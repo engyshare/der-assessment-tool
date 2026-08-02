@@ -1,0 +1,119 @@
+# 정본 규칙 문서 대조 — spec §16.5.3
+#
+# 볼트(Obsidian)는 CI에서 접근할 수 없다. 따라서 이 잡은 저장소 사본
+# (docs/domain-rules.md 등)을 정본 대신 읽는다. 사본이 정본과 바이트 동일해야
+# 성립하며, 그 조건은 §16.5.3 절차 5가 규정한다.
+#
+# 권위 있는 검사는 볼트가 있는 로컬에서 수행된다. CI의 역할은
+# "spec ↔ lock 정합"과 "인용 규칙 위반"을 잡는 것이며, 이 둘은 볼트 없이도
+# 완전히 검사된다.
+#
+# 경고이지 차단이 아니다 (§16.5.3 절차 2). 정본 개정은 잘못이 아니라 사건이며,
+# PR을 막을 일이 아니라 알아차려야 할 일이다. 차단으로 바꾸려면 --strict 를
+# 주고 continue-on-error 를 지운다.
+
+name: source-rules
+
+on:
+  push:
+    paths:
+      - "rslt/spec-*.md"
+      - "docs/source-rules.lock"
+      - "docs/domain-rules.md"
+      - "docs/evidence-standard.md"
+      - "scripts/check_source_rules.py"
+      - ".github/workflows/source-rules.yml"
+  pull_request:
+  schedule:
+    # 정본은 저장소 밖에서 바뀌므로 push 이벤트가 발생하지 않는다.
+    # 매일 한 번 능동 확인한다. 09:00 KST = 00:00 UTC
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+jobs:
+  collate:
+    runs-on: ubuntu-latest
+    continue-on-error: true      # 경고 상태 (§16.5.3 절차 2)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install pyyaml
+
+      - name: 정본 대조
+        id: collate
+        run: |
+          set +e
+          python scripts/check_source_rules.py | tee result.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: 결과 요약
+        if: always()
+        run: |
+          {
+            echo "## 정본 규칙 문서 대조"
+            echo
+            if [ "${{ steps.collate.outputs.exit_code }}" = "0" ]; then
+              echo "정합합니다."
+            else
+              echo "**표류를 감지했습니다.** spec §16.5.3 절차 3~5를 수행하십시오."
+              echo
+              echo "1. §16.5.1 파생 관계표를 따라 영향 FR 전수 재검토"
+              echo "2. 정본 어휘 변경 시 DB enum·UI 라벨·테스트 픽스처까지 추적"
+              echo "3. \`python scripts/check_source_rules.py --update\` 후 검토·커밋"
+              echo "4. 저장소 사본 동기화"
+            fi
+            echo
+            echo '```'
+            cat result.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 표류 시 경고 주석
+        if: steps.collate.outputs.exit_code != '0'
+        run: |
+          echo "::warning file=docs/source-rules.lock::정본 규칙 문서가 spec과 어긋납니다. 작업 요약을 확인하십시오."
+
+  # ── 수용기준 추적 매핑 (NFR-107) ──────────────────────────────────
+  #
+  # traceability.md 는 생성물이다. 커밋된 것이 지금 spec으로 다시 생성한 것과
+  # 다르면, 누군가 spec을 고치고 표를 갱신하지 않았거나 표를 직접 편집한 것이다.
+  # 둘 다 표를 믿을 수 없게 만든다.
+  traceability:
+    runs-on: ubuntu-latest
+    continue-on-error: true      # Wave 0~1 동안은 경고. 미매핑이 정상 상태다
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install pyyaml
+
+      - name: 매핑표 재생성 후 커밋본과 대조
+        run: |
+          cp docs/traceability.md /tmp/committed.md
+          python scripts/gen_traceability.py > /tmp/gen.log 2>&1 || true
+          cat /tmp/gen.log
+          if ! diff -q /tmp/committed.md docs/traceability.md > /dev/null; then
+            echo "::error file=docs/traceability.md::매핑표가 spec과 어긋납니다. \
+          'python scripts/gen_traceability.py' 를 실행하고 결과를 커밋하십시오."
+            diff /tmp/committed.md docs/traceability.md | head -40
+            exit 1
+          fi
+          echo "매핑표 최신 상태"
+
+      - name: 요약
+        if: always()
+        run: |
+          {
+            echo "## 수용기준 추적 (NFR-107)"
+            echo
+            echo '```'
+            cat /tmp/gen.log 2>/dev/null || echo "(생성 로그 없음)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

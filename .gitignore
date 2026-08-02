@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 편집기·OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 로컬 데이터 — 저장소에 들어오면 안 되는 것 (spec SC-3, FR-1101-AC5)
+#
+# Q-3 부하 시계열은 실증 참여 가구의 실제 데이터다. 익명화 전 원본이
+# 저장소에 들어오는 사고를 여기서 한 겹 막는다. 다만 .gitignore는 방어선이
+# 아니라 안전망이다 — 반입 전 차단이 절차상 원칙이다 (작업 16.3).
+data/raw/
+data/private/
+*.xlsx
+*.xls
+!fixtures/**/*.xlsx
+
+# 로컬 실행 산출물
+*.db
+*.sqlite3
+out/
+runs/
