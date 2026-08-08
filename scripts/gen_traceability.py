@@ -4,10 +4,15 @@
 무엇을 하는가
 -------------
 1. spec에서 요구사항(FR/NFR/UI)과 그 수용기준을 추출해 안정적인 ID를 붙인다
-2. tests/ 에서 `@pytest.mark.req("FR-104-AC3")` 마커를 수집한다
-3. docs/manual-checks.yaml 에서 수동 검증 항목을 수집한다
-4. 셋을 대조하여 docs/traceability.md 를 생성한다
-5. Must-have 요구사항에 미매핑 수용기준이 있으면 종료 코드 1
+2. `Priority:` 줄에 Phase가 없는 요구사항은 **부록 A.1 배정표**에서 채운다
+3. tests/ 에서 `@pytest.mark.req("FR-104-AC3")` 마커를 수집한다
+4. docs/manual-checks.yaml 에서 수동 검증 항목을 수집한다
+5. 셋을 대조하여 docs/traceability.md 를 생성한다
+6. Must-have 요구사항에 미매핑 수용기준이 있으면 종료 코드 1
+
+우선순위와 Phase는 **별개 축**이며 §4.0 R-1은 둘 다 요구한다. 그래서 요약에
+「Phase 미지정」을 우선순위 미지정과 나란히 집계한다 — 한쪽만 채우고 닫으면
+게이트가 초록불이어도 *지금 Phase에서* 지켜졌다는 보장이 되지 않는다.
 
 왜 생성하는가 — 손으로 쓰지 않는 이유
 --------------------------------------
@@ -64,6 +69,19 @@ REQ_START = re.compile(r"^- \*\*((?:FR|NFR|UI)-\d+)\*\*\s*(.*)$")
 PRIORITY = re.compile(r"^  - Priority:\s*\*\*([^*]+)\*\*(.*)$")
 BODY_START = re.compile(r"^## 1\. ")
 PHASE_IN_PRIORITY = re.compile(r"Phase (\d)")
+
+# 부록 A.1 Must-have Phase 배정표 — `Priority:` 줄에 Phase가 없는 요구사항을 채운다.
+#
+# 인라인 표기만 읽으면 43건이 공란으로 남는다. 공란은 그 자체로 조용한 구멍이다.
+# §4.0 R-1은 우선순위와 Phase를 **둘 다** 요구하는데, 공란이 요약에 집계되지
+# 않으면 절반만 채운 상태가 통과로 보인다.
+#
+# 배정표가 `Priority:` 줄을 **덮어쓰지는 않는다.** 요구사항 자신의 선언이 더
+# 가깝고, 둘이 어긋나면 그것 자체가 spec 결함이므로 덮지 않고 보고한다.
+APPENDIX_A1 = re.compile(r"^### A\.1\s")
+APPENDIX_END = re.compile(r"^## ")
+PHASE_ROW = re.compile(r"^\|\s*\*\*(\d+)[^|*]*\*\*\s*\|(.+)$")
+REQ_ID = re.compile(r"\b((?:FR|NFR|UI)-\d+)\b")
 
 # 수용기준 선언. **이 한 줄만이 수용기준을 만든다.**
 #
@@ -218,6 +236,44 @@ def parse_spec(path: Path) -> tuple[list[Requirement], list[str]]:
     return reqs, defects
 
 
+def parse_phase_appendix(path: Path) -> dict[str, str]:
+    """부록 A.1 배정표에서 요구사항 → Phase 를 읽는다.
+
+    한 요구사항이 여러 Phase 행에 나타날 수 있다 — FR-404는 Phase 1(`기본0`)과
+    Phase 3(`화폐화 산식`)에, NFR-107은 Phase 0(`게이트 구축`)과 Phase 1
+    (`매핑 전건`)에 등장한다. 이때는 **가장 이른 Phase**를 취한다.
+
+    이 값이 쓰이는 곳은 "언제부터 감시 대상인가"이므로, 늦은 쪽을 취하면 그
+    사이 기간이 감시 밖으로 빠진다. 반대 방향의 오차는 이르게 잡는 것뿐이다.
+    """
+    lines = path.read_text(encoding="utf-8").splitlines()
+    start = next((i for i, ln in enumerate(lines) if APPENDIX_A1.match(ln)), None)
+    if start is None:
+        return {}
+
+    out: dict[str, str] = {}
+    for line in lines[start + 1:]:
+        if APPENDIX_END.match(line):
+            break
+        m = PHASE_ROW.match(line)
+        if not m:
+            continue
+        phase = m.group(1)
+        # §4.0은 Phase 1·2·3만 정의한다. NFR 배정표의 `0 (Wave 0)` 행은 Phase가
+        # 아니라 **착수 시점을 구분하는 Wave 라벨**이며, 표 바로 아래 주석이
+        # 그렇게 못박고 있다 — *"Wave 0은 Phase 1 내부의 선행 단계이므로 별도
+        # Phase가 아니다. §4.0 R-2 판정상 전건 Phase 1 배정이다."*
+        #
+        # 이것을 Phase 0으로 읽으면 NFR-107·NFR-208이 본문과 충돌하는 것처럼
+        # 보인다. 문서가 스스로 해소해 둔 것을 도구가 다시 벌리는 셈이다.
+        if int(phase) == 0:
+            phase = "1"
+        for rid in REQ_ID.findall(m.group(2)):
+            if rid not in out or int(phase) < int(out[rid]):
+                out[rid] = phase
+    return out
+
+
 def collect_test_markers(tests_dir: Path) -> dict[str, list[str]]:
     """수용기준 ID → 그것을 검증하는 테스트 파일 목록."""
     mapping: dict[str, list[str]] = {}
@@ -260,6 +316,8 @@ def render(reqs: list[Requirement], tests: dict[str, list[str]],
 
     n_total = n_auto = n_manual = 0
     unprioritized = [r.rid for r in reqs if r.priority == "미지정"]
+    unphased = [r.rid for r in reqs if r.phase == "-"]
+    unphased_must = [r.rid for r in reqs if r.phase == "-" and r.is_must]
 
     for req in reqs:
         for i, crit in enumerate(req.criteria):
@@ -308,6 +366,7 @@ def render(reqs: list[Requirement], tests: dict[str, list[str]],
 | 수동 검증 매핑 | {n_manual} |
 | **Must-have 미매핑** | **{n_unmapped}** |
 | 우선순위 미지정 요구사항 | {len(unprioritized)} |
+| **Phase 미지정 요구사항** | **{len(unphased)}** |
 
 """
 
@@ -322,6 +381,24 @@ def render(reqs: list[Requirement], tests: dict[str, list[str]],
 > **이것은 표기 누락 이상입니다.** 미매핑 게이트는 Must-have만 대상으로 하므로,
 > 우선순위가 없는 요구사항은 **검사에서 조용히 빠집니다.** 위 {len(unprioritized)}건의
 > 수용기준은 지금 아무도 지키지 않아도 CI가 알려주지 않습니다.
+
+"""
+
+    if unphased:
+        header += f"""> **Phase 미지정 {len(unphased)}건 — §4.0 R-1 위반입니다.**
+>
+> `{", ".join(unphased)}`
+>
+> 그중 **Must-have {len(unphased_must)}건**{" — `" + ", ".join(unphased_must) + "`" if unphased_must else ""}
+>
+> 우선순위(중요도)와 Phase(시점)는 별개 축이며 §4.0 R-1은 **둘 다** 요구합니다.
+> `Priority:` 줄의 인라인 표기와 부록 A.1 배정표 어느 쪽에서도 찾지 못했습니다.
+> 부록 A.1은 **Must-have만** 등재하는 표이므로, 위 목록이 전부 Should-have 이하라면
+> 그 표의 「미배정 0건」 표기와 모순되지 않습니다.
+>
+> **둘의 긴급도는 다릅니다.** Must-have가 여기 있으면 미매핑 게이트가 그 수용기준을
+> 감시하면서도 *언제까지* 지켜야 하는지는 말하지 못하는 상태입니다. Should-have만
+> 남았다면 R-1 정비 사항이며 게이트 판정에는 영향이 없습니다.
 
 """
 
@@ -430,6 +507,22 @@ def main() -> int:
               "`- **AC3** …` 형식. 순번을 자동 부여하지 않습니다.", file=sys.stderr)
         return 2
 
+    # 부록 A.1 배정표로 Phase 공란을 채운다. `Priority:` 줄이 이미 말한 것은
+    # 덮지 않고, 어긋나면 spec 결함으로 보고한다 — 같은 사실이 두 곳에서 다르게
+    # 적혀 있다는 뜻이므로 조용히 한쪽을 고르면 안 된다.
+    appendix = parse_phase_appendix(spec_path)
+    conflicts: list[str] = []
+    for req in reqs:
+        assigned = appendix.get(req.rid)
+        if assigned is None:
+            continue
+        if req.phase == "-":
+            req.phase = assigned
+        elif req.phase != assigned:
+            conflicts.append(
+                f"{req.rid} — 본문 Priority 줄 Phase {req.phase} / "
+                f"부록 A.1 Phase {assigned}")
+
     tests = collect_test_markers(args.tests)
     manual, orphan = collect_manual(args.manual)
 
@@ -452,11 +545,24 @@ def main() -> int:
     if not args.check:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(content, encoding="utf-8")
-        print(f"생성: {args.out.relative_to(repo)}")
+        # 저장소 밖 경로(--out으로 임시 파일을 지정하는 음성 테스트 등)에서도
+        # 죽지 않아야 한다. relative_to()는 subpath가 아니면 ValueError를 낸다.
+        try:
+            shown = args.out.relative_to(repo)
+        except ValueError:
+            shown = args.out
+        print(f"생성: {shown}")
 
     n_crit = sum(len(r.criteria) for r in reqs)
+    n_unphased = sum(1 for r in reqs if r.phase == "-")
     print(f"요구사항 {len(reqs)}건 / 수용기준 {n_crit}건 / "
-          f"자동 {len(tests)}건 / 수동 {len(manual)}건")
+          f"자동 {len(tests)}건 / 수동 {len(manual)}건 / "
+          f"Phase 미지정 {n_unphased}건")
+
+    if conflicts:
+        print(f"Phase 표기 충돌 {len(conflicts)}건 — 본문과 부록 A.1이 다릅니다")
+        for c in conflicts:
+            print(f"  · {c}")
 
     if orphan:
         print(f"수동 대장 대상 없음 {len(orphan)}건 — criterion_id 누락")
