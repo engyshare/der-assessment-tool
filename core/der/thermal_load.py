@@ -36,7 +36,6 @@ from core.contracts.units import (
     steps_per_year,
     to_won,
 )
-from core.contracts.valuestream import ValueStream
 
 _DAYS_IN_MONTH: Final[tuple[int, ...]] = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 _MONTHS: Final[int] = 12
@@ -218,7 +217,7 @@ class ThermalLoad(DER):
         vat_rate: float = 0.0,
         fixed_om_won_per_year: float = 0.0,
         variable_om_won_per_kwh: float = 0.0,
-        inflation_rate: float = 0.0,
+        escalation_rate: float = 0.0,
         subcomponents: Sequence[Subcomponent] = (),
     ) -> None:
         # 열부하도 열화하지 않는다 — 단열 성능 저하는 부하 *증가*이므로
@@ -229,6 +228,7 @@ class ThermalLoad(DER):
             lifetime=lifetime,
             degradation_rate=0.0,
             carries_heat=True,
+            escalation_rate=escalation_rate,
         )
         self._steps = steps_per_year(dt)
         self._base_series, self._base_monthly = _resolve_series(
@@ -242,9 +242,6 @@ class ThermalLoad(DER):
 
         self.annual_growth_rate = _check_rate(
             annual_growth_rate, label="연간 증가율", low=-1.0, high=1.0
-        )
-        self.inflation_rate = _check_rate(
-            inflation_rate, label="물가상승률", low=-1.0, high=1.0
         )
         self._capacity_kw = _check_amount(capacity_kw, label="정격 열용량")
         self._acquisition_won = (
@@ -333,13 +330,15 @@ class ThermalLoad(DER):
 
     # ── 편익 없음 (`RC-LD-B0` 과 같은 규칙) ─────────────────────────
 
-    def value_streams(self) -> list[ValueStream]:
+    def value_streams(self) -> tuple[str, ...]:
         """**항상 빈 목록.** 열부하는 편익을 생성하지 않는다.
 
         「히트펌프로 바꿔 아낀 열비용」은 히트펌프의 편익(`RC-HP-B1`·`B2`)이며,
         열부하에도 붙이면 같은 절감이 두 번 계상된다 (FR-402-AC2.C).
+
+        v1.1 계약이 기본 구현(빈 튜플)을 두었으므로 이제 **상속만으로 강제된다**.
         """
-        return []
+        return ()
 
     def baseline_energy_cost(self, *, year: int, tariff_won_per_kwh: float) -> Money:
         """무지원 기준선 열비용 (원/년) — FR-607 · FR-705.
@@ -367,14 +366,14 @@ class ThermalLoad(DER):
 
     def fixed_om(self, *, year: int) -> Money:
         """C-2: `A × (1+i)^(n−1)`. 20년 누계는 등비수열 합이 된다."""
-        return to_won(self._fixed_om_won * self._escalation(year))
+        return to_won(self._fixed_om_won * self.escalation_factor(year=year))
 
     def variable_om(self, *, year: int) -> Money:
         """C-3: `처리량 × 단가`. 열부하의 처리량은 **연간 열 소비 kWh_th** 다."""
         return to_won(
             self.annual_energy_kwh(year=year)
             * self._variable_om_won_per_kwh
-            * self._escalation(year)
+            * self.escalation_factor(year=year)
         )
 
     def replacement_schedule(self, *, horizon: int) -> dict[int, Money]:
@@ -387,7 +386,7 @@ class ThermalLoad(DER):
                 continue
             year = life + 1
             while year <= horizon:
-                amount = to_won(cost * self._escalation(year))
+                amount = to_won(cost * self.escalation_factor(year=year))
                 schedule[year] = Money(schedule.get(year, Money(0)) + amount)
                 year += life
         return schedule
@@ -423,9 +422,6 @@ class ThermalLoad(DER):
                 f"{self._steps} 를 넘습니다. 열부하 시계열은 1년치입니다"
             )
         return self.step_series_kwh(year=int(ctx.year))[: ctx.steps]
-
-    def _escalation(self, year: int) -> float:
-        return (1.0 + self.inflation_rate) ** (int(Year(year)) - 1)
 
     def _components(self) -> list[Subcomponent]:
         return [("본체", self.lifetime, self._acquisition_won), *self._subcomponents]

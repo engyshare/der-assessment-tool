@@ -169,7 +169,10 @@ class HeatPump(DER):
     tag: ClassVar[str] = "HeatPump"
 
     #: FR-105-AC1 — 자원 클래스가 자신이 지원하는 운전 방법을 선언한다.
-    operating_modes: ClassVar[tuple[str, ...]] = (
+    #: 이름은 계약이 고정한다 (v1.1 개정 ④) — v1.0 에서는 이 자원만 소문자
+    #: `operating_modes` 였고 나머지는 `OPERATING_MODES` 였다. 케이스 그리드가
+    #: 운전 방법을 탐색 변수로 순회할 때(FR-105-AC5) 자원별 분기가 생긴다.
+    OPERATING_MODES: ClassVar[tuple[str, ...]] = (
         MODE_LOAD_FOLLOWING, MODE_NIGHT_STORAGE, MODE_PRICE_LINKED,
     )
 
@@ -182,7 +185,7 @@ class HeatPump(DER):
         cop_curve: CopCurve,
         heat_load_kwh: float | Sequence[float],
         # ── 열부하 대응 방식 (FR-105-AC1) ──
-        mode: str = MODE_LOAD_FOLLOWING,
+        operating_mode: str = MODE_LOAD_FOLLOWING,
         aux_heater_kw: float = 0.0,
         night_hours: Sequence[int] = DEFAULT_NIGHT_HOURS,
         price_profile_won_per_kwh: Sequence[float] | None = None,
@@ -192,7 +195,7 @@ class HeatPump(DER):
         # ── 재무 (§13.2.2 RC-ALL-C1~C5) ──
         elec_price_won_per_kwh: float = 0.0,
         capex_unit_won_per_kw: float = 0.0, capex_extra_won: float = 0.0, vat_rate: float = 0.1,
-        fixed_om_won: float = 0.0, om_escalation: float = 0.0,
+        fixed_om_won: float = 0.0, escalation_rate: float = 0.0,
         variable_om_won_per_kwh: float = 0.0,
         replacement_cost_won: float | None = None,
         pump_lifetime: int | None = None, pump_replacement_cost_won: float = 0.0,
@@ -202,16 +205,17 @@ class HeatPump(DER):
         # 잡히지 않고 사라진다 (FR-101-AC4).
         super().__init__(name=name, dt=dt, lifetime=lifetime,
                          degradation_rate=degradation_rate,
-                         carries_electric=True, carries_heat=True)
+                         carries_electric=True, carries_heat=True,
+                         operating_mode=operating_mode,
+                         escalation_rate=escalation_rate)
 
         if rated_heat_kw <= 0.0:
             raise ValueError(f"{name}: 정격 열출력은 0보다 커야 합니다: {rated_heat_kw}")
         if aux_heater_kw < 0.0:
             raise ValueError(f"{name}: 보조 열원 정격이 음수입니다: {aux_heater_kw}")
-        if mode not in self.operating_modes:
-            raise ValueError(f"{name}: 지원하지 않는 운전 방법입니다: {mode!r}. "
-                             f"지원 목록: {list(self.operating_modes)} (FR-105-AC1)")
-        if mode == MODE_PRICE_LINKED and price_profile_won_per_kwh is None:
+        # 운전 방법 소속 검사는 계약이 이미 했다 (super() 안에서). 여기서는
+        # **그 방법이 필요한 입력을 갖췄는지**만 본다 — 성질이 다른 검사다.
+        if operating_mode == MODE_PRICE_LINKED and price_profile_won_per_kwh is None:
             # 조용히 열부하 추종으로 되돌리면 사용자는 요금 연동으로 돌았다고 믿는다
             raise ValueError(f"{name}: 전력요금 연동 운전에는 요금 시계열이 필요합니다")
         if price_linked_hours <= 0:
@@ -219,7 +223,6 @@ class HeatPump(DER):
 
         self.rated_heat_kw = float(rated_heat_kw)
         self.cop_curve = _normalize_cop_curve(cop_curve)
-        self.mode = mode
         self.aux_heater_kw = float(aux_heater_kw)
         self.night_hours = frozenset(int(h) for h in night_hours)
         self.price_linked_hours = int(price_linked_hours)
@@ -235,7 +238,6 @@ class HeatPump(DER):
         self.capex_extra_won = float(capex_extra_won)
         self.vat_rate = float(vat_rate)
         self.fixed_om_won = float(fixed_om_won)
-        self.om_escalation = float(om_escalation)
         self.variable_om_won_per_kwh = float(variable_om_won_per_kwh)
         self.pump_lifetime = int(pump_lifetime) if pump_lifetime else None
         self.pump_replacement_cost_won = float(pump_replacement_cost_won)
@@ -288,26 +290,38 @@ class HeatPump(DER):
                     break
         return base * (1.0 - self.degradation_rate) ** (year - 1)
 
+    def value_streams(self) -> tuple[str, ...]:
+        """히트펌프가 만드는 편익 — 열 비용 절감 1종 (`RC-HP-B1~B2`).
+
+        전기를 **받아들이는** 자원이므로 전력 판매·REC 편익은 없다. 열 비용
+        절감은 기존 열원(전기보일러·가스보일러) 대비 차액이며, 그 기준선을
+        전제로 갖는다 (FR-401-AC2.HeatCostSaving).
+        """
+        return ("HeatCostSaving",)
+
     def dispatch(self, ctx: DispatchContext) -> DispatchResult:
         return self.simulate(ctx).result
 
     def simulate(self, ctx: DispatchContext) -> HeatPumpOperation:
-        """한 해 운전 — 시계열과 미충족 진단을 함께 돌려준다."""
-        if ctx.dt != self.dt:
-            raise ValueError(f"{self.name}: 컨텍스트의 시간 해상도({ctx.dt}초)가 자원의 "
-                             f"해상도({self.dt}초)와 다릅니다 — 연간 스텝 수가 달라지면 "
-                             "열부하 균등 배분이 통째로 어긋납니다")
+        """운전 — 시계열과 미충족 진단을 함께 돌려준다.
 
-        hours = ctx.dt / SECONDS_PER_HOUR
+        해상도 불일치 거부는 계약의 `check_context()` 로 옮겼다 (v1.1 개정 ①) —
+        v1.0 에서는 이 자원과 부하 자원만 거부하고 나머지 넷은 조용히 한쪽
+        해상도를 채택했다.
+        """
+        self.check_context(ctx)
+
+        hours = ctx.hours_per_step
         cap_hp = self.rated_heat_kw * hours
         cap_aux = self.aux_heater_kw * hours
 
         load = self._load_series(ctx)
-        target = self._production_target(ctx, load, cap_hp + cap_aux)
+        target, unmet_basis = self._production_plan(ctx, load)
         temps = self._temperature_series(ctx)
 
         electric = [0.0] * ctx.steps
         heat = [0.0] * ctx.steps
+        unmet = [0.0] * ctx.steps
         hp_total = aux_total = elec_total = 0.0
 
         for i in range(ctx.steps):
@@ -318,19 +332,39 @@ class HeatPump(DER):
             # 부호 규약: 열은 내보내므로 양수, 전기는 받아들이므로 음수.
             heat[i] = hp_heat + aux_heat
             electric[i] = -consumed
+            # 계획 대비 부족분. **스텝별로 남긴다** — 연 총량만 남기면
+            # «한겨울 며칠 전량 미충족»과 «1년 내내 조금씩 부족»이 같은 값이 되고,
+            # 보조 열원 증설 판단이 성립하지 않는다 (`RC-HP-X1`).
+            unmet[i] = max(0.0, unmet_basis[i] - heat[i])
             hp_total += hp_heat
             aux_total += aux_heat
             elec_total += consumed
 
         demand = sum(load)
+        unmet_total = max(0.0, demand - hp_total - aux_total)
         zeros = [0.0] * ctx.steps
+        notes: tuple[str, ...] = ()
+        if unmet_total > ENERGY_TOLERANCE_KWH:
+            notes = (
+                f"{self.name}: 열부하 {unmet_total:.3f} kWh 미충족 "
+                f"(정격 {self.rated_heat_kw} kWth · 보조 {self.aux_heater_kw} kWth). "
+                "보조 열원 증설 또는 정격 상향을 검토하십시오 (RC-HP-X1)",
+            )
         return HeatPumpOperation(
-            result=DispatchResult(electric=electric, heat=heat, cool=zeros, fuel=list(zeros)),
+            result=DispatchResult(
+                electric=electric, heat=heat, cool=zeros, fuel=list(zeros),
+                # **미충족을 결과에 싣는다** (v1.1 개정). v1.0 은 이 값을
+                # `HeatPumpOperation` 에만 두었고, 엔진은 `dispatch()` 만 보므로
+                # 미충족 사실이 그 자리에서 사라졌다 — 남는 것은 「열이 조금 덜
+                # 나온 정상 결과」뿐이었다.
+                unmet_heat=unmet,
+                notes=notes,
+            ),
             heat_demand_kwh=demand,
             hp_heat_kwh=hp_total,
             aux_heat_kwh=aux_total,
             electricity_kwh=elec_total,
-            unmet_heat_kwh=max(0.0, demand - hp_total - aux_total),
+            unmet_heat_kwh=unmet_total,
         )
 
     def _load_series(self, ctx: DispatchContext) -> list[float]:
@@ -344,32 +378,48 @@ class HeatPump(DER):
             return list(ctx.ambient_temp_c)
         return [self.default_ambient_temp_c] * ctx.steps
 
-    def _production_target(
-        self, ctx: DispatchContext, load: list[float], capacity: float
-    ) -> list[float]:
-        """열부하 대응 방식에 따른 스텝별 생산 목표량 (kWh). 축열조·요금연동 운전은
-        **하루 단위로만** 부하를 옮긴다 — 며칠치를 몰아 생산하면 알지도 못하는
-        축열 용량을 가정하게 된다.
+    def _production_plan(
+        self, ctx: DispatchContext, load: list[float]
+    ) -> tuple[list[float], list[float]]:
+        """`(생산 목표, 미충족 계상 기준)` 을 스텝별로 돌려준다 (kWh).
+
+        축열조·요금연동 운전은 **하루 단위로만** 부하를 옮긴다 — 며칠치를 몰아
+        생산하면 알지도 못하는 축열 용량을 가정하게 된다.
+
+        **두 배열을 나눠 돌려주는 이유** (v1.1). 미충족을 `부하 − 공급` 으로 스텝
+        마다 재면, 심야 운전은 주간 스텝 전부가 미충족으로 잡힌다 — 그 하루의 열이
+        실제로는 전량 공급되었는데도 그렇다. 미충족은 **계획 대비 부족분**이어야
+        하고, 계획은 부하를 옮긴 뒤의 것이다.
+
+        목표에 용량 상한을 걸지 않는 것도 그래서다. 상한은 호출부가 `min()` 으로
+        걸며(기기별로 다르다), 여기서 미리 깎으면 **깎인 만큼이 미충족 계상 기준에서
+        함께 사라진다** — 정격 부족이 미충족으로 드러나지 않는 상태가 된다.
         """
-        if self.mode == MODE_LOAD_FOLLOWING:
-            return load
+        if self.operating_mode == MODE_LOAD_FOLLOWING:
+            return load, load
 
         allowed = self._allowed_steps(ctx)
         per_day = max(1, _SECONDS_PER_DAY // ctx.dt)
         target = [0.0] * ctx.steps
+        basis = [0.0] * ctx.steps
         for start in range(0, ctx.steps, per_day):
             end = min(start + per_day, ctx.steps)
             window = [i for i in range(start, end) if allowed[i]]
             if not window:
-                continue  # 운전 가능 시간이 없는 날은 전량 미충족으로 남는다
+                # 운전 가능 시간이 없는 날은 전량 미충족이다. 목표는 0으로 두되
+                # **계상 기준에는 부하를 남긴다** — 기준에서도 지우면 그 하루가
+                # 「부하가 없던 날」과 구분되지 않는다.
+                basis[start:end] = load[start:end]
+                continue
             level = sum(load[start:end]) / len(window)
             for i in window:
-                target[i] = min(level, capacity)
-        return target
+                target[i] = level
+                basis[i] = level
+        return target, basis
 
     def _allowed_steps(self, ctx: DispatchContext) -> list[bool]:
         """운전 가능 시간대 마스크. 심야는 시계로, 요금 연동은 요금 순위로 고른다."""
-        if self.mode == MODE_NIGHT_STORAGE:
+        if self.operating_mode == MODE_NIGHT_STORAGE:
             return [(i * ctx.dt // SECONDS_PER_HOUR) % 24 in self.night_hours
                     for i in range(ctx.steps)]
 
@@ -438,7 +488,7 @@ class HeatPump(DER):
         """C-2 고정 O&M `A × (1+i)^(n−1)`. 20년 누계는 등비수열 합과 일치한다."""
         if year < 1:
             raise ValueError(f"분석 연도는 1부터 셉니다: {year}")
-        return to_won(self.fixed_om_won * (1.0 + self.om_escalation) ** (year - 1))
+        return to_won(self.fixed_om_won * self.escalation_factor(year=year))
 
     def variable_om(self, *, year: int) -> Money:
         """C-3 변동 O&M = `처리량 × 단가`. HeatPump의 처리량은 **열공급 kWh**다 —

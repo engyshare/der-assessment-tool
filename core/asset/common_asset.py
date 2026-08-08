@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import ClassVar, Final
 
-from core.contracts.asset import AllocationRule, CommonAsset
+from core.contracts.asset import AllocationResult, AllocationRule, CommonAsset
 from core.contracts.units import ZERO, Money, Year, to_won, won_sum
 
 #: 안분 잔차를 받는 가구의 인덱스. **-1(최종 가구)로 고정한다** — 상수로 두는
@@ -116,7 +116,7 @@ class StandardCommonAsset(CommonAsset):
         fixed_om_annual: MoneyLike,
         lifetime_sw: int,
         lifetime_hw: int,
-        inflation_rate: float,
+        escalation_rate: float,
         sw_redevelopment_ratio: float = 1.0,
         hw_replacement_ratio: float = 1.0,
         vat_rate: float = 0.0,
@@ -127,11 +127,11 @@ class StandardCommonAsset(CommonAsset):
             lifetime_sw=lifetime_sw,
             lifetime_hw=lifetime_hw,
             allocation=allocation,
+            escalation_rate=escalation_rate,
         )
         self.capex_sw = _non_negative_money("capex_sw", capex_sw)
         self.capex_hw = _non_negative_money("capex_hw", capex_hw)
         self.fixed_om_annual = _non_negative_money("fixed_om_annual", fixed_om_annual)
-        self._inflation = _fraction("inflation_rate", inflation_rate)
         self._sw_ratio = _ratio("sw_redevelopment_ratio", sw_redevelopment_ratio)
         self._hw_ratio = _ratio("hw_replacement_ratio", hw_replacement_ratio)
         self._vat = _fraction("vat_rate", vat_rate)
@@ -165,8 +165,10 @@ class StandardCommonAsset(CommonAsset):
         않으면 20년 누계가 A×20에 그쳐, i=2%에서 21.5%가 사라진다
         (§13.2.2 C-2: A=100,000·i=0.02·n=20 → 2,429,737원).
         """
-        exponent = _checked_year(year) - 1
-        return to_won(Decimal(self.fixed_om_annual) * (Decimal(1) + self._inflation) ** exponent)
+        return to_won(
+            Decimal(self.fixed_om_annual)
+            * Decimal(str(self.escalation_factor(year=_checked_year(year))))
+        )
 
     # ── 교체·잔존가치 (FR-106-AC3) ──────────────────────────────────
 
@@ -236,9 +238,10 @@ class StandardCommonAsset(CommonAsset):
             year=year,
         )
 
-    def salvage_value(self, *, year: int) -> Money:
-        """잔존가치 (원). SW·HW의 잔존 수명이 다르므로 따로 계산해 합친다."""
-        return won_sum([self.salvage_software(year=year), self.salvage_hardware(year=year)])
+    # `salvage_value()` 는 **덮어쓰지 않는다.** 계약이 `SW + HW` 로 확정했다
+    # (v1.1 개정 ②) — 합계 규칙이 설비마다 달라지면 AC3 분리 계상의 의미가
+    # 사라진다. v1.0 계약은 합계만 요구하고 분리를 요구하지 않았으므로
+    # 이 파일이 `salvage_software`·`salvage_hardware` 를 스스로 만들었다.
 
 
 class CEMS(StandardCommonAsset):
@@ -278,51 +281,15 @@ COMMON_ASSET_TYPES: Final[tuple[type[StandardCommonAsset], ...]] = (CEMS, HEMS, 
 
 
 # ── 안분 (FR-106-AC5) ────────────────────────────────────────────────
-
-@dataclass(frozen=True)
-class AllocationResult:
-    """안분 결과. **스스로 합계 보존을 검사한다.**
-
-    자료구조가 검사하지 않으면, 다른 경로로 만들어진 안분 결과가 리포트까지
-    흘러간 뒤에야 "가구 합계 ≠ 단지 총계"가 발견된다. 그때는 어느 단계에서
-    어긋났는지 되짚을 수 없다 (NFR-103-M1).
-    """
-
-    rule: AllocationRule
-    #: 안분 전 원액 (단지 총계)
-    source_total: Money
-    #: 가구별 부담액. 길이 = 가구 수
-    per_household: tuple[Money, ...]
-    #: 가구에 싣지 않고 단지 총계에만 남긴 금액 (미안분 규칙에서만 0이 아니다)
-    unallocated: Money
-
-    def __post_init__(self) -> None:
-        got = won_sum([*self.per_household, self.unallocated])
-        if got != self.source_total:
-            raise ValueError(
-                f"안분 합계가 원액과 다릅니다: {got} ≠ {self.source_total} "
-                f"(규칙 {self.rule.value}). 안분 전후 합계는 오차 0원이어야 합니다 "
-                "(FR-106-AC5 · NFR-103)"
-            )
-
-    @property
-    def households(self) -> int:
-        return len(self.per_household)
-
-    @property
-    def total(self) -> Money:
-        """가구 합계 + 미안분. 정의상 항상 `source_total` 과 같다."""
-        return won_sum([*self.per_household, self.unallocated])
-
-    def describe(self) -> str:
-        """리포트 표기용 한 줄. **규칙을 반드시 드러낸다** (FR-106-AC5).
-
-        같은 총액이 규칙에 따라 다르게 배분되므로 규칙 없는 부담액은 해석 불가다.
-        """
-        return (
-            f"안분 규칙: {self.rule.value} / 대상 {self.households}가구 / "
-            f"총액 {self.source_total:,}원"
-        )
+#
+# `AllocationResult` 는 **계약이 소유한다** (`core.contracts.asset`, v1.1 개정 ③).
+# 안분 결과는 프로포마(WP-7)와 리포트(WP-10)가 읽는 **구획 경계 자료구조**이므로
+# §16.2 「데이터 스키마」에 해당한다. v1.0 에서는 이 파일이 형(型)까지 소유해서,
+# 형을 고치려면 WP-7·WP-10 이 남의 구획 파일을 건드려야 했다.
+#
+# **배분 알고리즘은 이 파일이 소유한다** — 가중치 계산과 잔차 규약은 구현이며
+# 계약이 아니다. 계약은 「합계가 보존된다」만 요구하고, 어느 가구가 잔차를
+# 받는지는 여기서 정한다.
 
 
 def _capacity_weights(capacities: Sequence[float] | None, households: int) -> list[Decimal]:

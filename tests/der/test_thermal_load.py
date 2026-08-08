@@ -49,7 +49,7 @@ class TestThermalLoadContract(DERContractTests):
             unit_cost_won_per_kw=200_000.0,
             fixed_om_won_per_year=OM_A,
             variable_om_won_per_kwh=3.0,
-            inflation_rate=OM_I,
+            escalation_rate=OM_I,
             subcomponents=[("순환펌프", 12, 400_000.0)],
         )
 
@@ -181,7 +181,7 @@ def test_thermal_load_produces_no_value_streams() -> None:
     열부하에도 붙이면 같은 절감이 두 번 계상된다 (FR-402-AC2.C).
     """
     tl = make_thermal_load()
-    assert tl.value_streams() == []
+    assert tl.value_streams() == ()
     baseline = tl.baseline_energy_cost(year=1, tariff_won_per_kwh=120.0)
     assert baseline == to_won(ANNUAL_HEAT_KWH * 120.0)
 
@@ -262,7 +262,7 @@ def test_zero_cost_thermal_load_returns_money_zero_for_all_five() -> None:
 @pytest.mark.req("FR-101-AC2")
 def test_fixed_om_20y_total_matches_geometric_series() -> None:
     """C-2: A=100,000 i=0.02 n=20 → **2,429,737원**."""
-    tl = make_thermal_load(fixed_om_won_per_year=OM_A, inflation_rate=OM_I)
+    tl = make_thermal_load(fixed_om_won_per_year=OM_A, escalation_rate=OM_I)
     closed_form = OM_A * ((1.0 + OM_I) ** OM_N - 1.0) / OM_I
     assert to_won(closed_form) == OM_20Y_TOTAL
     assert won_sum(tl.fixed_om(year=y) for y in range(1, OM_N + 1)) == OM_20Y_TOTAL

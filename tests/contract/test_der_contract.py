@@ -25,8 +25,8 @@ from decimal import Decimal
 
 import pytest
 
-from core.contracts.der import DER, DispatchContext
-from core.contracts.units import Money, Year
+from core.contracts.der import DER, MEDIA, DispatchContext
+from core.contracts.units import Money, Year, steps_per_year
 
 # spec FR-101-AC1 이 열거한 속성. 이름을 여기서 다시 짓지 않고 그대로 옮긴다 —
 # 옮겨 적는 순간 spec과 코드가 갈릴 수 있으므로, 갈리면 이 테스트가 깨진다.
@@ -42,9 +42,12 @@ REQUIRED_ATTRS = [
     "degradation_rate",
 ]
 
-# spec FR-101-AC2 가 열거한 메서드.
+# spec FR-101-AC2 가 열거한 메서드. `capex_vat` 는 v1.1 계약 개정에서 들어왔다 —
+# §13.2.2 C-1(부가세 별도 분리)이 요구하는데 자리가 없어 자원 6종이 각자 지었고
+# ESS 하나는 아예 만들지 않았다.
 REQUIRED_METHODS = [
     "capex",
+    "capex_vat",
     "fixed_om",
     "variable_om",
     "replacement_schedule",
@@ -52,7 +55,10 @@ REQUIRED_METHODS = [
     "dispatch",
 ]
 
-MEDIA_FLAGS = ["carries_electric", "carries_heat", "carries_cool", "consumes_fuel"]
+#: 금액을 돌려주며 `year` 하나만 받는 메서드 — 정수 원 검사 대상
+MONEY_METHODS = ["capex", "capex_vat", "fixed_om", "variable_om", "salvage_value"]
+
+MEDIA_FLAGS = [flag for _media, flag in MEDIA]
 
 
 class DERContractTests:
@@ -126,7 +132,7 @@ class DERContractTests:
         그 어긋남은 화면상 정상으로 보이므로 사후 발견이 어렵다.
         """
         der = self.make()
-        for name in ("capex", "fixed_om", "variable_om", "salvage_value"):
+        for name in MONEY_METHODS:
             value = getattr(der, name)(year=1)
             assert isinstance(value, Money), (
                 f"{name}() 는 Money(Decimal 원)를 반환해야 합니다 "
@@ -187,6 +193,156 @@ class DERContractTests:
                     f"{flag}=False 인데 {series_name} 계열에 0이 아닌 값이 "
                     f"있습니다. 이 값은 어느 수지에도 집계되지 않고 사라집니다"
                 )
+
+    # ── 부분 창 규약 (v1.1 계약 개정 ①) ─────────────────────────────
+    @pytest.mark.contract
+    @pytest.mark.req("FR-301-AC3")
+    def test_dispatch_partial_window_is_a_prefix_of_the_year(self) -> None:
+        """`steps=24` 는 **연초부터 24스텝**이다 — 짧은 창은 긴 창의 앞부분이다.
+
+        **이것이 계약 개정 1순위였던 구멍이다.** v1.0 은 docstring에 *"한 해 운전
+        시뮬레이션"* 이라고만 적고 계약 테스트는 `steps=24` 로 호출했다. 부분 창을
+        어떻게 해석할지 근거가 없어 자원 6종이 각자 정했고, 같은 컨텍스트가
+        자원마다 다른 시각 구간을 뜻하게 되었다.
+
+        창은 **관측 범위**이지 물리의 변경이 아니다. 24스텝을 요구했다는 사실이
+        그 24스텝 안에서 벌어지는 일을 바꿔서는 안 된다. 바꾸면 엔진이 스텝 `i`
+        에서 더하는 값들이 서로 다른 시각의 값이 되는데, 총량은 그럴듯하고
+        수지 균형(NFR-102)도 통과한다 — 시각의 어긋남은 균형식이 보지 못한다.
+
+        금지되는 해석이 이 검사에 걸린다:
+            · 연간 총량을 창 길이에 몰아 담기 → 24스텝 값이 48스텝 때와 다르다
+            · 창 안에 사이클을 억지로 압축하기 → 같은 이유로 다르다
+        """
+        der = self.make()
+        short = der.dispatch(DispatchContext(steps=24, dt=der.dt, year=1))
+        long = der.dispatch(DispatchContext(steps=48, dt=der.dt, year=1))
+
+        for media, _flag in MEDIA:
+            head = getattr(long, media)[:24]
+            got = getattr(short, media)
+            assert got == pytest.approx(head, abs=1e-9), (
+                f"{media} 계열: 24스텝 창의 값이 48스텝 창의 앞부분과 다릅니다. "
+                "부분 창은 연초부터의 연속 구간이며, 창 길이가 그 구간의 내용을 "
+                "바꾸면 안 됩니다 (DispatchContext 부분 창 규약)"
+            )
+
+    @pytest.mark.contract
+    @pytest.mark.req("FR-301-AC3")
+    def test_dispatch_rejects_resolution_mismatch(self) -> None:
+        """`ctx.dt ≠ self.dt` 는 **거부**한다 — 조용히 한쪽을 채택하지 않는다.
+
+        v1.0 에서는 자원마다 달랐다. 어떤 자원은 `self.dt` 로 스텝 길이를 곱하고
+        어떤 자원은 `ctx.dt` 를 썼으며, 아무도 불일치를 거부하지 않았다.
+        해상도 비(4배)만큼 어긋난 에너지가 그럴듯한 값으로 남는다.
+        """
+        der = self.make()
+        other_dt = der.dt // 4 if der.dt == 3600 else der.dt * 4
+        ctx = DispatchContext(steps=24, dt=other_dt, year=1)
+        with pytest.raises(ValueError):
+            der.dispatch(ctx)
+
+    # ── 편익 훅 (v1.1 계약 개정 ③ · RC-LD-B0) ───────────────────────
+    @pytest.mark.contract
+    @pytest.mark.req("FR-401-AC1")
+    def test_value_streams_returns_tags(self) -> None:
+        """`value_streams()` 는 편익 tag 튜플을 돌려준다.
+
+        `ValueStream` 객체가 아니라 tag 인 이유: 편익은 형제 구획(WP-4)이
+        소유하므로 자원이 직접 참조하면 NFR-208-AC2 위반이다.
+        """
+        der = self.make()
+        streams = der.value_streams()
+        assert isinstance(streams, tuple), (
+            f"value_streams() 는 tuple 을 돌려줍니다 (실제 {type(streams).__name__}). "
+            "가변 리스트를 돌려주면 호출부가 자원의 선언을 고칠 수 있습니다"
+        )
+        for tag in streams:
+            assert isinstance(tag, str) and tag, (
+                f"편익 tag 는 비어 있지 않은 문자열입니다: {tag!r} "
+                "(`FR-401-AC2.<키>` 와 같은 리터럴)"
+            )
+        assert len(set(streams)) == len(streams), (
+            f"편익 tag 가 중복되었습니다: {streams}. 같은 편익을 두 번 선언하면 "
+            "이중 계상됩니다 (FR-402-AC2.C)"
+        )
+
+    # ── 운전 방법 (v1.1 계약 개정 ④ · FR-105) ───────────────────────
+    @pytest.mark.contract
+    @pytest.mark.req("FR-105-AC1")
+    def test_operating_mode_is_declared_and_selected(self) -> None:
+        """운전 방법 접근자 이름을 계약이 고정한다.
+
+        v1.0 은 이름을 정하지 않아 `mode` 와 `operating_mode` 로 갈렸고,
+        열거자도 `OPERATING_MODES`(클래스)와 `operating_modes`(인스턴스)로
+        갈렸다. FR-105-AC5 는 케이스 그리드가 운전 방법을 **탐색 변수**로
+        쓸 것을 요구하므로, 이름이 균일하지 않으면 자원별 분기가 생긴다 —
+        NFR-201(코어 수정 0줄)이 무너지는 지점이다.
+        """
+        der = self.make()
+        modes = type(der).OPERATING_MODES
+        assert isinstance(modes, tuple), (
+            "OPERATING_MODES 는 클래스 수준 tuple 입니다 (FR-105-AC1)"
+        )
+        assert isinstance(der.operating_mode, str)
+        if modes:
+            assert der.operating_mode in modes, (
+                f"선택된 운전 방법 {der.operating_mode!r} 가 선언 목록 {modes} 에 "
+                "없습니다"
+            )
+        else:
+            assert der.operating_mode == "", (
+                "운전 방법을 선언하지 않은 자원은 빈 문자열을 갖습니다 — "
+                "선언 없이 값을 가지면 리포트에 근거 없는 방법이 표기됩니다 "
+                "(FR-105-AC4)"
+            )
+
+    # ── 물가상승률 (v1.1 계약 개정 ⑤) ───────────────────────────────
+    @pytest.mark.contract
+    @pytest.mark.req("FR-701-AC3")
+    def test_escalation_rate_is_a_normalized_fraction(self) -> None:
+        """물가상승률은 **소수**이며 이름은 `escalation_rate` 하나다.
+
+        v1.0 에는 자리가 없어 자원이 각자 보유했다 — `inflation_pct`(**%**),
+        `inflation_rate`(소수), `om_escalation`(소수)로 이름과 **척도**까지
+        갈렸다. 같은 「2%」가 자원에 따라 `2.0` 과 `0.02` 로 들어가고, 어느 쪽도
+        오류가 아니므로 아무도 잡지 못한다. 20년 프로포마에서 100배 차이다.
+        """
+        der = self.make()
+        assert isinstance(der.escalation_rate, float)
+        assert -1.0 < der.escalation_rate < 1.0, (
+            f"escalation_rate 는 -1~1 소수입니다: {der.escalation_rate}. "
+            "2%는 0.02 입니다 (§7.5)"
+        )
+        assert der.escalation_factor(year=1) == pytest.approx(1.0), (
+            "1년차 물가 계수는 1.0 이어야 합니다 — 기준연도가 자원마다 다르면 "
+            "같은 물가상승률이 한 해씩 어긋난 비용을 냅니다"
+        )
+
+    # ── 잔존가치는 명목액 (v1.1 명문화 · §13.2.2 C-5) ───────────────
+    @pytest.mark.contract
+    @pytest.mark.req("FR-104-AC5")
+    def test_salvage_value_takes_no_discount_rate(self) -> None:
+        """`salvage_value()` 는 **할인율을 인자로 받지 않는다.**
+
+        할인율은 사업 단위 전제(FR-701)이지 자원의 속성이 아니다. 자원이
+        할인까지 하면 재무 계층이 한 번 더 할인해 **두 번 할인**되는데, 값이
+        작아지므로 「보수적으로 보여서」 검출되지 않는다.
+
+        시그니처를 검사하는 이유: 명목액인지 할인액인지는 반환값만 봐서는
+        구분할 수 없다. 할인율을 받지 않는다는 사실이 유일하게 기계로 확인
+        가능한 근거다.
+        """
+        der = self.make()
+        params = set(inspect.signature(der.salvage_value).parameters)
+        forbidden = {"discount_rate", "rate", "wacc", "discount"} & params
+        assert not forbidden, (
+            f"salvage_value() 가 할인율 인자 {forbidden} 를 받습니다. C-5 의 "
+            "잔존가치는 명목액이고 할인은 재무 계층(WP-7)의 몫입니다"
+        )
+        assert params <= {"year"}, (
+            f"salvage_value() 의 인자는 `year` 뿐입니다 (실제 {params})"
+        )
 
     # ── 확장성 (FR-101-AC3) ─────────────────────────────────────────
     @pytest.mark.contract
@@ -249,6 +405,22 @@ def test_der_cannot_be_instantiated_directly() -> None:
 
 
 @pytest.mark.contract
+@pytest.mark.req("FR-401-AC1")
+def test_value_streams_defaults_to_empty_on_the_contract() -> None:
+    """`value_streams()` 만 기본 구현을 갖는다 — **방향이 다르기 때문이다.**
+
+    비용 메서드의 기본값 0은 비용을 지우므로 경제성을 좋아 보이게 만든다.
+    편익의 기본값 「없음」은 편익을 지우므로 나빠 보이게 만든다. 나빠 보이는
+    결과는 검토를 부르고, 좋아 보이는 결과는 그대로 통과한다.
+    """
+    assert "value_streams" not in getattr(DER, "__abstractmethods__", frozenset()), (
+        "value_streams() 는 기본 구현(빈 튜플)을 갖습니다 — 그래야 RC-LD-B0"
+        "(부하는 편익을 만들지 않는다)이 상속으로 강제됩니다"
+    )
+    assert DER.value_streams(None) == ()  # type: ignore[arg-type]
+
+
+@pytest.mark.contract
 @pytest.mark.req("FR-101-AC4")
 def test_dispatch_result_carries_all_four_media() -> None:
     """매체 4종이 전부 계약에 있어야 한다.
@@ -265,6 +437,39 @@ def test_dispatch_result_carries_all_four_media() -> None:
 
 
 @pytest.mark.contract
+@pytest.mark.req("FR-101-AC4")
+def test_dispatch_result_carries_unmet_series_per_media() -> None:
+    """미충족 계열이 매체별로 있어야 한다 (v1.1 · `RC-HP-X1`).
+
+    v1.0 은 실적 계열만 실었다. 그래서 히트펌프가 열부하를 못 채운 사실이
+    자원 내부 자료구조에만 남고 `dispatch()` 를 통과한 시점에 사라졌다 —
+    엔진과 리포트에 남는 것은 「열이 조금 덜 나온 정상 결과」뿐이다.
+    """
+    from core.contracts.der import DispatchResult
+
+    result = DispatchResult.zeros(steps=3)
+    for media, _flag in MEDIA:
+        assert result.unmet(media) == [0.0, 0.0, 0.0], (
+            f"unmet_{media} 계열이 없거나 0으로 초기화되지 않았습니다"
+        )
+    assert result.total_unmet() == 0.0
+
+    with_unmet = DispatchResult(
+        electric=[0.0], heat=[1.0], cool=[0.0], fuel=[0.0],
+        unmet_heat=[2.5], notes=("정격 초과",),
+    )
+    assert with_unmet.total_unmet() == 2.5
+    assert with_unmet.notes == ("정격 초과",)
+
+    with pytest.raises(ValueError, match="음수"):
+        DispatchResult(electric=[0.0], heat=[0.0], cool=[0.0], fuel=[0.0],
+                       unmet_heat=[-1.0])
+    with pytest.raises(ValueError, match="길이"):
+        DispatchResult(electric=[0.0], heat=[0.0], cool=[0.0], fuel=[0.0],
+                       unmet_heat=[0.0, 0.0])
+
+
+@pytest.mark.contract
 @pytest.mark.req("FR-301-AC3")
 def test_dispatch_context_rejects_step_mismatch() -> None:
     """시계열 행수 불일치는 **명확한 오류로 중단**한다 (FR-301-AC3).
@@ -277,6 +482,45 @@ def test_dispatch_context_rejects_step_mismatch() -> None:
     ctx = DispatchContext(steps=24, dt=3600, year=1)
     with pytest.raises(ValueError, match="스텝"):
         ctx.check_series(list(range(23)), name="발전량")
+
+
+@pytest.mark.contract
+@pytest.mark.req("FR-301-AC3")
+def test_dispatch_context_rejects_windows_longer_than_a_year() -> None:
+    """한 컨텍스트는 한 해를 넘지 못한다 (v1.1).
+
+    v1.0 은 상한이 없었다. 그래서 `steps=17520` 이 「2년」인지 「한 해를 두 번
+    센 것」인지 계약이 답하지 않았고, 그 창에서는 물가상승률·열화가 한 번만
+    걸린다 — 2년차 비용이 1년차 값으로 계상되는데 결과는 그럴듯하다.
+    """
+    annual = steps_per_year(3600)
+    DispatchContext(steps=annual, dt=3600, year=1)  # 딱 한 해는 허용
+    with pytest.raises(ValueError, match="연간 스텝 수"):
+        DispatchContext(steps=annual + 1, dt=3600, year=1)
+
+
+@pytest.mark.contract
+@pytest.mark.req("FR-301-AC3")
+def test_year_fraction_is_the_only_proration_coefficient() -> None:
+    """연간 총량을 부분 창에 실을 때 곱하는 계수는 `year_fraction` 하나다.
+
+    자원이 각자 `/365`·`/8760` 을 쓰면 15분 해상도에서 4배 어긋나고, 그
+    어긋남은 **부분 창에서만** 나타나므로 8760 골든 시나리오로는 잡히지 않는다.
+    """
+    day = DispatchContext(steps=24, dt=3600, year=1)
+    assert day.annual_steps == 8760
+    assert not day.is_full_year
+    assert day.year_fraction == pytest.approx(24 / 8760)
+    assert day.hours_per_step == pytest.approx(1.0)
+
+    # 같은 하루를 15분 해상도로 보면 스텝 수는 4배지만 **연 비중은 같다** —
+    # 이것이 `/365` 나 `/8760` 대신 이 계수를 쓰는 이유다.
+    quarter = DispatchContext(steps=96, dt=900, year=1)
+    assert quarter.year_fraction == pytest.approx(day.year_fraction)
+    assert quarter.hours_per_step == pytest.approx(0.25)
+
+    full = DispatchContext(steps=8760, dt=3600, year=1)
+    assert full.is_full_year and full.year_fraction == 1.0
 
 
 @pytest.mark.contract

@@ -93,23 +93,27 @@ class ESS(DER):
         eol_soh_pct: float = 80.0,
         second_life: bool = False,
         cycles_per_year: float = 365.0,
-        mode: ESSOperatingMode = ESSOperatingMode.TOU_ARBITRAGE,
+        operating_mode: ESSOperatingMode = ESSOperatingMode.TOU_ARBITRAGE,
         mode_weights: dict[ESSOperatingMode, float] | None = None,
         backup_reserve_pct: float = 0.0,
         dt: int = SECONDS_PER_HOUR,
         capex_unit_won_per_kwh: float = 0.0,
         capex_extra_won: float = 0.0,
+        vat_rate: float = 0.0,
         fixed_om_won_per_year: float = 0.0,
-        inflation_pct: float = 0.0,
+        escalation_rate: float = 0.0,
         variable_om_won_per_kwh: float = 0.0,
         replacement_unit_won_per_kwh: float | None = None,
         pcs_lifetime: int | None = None,
         pcs_cost_won: float = 0.0,
     ) -> None:
-        if capacity_kwh <= 0:
-            raise ValueError(f"정격용량(kWh)은 0보다 커야 합니다: {capacity_kwh}")
-        if power_kw <= 0:
-            raise ValueError(f"정격출력(kW)은 0보다 커야 합니다: {power_kw}")
+        for label, value in (("정격용량(kWh)", capacity_kwh), ("정격출력(kW)", power_kw),
+                             ("연간 사이클 수", cycles_per_year)):
+            if value <= 0:
+                raise ValueError(f"{label}은 0보다 커야 합니다: {value}")
+        for label, value in (("사이클수명", cycle_life), ("달력수명", calendar_life)):
+            if value <= 0:
+                raise ValueError(f"{label}은 1 이상입니다: {value}")
         if not 0.0 < rte_pct <= 100.0:
             raise ValueError(
                 f"RTE(왕복효율)는 0 초과 100 이하 %입니다: {rte_pct}. 0.9 를 그대로 "
@@ -120,12 +124,6 @@ class ESS(DER):
                 f"SOC 상하한이 성립하지 않습니다: 하한 {soc_min_pct}% / 상한 "
                 f"{soc_max_pct}%. 0 ≤ 하한 < 상한 ≤ 100 이어야 가용량이 양수가 됩니다"
             )
-        if cycle_life <= 0:
-            raise ValueError(f"사이클수명은 1회 이상입니다: {cycle_life}")
-        if calendar_life <= 0:
-            raise ValueError(f"달력수명은 1년 이상입니다: {calendar_life}")
-        if cycles_per_year <= 0:
-            raise ValueError(f"연간 사이클 수는 0보다 커야 합니다: {cycles_per_year}")
         if not 0.0 <= backup_reserve_pct < 100.0:
             raise ValueError(f"백업 예비율은 0 이상 100 미만 %입니다: {backup_reserve_pct}")
         if pcs_lifetime is not None and pcs_lifetime <= 0:
@@ -153,13 +151,14 @@ class ESS(DER):
                 "이미 80%에서 시작하므로 EOL 을 그보다 낮게(예: 60%) 지정하십시오"
             )
 
-        self.mode = mode
-        self.mode_weights = self._normalize_weights(mode, mode_weights)
+        self.mode_weights = self._normalize_weights(operating_mode, mode_weights)
 
         self._capex_unit = float(capex_unit_won_per_kwh)
         self._capex_extra = float(capex_extra_won)
+        if not 0.0 <= vat_rate <= 1.0:
+            raise ValueError(f"부가세율은 0~1 소수입니다: {vat_rate} (§7.5)")
+        self._vat_rate = float(vat_rate)
         self._fixed_om = float(fixed_om_won_per_year)
-        self._inflation = inflation_pct / 100.0
         self._variable_om_unit = float(variable_om_won_per_kwh)
         self._replacement_unit = (
             self._capex_unit
@@ -175,6 +174,8 @@ class ESS(DER):
             lifetime=self.eol_year(),
             degradation_rate=self._annual_fade(),
             carries_electric=True,
+            operating_mode=operating_mode,
+            escalation_rate=escalation_rate,
         )
 
     # ── 운전 방법 (FR-105) ──────────────────────────────────────────
@@ -374,23 +375,49 @@ class ESS(DER):
 
     # ── 비용 (§13.2.2 `RC-ALL-C1~C5`) ──────────────────────────────
 
+    def _gross_capex_won(self) -> float:
+        """CAPEX 본체 — `단가 × 용량 + 부대비`. **부가세 제외** (§13.2.2 C-1)."""
+        return self._capex_unit * self.capacity_kwh + self._capex_extra
+
     def capex(self, *, year: int) -> Money:
         """`RC-ALL-C1` — `단가 × 용량 + 부대비`. 초기 투자는 1년차에만."""
         if year != 1:
             return to_won(0)
-        return to_won(self._capex_unit * self.capacity_kwh + self._capex_extra)
+        return to_won(self._gross_capex_won())
+
+    def capex_vat(self, *, year: int) -> Money:
+        """`RC-ALL-C1` 부가세액 — 본체와 **분리** 계상 (§13.2.2 C-1).
+
+        v1.0 계약에 자리가 없어 **이 자원만 세액 자체가 없었다.** 프로포마
+        부가세 행의 ESS 열이 0이 되고, 그 0은 「면세」로도 「누락」으로도 읽힌다.
+        """
+        if year != 1:
+            return to_won(0)
+        return to_won(self._gross_capex_won() * self._vat_rate)
 
     def fixed_om(self, *, year: int) -> Money:
         """`RC-ALL-C2` — `A × (1+i)^(y−1)`. 20년 누계는 등비수열 합이 된다.
         합을 미리 내지 않는 것은 프로포마가 **연도별 행**을 요구하기 때문이며
-        (FR-701-AC3), 누계는 재무 계층이 `won_sum` 으로 더한다."""
-        return to_won(self._fixed_om * (1.0 + self._inflation) ** (year - 1))
+        (FR-701-AC3), 누계는 재무 계층이 `won_sum` 으로 더한다.
+
+        물가 계수는 계약의 `escalation_factor()` 다 — v1.0 에서는 이 자원만
+        `inflation_pct`(**%**) 로 받아, 같은 「2%」가 다른 자원의 `0.02` 와 100배
+        어긋난 채 어느 쪽도 오류가 아니었다 (v1.1 개정 ⑤)."""
+        return to_won(self._fixed_om * self.escalation_factor(year=year))
 
     def variable_om(self, *, year: int) -> Money:
         """`RC-ALL-C3` — `처리량 × 단가`. **ESS 의 처리량은 방전 kWh** 다.
         열화로 처리량이 줄면 변동 O&M 도 함께 준다 — 1년차 값을 20년 내내
-        쓰면 후반 O&M 이 과대 계상된다."""
-        return to_won(self.annual_discharge_kwh(year=year) * self._variable_om_unit)
+        쓰면 후반 O&M 이 과대 계상된다.
+
+        단가에도 물가 계수를 걸어 **고정 O&M 과 같은 명목 기준**으로 맞춘다.
+        한쪽만 실질이면 20년 누계에서 두 항목의 비율이 실제와 달라지고, 어느
+        쪽이 기준인지 프로포마에 표시가 남지 않는다."""
+        return to_won(
+            self.annual_discharge_kwh(year=year)
+            * self._variable_om_unit
+            * self.escalation_factor(year=year)
+        )
 
     def _battery_cost(self) -> Money:
         """배터리 교체 단가 × 용량. 부대비(설치·계통연계)는 재취득하지 않는다."""
@@ -437,12 +464,33 @@ class ESS(DER):
 
     # ── 디스패치 (FR-301) ──────────────────────────────────────────
 
+    def value_streams(self) -> tuple[str, ...]:
+        """ESS 가 만드는 편익 (`FR-401-AC2.<키>`) — **운전 방법이 정한다.**
+
+        백업 예비 확보의 정전 회피 편익(`Resilience`)은 Phase 3이므로 선언하지
+        않는다 — 값 0인 행은 「편익 없음」과 「미구현」을 구분하지 못한다.
+        혼합 모드는 가중치 0보다 큰 **모든** 모드의 편익을 갖는다. 대표 모드만
+        보면 30% 섞인 피크 저감 편익이 통째로 사라진다.
+        """
+        active = {m for m, w in self.mode_weights.items() if w > 0.0}
+        streams: list[str] = []
+        if active & {ESSOperatingMode.SELF_CONSUMPTION, ESSOperatingMode.TOU_ARBITRAGE}:
+            streams.append("SelfConsumption")
+        if ESSOperatingMode.PEAK_SHAVING in active:
+            streams.append("PeakShaving")
+        return tuple(streams)
+
     def dispatch(self, ctx: DispatchContext) -> DispatchResult:
         """하루 1주기 충·방전 프로파일을 스텝별로 전개한다.
 
         부호 규약: **양수 = 방전, 음수 = 충전**. 열·냉·연료는 0으로 남긴다 —
         플래그가 거짓인 매체의 값은 사라진다 (FR-101-AC4).
+
+        **부분 창은 연초부터의 연속 구간이다.** 하루치 에너지를 시각별로 펼치고
+        창 길이만큼 잘라 내므로, 24스텝은 48스텝의 앞 24스텝과 정확히 같다 —
+        하루 에너지를 창 길이에 재배분하면 그 성질이 깨진다.
         """
+        self.check_context(ctx)
         steps_per_hour = SECONDS_PER_HOUR // ctx.dt
         hours_per_step = ctx.dt / SECONDS_PER_HOUR
 

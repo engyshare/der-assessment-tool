@@ -39,6 +39,10 @@ class ReferencePV(DER):
 
     tag = "PV"
 
+    #: FR-105-AC1 — 지원 운전 방법. 참조 구현이라 최소 2종만 둔다. **값을 갖는
+    #: 이상 계약이 목록 소속을 검사하므로**, 목록 밖 문자열은 생성자에서 막힌다
+    OPERATING_MODES = ("전량 자가소비", "잉여 판매")
+
     def __init__(
         self,
         *,
@@ -49,6 +53,9 @@ class ReferencePV(DER):
         degradation_rate: float = 0.005,
         lifetime: int = 25,
         inverter_lifetime: int = 12,
+        operating_mode: str = "잉여 판매",
+        escalation_rate: float = 0.02,
+        vat_rate: float = 0.1,
     ) -> None:
         super().__init__(
             name=name,
@@ -59,21 +66,39 @@ class ReferencePV(DER):
             carries_heat=False,
             carries_cool=False,
             consumes_fuel=False,
+            operating_mode=operating_mode,
+            escalation_rate=escalation_rate,
         )
         self.capacity_kw = capacity_kw
         self.unit_capex = unit_capex_won_per_kw
         self.capacity_factor = capacity_factor
         self.inverter_lifetime = inverter_lifetime
+        self.vat_rate = vat_rate
 
     # ── 금액 — 전부 정수 원 (NFR-103) ───────────────────────────────
+    def _gross_capex_won(self) -> float:
+        return self.capacity_kw * self.unit_capex
+
     def capex(self, *, year: int) -> Money:
         # 초기 투자는 1년차에만. 이후 연도에 다시 계상하면 20년 동안
-        # 25번 지은 사업이 된다.
-        return to_won(self.capacity_kw * self.unit_capex) if year == 1 else Money(0)
+        # 25번 지은 사업이 된다. **부가세는 여기 넣지 않는다** (§13.2.2 C-1).
+        return to_won(self._gross_capex_won()) if year == 1 else Money(0)
+
+    def capex_vat(self, *, year: int) -> Money:
+        """부가세액 — 본체와 **분리**해 계상한다 (§13.2.2 C-1).
+
+        1년차에만 발생한다. `capex()` 가 0인 해에 세액이 남으면 없는 투자에
+        세금이 붙는다.
+        """
+        if year != 1:
+            return Money(0)
+        return to_won(self._gross_capex_won() * self.vat_rate)
 
     def fixed_om(self, *, year: int) -> Money:
-        # 설비 보유에 비례 — 발전량과 무관하다
-        return to_won(self.capacity_kw * self.unit_capex * 0.01)
+        # 설비 보유에 비례 — 발전량과 무관하다. 물가상승률은 계약이 주는
+        # 계수 하나로 걸린다 (자원마다 기준연도를 다르게 잡지 않는다)
+        base = self.capacity_kw * self.unit_capex * 0.01
+        return to_won(base * self.escalation_factor(year=year))
 
     def variable_om(self, *, year: int) -> Money:
         return Money(0)  # PV는 변동 O&M이 실질적으로 없다
@@ -107,11 +132,25 @@ class ReferencePV(DER):
         gross = self.capacity_kw * self.unit_capex
         return to_won(gross * remaining / self.lifetime)
 
+    # ── 편익 (FR-401) ───────────────────────────────────────────────
+    def value_streams(self) -> tuple[str, ...]:
+        """PV는 자가소비 절감과 잉여 판매를 만든다 — **운전 방법에 따라 다르다.**
+
+        전량 자가소비 모드에서 잉여 판매 편익을 함께 선언하면, 팔지 않은 전력이
+        판매 수익으로 계상된다 (FR-402-AC2.A 동일 물리량 이중 판매).
+        """
+        if self.operating_mode == "전량 자가소비":
+            return ("SelfConsumption",)
+        return ("SelfConsumption", "SurplusSale")
+
     # ── 운전 ────────────────────────────────────────────────────────
     def dispatch(self, ctx: DispatchContext) -> DispatchResult:
+        self.check_context(ctx)   # 해상도 불일치는 계약이 거부한다
         derate = (1.0 - self.degradation_rate) ** (int(ctx.year) - 1)
-        hourly = self.capacity_kw * self.capacity_factor * derate
-        electric = [hourly] * ctx.steps
+        # kW → 스텝당 kWh. 스텝 길이를 곱하지 않으면 15분 해상도에서 4배가 된다
+        per_step = (self.capacity_kw * self.capacity_factor * derate
+                    * ctx.hours_per_step)
+        electric = [per_step] * ctx.steps
         # 플래그가 거짓인 매체는 0으로 둔다. 값을 실으면 어느 수지에도
         # 잡히지 않고 사라진다 (FR-101-AC4).
         return DispatchResult(
@@ -194,21 +233,24 @@ def test_20_year_cashflow_sums_match_to_the_won() -> None:
     horizon = 20
     replacements = pv.replacement_schedule(horizon=horizon)
 
+    # **부가세 행을 포함한다.** C-1 이 분리를 요구한 항목이므로 프로포마에도
+    # 별도 행으로 서며, 항등식이 그 행을 빼고 성립하면 검사가 헛돈다.
+    items = ("capex", "capex_vat", "fixed_om", "variable_om")
+
     per_year: list[Money] = []
     for year in range(1, horizon + 1):
         per_year.append(
             won_sum([
-                pv.capex(year=year),
-                pv.fixed_om(year=year),
-                pv.variable_om(year=year),
+                *(getattr(pv, m)(year=year) for m in items),
                 replacements.get(year, Money(0)),
             ])
         )
 
-    by_item = won_sum([pv.capex(year=y) for y in range(1, horizon + 1)]) \
-        + won_sum([pv.fixed_om(year=y) for y in range(1, horizon + 1)]) \
-        + won_sum([pv.variable_om(year=y) for y in range(1, horizon + 1)]) \
-        + won_sum(replacements.values())
+    by_item = won_sum(replacements.values())
+    for method in items:
+        by_item += won_sum(
+            [getattr(pv, method)(year=y) for y in range(1, horizon + 1)]
+        )
 
     assert sum(per_year, Decimal(0)) == by_item, (
         "연도별 합계와 항목별 합계가 어긋납니다 — NFR-103-M1 위반"

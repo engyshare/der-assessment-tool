@@ -50,7 +50,7 @@ BASE = dict(
     capex_unit_won_per_kw=1_200_000.0,
     capex_extra_won=500_000.0,          # 부대비 (C-1)
     fixed_om_won=100_000.0,             # C-2 의 A
-    om_escalation=0.02,                 # C-2 의 i
+    escalation_rate=0.02,                 # C-2 의 i
     variable_om_won_per_kwh=5.0,        # C-3
     replacement_cost_won=12_000_000.0,  # C-4
     lifetime=15,
@@ -253,6 +253,57 @@ def test_rc_hp_x1_unmet_heat_is_flagged() -> None:
     assert sum(op.result.heat) == pytest.approx(float(HOURS_PER_YEAR), abs=1e-6)
 
 
+@pytest.mark.req("FR-101-AC4")
+def test_rc_hp_x1_unmet_heat_reaches_the_engine_through_dispatch() -> None:
+    """미충족이 **`dispatch()` 를 통과해 살아 남는다** (v1.1 계약 개정).
+
+    v1.0 계약의 `DispatchResult` 에는 미충족 계열이 없었다. 그래서 이 자원은
+    미충족을 `HeatPumpOperation` 에만 담았고, **엔진은 `dispatch()` 만 보므로
+    그 자리에서 사라졌다** — 엔진에 남는 것은 「열이 조금 덜 나온 정상 결과」
+    뿐이고, 정격 부족은 어디에도 표시되지 않았다.
+
+    스텝별로 남기는 이유: 연 총량만 있으면 «한겨울 며칠 전량 미충족»과
+    «1년 내내 조금씩 부족»이 같은 값이 되어 증설 판단이 성립하지 않는다.
+    """
+    hp = make_hp(rated_heat_kw=1.0, heat_load_kwh=20_000.0, aux_heater_kw=0.0)
+    result = hp.dispatch(annual_ctx())
+
+    assert result.unmet("heat") == pytest.approx(
+        [20_000.0 / HOURS_PER_YEAR - 1.0] * HOURS_PER_YEAR, abs=1e-9
+    )
+    assert result.total_unmet() == pytest.approx(20_000.0 - HOURS_PER_YEAR, abs=1e-6)
+    assert result.notes and "미충족" in result.notes[0], (
+        "사람이 읽을 진단이 없으면 리포트에 각주를 달 근거가 없다 (RC-HP-X1)"
+    )
+    # 다른 매체에는 미충족이 없다 — 히트펌프가 못 채운 것은 열이다
+    assert result.unmet("electric") == [0.0] * HOURS_PER_YEAR
+
+
+@pytest.mark.req("FR-101-AC4")
+def test_unmet_is_measured_against_the_plan_not_the_hourly_load() -> None:
+    """부하 이동 운전에서 미충족은 **계획 대비**로 잰다.
+
+    심야 운전은 주간 부하를 심야에 몰아 생산한다. 미충족을 스텝마다
+    `부하 − 공급` 으로 재면 **주간 스텝 전부가 미충족**으로 잡히는데, 그 하루의
+    열은 실제로 전량 공급되었다. 그 값을 엔진에 실으면 정격이 충분한 설비가
+    「연중 60% 미충족」으로 보고된다.
+
+    합계 항등식도 함께 확인한다 — 스텝별 미충족의 합은 연 미충족과 같아야 한다.
+    같지 않으면 두 수치 중 어느 쪽을 믿어야 하는지 알 수 없다.
+    """
+    hp = make_hp(rated_heat_kw=100.0, heat_load_kwh=8_760.0,
+                 aux_heater_kw=0.0, operating_mode=MODE_NIGHT_STORAGE)
+    op = hp.simulate(annual_ctx())
+
+    assert op.unmet_heat_kwh == pytest.approx(0.0, abs=1e-6), (
+        "정격이 충분하므로 연 미충족은 0이다 (이 전제가 깨지면 아래 검사가 공허하다)"
+    )
+    assert op.result.total_unmet() == pytest.approx(0.0, abs=1e-6), (
+        "부하를 옮긴 것을 미충족으로 세고 있습니다 — 미충족은 계획 대비 부족분입니다"
+    )
+    assert sum(op.result.heat) == pytest.approx(8_760.0, abs=1e-6)
+
+
 @pytest.mark.req("FR-102-AC1.HeatPump")
 def test_rc_hp_x1_aux_heater_covers_shortfall() -> None:
     """보조 열원(전기 히터)을 두면 부족분을 메우고 미충족이 사라진다.
@@ -395,19 +446,19 @@ def test_degradation_reduces_cop_over_years() -> None:
 @pytest.mark.req("FR-105-AC1")
 def test_operating_modes_are_declared_on_the_class() -> None:
     """자원 클래스가 자신이 지원하는 운전 방법 목록을 선언한다."""
-    assert HeatPump.operating_modes == (
+    assert HeatPump.OPERATING_MODES == (
         MODE_LOAD_FOLLOWING, MODE_NIGHT_STORAGE, MODE_PRICE_LINKED
     )
-    assert make_hp().mode == MODE_LOAD_FOLLOWING
+    assert make_hp().operating_mode == MODE_LOAD_FOLLOWING
 
     with pytest.raises(ValueError, match="운전 방법"):
-        make_hp(mode="아무거나")
+        make_hp(operating_mode="아무거나")
 
 
 @pytest.mark.req("FR-105-AC1")
 def test_night_storage_mode_shifts_production_to_night() -> None:
     """축열조 활용 심야 운전은 **심야 시간대에만** 열을 생산한다."""
-    hp = make_hp(mode=MODE_NIGHT_STORAGE)
+    hp = make_hp(operating_mode=MODE_NIGHT_STORAGE)
     r = hp.dispatch(annual_ctx())
 
     daytime = [i for i in range(HOURS_PER_YEAR) if 8 <= i % 24 < 23]
@@ -421,7 +472,7 @@ def test_price_linked_mode_runs_in_cheapest_hours() -> None:
     """전력요금 연동은 하루 중 **싼 시간대**에 운전한다."""
     prices = [80.0 if i % 24 < 6 else 200.0 for i in range(HOURS_PER_YEAR)]
     hp = make_hp(
-        mode=MODE_PRICE_LINKED,
+        operating_mode=MODE_PRICE_LINKED,
         price_profile_won_per_kwh=prices,
         price_linked_hours=6,
     )
@@ -439,7 +490,7 @@ def test_price_linked_mode_requires_price_profile() -> None:
     조용히 열부하 추종으로 되돌리면 사용자는 요금 연동으로 돌았다고 믿는다.
     """
     with pytest.raises(ValueError, match="요금"):
-        make_hp(mode=MODE_PRICE_LINKED)
+        make_hp(operating_mode=MODE_PRICE_LINKED)
 
 
 # ── 입력 검증 ────────────────────────────────────────────────────────

@@ -54,7 +54,7 @@ def make_cems(**over) -> StandardCommonAsset:
         "fixed_om_annual": FIXED_OM,
         "lifetime_sw": 5,
         "lifetime_hw": 10,
-        "inflation_rate": INFLATION,
+        "escalation_rate": INFLATION,
     }
     kwargs.update(over)
     return CEMS(**kwargs)  # type: ignore[arg-type]
@@ -137,7 +137,7 @@ def test_metering_comm_follows_the_same_cost_rules() -> None:
     asset = MeteringComm(
         name="공용 계량기", capex_sw=Money(0), capex_hw=Money(5_000_000),
         fixed_om_annual=Money(200_000), lifetime_sw=5, lifetime_hw=15,
-        inflation_rate=INFLATION, allocation=AllocationRule.NO_ALLOCATION)
+        escalation_rate=INFLATION, allocation=AllocationRule.NO_ALLOCATION)
     assert asset.display_name == "공용 계량·통신 설비"
     assert asset.capex(year=1) == Money(5_000_000)
     assert asset.replacement_schedule(horizon=HORIZON) == {16: Money(5_000_000)}
@@ -450,7 +450,7 @@ def test_allocate_assets_allocates_each_asset() -> None:
     hems = HEMS(
         name="가구 HEMS", capex_sw=Money(1_000_000), capex_hw=Money(2_000_000),
         fixed_om_annual=Money(50_000), lifetime_sw=5, lifetime_hw=10,
-        inflation_rate=INFLATION)
+        escalation_rate=INFLATION)
     results = allocate_assets([make_cems(), hems], year=1, horizon=HORIZON, households=10)
     assert set(results) == {"단지 CEMS", "가구 HEMS"}
     assert results["단지 CEMS"].source_total == Money(50_100_000)
@@ -484,7 +484,7 @@ def test_constructor_rejects_invalid_values() -> None:
     with pytest.raises(ValueError, match="lifetime_sw"):
         make_cems(lifetime_sw=0)
     with pytest.raises(ValueError, match="소수"):
-        make_cems(inflation_rate=2.0)
+        make_cems(escalation_rate=2.0)
     with pytest.raises(ValueError, match="이름"):
         make_cems(name="")
 

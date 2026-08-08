@@ -21,7 +21,7 @@ from tests.contract.test_der_contract import DERContractTests
 # §13.2.2 예시 열이 고정한 공통 재무 전제. 테스트마다 다시 적으면 한 곳만
 # 고쳤을 때 오라클이 갈린다.
 DISCOUNT_RATE = 0.045
-INFLATION_RATE = 0.02
+ESCALATION_RATE = 0.02
 HORIZON = 20
 
 
@@ -34,7 +34,7 @@ def make_pv_1kw(**overrides: object) -> PV:
         "degradation_rate": 0.005,
         "lifetime": 25,
         "inverter_lifetime": 12,
-        "inflation_rate": INFLATION_RATE,
+        "escalation_rate": ESCALATION_RATE,
     }
     kwargs.update(overrides)
     return PV(**kwargs)  # type: ignore[arg-type]
@@ -55,7 +55,7 @@ def make_pv_3kw(**overrides: object) -> PV:
         "unit_capex_won_per_kw": 1_500_000,
         "fixed_om_won_per_year": 100_000,
         "variable_om_won_per_kwh": 5.0,
-        "inflation_rate": INFLATION_RATE,
+        "escalation_rate": ESCALATION_RATE,
     }
     kwargs.update(overrides)
     return PV(**kwargs)  # type: ignore[arg-type]
@@ -233,7 +233,7 @@ def test_rc_all_c2_fixed_om_20_year_cumulative() -> None:
 
     A=100,000, i=0.02, n=20 → **2,429,737원** (원 단위 완전 일치, NFR-103)
     """
-    pv = make_pv_3kw(fixed_om_won_per_year=100_000, inflation_rate=0.02)
+    pv = make_pv_3kw(fixed_om_won_per_year=100_000, escalation_rate=0.02)
     assert pv.fixed_om_cumulative(horizon=HORIZON) == Money(2_429_737)
 
 
@@ -243,7 +243,7 @@ def test_rc_all_c2_year_by_year_sum_matches_closed_form() -> None:
     행별 값을 사람이 더해 보는 문서라, 어긋나면 화면상 정상으로 보이면서 근거가
     무너진다.
     """
-    pv = make_pv_3kw(fixed_om_won_per_year=100_000, inflation_rate=0.02)
+    pv = make_pv_3kw(fixed_om_won_per_year=100_000, escalation_rate=0.02)
     year_by_year = won_sum(pv.fixed_om(year=y) for y in range(1, HORIZON + 1))
     assert year_by_year == pv.fixed_om_cumulative(horizon=HORIZON)
     assert pv.fixed_om(year=1) == Money(100_000)
@@ -268,7 +268,7 @@ def test_rc_all_c3_follows_degradation() -> None:
     20년을 고정하면 발전량과 변동비가 서로 다른 물리를 말한다. 물가 효과를 꺼서
     **열화만** 남긴다 (§13.2.1 단독성).
     """
-    pv = make_pv_1kw(variable_om_won_per_kwh=5.0, inflation_rate=0.0)
+    pv = make_pv_1kw(variable_om_won_per_kwh=5.0, escalation_rate=0.0)
     assert pv.variable_om(year=2) == to_won(1314.0 * 0.995 * 5.0)
     assert pv.variable_om(year=2) < pv.variable_om(year=1)
 
@@ -281,7 +281,7 @@ def test_rc_all_c3_applies_inflation_to_nominal_price() -> None:
     적용한다. 변동 O&M만 실질로 두면 두 비용 항목이 서로 다른 화폐 단위를 말하고,
     20년 합계에서 항목 간 비중이 바뀐다.
     """
-    pv = make_pv_1kw(variable_om_won_per_kwh=5.0, inflation_rate=0.02)
+    pv = make_pv_1kw(variable_om_won_per_kwh=5.0, escalation_rate=0.02)
     assert pv.variable_om(year=2) == to_won(1314.0 * 0.995 * 5.0 * 1.02)
 
 
@@ -353,14 +353,14 @@ def test_pv_declares_operating_modes() -> None:
     운전 방법 추가가 코어 수정이 된다 (FR-105-AC1·AC2 · NFR-201).
     """
     assert set(PV.OPERATING_MODES) == set(OperatingMode)
-    assert make_pv_1kw().mode in PV.OPERATING_MODES
+    assert make_pv_1kw().operating_mode in PV.OPERATING_MODES
 
 
 @pytest.mark.req("FR-105-AC1")
 def test_pv_rejects_unknown_operating_mode() -> None:
     """선언 목록 밖의 운전 방법은 거부한다 (DV-14)."""
     with pytest.raises(ValueError, match="운전 방법"):
-        make_pv_1kw(mode="야간 발전")
+        make_pv_1kw(operating_mode="야간 발전")
 
 
 @pytest.mark.req("FR-105-AC1")
@@ -368,7 +368,7 @@ def test_full_export_mode_forces_zero_self_consumption() -> None:
     """운전 방법이 **발전량의 용도 배분**을 실제로 바꾼다 — 아무 것도 바꾸지
     않으면 FR-105는 선언만 있고 효과가 없는 조항이 된다.
     """
-    pv = make_pv_1kw(mode=OperatingMode.FULL_EXPORT, self_consumption_ratio=1.0)
+    pv = make_pv_1kw(operating_mode=OperatingMode.FULL_EXPORT, self_consumption_ratio=1.0)
     assert pv.self_consumption_kwh(year=1) == pytest.approx(0.0)
     assert pv.surplus_kwh(year=1) == pytest.approx(1314.0, rel=1e-9)
 
@@ -378,7 +378,7 @@ def test_curtailment_mode_respects_grid_limit() -> None:
     """출력제어 운전은 계통 연계 상한을 지킨다 — 무시하면 계통에 실릴 수 없는
     kWh가 편익으로 계상된다 (`DispatchContext.grid_limit_kw`).
     """
-    pv = make_pv_1kw(capacity_factor=0.5, mode=OperatingMode.CURTAILMENT)
+    pv = make_pv_1kw(capacity_factor=0.5, operating_mode=OperatingMode.CURTAILMENT)
     ctx = DispatchContext(steps=24, dt=pv.dt, year=1, grid_limit_kw=[0.2] * 24)
     result = pv.dispatch(ctx)
     assert all(v <= 0.2 + 1e-9 for v in result.electric)
@@ -390,7 +390,7 @@ def test_grid_limit_violation_is_an_error_outside_curtailment_mode() -> None:
     """출력제어를 **선언하지 않은** 자원이 상한을 넘으면 오류다 — 조용히 깎으면
     «수용»과 «미수용»이 같은 결과를 내어 FR-105 선택이 무의미해진다.
     """
-    pv = make_pv_1kw(capacity_factor=0.5, mode=OperatingMode.SELF_CONSUMPTION_FIRST)
+    pv = make_pv_1kw(capacity_factor=0.5, operating_mode=OperatingMode.SELF_CONSUMPTION_FIRST)
     ctx = DispatchContext(steps=24, dt=pv.dt, year=1, grid_limit_kw=[0.2] * 24)
     with pytest.raises(ValueError, match="연계 용량"):
         pv.dispatch(ctx)
@@ -399,9 +399,9 @@ def test_grid_limit_violation_is_an_error_outside_curtailment_mode() -> None:
 @pytest.mark.req("FR-105-AC1")
 def test_same_type_instances_can_hold_different_modes() -> None:
     """같은 유형의 두 인스턴스가 서로 다른 운전 방법을 갖는다 (FR-105-AC3)."""
-    a = make_pv_1kw(name="옥상PV", mode=OperatingMode.SELF_CONSUMPTION_FIRST)
-    b = make_pv_1kw(name="벽면BIPV", mode=OperatingMode.FULL_EXPORT)
-    assert a.mode is not b.mode
+    a = make_pv_1kw(name="옥상PV", operating_mode=OperatingMode.SELF_CONSUMPTION_FIRST)
+    b = make_pv_1kw(name="벽면BIPV", operating_mode=OperatingMode.FULL_EXPORT)
+    assert a.operating_mode is not b.operating_mode
 
 
 # ── 경계·위반 (RC-PV-X1) ────────────────────────────────────────────

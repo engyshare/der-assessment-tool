@@ -76,7 +76,7 @@ class EV_V2G(DER):
         charge_efficiency: float = 0.92,
         lifetime: int = 10,
         degradation_rate: float = 0.0,
-        inflation_rate: float = 0.0,
+        escalation_rate: float = 0.0,
         charger_count: int | None = None,
         charger_unit_cost_won: float = 0.0,
         ancillary_cost_won: float = 0.0,
@@ -92,7 +92,9 @@ class EV_V2G(DER):
         dt: int = SECONDS_PER_HOUR,
     ) -> None:
         super().__init__(name=name, dt=dt, lifetime=lifetime,
-                         degradation_rate=degradation_rate, carries_electric=True)
+                         degradation_rate=degradation_rate, carries_electric=True,
+                         operating_mode=operating_mode,
+                         escalation_rate=escalation_rate)
         self.vehicle_count = int(vehicle_count)
         self.battery_kwh = float(battery_kwh)
         self.max_charge_kw = float(max_charge_kw)
@@ -105,7 +107,6 @@ class EV_V2G(DER):
         self.min_departure_soc = float(min_departure_soc)
         self.discharge_efficiency = float(discharge_efficiency)
         self.charge_efficiency = float(charge_efficiency)
-        self.inflation_rate = float(inflation_rate)
         self.charger_count = int(vehicle_count if charger_count is None else charger_count)
         self.charger_unit_cost_won = float(charger_unit_cost_won)
         self.ancillary_cost_won = float(ancillary_cost_won)
@@ -115,7 +116,6 @@ class EV_V2G(DER):
         self.degradation_compensation_won_per_kwh = float(degradation_compensation_won_per_kwh)
         self.replacement_cost_won = replacement_cost_won
         self.daily_charge_kwh = float(daily_charge_kwh)
-        self.operating_mode = operating_mode
         self.discharge_benefit_enabled = bool(discharge_benefit_enabled)
         self.avoided_price_won_per_kwh = float(avoided_price_won_per_kwh)
 
@@ -136,10 +136,9 @@ class EV_V2G(DER):
     def _validate_domain(self) -> None:
         """정의역 검사를 대입 뒤 한자리로 모은다 — 대입문 27줄 사이에 흩어 두면
         새 파라미터를 넣는 사람이 검사를 빠뜨린다 (§7.5 비율 규약 포함)."""
+        # 운전 방법 소속과 물가상승률 척도는 **계약이 이미 검사했다**
+        # (v1.1 개정 ④⑤). 여기서 다시 보면 규칙이 두 곳에 생기고 한쪽만 고쳐진다.
         n = self.name
-        if self.operating_mode not in self.OPERATING_MODES:
-            raise ValueError(f"{n}: 알 수 없는 운전 방법 {self.operating_mode!r}. "
-                             f"지원 목록: {', '.join(self.OPERATING_MODES)} (FR-105-AC1)")
         _check(n, "0보다 커야 합니다", lambda v: v > 0,
                vehicle_count=self.vehicle_count, battery_kwh=self.battery_kwh,
                max_charge_kw=self.max_charge_kw, max_discharge_kw=self.max_discharge_kw)
@@ -160,7 +159,6 @@ class EV_V2G(DER):
                replacement_cost_won=self.replacement_cost_won or 0.0,
                avoided_price_won_per_kwh=self.avoided_price_won_per_kwh,
                degradation_compensation_won_per_kwh=self.degradation_compensation_won_per_kwh)
-        _check(n, "-100%보다 커야 합니다", lambda v: v > -1.0, inflation_rate=self.inflation_rate)
 
     def _validate_operation(self) -> None:
         """SOC 보장·운전 방법·시간대 수용력이 성립하는지 본다. 조용히 클램프하면
@@ -200,6 +198,18 @@ class EV_V2G(DER):
     def policy_warnings(self) -> list[str]:
         """리포트 상단에 표시할 정책 가정 경고 (FR-404-AC1)."""
         return [POLICY_WARNING] if self.discharge_benefit_enabled else []
+
+    def value_streams(self) -> tuple[str, ...]:
+        """편익 tag — **기본은 없음이다** (§15.1 Q-8 제도 미확인 → 비활성).
+
+        비활성 상태에서 값 0인 편익을 선언하면 리포트에 행이 서는데, 그 0은
+        「제도가 없어서 0」과 「계산이 0을 냈다」를 구분하지 못한다. 단방향
+        충전에도 편익이 없다 — 충전기 비용은 계상되므로 보수적이다.
+        """
+        if (not self.discharge_benefit_enabled
+                or self.operating_mode == self.MODE_UNIDIRECTIONAL):
+            return ()
+        return ("DemandResponse",)
 
     # ── 물리 (RC-EV-P1~P3) ───────────────────────────────────────────
 
@@ -241,7 +251,12 @@ class EV_V2G(DER):
         스텝 배치는 「접속 사이클 순서」다 — 도착(예 18시)부터 출발(예 08시)까지를
         한 사이클로 보고 앞에 방전을, 뒤에 재충전을 채운다. 달력일 배열 순서로
         채우면 자정을 넘는 블록이 잘려 재충전이 방전보다 먼저 오는 하루가 된다.
+
+        **부분 창은 연초부터의 연속 구간이다.** 사이클 오프셋은 하루 안의 인덱스
+        이므로 온전한 하루의 값은 창 길이와 무관하다. 창이 하루 중간에서 끝나면
+        남은 스텝은 **관측되지 않은 것**이며, 창 안으로 압축하지 않는다.
         """
+        self.check_context(ctx)
         year, steps = int(ctx.year), ctx.steps
         elec = [0.0] * steps
         grid_dis = self._daily_grid_discharge_kwh(year)
@@ -343,9 +358,6 @@ class EV_V2G(DER):
 
     # ── 비용 (RC-ALL-C1~C5 · RC-EV-C6) ───────────────────────────────
 
-    def _escalation(self, year: int) -> float:
-        return (1.0 + self.inflation_rate) ** (int(Year(year)) - 1)
-
     def _initial_cost_won(self) -> float:
         """세전 취득가 = 충전기 단가 × 대수 + 부대비 (§13.2.2 C-1)."""
         return self.charger_unit_cost_won * self.charger_count + self.ancillary_cost_won
@@ -369,7 +381,7 @@ class EV_V2G(DER):
     def fixed_om(self, *, year: int) -> Money:
         """고정 O&M (원/년). 명목 기준이므로 물가로 에스컬레이션한다 (가정 A-2).
         20년 누계는 `A × ((1+i)^n − 1)/i` 와 원 단위로 일치한다 (§13.2.2 C-2)."""
-        return to_won(self.fixed_om_won_per_year * self._escalation(year))
+        return to_won(self.fixed_om_won_per_year * self.escalation_factor(year=year))
 
     def throughput_kwh(self, *, year: int) -> float:
         """변동 O&M의 처리량 정의 = **연간 배터리 방전 kWh** (§13.2.2 C-3). 충전량을
@@ -382,7 +394,7 @@ class EV_V2G(DER):
         물어 주는지가 사라진다."""
         y = int(Year(year))
         throughput = self.throughput_kwh(year=y)
-        esc = self._escalation(y)
+        esc = self.escalation_factor(year=y)
         return {"충전기 변동 O&M": to_won(throughput * self.variable_om_won_per_kwh * esc),
                 "V2G 배터리 열화 보상": to_won(
                     throughput * self.degradation_compensation_won_per_kwh * esc)}
@@ -401,7 +413,8 @@ class EV_V2G(DER):
         schedule: dict[int, Money] = {}
         year = self.lifetime + 1
         while year <= horizon:
-            schedule[year] = to_won(self._replacement_cost_won() * self._escalation(year))
+            schedule[year] = to_won(
+                self._replacement_cost_won() * self.escalation_factor(year=year))
             year += self.lifetime
         return schedule
 
@@ -417,7 +430,7 @@ class EV_V2G(DER):
         if remaining <= 0:
             return ZERO
         base = (self._initial_cost_won() if install_year == 1
-                else self._replacement_cost_won() * self._escalation(install_year))
+                else self._replacement_cost_won() * self.escalation_factor(year=install_year))
         return to_won(base * remaining / n)
 
     def discounted_salvage_value(self, *, year: int, discount_rate: float) -> Money:

@@ -42,7 +42,7 @@ SPEC_KWARGS = {
     "charge_efficiency": 0.92,
     "lifetime": 10,
     "degradation_rate": 0.0,
-    "inflation_rate": 0.0,
+    "escalation_rate": 0.0,
     "charger_unit_cost_won": 3_000_000.0,
     "ancillary_cost_won": 500_000.0,
     "vat_rate": 0.10,
@@ -434,7 +434,7 @@ def test_rc_all_c2_fixed_om_20yr_geometric_sum() -> None:
     누계를 `won_sum` 으로 내는 이유는 NFR-103-M1 이다 — 항별로 반올림한 뒤
     더해야 프로포마의 행별 값과 총계가 눈으로 더해도 맞는다.
     """
-    ev = make_ev(inflation_rate=0.02, fixed_om_won_per_year=100_000.0)
+    ev = make_ev(escalation_rate=0.02, fixed_om_won_per_year=100_000.0)
 
     assert ev.fixed_om(year=1) == Money(100_000)
     total = won_sum(ev.fixed_om(year=y) for y in range(1, 21))
@@ -471,7 +471,7 @@ def test_rc_all_c4_replacement_at_year_after_lifetime() -> None:
         3,000,000 × 2 × 1.02^10 = 7,313,966.52 → **7,313,967원**
     부대비(전기 인입·설치 공사)는 교체 시 재발생하지 않으므로 제외한다.
     """
-    ev = make_ev(inflation_rate=0.02, lifetime=10)
+    ev = make_ev(escalation_rate=0.02, lifetime=10)
     schedule = ev.replacement_schedule(horizon=20)
 
     assert list(schedule) == [11], "수명 10년이면 11년차 한 번만 교체된다 (20년 분석)"

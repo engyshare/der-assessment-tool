@@ -55,7 +55,7 @@ class TestLoadContract(DERContractTests):
             incidental_cost_won=50_000.0,
             fixed_om_won_per_year=OM_A,
             variable_om_won_per_kwh=5.0,
-            inflation_rate=OM_I,
+            escalation_rate=OM_I,
             subcomponents=[("계량기", 12, 300_000.0)],
         )
 
@@ -187,7 +187,7 @@ def test_load_produces_no_value_streams() -> None:
     붙이면 같은 화폐 흐름이 두 번 계상된다(FR-402-AC2.C 동일 효과 이중 화폐화).
     """
     load = make_load()
-    assert load.value_streams() == []
+    assert load.value_streams() == ()
 
 
 @pytest.mark.req("FR-102-AC1.Load")
@@ -197,7 +197,7 @@ def test_baseline_cost_is_reported_but_is_not_a_benefit() -> None:
     baseline = load.baseline_energy_cost(year=1, tariff_won_per_kwh=150.0)
     assert baseline == to_won(ANNUAL_KWH * 150.0)
     assert isinstance(baseline, Money)
-    assert load.value_streams() == []
+    assert load.value_streams() == ()
 
 
 # ── 경계·위반 ────────────────────────────────────────────────────────
@@ -298,7 +298,7 @@ def test_fixed_om_20y_total_matches_geometric_series() -> None:
     연차별 값을 각각 반올림해 더한 값(`won_sum`)과 해석해를 함께 본다 —
     두 경로가 갈리면 프로포마 행 합계와 총계가 어긋난다 (NFR-103-M1).
     """
-    load = make_load(fixed_om_won_per_year=OM_A, inflation_rate=OM_I)
+    load = make_load(fixed_om_won_per_year=OM_A, escalation_rate=OM_I)
 
     closed_form = OM_A * ((1.0 + OM_I) ** OM_N - 1.0) / OM_I
     assert to_won(closed_form) == OM_20Y_TOTAL

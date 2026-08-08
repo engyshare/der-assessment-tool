@@ -39,7 +39,6 @@ from core.contracts.units import (
     steps_per_year,
     to_won,
 )
-from core.contracts.valuestream import ValueStream
 
 #: 평년 기준. 윤년을 쓰지 않는 이유는 8760/35040 이라는 스텝 수 규약 자체가
 #: 평년 전제이기 때문이다 — 여기서만 366일을 쓰면 마지막 하루가 갈 곳을 잃는다.
@@ -208,7 +207,7 @@ class Load(DER):
         vat_rate: float = 0.0,
         fixed_om_won_per_year: float = 0.0,
         variable_om_won_per_kwh: float = 0.0,
-        inflation_rate: float = 0.0,
+        escalation_rate: float = 0.0,
         subcomponents: Sequence[Subcomponent] = (),
     ) -> None:
         # 부하는 열화하지 않는다 — `degradation_rate` 는 감소를 뜻하므로 성장을
@@ -219,6 +218,7 @@ class Load(DER):
             lifetime=lifetime,
             degradation_rate=0.0,
             carries_electric=True,
+            escalation_rate=escalation_rate,
         )
         self._steps = steps_per_year(dt)
         self._base_series, self._base_monthly = _resolve_series(
@@ -231,9 +231,6 @@ class Load(DER):
 
         self.annual_growth_rate = _check_rate(
             annual_growth_rate, label="연간 증가율", low=-1.0, high=1.0
-        )
-        self.inflation_rate = _check_rate(
-            inflation_rate, label="물가상승률", low=-1.0, high=1.0
         )
         self._capacity_kw = _check_amount(capacity_kw, label="계약전력")
         self._acquisition_won = (
@@ -272,12 +269,7 @@ class Load(DER):
 
     def dispatch(self, ctx: DispatchContext) -> DispatchResult:
         """한 해(또는 그 앞부분) 운전. 전기 계열에 **음수**로 싣는다."""
-        if ctx.dt != self.dt:
-            raise ValueError(
-                f"{self.name}: 컨텍스트 해상도({ctx.dt}초)가 자원 해상도"
-                f"({self.dt}초)와 다릅니다. 해상도가 다르면 같은 인덱스가 서로 "
-                "다른 시각을 가리킵니다 (FR-301-AC3)"
-            )
+        self.check_context(ctx)
         if ctx.steps > self._steps:
             raise ValueError(
                 f"{self.name}: 요청 스텝 수 {ctx.steps} 가 연간 스텝 수 "
@@ -296,14 +288,16 @@ class Load(DER):
 
     # ── 편익 (RC-LD-B0) ─────────────────────────────────────────────
 
-    def value_streams(self) -> list[ValueStream]:
+    def value_streams(self) -> tuple[str, ...]:
         """**항상 빈 목록.** 부하는 편익을 생성하지 않는다 (`RC-LD-B0`).
 
         여기에 무엇이든 넣는 순간 다른 자원의 편익을 이중 계상하게 된다.
-        메서드를 아예 두지 않는 대신 빈 목록을 명시하는 이유는, 「없음」과
-        「아직 안 만듦」을 구분하기 위해서다.
+        **v1.1 개정으로 이 메서드는 계약이 요구하는 것이 되었다.** v1.0 계약에는
+        훅이 없어 이 선언이 자원의 성실성에 달려 있었다 — 다른 누군가가 부하에
+        편익을 붙이는 것을 아무 장치도 막지 않았다. 이제 기본 구현이 빈 튜플이므로
+        **상속만으로 강제된다**.
         """
-        return []
+        return ()
 
     def baseline_energy_cost(
         self, *, year: int, tariff_won_per_kwh: float
@@ -337,14 +331,14 @@ class Load(DER):
 
     def fixed_om(self, *, year: int) -> Money:
         """C-2: `A × (1+i)^(n−1)`. 20년 누계는 등비수열 합이 된다."""
-        return to_won(self._fixed_om_won * self._escalation(year))
+        return to_won(self._fixed_om_won * self.escalation_factor(year=year))
 
     def variable_om(self, *, year: int) -> Money:
         """C-3: `처리량 × 단가`. 부하의 처리량은 **연간 소비 kWh** 다."""
         return to_won(
             self.annual_energy_kwh(year=year)
             * self._variable_om_won_per_kwh
-            * self._escalation(year)
+            * self.escalation_factor(year=year)
         )
 
     def replacement_schedule(self, *, horizon: int) -> dict[int, Money]:
@@ -361,7 +355,7 @@ class Load(DER):
                 continue
             year = life + 1
             while year <= horizon:
-                amount = to_won(cost * self._escalation(year))
+                amount = to_won(cost * self.escalation_factor(year=year))
                 schedule[year] = Money(schedule.get(year, Money(0)) + amount)
                 year += life
         return schedule
@@ -384,9 +378,6 @@ class Load(DER):
         return to_won(total)
 
     # ── 내부 ────────────────────────────────────────────────────────
-
-    def _escalation(self, year: int) -> float:
-        return (1.0 + self.inflation_rate) ** (int(Year(year)) - 1)
 
     def _components(self) -> list[Subcomponent]:
         """본체 + 부속설비. 본체를 같은 목록에 넣어 수명 계산을 한 곳에 모은다."""

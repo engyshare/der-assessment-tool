@@ -303,6 +303,29 @@ def test_rc_all_c1_capex() -> None:
 
 
 @pytest.mark.req("FR-101-AC2")
+def test_rc_all_c1_vat_is_separated_from_the_body() -> None:
+    """`RC-ALL-C1` 부가세 분리 — **이 자원은 세액 자체가 없었다.**
+
+    v1.0 계약에 `capex_vat()` 자리가 없어 자원 6종 중 다섯은 각자 지어냈고 ESS
+    하나는 만들지 않았다. 그래서 프로포마의 부가세 행에서 ESS 열만 0원이 되고,
+    그 0은 **면세인지 누락인지 구분되지 않는다.** 계약 개정(v1.1)이 메운 자리다.
+
+    오라클: 본체 6,000,000 × 10% = **600,000원**. 본체는 세액을 포함하지 않고,
+    세액은 1년차에만 발생한다 — `capex()` 가 0인 해에 세액이 남으면 없는 투자에
+    세금이 붙는다.
+    """
+    ess = _p1_ess(capex_unit_won_per_kwh=500_000.0, capex_extra_won=1_000_000.0,
+                  vat_rate=0.10)
+    assert ess.capex(year=1) == 6_000_000, "본체에 세액이 섞였습니다 (§13.2.2 C-1)"
+    assert ess.capex_vat(year=1) == Money(600_000)
+    assert ess.capex_vat(year=2) == 0
+
+    # 세율을 주지 않으면 0이다 — 「부가세를 계상하지 않는 케이스」는 §13.2.1
+    # 단독성이 요구하는 상태이며, 메서드가 없는 것과는 다르다
+    assert _p1_ess(capex_unit_won_per_kwh=500_000.0).capex_vat(year=1) == 0
+
+
+@pytest.mark.req("FR-101-AC2")
 def test_rc_all_c2_geometric_series_formula_is_resource_independent() -> None:
     """`RC-ALL-C2` 산식 자체의 검증 — **자원과 무관하다**.
 
@@ -323,7 +346,7 @@ def test_rc_all_c2_fixed_om_20y_cumulative_matches_geometric_sum() -> None:
     `won_sum` 은 **각 항을 반올림한 뒤 더한다**(NFR-103-M1). 그 합이 닫힌형과
     일치해야 프로포마의 행별 합과 총계가 어긋나지 않는다.
     """
-    ess = _p1_ess(fixed_om_won_per_year=100_000.0, inflation_pct=2.0)
+    ess = _p1_ess(fixed_om_won_per_year=100_000.0, escalation_rate=0.02)
     assert ess.fixed_om(year=1) == 100_000
     assert ess.fixed_om(year=2) == 102_000
     assert won_sum(ess.fixed_om(year=y) for y in range(1, 21)) == 2_429_737
@@ -430,11 +453,11 @@ def test_operating_modes_declared_match_spec_list() -> None:
 @pytest.mark.req("FR-105-AC1")
 def test_two_instances_may_take_different_modes() -> None:
     """FR-105-AC3 — 같은 유형 두 인스턴스가 서로 다른 운전 방법을 갖는다."""
-    household = _p1_ess(name="가구용ESS", mode=ESSOperatingMode.SELF_CONSUMPTION)
-    common = _p1_ess(name="공용부ESS", mode=ESSOperatingMode.PEAK_SHAVING)
+    household = _p1_ess(name="가구용ESS", operating_mode=ESSOperatingMode.SELF_CONSUMPTION)
+    common = _p1_ess(name="공용부ESS", operating_mode=ESSOperatingMode.PEAK_SHAVING)
 
-    assert household.mode is ESSOperatingMode.SELF_CONSUMPTION
-    assert common.mode is ESSOperatingMode.PEAK_SHAVING
+    assert household.operating_mode is ESSOperatingMode.SELF_CONSUMPTION
+    assert common.operating_mode is ESSOperatingMode.PEAK_SHAVING
     assert household.discharge_hours != common.discharge_hours
 
 
@@ -444,7 +467,7 @@ def test_backup_reserve_mode_reduces_usable_energy() -> None:
 
     예비 25% → 가용 8 × 0.75 = 6 kWh, 연 방전 6 × 365 = 2,190 kWh
     """
-    ess = _p1_ess(mode=ESSOperatingMode.BACKUP_RESERVE, backup_reserve_pct=25.0)
+    ess = _p1_ess(operating_mode=ESSOperatingMode.BACKUP_RESERVE, backup_reserve_pct=25.0)
     assert ess.usable_capacity_kwh(year=1) == pytest.approx(6.0, rel=1e-9)
     assert ess.annual_discharge_kwh(year=1) == pytest.approx(2190.0, rel=1e-9)
 
@@ -453,14 +476,14 @@ def test_backup_reserve_mode_reduces_usable_energy() -> None:
 def test_hybrid_mode_requires_weights_that_sum_to_one() -> None:
     """혼합 모드는 가중치를 요구한다 — 없으면 무엇을 섞는지 판정할 수 없다."""
     with pytest.raises(ValueError, match="가중치"):
-        _p1_ess(mode=ESSOperatingMode.HYBRID)
+        _p1_ess(operating_mode=ESSOperatingMode.HYBRID)
 
     half = {ESSOperatingMode.TOU_ARBITRAGE: 0.5, ESSOperatingMode.PEAK_SHAVING: 0.2}
     with pytest.raises(ValueError, match="합"):
-        _p1_ess(mode=ESSOperatingMode.HYBRID, mode_weights=half)
+        _p1_ess(operating_mode=ESSOperatingMode.HYBRID, mode_weights=half)
 
     mixed = _p1_ess(
-        mode=ESSOperatingMode.HYBRID,
+        operating_mode=ESSOperatingMode.HYBRID,
         backup_reserve_pct=40.0,
         mode_weights={
             ESSOperatingMode.TOU_ARBITRAGE: 0.75,

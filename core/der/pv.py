@@ -89,13 +89,14 @@ class PV(DER):
         inverter_unit_capex_won_per_kw: float | None = None,
         fixed_om_won_per_year: float = 0.0,
         variable_om_won_per_kwh: float = 0.0,
-        inflation_rate: float = 0.0,
+        escalation_rate: float = 0.0,
         self_consumption_ratio: float = 1.0,
-        mode: OperatingMode | str = OperatingMode.SELF_CONSUMPTION_FIRST,
+        operating_mode: OperatingMode | str = OperatingMode.SELF_CONSUMPTION_FIRST,
         dt: int = SECONDS_PER_HOUR,
     ) -> None:
-        # 이름·수명·열화율·매체 플래그 검증은 계약이 이미 한다. 여기서 다시
-        # 검사하면 같은 규칙이 두 곳에 생기고, 언젠가 한쪽만 고쳐진다.
+        # 이름·수명·열화율·매체 플래그·운전 방법·물가상승률 검증은 계약이 이미
+        # 한다. 여기서 다시 검사하면 같은 규칙이 두 곳에 생기고, 언젠가 한쪽만
+        # 고쳐진다.
         super().__init__(
             name=name,
             dt=dt,
@@ -105,9 +106,10 @@ class PV(DER):
             carries_heat=False,
             carries_cool=False,
             consumes_fuel=False,
+            operating_mode=self._coerce_mode(mode=operating_mode, name=name),
+            escalation_rate=escalation_rate,
         )
 
-        self.mode = self._coerce_mode(mode)
         self.capacity_kw = _positive(capacity_kw, label="용량(kW)", name=name)
         self.capacity_factor, self.generation_profile_kwh = self._resolve_generation(
             capacity_factor=capacity_factor, profile=generation_profile_kwh, name=name
@@ -118,7 +120,8 @@ class PV(DER):
         self.unit_capex_won_per_kw = _non_negative(
             unit_capex_won_per_kw, label="설비 단가(원/kW)", name=name
         )
-        self.bos_capex_won = _non_negative(bos_capex_won, label="부대비(원)", name=name)
+        self.bos_capex_won = _non_negative(bos_capex_won, label="부가세 제외 부대비(원)",
+                                          name=name)
         self.vat_rate = _in_range(vat_rate, 0.0, 1.0, label="부가세율", name=name)
         self.inverter_unit_capex_won_per_kw = _non_negative(
             self.unit_capex_won_per_kw * DEFAULT_INVERTER_CAPEX_RATIO
@@ -133,28 +136,27 @@ class PV(DER):
         self.variable_om_won_per_kwh = _non_negative(
             variable_om_won_per_kwh, label="변동 O&M 단가(원/kWh)", name=name
         )
-        # 물가상승률은 음수(디플레이션)도 성립하므로 하한만 막는다.
-        if inflation_rate <= -1.0:
-            raise ValueError(f"{name}: 물가상승률이 -100% 이하입니다: {inflation_rate}")
-        self.inflation_rate = float(inflation_rate)
         self.self_consumption_ratio = _in_range(
             self_consumption_ratio, 0.0, 1.0, label="자가소비율", name=name
         )
 
     # ── 입력 해석 ───────────────────────────────────────────────────
 
-    def _coerce_mode(self, mode: OperatingMode | str) -> OperatingMode:
-        """선언 목록 밖의 운전 방법을 거부한다 (DV-14).
+    @classmethod
+    def _coerce_mode(cls, *, mode: OperatingMode | str, name: str) -> OperatingMode:
+        """문자열을 열거 멤버로 승격시킨다 — **목록 소속 검사는 계약이 한다.**
 
-        문자열도 받는 이유: 운전 방법은 케이스 그리드의 탐색 변수가 될 수
-        있고(FR-105-AC5), 그 값은 YAML·DB를 거쳐 문자열로 들어온다.
+        문자열을 받는 이유는 운전 방법이 케이스 그리드의 탐색 변수이고
+        (FR-105-AC5) 그 값이 YAML·DB를 거쳐 문자열로 들어오기 때문이다. 승격하지
+        않으면 `operating_mode is OperatingMode.CURTAILMENT` 가 조용히 거짓이 되어
+        출력제어 수용이 무시된다 — 계약은 `str` 소속만 본다 (DV-14).
         """
         try:
             return OperatingMode(mode)
         except ValueError as e:
-            allowed = ", ".join(m.value for m in self.OPERATING_MODES)
+            allowed = ", ".join(m.value for m in cls.OPERATING_MODES)
             raise ValueError(
-                f"선언되지 않은 운전 방법입니다: {mode!r}. "
+                f"{name}: 선언되지 않은 운전 방법입니다: {mode!r}. "
                 f"PV가 지원하는 운전 방법은 [{allowed}] 뿐입니다 (FR-105-AC1 · DV-14)"
             ) from e
 
@@ -232,7 +234,7 @@ class PV(DER):
         입력값 자체를 지우지 않는 이유는 운전 방법을 되돌렸을 때 원래 값이
         살아나야 하기 때문이다 (FR-801이 운전 방법을 탐색 변수로 돌린다).
         """
-        if self.mode is OperatingMode.FULL_EXPORT:
+        if self.operating_mode is OperatingMode.FULL_EXPORT:
             return 0.0
         return self.self_consumption_ratio
 
@@ -274,13 +276,30 @@ class PV(DER):
                 f"{allocated:.6f} kWh 를 배분했습니다 (FR-402-AC2.A)"
             )
 
+    def value_streams(self) -> tuple[str, ...]:
+        """편익 tag (`FR-401-AC2.<키>`) — **운전 방법과 자가소비율이 정한다.**
+
+        3종을 늘 선언하면 전량 판매인데 자가소비 절감이, 자가소비율 100%인데
+        판매 수익이 계상된다 (FR-402-AC2.A 동일 물리량 이중 판매).
+        """
+        ratio = self._self_consumption_ratio_effective()
+        return tuple(
+            (["SelfConsumption"] if ratio > 0.0 else [])
+            + (["SurplusSale"] if ratio < 1.0 else [])
+            + ["REC"]        # REC는 발전량 기준이므로 용도 배분과 무관하다
+        )
+
     def dispatch(self, ctx: DispatchContext) -> DispatchResult:
-        """한 해 운전 — 전기 계열에만 값을 싣는다 (FR-101-AC4).
+        """운전 — 전기 계열에만 값을 싣는다 (FR-101-AC4).
 
         스텝당 kWh = `발전 kW × 스텝 길이(h)`. 해상도가 바뀌어도 연간 합계가 같아야
         하므로 스텝 길이를 곱한다 — 빼먹으면 15분 해상도에서 발전량이 4배가 된다.
+
+        `ctx.steps` 가 한 해보다 짧으면 **연초부터 그만큼**이다 (부분 창 규약) —
+        시계열을 앞에서 자르는 것이 그 이행이다.
         """
-        hours_per_step = self.dt / SECONDS_PER_HOUR
+        self.check_context(ctx)   # 해상도 불일치를 계약이 거부한다
+        hours_per_step = ctx.hours_per_step
         derate = self.derate(year=int(ctx.year))
 
         if self.generation_profile_kwh is not None:
@@ -318,7 +337,7 @@ class PV(DER):
             return electric
 
         limits = [lim * hours_per_step for lim in ctx.grid_limit_kw]
-        if self.mode is OperatingMode.CURTAILMENT:
+        if self.operating_mode is OperatingMode.CURTAILMENT:
             return [min(gen, lim) for gen, lim in zip(electric, limits, strict=True)]
 
         for step, (gen, lim) in enumerate(zip(electric, limits, strict=True)):
@@ -367,13 +386,8 @@ class PV(DER):
         """CAPEX 본체 = `단가 × 용량 + 부대비` (§13.2.2 C-1). 부가세는 제외."""
         return self.capacity_kw * self.unit_capex_won_per_kw + self.bos_capex_won
 
-    def _escalation(self, *, year: int) -> float:
-        """`year` 년차 물가 계수 = `(1 + 물가상승률)^(year−1)`. 1년차가 기준연도다.
-
-        지수를 `year`로 쓰면 1년차 비용이 이미 한 해 오른 값이 되어 전 항목이
-        일제히 어긋난다.
-        """
-        return (1.0 + self.inflation_rate) ** (int(year) - 1)
+    # 물가 계수는 계약의 `escalation_factor(year=...)` 다 (v1.1 개정 ⑤) — 자원이
+    # 각자 지수를 쓰면 기준연도가 갈려 한 해씩 어긋난 비용이 나온다.
 
     def capex(self, *, year: int) -> Money:
         """`RC-ALL-C1` CAPEX — 1년차에만 계상. 오라클 1,500,000 × 3 = 4,500,000원.
@@ -392,7 +406,7 @@ class PV(DER):
 
     def fixed_om(self, *, year: int) -> Money:
         """`RC-ALL-C2` 고정 O&M — 설비 보유에 비례하며 발전량과 무관하다."""
-        return to_won(self.fixed_om_won_per_year * self._escalation(year=year))
+        return to_won(self.fixed_om_won_per_year * self.escalation_factor(year=year))
 
     def fixed_om_cumulative(self, *, horizon: int) -> Money:
         """`RC-ALL-C2` 고정 O&M 분석기간 누계 — 등비수열 합.
@@ -404,7 +418,7 @@ class PV(DER):
         """
         if horizon <= 0:
             raise ValueError(f"{self.name}: 분석기간은 1년 이상입니다: {horizon}")
-        i = self.inflation_rate
+        i = self.escalation_rate
         if i == 0.0:
             total = self.fixed_om_won_per_year * horizon
         else:
@@ -420,7 +434,7 @@ class PV(DER):
         return to_won(
             self.annual_generation_kwh(year=year)
             * self.variable_om_won_per_kwh
-            * self._escalation(year=year)
+            * self.escalation_factor(year=year)
         )
 
     def replacement_schedule(self, *, horizon: int) -> dict[int, Money]:
@@ -443,7 +457,7 @@ class PV(DER):
         ):
             year = life + 1
             while year <= horizon:
-                cost = self.capacity_kw * unit_cost * self._escalation(year=year)
+                cost = self.capacity_kw * unit_cost * self.escalation_factor(year=year)
                 # 같은 해에 본체와 인버터가 겹치면 더한다 — 덮어쓰면 한쪽이
                 # 조용히 사라진다
                 schedule[year] = to_won(to_won(cost) + schedule.get(year, Money(0)))
@@ -478,6 +492,15 @@ class PV(DER):
 # 시나리오에서 «값이 범위 밖»만 나오면 어느 자원인지 찾지 못한다.
 
 
+def _in_range(value: float, low: float, high: float, *, label: str, name: str) -> float:
+    if not low <= value <= high:
+        raise ValueError(
+            f"{name}: {label} 은(는) {low}~{high} 범위입니다 (받은 값 {value}). "
+            "비율은 코드 내부에서 0~1 소수로 정규화합니다 (§7.5)"
+        )
+    return float(value)
+
+
 def _positive(value: float, *, label: str, name: str) -> float:
     if not value > 0:
         raise ValueError(f"{name}: {label} 은(는) 0보다 커야 합니다 (받은 값 {value})")
@@ -487,13 +510,4 @@ def _positive(value: float, *, label: str, name: str) -> float:
 def _non_negative(value: float, *, label: str, name: str) -> float:
     if value < 0:
         raise ValueError(f"{name}: {label} 은(는) 음수가 될 수 없습니다 (받은 값 {value})")
-    return float(value)
-
-
-def _in_range(value: float, low: float, high: float, *, label: str, name: str) -> float:
-    if not low <= value <= high:
-        raise ValueError(
-            f"{name}: {label} 은(는) {low}~{high} 범위입니다 (받은 값 {value}). "
-            "비율은 코드 내부에서 0~1 소수로 정규화합니다 (§7.5)"
-        )
     return float(value)
