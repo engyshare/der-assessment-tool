@@ -88,7 +88,31 @@ REQ_ID = re.compile(r"\b((?:FR|NFR|UI)-\d+)\b")
 # 들여쓰기를 4칸으로 고정하지 않는 이유: 표에 딸린 수용기준은 부모 불릿 아래
 # 6칸에 놓인다(FR-601-AC2 등). 들여쓰기는 문서의 읽기 구조이지 ID의 근거가
 # 아니므로 여기서 판정에 쓰지 않는다. 판정은 오직 `**ACn**` 표기다.
-CRITERION = re.compile(r"^\s{2,}- \*\*(AC\d+|M\d+)\*\*\s+(.+)$")
+## 표 수용기준 전개 키 (2.15 ①)
+#
+# `(표)` 캡션 1건으로 뭉쳐 있던 표를 행 단위 조항으로 가를 때, 각 행은
+# `AC1.PV` 처럼 **저자가 부여한 리터럴 키**를 갖는다.
+#
+# **키는 무엇으로부터도 계산하지 않는다.** 행 위치(`AC1.1`)는 물론이고
+# 지표명 슬러그화·대소문자 변환도 파생이다. 파생하는 순간 원본이 바뀔 때
+# ID가 조용히 다른 것을 가리키며, 그것이 v0.7에서 7건을 어긋나게 한 구조다.
+# 그래서 `PV`는 `pv`로 낮추지 않는다 — 낮추는 것 자체가 파생이다.
+KEY = r"[A-Za-z][A-Za-z0-9_-]*"
+
+CRITERION = re.compile(rf"^\s{{2,}}- \*\*(AC\d+(?:\.{KEY})?|M\d+)\*\*\s+(.+)$")
+
+# 수용기준 자리에 있으나 ID 형식이 어긋난 선언.
+#
+# `BARE_BULLET`은 **4칸 들여쓰기만** 잡는다. 그런데 표에 딸린 수용기준은
+# 6칸에 놓인다(FR-601-AC2·AC5, FR-611-AC3, FR-801-AC7). 그 결과 형식이
+# 어긋난 선언의 운명이 들여쓰기에 따라 정반대로 갈렸다 —
+#
+#   4칸: BARE_BULLET에 걸려 결함 보고 → 종료 코드 2 (요란하게 멈춤)
+#   6칸: CRITERION에도 BARE_BULLET에도 안 걸려 **그냥 사라짐** (초록불)
+#
+# 사라진 조항은 미매핑으로도 잡히지 않는다. 조항 자체가 없기 때문이다.
+# 통과 화면만 보면 아무 일도 없어 보인다. 이 비대칭을 여기서 닫는다.
+MALFORMED_ID = re.compile(r"^\s{2,}- \*\*((?:AC|M)[^*]*)\*\*")
 
 # 수용기준 필드의 머리줄. 선언은 이 줄 뒤에만 온다.
 #
@@ -213,6 +237,14 @@ def parse_spec(path: Path) -> tuple[list[Requirement], list[str]]:
                 continue
             kind = "measurement" if m.group(1).startswith("M") else "ac"
             cur.criteria.append(Criterion(cid, summarize(m.group(2)), kind))
+            continue
+
+        # ID 형식이 어긋난 선언 — 들여쓰기와 무관하게 잡는다.
+        m = MALFORMED_ID.match(line)
+        if m and in_field:
+            defects.append(f"L{offset} 수용기준 ID 형식 오류 ({cur.rid}): "
+                           f"`**{m.group(1)}**` — `AC3` 또는 `AC3.key` 형식이어야 "
+                           f"합니다 (key는 `{KEY}`, 점은 한 단계)")
             continue
 
         # 다른 2칸 필드가 열리면 수용기준 필드는 닫힌다.

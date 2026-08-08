@@ -44,7 +44,10 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-CITE = re.compile(r"`((?:FR|NFR|UI)-\d+-(?:AC|M)\d+)`")
+# 표 수용기준 전개(2.15 ①)로 생긴 `FR-102-AC1.PV` 형식을 함께 받는다.
+# 키는 저자가 부여한 리터럴이며 대소문자를 구분한다 — `PV`를 `pv`로 낮추는 것도
+# 파생이므로 하지 않는다. 점은 한 단계까지만이다.
+CITE = re.compile(r"`((?:FR|NFR|UI)-\d+-(?:AC|M)\d+(?:\.[A-Za-z][A-Za-z0-9_-]*)?)`")
 RANGE = re.compile(r"`((?:FR|NFR|UI)-\d+)-(AC|M)(\d+)`\s*~\s*`?(?:AC|M)?(\d+)`?")
 
 # 작업 항목 식별.
@@ -223,11 +226,33 @@ def main() -> int:
     else:
         print("· 범위 초과 인용 없음")
 
-    # ── 2. 미인용 Phase 1 Must-have 조항 ────────────────────────────
     cited = set(CITE.findall(raw))
     for req, kind, lo, hi in RANGE.findall(raw):
         cited |= {f"{req}-{kind}{n}" for n in range(int(lo), int(hi) + 1)}
 
+    # ── 1b. 실재하지 않는 조항 인용 ─────────────────────────────────
+    #
+    # 어느 도구도 **인용된 ID가 실제로 존재하는지**를 보지 않았다. 범위 초과
+    # 검사는 범위 표기의 상한만 세고, 미인용 검사는 실재 조항 쪽을 순회하므로
+    # 유령 인용은 양쪽 시야 밖이다. gen_traceability는 수동 대장과 테스트
+    # 마커에 대해서만 실재 검사를 한다 — 작업 목록은 대상이 아니었다.
+    #
+    # 표 수용기준을 행 단위로 가르면(2.15 ①) 부모 ID가 폐기되면서 수십 개의
+    # 인용이 한 번에 갈 곳을 잃는다. 그때 드러나는 유일한 신호가 「미인용 N건」
+    # 인데, 그것은 "아직 새 ID를 안 붙였다"로도 읽혀 원인이 가려진다.
+    # 폐기된 ID를 가리키는 인용은 **조용히 무효**가 되므로 여기서 이름을 준다.
+    ghost = sorted(cited - set(crit))
+    if ghost:
+        problems += len(ghost)
+        print(f"\n✗ 실재하지 않는 수용기준 인용 {len(ghost)}건")
+        print("    작업 목록이 인용하는 ID가 spec에 없다 — 폐기되었거나 오타다")
+        for cid in ghost:
+            print(f"    {cid}")
+        print()
+    else:
+        print("· 실재하지 않는 인용 없음")
+
+    # ── 2. 미인용 Phase 1 Must-have 조항 ────────────────────────────
     uncited = [(cid, body, req) for cid, (body, req, pri, ph) in crit.items()
                if pri.startswith("Must") and ph in ("1", "-") and cid not in cited]
     if uncited:
