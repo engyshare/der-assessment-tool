@@ -97,9 +97,9 @@ sources:
   - path: "0. rules/근거 표기 기준.md"
     wikilink: "[[근거 표기 기준]]"
     repo_copy: "docs/evidence-standard.md"
-    mtime: "2026-08-02T16:15:23+09:00"
-    size_bytes: 7666
-    sha256: "b5500118f2b447281e2b8a6b46a0db5a4f797b71eebacae94a3113c0821fc697"
+    mtime: "2026-08-03T15:17:44+09:00"
+    size_bytes: 7784
+    sha256: "14daa428cf7f5782d51ef78ea65ff326db632e8a916bc682e714f9f5048f2d4b"
 
     # 인용 좌표계: 절 번호.
     # 이 문서는 원칙 번호 체계가 없어 절 번호가 유일한 좌표다.
