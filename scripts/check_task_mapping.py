@@ -100,8 +100,13 @@ def load_criteria(path: Path):
         m = TR_ROW.match(line)
         if not m:
             continue
+        # 우선순위는 요구사항 단위라 첫 행에만 있고 이후 조항이 물려받는다.
+        # **Phase는 수용기준 단위**이므로 행마다 다시 읽는다 — 물려받게 두면
+        # 자원·편익 레지스트리처럼 행별 Phase가 다른 표에서, Phase 2·3 조항이
+        # 전부 Phase 1로 취급되어 미인용 오탐이 된다.
         if m.group(1):
-            cur, pri, ph = m.group(1), m.group(2).strip(), m.group(3).strip()
+            cur, pri = m.group(1), m.group(2).strip()
+        ph = m.group(3).strip() or ph
         out[m.group(4)] = (m.group(5).strip(), cur, pri, ph)
     return out
 

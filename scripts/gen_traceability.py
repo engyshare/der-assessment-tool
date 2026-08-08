@@ -114,6 +114,21 @@ CRITERION = re.compile(rf"^\s{{2,}}- \*\*(AC\d+(?:\.{KEY})?|M\d+)\*\*\s+(.+)$")
 # 통과 화면만 보면 아무 일도 없어 보인다. 이 비대칭을 여기서 닫는다.
 MALFORMED_ID = re.compile(r"^\s{2,}- \*\*((?:AC|M)[^*]*)\*\*")
 
+# 수용기준 단위 Phase — **줄 끝 `[Phase N]`** 표기만 인정한다.
+#
+# 왜 필요한가: 자원·편익 레지스트리 표는 행마다 Phase가 다르다(자원 9행이
+# Phase 1/2/3 = 6/2/1). 요구사항 단위 Phase만 있으면 전개 후 Phase 2·3 행이
+# 전부 "Phase 1 Must-have 미인용"으로 뜨는데, 그것을 다룰 작업은 원리적으로
+# 없다(해당 Phase 착수 시 작성). 게이트가 영구히 빨갛게 굳으면 아무도 보지
+# 않게 된다 — 이 저장소가 이미 겪은 실패다.
+#
+# 왜 본문에서 `Phase N`을 찾지 않는가: 산문에 우연히 등장하면 오탐이다.
+# 서술과 선언을 **뜻으로** 가르려는 시도는 이 저장소에서 네 번 실패했다.
+# 판정 기준은 형식뿐이며, 위치를 줄 끝으로 고정해 우연한 일치를 배제한다.
+#
+# 표기가 없으면 요구사항의 Phase를 물려받는다 — 대다수 조항이 그렇다.
+CRIT_PHASE = re.compile(r"\s*\[Phase (\d)\]\s*$")
+
 # 수용기준 필드의 머리줄. 선언은 이 줄 뒤에만 온다.
 #
 # 요구사항 블록 안이라는 조건만으로는 부족하다. 설명이나 나쁜 예로 적은
@@ -146,6 +161,7 @@ class Criterion:
     cid: str
     text: str
     kind: str            # "ac" | "measurement"
+    phase: str = ""      # 빈 값이면 소속 요구사항의 Phase를 물려받는다
 
 
 @dataclass
@@ -236,7 +252,12 @@ def parse_spec(path: Path) -> tuple[list[Requirement], list[str]]:
                 defects.append(f"L{offset} 수용기준 ID 중복: {cid}")
                 continue
             kind = "measurement" if m.group(1).startswith("M") else "ac"
-            cur.criteria.append(Criterion(cid, summarize(m.group(2)), kind))
+            body = m.group(2)
+            pm = CRIT_PHASE.search(body)
+            crit_phase = pm.group(1) if pm else ""
+            if pm:
+                body = CRIT_PHASE.sub("", body)
+            cur.criteria.append(Criterion(cid, summarize(body), kind, crit_phase))
             continue
 
         # ID 형식이 어긋난 선언 — 들여쓰기와 무관하게 잡는다.
@@ -373,8 +394,12 @@ def render(reqs: list[Requirement], tests: dict[str, list[str]],
 
             head = f"`{req.rid}`" if i == 0 else ""
             pri = req.priority if i == 0 else ""
+            # Phase는 **모든 행에** 찍는다. 첫 행에만 찍으면 수용기준 단위
+            # Phase가 표에서 표현되지 않고, 이 표를 읽는 check_task_mapping이
+            # 요구사항 Phase를 이후 조항에 그대로 물려 버린다 — 행별 Phase가
+            # 도구에 도달하지 못하던 원인이 바로 이것이다.
             rows.append(
-                f"| {head} | {pri} | {req.phase if i == 0 else ''} | "
+                f"| {head} | {pri} | {crit.phase or req.phase} | "
                 f"`{crit.cid}` | {crit.text} | {status} | {where} |")
 
     must = [r for r in reqs if r.is_must]
