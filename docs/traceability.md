@@ -12,9 +12,9 @@
 | 요구사항 | 97 |
 | 그중 Must-have | 71 |
 | 수용기준 총계 | 299 |
-| 자동 검증 매핑 | 39 |
+| 자동 검증 매핑 | 40 |
 | 수동 검증 매핑 | 8 |
-| **Must-have 미매핑** | **222** |
+| **Must-have 미매핑** | **221** |
 | 우선순위 미지정 요구사항 | 0 |
 | **Phase 미지정 요구사항** | **9** |
 
@@ -33,7 +33,7 @@
 > 감시하면서도 *언제까지* 지켜야 하는지는 말하지 못하는 상태입니다. Should-have만
 > 남았다면 R-1 정비 사항이며 게이트 판정에는 영향이 없습니다.
 
-> **미매핑 222건.** NFR-107은 미매핑 0건을 요구합니다.
+> **미매핑 221건.** NFR-107은 미매핑 0건을 요구합니다.
 >
 > 현재 저장소에 테스트가 없으므로 전건 미매핑인 것이 정상입니다. 이 표는
 > **Wave 0 시점의 작업 목록**으로 읽으십시오 — 각 행이 곧 작성해야 할 테스트
@@ -302,7 +302,7 @@
 | `NFR-102` | Must-have | 1 | `NFR-102-M1` | 시뮬레이션 종료 시 자동 assertion, 위반 시 실행 실패 | **미매핑** | — |
 | `NFR-103` | Must-have | 1 | `NFR-103-M1` | 20년 프로포마 합계와 항목별 합계 일치 검증 | 자동 | test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_smoke_wave0.py |
 | `NFR-104` | Must-have | 1 | `NFR-104-M1` | CI 회귀 테스트 | **미매핑** | — |
-| `NFR-105` | Must-have | 1 | `NFR-105-AC1` | 모든 계산 코드는 테스트 우선(TDD) 으로 작성되어야 한다. 구현보다 그 구현을 규정하는 실패 테스트가 먼저 존재해야 한다 | **미매핑** | — |
+| `NFR-105` | Must-have | 1 | `NFR-105-AC1` | 모든 계산 코드는 테스트 우선(TDD) 으로 작성되어야 한다. 구현보다 그 구현을 규정하는 실패 테스트가 먼저 존재해야 한다 | 자동 | test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py |
 | `NFR-106` | Must-have | 1 | `NFR-106-M1` | CI가 자원 레지스트리를 순회하여 각 자원에 대해 비용측 5종·편익측 전건 케이스의 존재와 통과를 확인한다. 케이스가 누락된 자원이 1건이라도 있으면 실패 | **미매핑** | — |
 | `NFR-107` | Must-have | 1 | `NFR-107-AC1.auto` | 자동 검증 — 매핑 형식은 @pytest.mark.req("FR-104-AC3"). CI는 테스트를 실행하고 통과를 확인한다 | **미매핑** | — |
 |  |  | 1 | `NFR-107-AC1.manual` | 수동 검증 — 매핑 형식은 @pytest.mark.req(...) + @pytest.mark.manual 로 skip 처리된 명세 스텁, 또는 docs/manu… | **미매핑** | — |

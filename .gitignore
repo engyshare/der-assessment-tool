@@ -9,8 +9,9 @@ venv/
 .coverage
 htmlcov/
 .pytest_cache/
-.coverage
-htmlcov/
+coverage.xml
+diff-cover.md
+.import_linter_cache/
 
 # 편집기·OS
 .vscode/

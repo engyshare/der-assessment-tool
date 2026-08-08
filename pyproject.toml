@@ -16,6 +16,8 @@ dev = [
     "import-linter>=2.0",
     "ruff>=0.5",
     "mypy>=1.10",
+    # NFR-105 게이트 ① 변경분 커버리지 (작업 2.5)
+    "diff-cover>=9.0",
 ]
 
 [build-system]

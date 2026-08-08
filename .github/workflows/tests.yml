@@ -1,0 +1,112 @@
+# 테스트·정적검사·NFR-105 게이트 — 작업 2.5·2.6 / spec NFR-105
+#
+# **왜 별도 파일인가.** §16.4는 `.github/workflows/` 의 편집 규칙을 *"잡(job)
+# 단위 파일 분할"* 로 규정한다. `source-rules.yml` 은 문서 게이트(정본 대조·매핑·
+# 가정 대장·파일 규모)를 담고 있고, 그 `on.push.paths` 에는 **`core/**` 가 없다**
+# — 코드만 고친 push 는 그 워크플로를 아예 깨우지 않는다. 같은 파일에 코드
+# 게이트를 넣으면 경로 필터를 넓혀야 하고, 그러면 문서 게이트가 코드 변경마다
+# 돌아 두 관심사가 한 파일에서 얽힌다.
+#
+# **게이트 3종 중 둘이 여기 있다** (NFR-105 Measurement).
+#
+#   ① 변경분 커버리지 ≥ 95%   diff-cover        — 작업 2.5, 차단
+#   ② 테스트 동반 검사        check_test_...    — 작업 2.6, 차단
+#   ③ 커밋 순서 검사          미구현             — 조항이 **경고**로 규정. 스쿼시
+#                                                병합 등 정당한 예외가 있어 차단
+#                                                으로 켤 수 없다
+#
+# **①②는 PR 에서만 판정된다.** 기준 브랜치가 있어야 «변경분» 이 정의되기 때문
+# 이다. push 에서는 조용히 건너뛰지 않고 **건너뛴다고 말한다** — 로그에 아무것도
+# 없으면 «통과» 와 «수행하지 않음» 이 구별되지 않는다 (§13.0.1 ④).
+
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # ── 테스트·정적검사 ────────────────────────────────────────────────
+  #
+  # 08-08까지 CI에는 이 잡이 **없었다.** pytest·ruff·import-linter 는 사람이
+  # 로컬에서 부를 때만 돌았고, 그것은 「검사가 있다」가 아니라 「검사를 기억하면
+  # 돈다」다. 자원 6종이 병렬로 들어온 직후가 특히 위험했다.
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 게이트 ①②는 기준 브랜치와의 **병합 기점**을 본다. 얕은 클론이면
+          # 그 ref 나 공통 조상이 로컬에 없고, 그러면 판정이 성립하지 않는다.
+          # (diff-cover 10.4.2 는 ref 가 아예 없을 때는 오류로 멈춘다 — 실측.
+          # 조용히 통과하는 쪽은 **경로가 어긋난 산출물**이며 그것은 입력
+          # 검증 단계가 잡는다.)
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 의존성
+        run: pip install -e ".[dev]"
+
+      - name: ruff
+        run: python -m ruff check core tests scripts
+
+      - name: import-linter — 구획 경계 4계약 (NFR-208)
+        # `python -m importlinter.cli lint` 로 부르지 **않는다.** 그 모듈에는
+        # `__main__` 가드가 없어 import만 되고 끝나며 **종료 코드 0**을 낸다 —
+        # 위반을 심어도 초록불이다. 콘솔 스크립트를 부른다.
+        run: lint-imports
+
+      - name: pytest + 커버리지
+        run: |
+          python -m pytest --cov=core --cov-branch --cov-report=xml --cov-report=term
+
+      # ── 게이트 ① 변경분 커버리지 ≥ 95% (작업 2.5) ─────────────────
+      #
+      # 전체 커버리지(NFR-203, 85%)와 별개로 **신규 코드에 더 높은 기준**을
+      # 적용한다. 이유는 조항 근거에 있다 — 이 시스템의 산출물은 정책 판단
+      # 근거이고, 계산 오류는 화면상 정상 동작으로 보이므로 사후 발견이 어렵다.
+      # 이미 있는 코드의 미검증분은 서서히 갚되, **지금 들어오는 코드는 검증과
+      # 함께 들어와야 한다.**
+      #
+      # 입력 검증이 **먼저** 온다. diff-cover 는 판정할 수 없을 때 통과하기
+      # 때문이다 — `coverage.xml` 의 경로가 어긋나면 «No lines with coverage
+      # information in this diff» 를 출력하고 종료 코드 0 을 낸다(실측). 문서만
+      # 고친 PR 에서는 그것이 옳고, `core/` 를 고친 PR 에서는 정반대의 뜻인데
+      # 출력과 종료 코드가 같아 로그로도 구별되지 않는다.
+      - name: 게이트 ① 입력 검증 (PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          python scripts/check_coverage_inputs.py --base "origin/${{ github.base_ref }}"
+
+      - name: 게이트 ① 변경분 커버리지 (PR)
+        if: github.event_name == 'pull_request'
+        run: |
+          diff-cover coverage.xml \
+            --compare-branch "origin/${{ github.base_ref }}" \
+            --fail-under=95 \
+            --diff-range-notation '...' \
+            --markdown-report diff-cover.md
+          cat diff-cover.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 게이트 ① 건너뜀 (push)
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "게이트 ①은 PR 에서만 판정합니다 — 기준 브랜치가 있어야 «변경분»이" \
+               "정의됩니다. 이 실행은 통과가 아니라 **미수행**입니다." \
+               >> "$GITHUB_STEP_SUMMARY"
+
+      # ── 게이트 ② 테스트 동반 검사 (작업 2.6) ──────────────────────
+      - name: 게이트 ② 테스트 동반 (PR)
+        if: github.event_name == 'pull_request'
+        run: python scripts/check_test_accompaniment.py --base "origin/${{ github.base_ref }}"
+
+      - name: 게이트 ② 건너뜀 (push)
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "게이트 ②는 PR 에서만 판정합니다. 이 실행은 통과가 아니라 **미수행**입니다." \
+               >> "$GITHUB_STEP_SUMMARY"
