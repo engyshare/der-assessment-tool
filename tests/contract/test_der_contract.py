@@ -596,3 +596,109 @@ def test_all_implementations_share_the_same_vat_default() -> None:
         "프로포마에서 자원에 따라 세액이 잡히거나 사라지는데 어느 쪽도 오류로 "
         "보이지 않습니다. 정본은 docs/assumptions.yaml 의 tax.vat_rate 입니다"
     )
+
+
+# ── v1.2 ⑥ 가격 신호는 계약이 나른다 ─────────────────────────────────
+
+@pytest.mark.contract
+@pytest.mark.req("FR-301-AC1")
+def test_price_signal_rides_on_the_context() -> None:
+    """요금·연료 단가는 **자원이 아니라 컨텍스트**가 나른다 (계약 v1.2 ⑥).
+
+    자원이 단가를 들면 요금제 개정이 자원 코드 수정이 되고, 그 수정은 자원
+    6종에 흩어진다 — §16.1 W-1(파일 단위 배타 소유)이 막으려는 형태다.
+    요금 구조 해석은 WP-3(`core/regulation`) 소관이며, 그 **결과인 스텝별
+    단가 하나**만 엔진이 여기 싣는다.
+    """
+    ctx = DispatchContext(
+        steps=24,
+        dt=3600,
+        year=Year(1),
+        price_signal_won_per_kwh=[100.0] * 24,
+        fuel_price_signal_won_per_kwh=[60.0] * 24,
+    )
+    assert ctx.require_price_signal() == [100.0] * 24
+    assert ctx.require_price_signal(media="fuel") == [60.0] * 24
+
+    # 행수 불일치는 다른 계열과 **같은 경로**로 막힌다. 가격만 별도 검사를
+    # 두면 그 검사가 낡을 때 가격 계열만 조용히 통과한다 (FR-301-AC3).
+    with pytest.raises(ValueError, match="price_signal_won_per_kwh"):
+        DispatchContext(steps=24, dt=3600, year=Year(1),
+                        price_signal_won_per_kwh=[100.0] * 23)
+
+
+@pytest.mark.contract
+@pytest.mark.req("FR-301-AC1")
+def test_missing_price_signal_stops_instead_of_defaulting_to_zero() -> None:
+    """신호가 없으면 **멈춘다.** 0원으로 메우지 않는다 (계약 v1.2 ⑥).
+
+    `ctx.price_signal_won_per_kwh or [0.0] * ctx.steps` 를 자원마다 쓰면 전
+    스텝의 단가가 같아져 **「가장 싼 시각」이 사라지고 가격 연동이 「아무
+    때나」와 구별되지 않는다.** 그 결과는 총량이 맞으므로 수지 균형
+    (NFR-102)도 통과한다 — v1.1 ①(부분 창 해석)에서 만난 «균형식이 볼 수
+    없는 오류» 와 같은 종류이며, 판단이 자원에 흩어지면 여섯 개의 서로 다른
+    답이 생기고 어느 것도 오류가 아니다.
+    """
+    ctx = DispatchContext(steps=24, dt=3600, year=Year(1))
+    assert ctx.price_signal_won_per_kwh is None
+    with pytest.raises(ValueError, match="가격 신호가 없습니다"):
+        ctx.require_price_signal()
+    with pytest.raises(ValueError, match="가격 신호가 없습니다"):
+        ctx.require_price_signal(media="fuel")
+
+
+#: **이관 부채 — 계약 v1.2 시점의 실측치다.** 이 셋은 요금·시장가격을 자원
+#: 생성자가 들고 있는 잔여분이며, `status.md` 「미해결」이 조치 시점을
+#: *"8.0 또는 5.0 착수 전"* 으로 적어 둔 항목이다. 8.0(편익)이 편익 산식의
+#: 소유권을 WP-4로 확정할 때 함께 이관한다 — `avoided_price` 는 운전 결정이
+#: 아니라 **편익 화폐화** 이므로 ctx 가 아니라 WP-4 로 가는 것이 맞고,
+#: 그 판단은 8.0 착수 시점에 내려진다.
+#:
+#: **이 목록을 늘리는 방향으로 고치지 말 것.** 새 요금 인자를 자원에 두면
+#: 이 검사가 즉시 빨개진다. 그것이 이 목록의 유일한 목적이다.
+KNOWN_TARIFF_DEBT: dict[str, set[str]] = {
+    "EV_V2G": {"avoided_price_won_per_kwh"},
+    "HeatPump": {"price_profile_won_per_kwh", "elec_price_won_per_kwh"},
+}
+
+
+@pytest.mark.contract
+@pytest.mark.req("NFR-202-M1")
+def test_no_new_tariff_parameter_enters_a_resource() -> None:
+    """자원이 새 요금·시장가격 인자를 갖는 것을 막는다 (계약 v1.2 ⑥).
+
+    **왜 「0건」이 아니라 실측 목록인가.** 지금 0건을 요구하면 이 검사는
+    켜는 즉시 빨간불이고, 통과시키려면 `RC-HP` · `RC-EV` 검증 케이스를
+    함께 고쳐야 한다 — 그것은 8.0 이 편익 소유권을 확정한 뒤에 할 일이다.
+    2.7 매핑 게이트에서 「미매핑 0건」을 요구하지 않은 것과 같은 판단이다.
+    **드러난 부채는 부채이고, 드러나지 않는 부채가 문제다.**
+
+    `price_linked_hours` 처럼 **가격이 아닌** 운전 파라미터는 대상이 아니다.
+    이름에 `price` 가 들어간다고 요금인 것은 아니며, 그렇게 판정하면 정당한
+    인자가 걸려 검사가 꺼진다 — 이 저장소가 여섯 번 만난 형태다. 판정은
+    「원/kWh 단가를 자원이 소유하는가」이고, `capex_unit_won_per_kwh` 같은
+    **비용 단가는 자원의 것이 맞다** (§13.2.2 C-1~C-3).
+    """
+    import core.der
+    from core.contracts.registry import discover
+
+    found: dict[str, set[str]] = {}
+    for tag, cls in discover(core.der, DER).items():
+        params = inspect.signature(cls.__init__).parameters
+        hits = {
+            name
+            for name in params
+            if name.endswith("_won_per_kwh")
+            and not name.startswith(("capex_", "variable_om_", "fixed_om_",
+                                     "replacement_", "degradation_compensation_"))
+        }
+        if hits:
+            found[tag] = hits
+
+    assert found == KNOWN_TARIFF_DEBT, (
+        f"자원이 소유한 요금 인자가 실측 부채와 다릅니다.\n"
+        f"  실측: {found}\n  기대: {KNOWN_TARIFF_DEBT}\n"
+        "늘었다면 요금 구조가 자원 코드로 새고 있습니다 — 단가는 "
+        "`DispatchContext.price_signal_won_per_kwh` 로 받습니다(계약 v1.2 ⑥). "
+        "줄었다면 이관이 진행된 것이므로 이 목록을 함께 줄이십시오"
+    )

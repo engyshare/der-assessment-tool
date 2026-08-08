@@ -12,9 +12,9 @@
 | 요구사항 | 105 |
 | 그중 Must-have | 79 |
 | 수용기준 총계 | 307 |
-| 자동 검증 매핑 | 52 |
+| 자동 검증 매핑 | 55 |
 | 수동 검증 매핑 | 8 |
-| **Must-have 미매핑** | **219** |
+| **Must-have 미매핑** | **216** |
 | 우선순위 미지정 요구사항 | 0 |
 | **Phase 미지정 요구사항** | **9** |
 
@@ -33,7 +33,7 @@
 > 감시하면서도 *언제까지* 지켜야 하는지는 말하지 못하는 상태입니다. Should-have만
 > 남았다면 R-1 정비 사항이며 게이트 판정에는 영향이 없습니다.
 
-> **미매핑 219건.** NFR-107은 미매핑 0건을 요구합니다.
+> **미매핑 216건.** NFR-107은 미매핑 0건을 요구합니다.
 >
 > 현재 저장소에 테스트가 없으므로 전건 미매핑인 것이 정상입니다. 이 표는
 > **Wave 0 시점의 작업 목록**으로 읽으십시오 — 각 행이 곧 작성해야 할 테스트
@@ -91,7 +91,7 @@
 |  |  | 2 | `FR-204-AC2` | 마을단위 분산특구 6개 모델, 아파트 마이크로그리드 모델 | **미매핑** | — |
 |  |  | 1 | `FR-204-AC3` | 템플릿 로드 시 모든 파라미터에 기본값과 출처가 채워진다 | **미매핑** | — |
 | `FR-205` | Must-have | 1 | `FR-205-AC1` | 다음이 정산 로직에 반영된다 — 개별 세대 직접계약 / 단일계약+관리주체 경유 / 분산특구 직접거래 / 상계거래 / 잉여 직거래 / 집합 PPA / VPP 경유 | **미매핑** | — |
-| `FR-301` | Must-have | 1 | `FR-301-AC1` | 매 스텝 자원별 충·방전·발전·소비량과 계통 수·송전량을 산출 | **미매핑** | — |
+| `FR-301` | Must-have | 1 | `FR-301-AC1` | 매 스텝 자원별 충·방전·발전·소비량과 계통 수·송전량을 산출 | 자동 | test_der_contract.py, test_der_contract.py |
 |  |  | 1 | `FR-301-AC2` | 전력·열 수지 균형식이 모든 스텝에서 오차 < 1e-6 kWh | 자동 | test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py |
 |  |  | 1 | `FR-301-AC3` | 시계열 행수 불일치 시 명확한 오류로 중단 | 자동 | test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_ev_v2g.py, test_heatpump.py |
 | `FR-302` | Must-have | 1 | `FR-302-AC1` | 다음 우선순위를 설정 가능한 순서로 적용 | **미매핑** | — |
@@ -160,7 +160,7 @@
 |  |  | 1 | `FR-601-AC2.escalation` | 상승률 — 일반 물가상승률 / 전기요금 인상률 / 연료비 상승률 / 인건비 상승률을 각각 별도 항목으로 보유 | **미매핑** | — |
 |  |  | 1 | `FR-601-AC2.reference` | 참조 — 요금표 참조, 규제 프로파일 참조 | **미매핑** | — |
 |  |  | 1 | `FR-601-AC3` | 전기요금 인상률 분리 (v0.3 추가): 물가상승률과 별개 항목으로 관리한다. 자가소비·열비용 절감 편익의 20년 누계를 좌우하는 최대 민감 인자이며, 일반 물… | **미매핑** | — |
-|  |  | 1 | `FR-601-AC4` | 항목 메타데이터 (v0.5 정정 — 6종 → 7종): 모든 항목이 근거 표기 기준 5절이 정한 경제성 입력값 필수 부기 항목 7종을 보유한다. 이 목록은 정본이… | **미매핑** | — |
+|  |  | 1 | `FR-601-AC4` | 항목 메타데이터 (v0.5 정정 — 6종 → 7종): 모든 항목이 근거 표기 기준 5절이 정한 경제성 입력값 필수 부기 항목 7종을 보유한다. 이 목록은 정본이… | 자동 | test_assumption_provider.py, test_assumption_provider.py |
 |  |  | 1 | `FR-601-AC5.value_unit` | 값·단위 — 스키마는 value_json + unit 두 컬럼이므로 이 조항과 1:1 대응이 아니다. 두 컬럼이 모두 채워져야 충족한다 | **미매핑** | — |
 |  |  | 1 | `FR-601-AC5.base_year` | 기준일·기준연도·버전 — 언제 시점의 값인지. 항목명은 3요소이나 스키마 컬럼은 base_year 하나뿐이다. 이는 스키마 쪽 결손이며 같은 이름을 씀으로써 결… | **미매핑** | — |
 |  |  | 1 | `FR-601-AC5.applicable_scope` | 적용 범위·조건 — 대상·구간·통계 집계 범위 (v0.5 추가) | **미매핑** | — |
@@ -168,7 +168,7 @@
 |  |  | 1 | `FR-601-AC5.source` | 출처 — 문서명 · 위치(조항·페이지·표 번호) · 전체 URL | **미매핑** | — |
 |  |  | 1 | `FR-601-AC5.verified_at` | 최종확인일 — 실제로 열어본 날짜 | **미매핑** | — |
 |  |  | 1 | `FR-601-AC5.confidence` | 신뢰도 (축 2) — 확정 / 추정 / 가정 | **미매핑** | — |
-|  |  | 1 | `FR-601-AC6` | 항목 유형: 항목은 스칼라형(단가·비율 등)과 참조형(요금표·규제 프로파일 등 다른 엔티티를 가리키는 항목) 두 가지를 지원한다. 참조형 항목도 동일한 7종 메… | **미매핑** | — |
+|  |  | 1 | `FR-601-AC6` | 항목 유형: 항목은 스칼라형(단가·비율 등)과 참조형(요금표·규제 프로파일 등 다른 엔티티를 가리키는 항목) 두 가지를 지원한다. 참조형 항목도 동일한 7종 메… | 자동 | test_assumption_provider.py |
 |  |  | 1 | `FR-601-AC7` | 신뢰도 (v0.5 정정): 확정 / 추정 / 가정 3단계. 정의는 근거 표기 기준 2절을 따르며 여기서 재정의하지 않는다. 가정 항목이 결과에 미친 영향도를 리… | **미매핑** | — |
 |  |  | 1 | `FR-601-AC8` | 버전·diff: 이름·버전으로 저장되고 두 버전 간 diff 뷰를 제공한다 | **미매핑** | — |
 |  |  | 1 | `FR-601-AC9` | 공유: 하나의 AssumptionSet을 여러 사업모델이 공유 참조한다 (FR-202의 전제 동일성 보장 근거) | **미매핑** | — |
@@ -222,7 +222,7 @@
 |  |  | 1 | `FR-703-AC1.irr` | IRR 내부수익률 — 오라클 §13.0.2 순위 2 / 0.01%. FR-704-AC2(사업자 관점)가 이 조항만 인용한다 | **미매핑** | — |
 |  |  | 1 | `FR-703-AC1.mirr-value` | MIRR 수정내부수익률 (값) — 오라클 §13.0.2 순위 2 / 0.01% | **미매핑** | — |
 |  |  | 1 | `FR-703-AC1.mirr-order` | MIRR 우선 표시 규칙 — 현금흐름의 부호변경이 다수일 때 MIRR을 IRR보다 우선 표시한다. 값이 아니라 조건부 표시 규칙이므로 AC1.mirr-value… | **미매핑** | — |
-|  |  | 1 | `FR-703-AC1.bcr` | B/C 총편익 현가 / 총비용 현가 — §13.0.2 어느 순위에도 배정되어 있지 않다. 오라클 배정이 필요하다 (미해결) | **미매핑** | — |
+|  |  | 1 | `FR-703-AC1.bcr` | B/C 총편익 현가 / 총비용 현가 — 오라클 §13.0.2 순위 1. (v0.12 배정) 분자·분모를 각각 원 단위 완전 일치로 판정하고 비율 자체에는 별도 … | **미매핑** | — |
 |  |  | 1 | `FR-703-AC1.lcoe-resource` | LCOE (자원별) 균등화발전원가 — 발전 자원(PV 등)별로만 산출한다 | **미매핑** | — |
 |  |  | 1 | `FR-703-AC1.lcoe-mixed` | 혼합 모델 전체 LCOE 미산출 — 히트펌프·ESS가 섞인 모델의 전체 LCOE는 분모 정의가 성립하지 않으므로 산출하지 않는다 (v0.3 정정). 모델 전체 … | **미매핑** | — |
 |  |  | 1 | `FR-703-AC1.payback-simple` | 단순 회수기간 누적 현금흐름 0 도달 — 소수점 보간 | **미매핑** | — |
@@ -312,7 +312,7 @@
 |  |  | 1 | `NFR-107-AC5` | 수동 검증 분류의 정본은 docs/manual-checks.yaml이다. spec은 어느 수용기준이 수동인지 열거하지 않는다. 대장의 전건에 대해 ⓐ crite… | **미매핑** | — |
 |  |  | 1 | `NFR-107-M1` | CI가 spec 수용기준 목록과 마커·YAML을 대조하여 미매핑 0건 확인. 구현: scripts/gen_traceability.py (Wave 0 산출물 0.… | **미매핑** | — |
 | `NFR-201` | Must-have | 1 | `NFR-201-M1` | 신규 자원 추가 PR에서 core/engine/, core/cba/ diff 0줄 | **미매핑** | — |
-| `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | 자동 | test_ci_gates.py, test_der_contract.py |
+| `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | 자동 | test_ci_gates.py, test_assumption_provider.py, test_assumption_provider.py, test_der_contract.py, test_der_contract.py |
 | `NFR-203` | Should-have | 1 | `NFR-203-M1` | pytest-cov CI 게이트 | 자동 | test_ci_gates.py |
 | `NFR-204` | Should-have | 1 | `NFR-204-M1` | mypy strict 통과 | 자동 | test_ci_gates.py |
 | `NFR-205` | Must-have | 1 | `NFR-205-M1` | 코드 리뷰 + lint 규칙. 근거: DER-VET Params.py의 클래스 변수 전역 상태는 동시 실행·테스트 격리를 불가능하게 만든다 (부록 C.5) | 자동 | test_ci_gates.py, test_ci_gates.py, test_ess.py |
@@ -322,7 +322,7 @@
 |  |  | 1 | `NFR-207-M1` | 신규 자원 추가 PR의 diff에 §16.4 공유 파일 목록의 변경 0줄 | 자동 | test_registry.py, test_registry.py, test_registry.py |
 | `NFR-208` | Must-have | 1 | `NFR-208-AC1` | 상위 계층은 하위 계층을 import할 수 있으나 역방향 import는 금지한다 (예: core/der/ → core/engine/ 금지) | 자동 | test_import_boundaries.py |
 |  |  | 1 | `NFR-208-AC2` | 동일 계층의 형제 구획 간 직접 import를 금지한다 (예: core/valuestream/ → core/regulation/ 직접 참조 금지, core/co… | 자동 | test_import_boundaries.py |
-|  |  | 1 | `NFR-208-AC3` | core/contracts/는 어떤 구획도 import하지 않는 순수 인터페이스·타입·단위 정의만 포함한다 | 자동 | test_import_boundaries.py |
+|  |  | 1 | `NFR-208-AC3` | core/contracts/는 어떤 구획도 import하지 않는 순수 인터페이스·타입·단위 정의만 포함한다 | 자동 | test_import_boundaries.py, test_assumption_provider.py |
 |  |  | 1 | `NFR-208-M1` | import-linter 계약(layers + independence)을 CI에서 강제. 위반 0건 | 자동 | test_import_boundaries.py, test_import_boundaries.py |
 | `NFR-301` | Should-have | 1 | `NFR-301-M1` | 사용자 5명 태스크 수행 테스트 | 수동 | MC-2 (미수행) |
 | `NFR-302` | Should-have | 1 | `NFR-302-M1` | UI 검수 체크리스트 | 수동 | MC-3 (미수행) |

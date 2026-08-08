@@ -8,6 +8,12 @@ venv/
 .mypy_cache/
 .coverage
 htmlcov/
+# 구획 병렬 작업 산출물 — 여러 구획이 동시에 검사를 돌리면 캐시·커버리지
+# 파일이 서로를 덮어쓴다. 구획별로 갈라 쓰되 저장소에는 남기지 않는다.
+# (`.coverage` 한 줄로는 `.coverage.assumption` 이 잡히지 않는다 —
+#  gitignore 의 `.coverage` 는 접미사가 붙은 이름과 다른 파일이다)
+.coverage.*
+.mypy_cache_*/
 .pytest_cache/
 coverage.xml
 diff-cover.md
@@ -35,3 +41,15 @@ data/private/
 *.sqlite3
 out/
 runs/
+
+# 에이전트 도구가 작업 디렉터리에 남기는 세션 상태
+#
+# 병렬 구획 작업을 여러 CLI 에이전트로 돌리면 각자 세션 파일을 만든다.
+# 이것들은 **로컬 절대 경로와 대화 내용을 담을 수 있으므로** 공개 저장소에
+# 들어오면 안 된다 (SC-3 · SC-8). `check_disclosure.py` 가 추적 대상만
+# 보므로, 추적되지 않게 하는 것이 첫 번째 방어선이다.
+.omo/
+.opencode/
+.codex/
+.agy/
+.claude/settings.local.json

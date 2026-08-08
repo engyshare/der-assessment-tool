@@ -22,6 +22,19 @@
                         `mode` / `operating_mode` 로 이름이 갈렸다 → 이름 고정
     ⑤ 물가상승률        `inflation_pct`(%) / `inflation_rate`(소수) / `om_escalation`
                         → `escalation_rate` **소수** 하나. 척도가 갈리면 100배 틀린다
+
+**v1.2 개정 (계약 개정 2차) — Wave 1 착수 전에 답해야 하는 두 건.**
+v1.1 이 «이미 갈린 것» 을 모았다면 이 판은 «갈리기 직전의 것» 을 막는다.
+두 건 모두 `status.md` 「미해결」이 *착수 전 판단*으로 남겨 둔 항목이다.
+
+    ⑥ 요금·연료 단가    자원 다섯이 `elec_price_won_per_kwh` 계열을 각자 들고
+                        있어 **요금제 개정이 자원 코드 수정**이 된다. 요금 구조는
+                        WP-3 소관이다 → `DispatchContext` 에 **가격 신호**로 싣는다.
+                        「요금」이 아니라 「신호」인 것이 요점이다
+    ⑦ 전제 대장 읽기    `tax.vat_rate` 가 대장에 있으나 **아무도 읽지 않는다.**
+                        `vat_rate=0.0` 은 「세율 0%」가 아니라 「주입되지 않음」이며
+                        둘은 프로포마에서 구별되지 않는다
+                        → `core.contracts.assumptions.AssumptionProvider` 신설
 """
 
 from __future__ import annotations
@@ -161,6 +174,40 @@ class DispatchContext:
     `year_fraction` 을 곱한다. 자원이 각자 `/365` 나 `/8760` 을 쓰면 15분
     해상도에서 4배 어긋나고, 그 어긋남은 부분 창에서만 나타나 골든 시나리오
     (8760 전체)로는 잡히지 않는다.
+
+    ── 가격 신호 규약 (v1.2에서 신설) ──────────────────────────────────
+
+    **여기 실리는 것은 「요금」이 아니라 「신호」다.** 누진 구간·계절시간대·
+    특례할인·기반기금의 해석은 WP-3(`core/regulation/`)이 하고, 그 결과인
+    **스텝별 단가 하나**만 엔진이 여기 실어 자원에 건넨다.
+
+        자원이 보는 것    「이 스텝의 전력 1 kWh 는 얼마인가」 → 언제 돌릴지
+        자원이 못 보는 것 「이 kWh 가 몇 단계 누진에 걸리는가」 → 얼마를 벌었는지
+
+    **왜 자원이 요금을 들면 안 되는가.** v1.1 시점에 다섯 자원이
+    `elec_price_won_per_kwh`·`price_profile_won_per_kwh`·
+    `avoided_price_won_per_kwh` 를 **각자 생성자 인자로 들고 있었다.**
+    요금 구조는 WP-3 소관이므로 그 상태에서는 **요금제 개정이 자원 코드
+    수정**이 되고, 자원 6종을 6명이 나눠 고치게 된다 — §16.1 W-1(파일 단위
+    배타 소유)이 막으려는 바로 그 형태다. `vat_rate` 에서 이미 같은 유형을
+    한 번 닫았고(08-08), **요금 단가는 그보다 크고 자주 바뀐다.**
+
+    **왜 `DispatchContext` 이고 별도 계약이 아닌가.** 이 클래스는 이미
+    *"엔진이 자원에게 건네는 유일한 통로"* 로 규정되어 있다. 통로를 하나 더
+    만들면 자원이 두 곳을 봐야 하고, 「어느 것이 정본인가」가 다시 생긴다.
+    외기온·계통 상한이 여기 실리는 것과 같은 이유이며, 가격도 **운전 결정의
+    입력**이라는 점에서 그 둘과 성질이 같다.
+
+    **편익 화폐화용 요금은 여기 싣지 않는다.** 자가소비 절감액(기존요금 −
+    신규요금)은 운전이 **끝난 뒤** WP-4(`core/valuestream/`)가 WP-3의 요금
+    엔진으로 계산한다. 그것까지 ctx 에 실으면 자원이 다시 편익을 계산하게
+    되고, `value_streams()` 가 tag 문자열만 돌려주도록 v1.1 에서 좁힌 것이
+    무의미해진다.
+
+    **None 은 「가격 신호 없음」이며 「0원」이 아니다.** 가격 연동 운전
+    방법을 쓰는 자원은 신호가 없으면 **멈춰야 한다** — 0원으로 읽으면
+    「항상 가장 싼 시각」이 되어 전 스텝이 동등해지고, 결과는 그럴듯하다.
+    `require_price_signal()` 이 그 판정을 한 곳에서 한다.
     """
 
     steps: int
@@ -170,6 +217,14 @@ class DispatchContext:
     ambient_temp_c: list[float] | None = field(default=None)
     #: 스텝별 계통 연계 용량 상한(kW). None이면 무제한
     grid_limit_kw: list[float] | None = field(default=None)
+    #: 스텝별 전력 가격 신호 (원/kWh). **요금이 아니라 신호다** — 위 규약 참조.
+    #: WP-3 이 요금 구조를 해석한 결과를 엔진이 싣는다. None = 신호 없음
+    price_signal_won_per_kwh: list[float] | None = field(default=None)
+    #: 스텝별 연료 가격 신호 (원/kWh, **열량 기준**). 도시가스·등유 등.
+    #: 열량 기준인 이유: 연료 종류마다 물량 단위(㎥·L)가 달라 자원이 환산을
+    #: 떠안게 되고, 환산 계수가 자원마다 갈리면 v1.1 의 `inflation_pct` 와
+    #: 같은 «어느 쪽도 오류가 아닌» 100배 오차가 생긴다
+    fuel_price_signal_won_per_kwh: list[float] | None = field(default=None)
 
     def __post_init__(self) -> None:
         if self.steps <= 0:
@@ -185,8 +240,12 @@ class DispatchContext:
             )
         object.__setattr__(self, "year", Year(int(self.year)))
 
-        for name, series in (("ambient_temp_c", self.ambient_temp_c),
-                             ("grid_limit_kw", self.grid_limit_kw)):
+        for name, series in (
+            ("ambient_temp_c", self.ambient_temp_c),
+            ("grid_limit_kw", self.grid_limit_kw),
+            ("price_signal_won_per_kwh", self.price_signal_won_per_kwh),
+            ("fuel_price_signal_won_per_kwh", self.fuel_price_signal_won_per_kwh),
+        ):
             if series is not None:
                 self.check_series(series, name=name)
 
@@ -213,6 +272,35 @@ class DispatchContext:
     def hours_per_step(self) -> float:
         """스텝 길이 (시간). kW → 스텝당 kWh 변환에 쓴다."""
         return self.dt / SECONDS_PER_HOUR
+
+    def require_price_signal(self, *, media: str = "electric") -> list[float]:
+        """가격 연동 운전에 쓸 신호를 꺼낸다. **없으면 멈춘다.**
+
+        `ctx.price_signal_won_per_kwh or [0.0] * ctx.steps` 같은 표현을
+        자원마다 쓰지 못하게 하는 것이 이 메서드의 목적이다. 0원으로 메우면
+        전 스텝의 단가가 같아져 **가격 연동이 「아무 때나」와 구별되지
+        않고**, 그 결과는 총량이 맞으므로 수지 균형(NFR-102)도 통과한다 —
+        v1.1 ①(부분 창 해석)에서 만난 «균형식이 볼 수 없는 오류» 와 같은
+        종류다.
+
+        멈추는 자리를 계약에 두는 이유는 v1.1 ⑤ 와 같다. 판단이 자원에
+        흩어지면 여섯 개의 서로 다른 답이 생기고 **어느 것도 오류가 아니다.**
+        """
+        series = (
+            self.price_signal_won_per_kwh
+            if media == "electric"
+            else self.fuel_price_signal_won_per_kwh
+        )
+        if series is None:
+            raise ValueError(
+                f"{media} 가격 신호가 없습니다. 가격 연동 운전 방법은 신호 "
+                "없이 성립하지 않습니다 — 0원으로 메우면 전 스텝 단가가 "
+                "같아져 「가장 싼 시각」이 사라지고, 그 결과는 총량이 맞아 "
+                "수지 균형 검사를 통과합니다. 요금 구조 해석은 "
+                "WP-3(core/regulation)이 하고 엔진이 그 결과를 ctx 에 "
+                "싣습니다 (계약 v1.2 가격 신호 규약)"
+            )
+        return series
 
     def check_series(self, series: Sized, *, name: str) -> None:
         """시계열 행수 불일치를 **명확한 오류로 중단**한다 (FR-301-AC3).

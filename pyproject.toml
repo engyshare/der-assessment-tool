@@ -9,6 +9,15 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# 구획별 그룹 (§16.4 — `pyproject.toml` 은 WP-15 단독 소유, append-only).
+# **구획이 직접 추가하지 않는다.** 여러 구획이 같은 파일을 동시에 편집하면
+# 그 순간 §16.1 W-1(파일 단위 배타 소유)이 선언만 남는다. 의존성이 필요하면
+# 요청하고, WP-15 가 여기에 append 한다.
+persistence = [          # WP-13 (작업 3.0)
+    "SQLAlchemy>=2.0",
+    "alembic>=1.13",
+    "pyarrow>=16.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
