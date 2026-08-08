@@ -55,7 +55,10 @@ def _run(root: Path) -> tuple[int, str]:
 CASES: list[tuple[str, dict[str, str], bool, str]] = [
     (
         "음성1 윈도우 로컬 경로",
-        {"notes.md": 'python x.py --vault "D:\\Obsidian\\Vault"\n'},
+        # 픽스처 경로도 **실제 폴더 이름을 쓰지 않는다.** 이 파일은 검사
+        # 대상에서 면제되어 있어(`SELF_EXEMPT`) 자기 자신에는 걸리지 않지만,
+        # 면제는 «검사에 안 걸린다» 는 뜻이지 «공개해도 된다» 는 뜻이 아니다.
+        {"notes.md": 'python x.py --vault "D:\\Obsidian\\MyVault"\n'},
         True, "로컬 절대 경로",
     ),
     (
