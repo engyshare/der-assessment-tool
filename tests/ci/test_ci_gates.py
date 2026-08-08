@@ -414,6 +414,36 @@ def test_ci_validates_coverage_inputs_before_judging_them() -> None:
         )
 
 
+@pytest.mark.req("NFR-204-M1")
+def test_ci_runs_mypy_strict() -> None:
+    """mypy strict 가 CI 에서 강제된다 (작업 2.4).
+
+    `pyproject.toml` 의 `strict = true` 는 08-08 이전부터 있었지만 **아무도
+    돌리지 않아 5건이 쌓여 있었다.** 설정 파일에 규칙이 적혀 있다는 것과 그
+    규칙이 강제된다는 것은 다르다 — CODEOWNERS(없는 팀명은 조용히 무시)와
+    import-linter(CI 에 없었다)에서 이미 두 번 만난 간극이다.
+
+    `strict` 설정 자체도 함께 본다. CI 가 `mypy` 를 부르더라도 설정이 느슨해지면
+    같은 명령이 아무것도 잡지 않는다.
+    """
+    import tomllib
+
+    spec = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    commands = "\n".join(
+        step["run"]
+        for job in spec["jobs"].values()
+        for step in job.get("steps", [])
+        if isinstance(step.get("run"), str)
+    )
+    assert "mypy" in commands, "CI 가 mypy 를 부르지 않습니다 (NFR-204-M1 / 작업 2.4)"
+
+    config = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert config["tool"]["mypy"]["strict"] is True, (
+        "mypy 가 strict 가 아닙니다 — NFR-204-M1 의 문면은 `mypy strict 통과` 이며, "
+        "느슨하게 바꾸는 것은 spec 개정입니다 (§16.5)"
+    )
+
+
 @pytest.mark.req("NFR-203-M1")
 def test_ci_enforces_the_total_coverage_floor() -> None:
     """전체 커버리지 하한 85% (작업 2.10).

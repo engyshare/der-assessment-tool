@@ -12,7 +12,7 @@
 | 요구사항 | 97 |
 | 그중 Must-have | 71 |
 | 수용기준 총계 | 299 |
-| 자동 검증 매핑 | 45 |
+| 자동 검증 매핑 | 46 |
 | 수동 검증 매핑 | 8 |
 | **Must-have 미매핑** | **217** |
 | 우선순위 미지정 요구사항 | 0 |
@@ -52,7 +52,7 @@
 | `FR-102` | Must-have | 1 | `FR-102-AC1.PV` | PV 태양광 (옥상/벽면 BIPV 구분) — 용량(kW), 이용률(%) 또는 8760 발전 시계열, 방위·경사, 연간 열화율, 인버터 수명 | 자동 | test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py |
 |  |  | 1 | `FR-102-AC1.ESS` | ESS 배터리 (신품/사용후배터리) — 정격용량(kWh), 정격출력(kW), RTE(%), SOC 상하한, 사이클수명, 달력수명, EOL 잔존율 | 자동 | test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py |
 |  |  | 1 | `FR-102-AC1.EV_V2G` | EV_V2G 전기차 + 양방향 충전기 — 대수, 배터리(kWh), 최대 충방전(kW), 접속가능시간대, 참여율, 열화 보상단가 | 자동 | test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py |
-|  |  | 1 | `FR-102-AC1.HeatPump` | HeatPump 히트펌프 (난방/급탕) — 정격 열출력(kW), COP 곡선(외기온 함수), 열부하 대응 방식 | 자동 | test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py |
+|  |  | 1 | `FR-102-AC1.HeatPump` | HeatPump 히트펌프 (난방/급탕) — 정격 열출력(kW), COP 곡선(외기온 함수), 열부하 대응 방식 | 자동 | test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py |
 |  |  | 1 | `FR-102-AC1.Load` | Load 전기부하 (가구/공용부/상업) — 8760 부하 시계열 또는 월사용량+표준 프로파일, 연간 증가율 | 자동 | test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py |
 |  |  | 1 | `FR-102-AC1.ThermalLoad` | ThermalLoad 열부하 (난방·급탕) — 8760 열부하 시계열 또는 난방도일 기반 추정 | 자동 | test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py |
 |  |  | 2 | `FR-102-AC1.VPP` | VPP 통합발전소 (자원 집합 + 시장참여) — 집합 자원 ID 목록, 운영수수료(%), 시장참여 유형 | **미매핑** | — |
@@ -61,7 +61,7 @@
 | `FR-103` | Must-have | 1 | `FR-103-AC1` | 한 시나리오 내에 PV#1(햇빛소득마을 조건), PV#2(자가용 조건)이 동시 존재 | **미매핑** | — |
 |  |  | 1 | `FR-103-AC2` | 각 인스턴스는 독립적인 IncentiveScheme 참조를 가진다 (FR-604) | **미매핑** | — |
 |  |  | 1 | `FR-103-AC3` | 두 인스턴스의 현금흐름이 프로포마에서 분리된 행으로 표시된다 | **미매핑** | — |
-| `FR-104` | Must-have | 1 | `FR-104-AC1` | PV: 연 degradation_rate(%/년) 발전량 감소 | 자동 | test_ev_v2g.py, test_heatpump.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py |
+| `FR-104` | Must-have | 1 | `FR-104-AC1` | PV: 연 degradation_rate(%/년) 발전량 감소 | 자동 | test_ev_v2g.py, test_heatpump.py, test_heatpump.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py |
 |  |  | 1 | `FR-104-AC2` | ESS: 사이클 누적 + 달력 열화 중 보수적 값 적용, EOL(기본 80%) 도달 시 교체비 계상 | 자동 | test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ev_v2g.py, test_ev_v2g.py, test_pv.py, test_pv.py |
 |  |  | 1 | `FR-104-AC3` | 수명 도달 자원은 replace / retire 선택 가능 | 자동 | test_ev_v2g.py, test_load.py, test_load.py, test_pv.py, test_pv.py, test_pv.py, test_thermal_load.py |
 |  |  | 1 | `FR-104-AC4` | 인버터 등 부속설비의 독립 수명(10~12년)을 본체와 분리 관리 | 자동 | test_smoke_wave0.py, test_ess.py, test_ev_v2g.py, test_heatpump.py, test_heatpump.py, test_load.py, test_pv.py, test_pv.py, test_pv.py, test_thermal_load.py |
@@ -314,7 +314,7 @@
 | `NFR-201` | Must-have | 1 | `NFR-201-M1` | 신규 자원 추가 PR에서 core/engine/, core/cba/ diff 0줄 | **미매핑** | — |
 | `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | **미매핑** | — |
 | `NFR-203` | Should-have | 1 | `NFR-203-M1` | pytest-cov CI 게이트 | 자동 | test_ci_gates.py |
-| `NFR-204` | Should-have | 1 | `NFR-204-M1` | mypy strict 통과 | **미매핑** | — |
+| `NFR-204` | Should-have | 1 | `NFR-204-M1` | mypy strict 통과 | 자동 | test_ci_gates.py |
 | `NFR-205` | Must-have | 1 | `NFR-205-M1` | 코드 리뷰 + lint 규칙. 근거: DER-VET Params.py의 클래스 변수 전역 상태는 동시 실행·테스트 격리를 불가능하게 만든다 (부록 C.5) | **미매핑** | — |
 | `NFR-206` | Should-have | 1 | `NFR-206-M1` | lint 경고. 근거: DER-VET Params.py 1,830줄의 유지보수 실패 사례 | **미매핑** | — |
 | `NFR-207` | Must-have | 1 | `NFR-207-AC1` | 등록은 패키지 디렉터리 스캔 또는 데코레이터 자동 수집으로 수행한다. 신규 자원 추가 시 core/der/__init__.py, REGISTRY = [...] … | 자동 | test_registry.py, test_registry.py, test_registry.py, test_registry.py, test_registry.py |

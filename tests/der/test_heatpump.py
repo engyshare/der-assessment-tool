@@ -22,6 +22,7 @@ from core.contracts.units import (
     HOURS_PER_YEAR,
     SECONDS_PER_HOUR,
     Money,
+    Year,
     steps_per_year,
     to_won,
     won_sum,
@@ -536,3 +537,45 @@ def test_rejects_context_with_different_resolution() -> None:
     hp = make_hp()
     with pytest.raises(ValueError, match="해상도"):
         hp.dispatch(DispatchContext(steps=96, dt=SECONDS_PER_HOUR // 4, year=1))
+
+
+@pytest.mark.req("FR-102-AC1.HeatPump")
+def test_rejects_bool_heat_load() -> None:
+    """열부하 자리의 `bool` 은 **오류다** — 조용히 0·1 kWh 가 되지 않는다.
+
+    `bool` 은 `int` 의 하위 클래스라 스칼라 분기로 들어오면 «연간 열부하
+    1 kWh» 가 되고, 그 값은 그럴듯하다. 프로파일 분기로 가면 *"'bool' object
+    is not iterable"* 이라는 무관해 보이는 메시지가 뜬다. 어느 쪽도 «열부하
+    자리에 플래그가 들어왔다» 를 말해 주지 않는다.
+
+    `to_won()` 이 금액 자리의 `bool` 을 거부하는 것과 같은 판단이다.
+    """
+    with pytest.raises(TypeError, match="bool"):
+        make_hp(heat_load_kwh=True)
+    with pytest.raises(TypeError, match="bool"):
+        make_hp(heat_load_kwh=False)
+
+
+@pytest.mark.req("FR-104-AC1")
+def test_annual_operation_enforces_one_based_year() -> None:
+    """`annual_operation()` 의 연도는 **1-base 규약을 통과한다** (`Year`).
+
+    0을 넘기면 그 자리에서 멈춰야 한다. 통과시키면 20년 분석이 19년이 되거나
+    잔존가치가 한 해 밀리며, **두 오류 모두 결과가 그럴듯해 눈으로는 잡히지
+    않는다** — `Year` 가 존재하는 이유 그대로다.
+
+    캐시 키가 `Year` 로 바뀌어도 정수 조회가 그대로 동작하는 것도 함께
+    고정한다(`Year(1) == 1`). 깨지면 연도마다 운전을 다시 풀게 되고, 그 손실은
+    느려지는 것으로만 나타나 원인을 찾기 어렵다.
+    """
+    hp = make_hp()
+    with pytest.raises(ValueError, match="1부터"):
+        hp.annual_operation(0)
+    with pytest.raises(ValueError, match="1부터"):
+        hp.annual_operation(-1)
+
+    first = hp.annual_operation(1)
+    assert hp.annual_operation(Year(1)) is first, (
+        "Year 로 조회했더니 다른 객체가 나왔습니다 — 캐시 키가 int 와 Year 를 "
+        "다른 것으로 보고 있습니다"
+    )

@@ -103,6 +103,16 @@ def test_item_sum_equals_total_over_20_years() -> None:
         "내는 데이터를 골랐습니다. 원 미만이 남는 값으로 바꾸십시오"
     )
 
+    # `won_sum` 은 임의의 iterable 을 받는다(`Iterable[float|int|Decimal]`).
+    # 시퀀스로 좁히면 제너레이터를 넘기는 호출부가 리스트를 먼저 만들게 되고,
+    # 20년 × 자원 N 의 중간 리스트는 이유 없는 비용이다.
+    assert won_sum(v for v in yearly_float) == total
+    assert won_sum([Decimal("1.5"), Decimal("2.5")]) == to_won(2) + to_won(3), (
+        "Decimal 항이 사사오입되지 않았습니다 — 은행가 반올림이면 1.5→2, "
+        "2.5→2 가 되어 합계가 1원 어긋납니다"
+    )
+    assert won_sum([]) == 0, "빈 합계는 0원이며 오류가 아닙니다"
+
 
 @pytest.mark.req("NFR-103-M1")
 def test_cashflow_row_rejects_sub_won_amounts() -> None:

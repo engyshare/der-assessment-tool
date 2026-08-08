@@ -29,6 +29,7 @@ from core.contracts.units import (
     ENERGY_TOLERANCE_KWH,
     SECONDS_PER_HOUR,
     Money,
+    Year,
     steps_per_year,
     to_won,
     won_sum,
@@ -258,7 +259,16 @@ class HeatPump(DER):
         """열부하를 (스텝별 프로파일, 연간 총량)으로 정규화한다. 스칼라는 연간
         총량이라 **균등 배분**하고, 프로파일은 1년치로 보아 그대로 쓴다.
         """
-        if isinstance(heat_load_kwh, (int, float)) and not isinstance(heat_load_kwh, bool):
+        # `bool` 을 **먼저** 거른다. `bool` 은 `int` 의 하위 클래스라 스칼라
+        # 분기로 들어오면 조용히 0·1 kWh 가 되고, 아래 프로파일 분기로 가면
+        # *"'bool' object is not iterable"* 이라는 무관해 보이는 메시지가 뜬다.
+        # `to_won()` 이 금액 자리의 `bool` 을 거부하는 것과 같은 이유다.
+        if isinstance(heat_load_kwh, bool):
+            raise TypeError(
+                f"{self.name}: 열부하 자리에 bool 이 들어왔습니다. "
+                "연간 총량(스칼라) 또는 스텝별 프로파일이어야 합니다"
+            )
+        if isinstance(heat_load_kwh, (int, float)):
             if heat_load_kwh < 0.0:
                 raise ValueError(f"{self.name}: 연간 열부하가 음수입니다: {heat_load_kwh}")
             return None, float(heat_load_kwh)
@@ -439,8 +449,15 @@ class HeatPump(DER):
         return allowed
 
     def annual_operation(self, year: int = 1) -> HeatPumpOperation:
-        """비용·편익 산정용 1년치 운전. 연도별로 한 번만 풀고 재사용한다."""
-        key = int(year)
+        """비용·편익 산정용 1년치 운전. 연도별로 한 번만 풀고 재사용한다.
+
+        `int(year)` 가 아니라 `Year(year)` 로 만든다. `DispatchContext` 가
+        `__post_init__` 에서 다시 `Year` 로 감싸므로 **동작은 전과 같지만**,
+        1-base 규약을 지닌 타입을 벗겨 낸 뒤 넘기면 그 규약이 계약 경계에서만
+        살아 있고 여기서는 사라진 것처럼 보인다. `Year` 는 `int` 의 하위
+        클래스라 캐시 키로도 그대로 쓰인다 (`Year(1) == 1`).
+        """
+        key = Year(year)
         if key not in self._annual_ops:
             ambient = self.annual_ambient_temp_c
             ctx = DispatchContext(steps=steps_per_year(self.dt), dt=self.dt, year=key,

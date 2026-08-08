@@ -468,6 +468,12 @@ def test_dispatch_result_carries_unmet_series_per_media() -> None:
         DispatchResult(electric=[0.0], heat=[0.0], cool=[0.0], fuel=[0.0],
                        unmet_heat=[0.0, 0.0])
 
+    # `unmet()` 은 이름을 조립해 `getattr` 로 꺼낸다. 없는 매체를 물으면
+    # **오류여야 한다** — 0으로 답하면 오타 하나가 「미충족 없음」이 되고,
+    # 그 결과는 열이 다 공급된 것과 구별되지 않는다.
+    with pytest.raises(AttributeError):
+        result.unmet("얼음")
+
 
 @pytest.mark.contract
 @pytest.mark.req("FR-301-AC3")
@@ -482,6 +488,14 @@ def test_dispatch_context_rejects_step_mismatch() -> None:
     ctx = DispatchContext(steps=24, dt=3600, year=1)
     with pytest.raises(ValueError, match="스텝"):
         ctx.check_series(list(range(23)), name="발전량")
+
+    # 이 검사가 요구하는 것은 `len()` 뿐이다(`Sized`). 계열 표현을 `list` 로
+    # 좁히면 자원 구현에 «검사를 통과시키기 위한» 변환을 강요하게 되고, 그런
+    # 변환은 스텝 수가 맞는지와 무관하게 조용히 사본을 만든다.
+    from array import array
+
+    ctx.check_series(array("d", [0.0] * 24), name="배열 계열")
+    ctx.check_series(tuple(range(24)), name="튜플 계열")
 
 
 @pytest.mark.contract

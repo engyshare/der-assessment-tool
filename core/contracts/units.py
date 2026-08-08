@@ -22,6 +22,7 @@ pandas/numpy는 Decimal을 실질적으로 지원하지 않는다. 그래서 계
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Final
 
@@ -81,7 +82,7 @@ def to_won(value: float | int | Decimal) -> Money:
     return Money(d.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
-def won_sum(values) -> Money:
+def won_sum(values: Iterable[float | int | Decimal]) -> Money:
     """원 단위 합계. **각 항을 반올림한 뒤 더한다.**
 
     합계를 먼저 내고 마지막에 반올림하면 항목별 합계와 총계가 어긋난다 —

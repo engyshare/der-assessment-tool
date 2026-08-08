@@ -55,6 +55,17 @@ jobs:
       - name: ruff
         run: python -m ruff check core tests scripts
 
+      # NFR-204-M1 (작업 2.4). `strict = true` 는 08-08 이전부터
+      # `pyproject.toml` 에 있었지만 **아무도 돌리지 않아 5건이 쌓여 있었다** —
+      # 설정 파일에 규칙이 적혀 있다는 것과 그 규칙이 강제된다는 것은 다르다.
+      # 이 저장소가 CODEOWNERS·import-linter 에서 이미 두 번 만난 간극이다.
+      #
+      # 대상은 `core` 다(`[tool.mypy] files`). 테스트·도구까지 strict 로 묶으면
+      # 임시 스텁과 음성 케이스가 타입 오류가 되고, 통과시키려고 검사 대상을
+      # 무르게 만드는 압력이 생긴다.
+      - name: mypy strict (NFR-204)
+        run: python -m mypy
+
       - name: import-linter — 구획 경계 4계약 (NFR-208)
         # `python -m importlinter.cli lint` 로 부르지 **않는다.** 그 모듈에는
         # `__main__` 가드가 없어 import만 되고 끝나며 **종료 코드 0**을 낸다 —

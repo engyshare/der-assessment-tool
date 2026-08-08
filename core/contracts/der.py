@@ -27,8 +27,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sized
 from dataclasses import dataclass, field
-from typing import ClassVar
+from typing import ClassVar, cast
 
 from core.contracts.units import (
     SECONDS_PER_HOUR,
@@ -121,8 +122,14 @@ class DispatchResult:
         object.__setattr__(self, "notes", tuple(self.notes))
 
     def unmet(self, media: str) -> list[float]:
-        """매체별 미충족 계열. 이름 조립을 호출부마다 되풀이하지 않는다."""
-        return getattr(self, f"unmet_{media}")
+        """매체별 미충족 계열. 이름 조립을 호출부마다 되풀이하지 않는다.
+
+        `getattr` 은 `Any` 를 돌려주므로 `cast` 로 계약을 다시 못 박는다.
+        `__post_init__` 이 네 계열을 `list[float]` 로 채운 뒤이므로 이 단언은
+        런타임 상태와 일치한다 — **cast 가 검사를 끄는 것이 아니라, 검사가 볼
+        수 없는 곳을 사람이 보증한 지점을 표시하는 것**이다.
+        """
+        return cast(list[float], getattr(self, f"unmet_{media}"))
 
     def total_unmet(self) -> float:
         """전 매체 미충족 합계 (kWh). 0이 아니면 그 결과는 수요를 못 채웠다."""
@@ -207,8 +214,13 @@ class DispatchContext:
         """스텝 길이 (시간). kW → 스텝당 kWh 변환에 쓴다."""
         return self.dt / SECONDS_PER_HOUR
 
-    def check_series(self, series, *, name: str) -> None:
+    def check_series(self, series: Sized, *, name: str) -> None:
         """시계열 행수 불일치를 **명확한 오류로 중단**한다 (FR-301-AC3).
+
+        `Sized` 를 받는 이유: 이 검사가 실제로 요구하는 것은 `len()` 뿐이다.
+        `Sequence[float]` 로 좁히면 `array`·`memoryview` 처럼 정당한 계열
+        표현이 타입 오류가 되고, 그것은 자원 구현에 «검사를 통과시키기 위한»
+        변환을 강요한다.
 
         조용히 자르거나 0으로 채우면 어느 해의 어느 시각이 어긋났는지 영영
         모른다. 8760행짜리 부하에 8759행 발전을 붙이면 마지막 한 시간이
