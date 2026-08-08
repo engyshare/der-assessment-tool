@@ -114,6 +114,28 @@ def m15(items):
 case("track 오타", m15, "track")
 
 
+# 16~19 — `fixed` 갈래 (08-08 신설). **대장에서 가장 강한 주장이므로 가장
+# 엄하게 본다** — 「정해져 있고 회신을 기다릴 것이 없다」는 뜻이라, 근거 없이
+# 이 갈래에 넣으면 가정이 사실로 굳는 가장 빠른 길이 된다.
+def m16(items):
+    find(items, "tax.vat_rate")["confidence"] = "가정"
+case("fixed 인데 신뢰도가 가정", m16, "fixed")
+
+def m17(items):
+    find(items, "tax.vat_rate")["sensitivity"] = {"low": 0.08, "base": 0.10, "high": 0.12}
+case("fixed 인데 민감도 3수준", m17, "fixed")
+
+def m18(items):
+    find(items, "tax.vat_rate")["value"] = None
+case("fixed 인데 값 없음", m18, "fixed")
+
+def m19(items):
+    it = find(items, "tax.vat_rate")
+    it["source"] = None
+    it["verified_at"] = None
+case("fixed 확정인데 근거 없음", m19, "source")
+
+
 fails = 0
 for name, mutate, expect in CASES:
     items = copy.deepcopy(base_items)

@@ -195,7 +195,15 @@ class HeatPump(DER):
         default_ambient_temp_c: float = 7.0,
         # ── 재무 (§13.2.2 RC-ALL-C1~C5) ──
         elec_price_won_per_kwh: float = 0.0,
-        capex_unit_won_per_kw: float = 0.0, capex_extra_won: float = 0.0, vat_rate: float = 0.1,
+        # `vat_rate` 기본값은 **0.0 이며 「세율 0%」가 아니라 「주입되지 않음」**
+        # 이다. 법정 세율 10%는 `docs/assumptions.yaml` 의 `tax.vat_rate` 가
+        # 정본이고, 자원은 그것을 소유하지 않는다 (NFR-202).
+        #
+        # v1.1 계약 개정 직후 이 자리만 `0.1` 이었고 나머지 일곱(자원 6종 +
+        # 공통설비)은 `0.0` 이었다. **같은 프로포마에서 히트펌프만 세액이 잡히고
+        # 나머지는 0원이 되는데 어느 쪽도 오류가 아니었다** — v1.1이 메운
+        # 「`capex_vat()` 가 없다」와 같은 구조가 기본값에 남아 있었던 것이다.
+        capex_unit_won_per_kw: float = 0.0, capex_extra_won: float = 0.0, vat_rate: float = 0.0,
         fixed_om_won: float = 0.0, escalation_rate: float = 0.0,
         variable_om_won_per_kwh: float = 0.0,
         replacement_cost_won: float | None = None,

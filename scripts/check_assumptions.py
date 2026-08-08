@@ -76,7 +76,22 @@ ANNOTATION_FIELDS = [
 # 같은 토큰을 두 축에 쓰면 어느 뜻인지 판정할 수 없다 (spec v0.5 어휘 정정).
 CONFIDENCE = {"확정", "추정", "가정"}
 
-TRACKS = {"assume", "default0", "blocked"}
+#: 갈래 4종.
+#:
+#:   assume    가정 진행 — 값 + 민감도 3수준. 회신이 오면 바뀐다
+#:   default0  기본 비활성 — 제도 미확인이므로 크기를 추정하지 않고 값 0
+#:   blocked   가정 불가 — 검증 정박점이라 가정하면 자기충족이 된다
+#:   fixed     확정 — 법령·고시로 이미 정해져 있어 회신을 기다릴 것이 없다
+#:
+#: **`fixed` 를 뒤늦게 더한 이유.** 08-08 에 NFR-202 검사가 `core/der/
+#: heatpump.py` 의 `vat_rate=0.1`(부가세율)을 찾았는데, **대장에 올릴 자리가
+#: 없었다.** 잠정 가정이 아니라 법정 세율이므로 `assume`(민감도 3수준 필수)도
+#: `default0`(값 0)도 `blocked`(값 없음)도 맞지 않는다.
+#:
+#: 자리가 없으면 값은 소스에 남는다 — **계약에 자리가 없으면 만들지 않는
+#: 쪽이 더 흔하다**(v1.1 계약 개정에서 ESS 가 `capex_vat()` 를 아예 만들지
+#: 않아 세액이 사라졌던 것과 같은 구조다). 그래서 갈래를 늘렸다.
+TRACKS = {"assume", "default0", "blocked", "fixed"}
 
 # spec §15.1 표에서 Q 번호를 뽑는다. 표 첫 칸에만 있으므로 행 머리로 한정한다 —
 # 본문 서술의 언급까지 세면 폐기된 Q가 살아 있는 것으로 잡힌다.
@@ -219,6 +234,23 @@ def check(items: list, spec_qs: set[str]) -> list[str]:
         elif track == "default0" and item.get("value") != 0:
             bad(item, f"track: default0 인데 `value`가 0이 아닙니다: {item.get('value')!r} — "
                       "제도 미확인 항목의 크기를 추정하면 없는 제도 위에 편익을 쌓게 됩니다")
+        elif track == "fixed":
+            # **`fixed` 는 대장에서 가장 강한 주장이다.** 「이 값은 정해져 있고
+            # 회신을 기다릴 것이 없다」는 뜻이므로, 근거 없이 이 갈래에 넣으면
+            # 가정이 사실로 굳는 가장 빠른 길이 된다 — 이 대장의 존재 이유가
+            # 그것을 막는 것이다.
+            if item.get("value") is None:
+                bad(item, "track: fixed 인데 `value`가 없습니다 — "
+                          "정해져 있다면서 값을 적지 않으면 무엇이 정해졌는지 알 수 없습니다")
+            if conf not in ("확정", "추정"):
+                bad(item, f"track: fixed 인데 `confidence`가 {conf!r} 입니다 — "
+                          "법령·고시로 정해진 값이라는 주장이므로 `확정`(또는 근거를 "
+                          "열어 본 `추정`)이어야 합니다. `가정`이면 갈래가 `assume` 입니다")
+            if item.get("sensitivity") is not None:
+                bad(item, "track: fixed 인데 `sensitivity`가 있습니다 — "
+                          "정해진 값에 민감도 3수준을 주면 «정해졌다»는 주장과 "
+                          "«범위가 있다»는 주장이 한 항목에 공존합니다. 제도가 바뀔 "
+                          "수 있다면 그것은 `replace_when` 에 적을 일입니다")
 
     # ── 7. Q 목록 대조 ───────────────────────────────────────────────
     ledger_qs = {i.get("q_ref") for i in items if isinstance(i, dict) and i.get("q_ref")}
@@ -238,7 +270,8 @@ def summarize(items: list) -> None:
     print(f"· 등재 {len(items)}건 — "
           f"가정 진행 {len(by_track['assume'])} / "
           f"기본 비활성 {len(by_track['default0'])} / "
-          f"가정 불가 {len(by_track['blocked'])}")
+          f"가정 불가 {len(by_track['blocked'])} / "
+          f"확정 {len(by_track['fixed'])}")
 
     conf_counts: dict[str, int] = {}
     for i in items:

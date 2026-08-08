@@ -549,3 +549,50 @@ def test_year_is_one_based() -> None:
         Year(0)
     assert int(Year(1)) == 1
     assert Money(Decimal("0")) == 0
+
+
+# ── 정책 파라미터를 자원이 소유하지 않는다 (NFR-202) ────────────────
+
+@pytest.mark.contract
+@pytest.mark.req("NFR-202-M1")
+def test_all_implementations_share_the_same_vat_default() -> None:
+    """자원·공통설비 전건이 `vat_rate` 기본값을 **똑같이** 갖는다.
+
+    **이것이 v1.1 이 메우지 못하고 남긴 구멍이다.** 계약 개정은 「`capex_vat()`
+    가 없다」는 문제를 닫았지만 **기본값의 갈림은 그대로 남았다** — 여덟 중
+    일곱이 `0.0`, 히트펌프만 `0.1` 이었다. 같은 프로포마에서 히트펌프만 세액이
+    잡히고 나머지 열은 0원이 되는데 **어느 쪽도 오류가 아니다.** 물가상승률이
+    `2.0`(%)과 `0.02`(소수)로 갈렸던 것과 정확히 같은 유형이며, 그때와 마찬가지로
+    자원별 테스트는 각자 자기 기본값으로 오라클을 맞춰 두어 **전부 초록불**이었다.
+
+    **기본값이 `0.0` 인 것은 「세율 0%」가 아니라 「주입되지 않음」이다.** 법정
+    세율의 정본은 `docs/assumptions.yaml` 의 `tax.vat_rate` 이고, 자원이 그것을
+    들면 세율 개정이 자원 코드 수정이 된다 (NFR-202).
+
+    레지스트리를 순회하는 이유: 손으로 목록을 적으면 자원을 추가할 때 반드시
+    빠지고, 빠진 자원은 검사받지 않은 채 초록불로 남는다 (NFR-106 과 같은 이유).
+    """
+    import core.asset
+    import core.der
+    from core.contracts.asset import CommonAsset
+    from core.contracts.registry import discover
+
+    registry = {**discover(core.der, DER), **discover(core.asset, CommonAsset)}
+    assert registry, "레지스트리가 비었습니다 — 순회 검사가 성립하지 않습니다"
+
+    defaults: dict[str, object] = {}
+    for tag, cls in registry.items():
+        params = inspect.signature(cls.__init__).parameters
+        assert "vat_rate" in params, (
+            f"{tag} 이 `vat_rate` 를 받지 않습니다 — §13.2.2 C-1 은 부가세 분리를 "
+            "자원과 공통설비를 가리지 않고 요구합니다"
+        )
+        defaults[tag] = params["vat_rate"].default
+
+    distinct = set(defaults.values())
+    assert distinct == {0.0}, (
+        f"`vat_rate` 기본값이 자원마다 다릅니다: {defaults}. 정책 수치를 자원이 "
+        "기본값으로 들면 ⓐ 세율 개정이 자원 코드 수정이 되고(NFR-202) ⓑ 같은 "
+        "프로포마에서 자원에 따라 세액이 잡히거나 사라지는데 어느 쪽도 오류로 "
+        "보이지 않습니다. 정본은 docs/assumptions.yaml 의 tax.vat_rate 입니다"
+    )
