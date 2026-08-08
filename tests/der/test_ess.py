@@ -1,0 +1,504 @@
+"""ESS 자원 검증 케이스 — WP-1b / spec §13.2.3 `RC-ESS-*` + §13.2.2 `RC-ALL-C1~C5`.
+
+**이 파일은 구현보다 먼저 쓰였다** (NFR-105). 오라클은 전부 §13.2 표의 손계산
+(§13.0.2 순위 2)이며 **산식 원문**을 각 docstring 에 옮겨 적는다 (§13.2.1).
+허용 오차: 물리량 1e-9 / 에너지 수지 1e-6 kWh (NFR-102) / **금액은 원 단위 완전
+일치** — 오라클도 `to_won()` 과 같은 사사오입을 쓴다 (NFR-103).
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from core.contracts.der import DER, DispatchContext
+from core.contracts.units import ENERGY_TOLERANCE_KWH, Money, to_won, won_sum
+from core.der.ess import ESS, ESSOperatingMode
+from tests.contract.test_der_contract import DERContractTests
+
+
+def _p1_ess(**overrides) -> ESS:
+    """`RC-ESS-P1` 기준 제원. 팩토리로 두는 것은 §13.2.1 「단독성」때문이다 —
+    상수를 공유하면 한 케이스의 파라미터 변경이 다른 케이스의 오라클을 무너뜨린다."""
+    params = {
+        "name": "검증용ESS", "capacity_kwh": 10.0, "power_kw": 5.0, "rte_pct": 90.0,
+        "soc_min_pct": 10.0, "soc_max_pct": 90.0, "cycle_life": 6000,
+        "calendar_life": 20, "eol_soh_pct": 80.0, "cycles_per_year": 365.0,
+    }
+    params.update(overrides)
+    return ESS(**params)
+
+
+class TestESSContract(DERContractTests):
+    """`DER` 계약 전건을 상속으로 받는다 — 자원마다 손으로 쓰면 반드시 빠진다."""
+
+    def make(self) -> DER:
+        return _p1_ess(
+            capex_unit_won_per_kwh=500_000.0, capex_extra_won=1_000_000.0,
+            fixed_om_won_per_year=100_000.0, variable_om_won_per_kwh=3.0,
+            replacement_unit_won_per_kwh=400_000.0,
+        )
+
+
+# ── FR-102-AC1.ESS 자원 정의 ─────────────────────────────────────────
+@pytest.mark.req("FR-102-AC1.ESS")
+def test_tag_is_spec_literal_and_only_electric_is_carried() -> None:
+    """`tag` 는 spec 조항 ID `FR-102-AC1.ESS` 와 **같은 리터럴**이다.
+
+    슬러그화·소문자화하면 NFR-106 레지스트리 순회가 자원을 못 찾고도 초록불로
+    남는다. 매체는 전기만 참이다 — 거짓인 매체에 실린 값은 사라진다.
+    """
+    ess = _p1_ess()
+    assert ESS.tag == "ESS"
+    assert ess.carries_electric is True
+    assert (ess.carries_heat, ess.carries_cool, ess.consumes_fuel) == (False, False, False)
+
+
+@pytest.mark.req("FR-102-AC1.ESS")
+@pytest.mark.parametrize(
+    ("bad", "needle"),
+    [
+        ({"capacity_kwh": 0.0}, "정격용량"),
+        ({"power_kw": -1.0}, "정격출력"),
+        ({"rte_pct": 0.0}, "RTE"),
+        ({"soc_min_pct": 90.0, "soc_max_pct": 10.0}, "SOC"),
+        ({"cycle_life": 0}, "사이클수명"),
+        ({"calendar_life": 0}, "달력수명"),
+    ],
+)
+def test_invalid_parameters_are_rejected_with_cause(bad: dict, needle: str) -> None:
+    """음성 케이스 (§13.2.1 「양·음성 쌍」) — 원인이 메시지에 있어야 한다."""
+    with pytest.raises(ValueError, match=needle):
+        _p1_ess(**bad)
+
+
+# ── RC-ESS-P1 왕복효율·SOC 경계 ──────────────────────────────────────
+@pytest.mark.req("FR-102-AC1.ESS")
+def test_rc_ess_p1_roundtrip_efficiency_and_soc_window() -> None:
+    """`RC-ESS-P1` 산식 원문 (§13.2.3 ESS 표):
+
+        가용   = 정격 × (SOC상한 − SOC하한) = 10 × (0.9 − 0.1) = **8 kWh**
+        연 방전 = 8 × 365 = **2,920 kWh**
+        연 충전 = 2,920 / 0.9 = **3,244.4 kWh** (표기 소수 1자리)
+        연 손실 = 3,244.4 − 2,920 = **324.4 kWh**
+
+    **표의 3,244.4 는 표시용 반올림이다.** 내부 값 3,244.4444… 를 `RC-ESS-B1`
+    이 요구한다 — 그래서 반올림은 금액 경계에서만 일어난다.
+    """
+    ess = _p1_ess()
+    assert ess.usable_capacity_kwh(year=1) == pytest.approx(8.0, rel=1e-9)
+    assert ess.annual_discharge_kwh(year=1) == pytest.approx(2920.0, rel=1e-9)
+    assert round(ess.annual_charge_kwh(year=1), 1) == 3244.4
+    assert round(ess.annual_loss_kwh(year=1), 1) == 324.4
+    assert ess.annual_charge_kwh(year=1) == pytest.approx(2920.0 / 0.9, rel=1e-9)
+
+
+@pytest.mark.req("FR-102-AC1.ESS")
+def test_rc_ess_p1_dispatch_year_totals_match_analytic_values() -> None:
+    """8760 디스패치의 연 합계가 위 손계산과 일치한다.
+
+    부호 규약: **양수 = 방전, 음수 = 충전**. 뒤집으면 합산이 조용히 상쇄된다.
+    """
+    ess = _p1_ess()
+    result = ess.dispatch(DispatchContext(steps=8760, dt=3600, year=1))
+
+    assert sum(v for v in result.electric if v > 0) == pytest.approx(2920.0, rel=1e-9)
+    assert -sum(v for v in result.electric if v < 0) == pytest.approx(2920 / 0.9, rel=1e-9)
+    assert all(v == 0.0 for v in result.heat + result.cool + result.fuel)
+
+
+# ── RC-ESS-P2 수지 균형 ──────────────────────────────────────────────
+@pytest.mark.req("FR-301-AC2")
+def test_rc_ess_p2_energy_balance_holds_at_every_step() -> None:
+    """`RC-ESS-P2` — 오라클 §13.2.3 / 허용 오차 NFR-102(1e-6 kWh).
+
+    **표의 산식 `충전 = 방전/RTE + 손실` 은 그대로 성립할 수 없다** — P1 수치를
+    넣으면 3,244.4 = 3,244.4 + 324.4 가 되어 손실을 두 번 센다. 물리적으로 닫히고
+    P1 수치와도 맞는 항등식은 둘이다 (표 문구의 합산형은 재현하지 않는다):
+
+        충전 = 방전 / RTE   (3,244.444… = 2,920 / 0.9)
+        충전 = 방전 + 손실   (3,244.444… = 2,920 + 324.444…)
+
+    스텝별로는 SOC 가 창 안에 머물고 하루 주기가 닫히는지를 본다.
+    """
+    ess = _p1_ess()
+    series = ess.dispatch(DispatchContext(steps=8760, dt=3600, year=1)).electric
+    lo, hi = ess.soc_bounds_kwh(year=1)
+
+    soc = lo
+    for i, step in enumerate(series):
+        soc += (-step * ess.rte) if step < 0 else -step
+        assert lo - ENERGY_TOLERANCE_KWH <= soc <= hi + ENERGY_TOLERANCE_KWH
+        if (i + 1) % 24 == 0:  # 하루 충전 × RTE = 하루 방전 → SOC 가 하한으로 복귀
+            assert abs(soc - lo) < ENERGY_TOLERANCE_KWH
+
+    discharge = ess.annual_discharge_kwh(year=1)
+    charge = ess.annual_charge_kwh(year=1)
+    assert abs(charge - discharge / ess.rte) < ENERGY_TOLERANCE_KWH
+    assert abs(charge - (discharge + ess.annual_loss_kwh(year=1))) < ENERGY_TOLERANCE_KWH
+
+
+# ── RC-ESS-P3 열화 — 사이클/달력 중 보수적 값 ────────────────────────
+@pytest.mark.req("FR-104-AC2")
+def test_rc_ess_p3_cycle_degradation_dominates() -> None:
+    """`RC-ESS-P3` 사이클 지배 — FR-104-AC2 「보수적 값」. 산식 원문:
+
+        SOH_사이클(y) = SOH0 − (SOH0 − EOL) × 누적사이클 / 사이클수명
+        SOH_달력(y)   = SOH0 − (SOH0 − EOL) × y / 달력수명
+        SOH(y) = min(둘) ← **더 나쁜 쪽**
+        사이클 1,000회 · 연 365 · 달력 20년, 3년차 → 0.781(채택) vs 달력 0.970
+    """
+    ess = _p1_ess(cycle_life=1000, calendar_life=20)
+    assert ess.soh_cycle(year=3) == pytest.approx(0.781, rel=1e-9)
+    assert ess.soh_calendar(year=3) == pytest.approx(0.970, rel=1e-9)
+    assert ess.state_of_health(year=3) == pytest.approx(0.781, rel=1e-9)
+
+
+@pytest.mark.req("FR-104-AC2")
+def test_rc_ess_p3_calendar_degradation_dominates() -> None:
+    """`RC-ESS-P3` 달력 지배 — 같은 산식, 파라미터만 뒤집는다.
+
+    사이클 20,000회 · 연 365 · 달력 10년, 5년차:
+        사이클 = 1 − 0.2 × 1,825/20,000 = 0.98175 / 달력 = **0.900** ← 채택
+    """
+    ess = _p1_ess(cycle_life=20000, calendar_life=10)
+    assert ess.soh_cycle(year=5) == pytest.approx(0.98175, rel=1e-9)
+    assert ess.soh_calendar(year=5) == pytest.approx(0.900, rel=1e-9)
+    assert ess.state_of_health(year=5) == pytest.approx(0.900, rel=1e-9)
+
+
+@pytest.mark.req("FR-104-AC2")
+@pytest.mark.req("FR-102-AC1.ESS")
+def test_rc_ess_p3_degradation_rate_is_the_conservative_annual_equivalent() -> None:
+    """`degradation_rate`(FR-101-AC1) 도 보수적 쪽을 따른다.
+
+    사이클 6,000회 · 연 365사이클 · 달력 20년:
+        연 사이클 = 0.2 × 365/6,000 = 0.0121667 ← 더 나쁨 / 연 달력 = 0.01
+    """
+    assert _p1_ess().degradation_rate == pytest.approx(0.2 * 365 / 6000, rel=1e-9)
+    # 수명은 달력수명을 넘지 않는다 — 사이클을 적게 쓴다고 영구히 쓰진 못한다
+    assert _p1_ess(cycle_life=10**9, calendar_life=12).eol_year() == 12
+
+
+# ── RC-ESS-P4 EOL 교체 ──────────────────────────────────────────────
+@pytest.mark.req("FR-104-AC2")
+def test_rc_ess_p4_replacement_is_charged_after_eol_is_reached() -> None:
+    """`RC-ESS-P4` — 잔존율 80% 도달 시점에 교체비 계상.
+
+    사이클 1,000회 · 연 365사이클 → 1,000/365 = 2.74년에 EOL, 올림하여 **수명
+    3년**. `RC-ALL-C4` 「수명 도달 **다음 연도 초**」로 교체는 **4년차**이며 이후
+    3년마다 반복한다.
+    """
+    ess = _p1_ess(cycle_life=1000, calendar_life=20, replacement_unit_won_per_kwh=400_000.0)
+
+    assert ess.state_of_health(year=2) > 0.80
+    assert ess.state_of_health(year=3) <= 0.80
+    assert ess.eol_year() == 3
+    assert ess.lifetime == 3
+    assert sorted(ess.replacement_schedule(horizon=20)) == [4, 7, 10, 13, 16, 19]
+
+
+@pytest.mark.req("FR-104-AC2")
+def test_rc_ess_p4_second_life_battery_starts_at_soh_80() -> None:
+    """`RC-ESS-P4` — 사용후배터리는 **초기 SOH 80%** 에서 시작한다.
+
+    잔여 수명(사이클 500회 · 달력 10년)은 EOL 60% 까지의 값이므로
+        SOH(1) = 0.8 − (0.8 − 0.6) × 365/500 = **0.654**
+        가용    = 10 × 0.8 × 0.8 = **6.4 kWh** (1년차 = 초기 SOH 적용)
+        EOL     = 500/365 = 1.37년 → 올림 **2년** → 교체 3년차
+    """
+    ess = _p1_ess(second_life=True, eol_soh_pct=60.0, cycle_life=500, calendar_life=10)
+
+    assert ess.initial_soh == pytest.approx(0.80, rel=1e-9)
+    assert ess.state_of_health(year=0) == pytest.approx(0.80, rel=1e-9)
+    assert ess.state_of_health(year=1) == pytest.approx(0.654, rel=1e-9)
+    assert ess.usable_capacity_kwh(year=1) == pytest.approx(6.4, rel=1e-9)
+    assert ess.eol_year() == 2
+    assert sorted(ess.replacement_schedule(horizon=8)) == [3, 5, 7]
+
+
+@pytest.mark.req("FR-104-AC2")
+def test_rc_ess_p4_second_life_with_unreachable_eol_is_rejected() -> None:
+    """음성 케이스 — 사용후배터리(초기 80%)에 EOL 80% 를 주면 거부한다.
+
+    허용하면 **취득 즉시 EOL** 인 자원이 된다. 교체비가 매년 잡히는 형태라
+    "보수적으로 나왔나 보다"로 읽힌다 — 조용히 틀리는 유형이다.
+    """
+    with pytest.raises(ValueError, match="EOL"):
+        _p1_ess(second_life=True, eol_soh_pct=80.0)
+
+
+# ── RC-ESS-B1 TOU 차익거래 / B2 피크 저감 ───────────────────────────
+@pytest.mark.req("FR-401-AC2.PeakShaving")
+def test_rc_ess_b1_tou_arbitrage_benefit() -> None:
+    """`RC-ESS-B1` 산식 원문 (§13.2.3 ESS 표):
+
+        편익 = 방전 kWh × 피크단가 − 충전 kWh × 경부하단가
+             = 2,920 × 200 − 3,244.444… × 80
+             = 584,000 − 259,556 = **324,444원/년**
+
+    259,556 은 259,555.55… 의 사사오입이다. 표시값 3,244.4 로 계산하면 259,552
+    가 되어 4원 어긋난다 — **반올림은 금액 경계에서 단 한 번**(NFR-103)이라는
+    규약이 여기서 결과를 가른다.
+    """
+    ess = _p1_ess()
+    benefit = ess.tou_arbitrage_benefit(peak_price_won=200.0, offpeak_price_won=80.0, year=1)
+
+    assert isinstance(benefit, Money)
+    assert benefit == to_won(584_000) - to_won(2920.0 / 0.9 * 80.0)
+    assert benefit == 324_444
+
+
+@pytest.mark.req("FR-401-AC2.PeakShaving")
+def test_rc_ess_b2_peak_shaving_benefit() -> None:
+    """`RC-ESS-B2` 산식 원문: `저감 kW × 기본요금 단가 × 12개월`
+
+        저감 가능 출력 = 가용 8 kWh / 방전창 4시간 = **2 kW** (정격 5kW 이내)
+        편익 = 2 × 8,320 × 12 = **199,680원/년**
+    """
+    ess = _p1_ess()
+    assert ess.reducible_peak_kw(year=1) == pytest.approx(2.0, rel=1e-9)
+
+    benefit = ess.peak_shaving_benefit(demand_charge_won_per_kw=8_320.0, year=1)
+    assert isinstance(benefit, Money)
+    assert benefit == 199_680
+
+    # 저감 kW 는 정격출력을 넘을 수 없다 — 넘기면 없는 출력으로 편익이 난다
+    capped = _p1_ess(power_kw=1.0, capacity_kwh=100.0, cycle_life=20000)
+    assert capped.reducible_peak_kw(year=1) == pytest.approx(1.0, rel=1e-9)
+
+
+# ── RC-ESS-X1 SOC 하한 침범 ─────────────────────────────────────────
+@pytest.mark.req("FR-102-AC1.ESS")
+def test_rc_ess_x1_discharge_below_soc_floor_is_rejected_with_cause() -> None:
+    """`RC-ESS-X1` — 하한 미만 방전 지시는 **거부되고 원인이 보고**된다.
+
+    조용히 잘라내면 가용량이 늘어난 것과 같아 편익이 과대 계상되고, 잘라낸
+    값으로 수지가 닫혀 NFR-102 검사는 통과한다.
+    """
+    ess = _p1_ess()
+    lo, hi = ess.soc_bounds_kwh(year=1)
+
+    with pytest.raises(ValueError) as excinfo:
+        ess.plan_discharge(soc_kwh=lo, energy_kwh=2.0, year=1)
+
+    message = str(excinfo.value)
+    assert "SOC 하한" in message
+    assert ess.name in message and "2" in message  # 원인 — 자원명·요구량 보고
+
+    # 양성 짝 (§13.2.1) — 하한까지의 방전은 정상 수행된다
+    assert ess.plan_discharge(soc_kwh=hi, energy_kwh=hi - lo) == pytest.approx(hi - lo)
+
+
+# ── RC-ALL-C1~C3 (§13.2.2) ─────────────────────────────────────────
+@pytest.mark.req("FR-101-AC2")
+def test_rc_all_c1_capex() -> None:
+    """`RC-ALL-C1` 산식 원문 (§13.2.2): `단가 × 용량 + 부대비`
+
+    ESS 파라미터화: 500,000 × 10 + 1,000,000 = **6,000,000원**. 1년차에만 발생.
+    """
+    ess = _p1_ess(capex_unit_won_per_kwh=500_000.0, capex_extra_won=1_000_000.0)
+    assert isinstance(ess.capex(year=1), Money)
+    assert ess.capex(year=1) == 6_000_000
+    assert ess.capex(year=2) == 0
+
+
+@pytest.mark.req("FR-101-AC2")
+def test_rc_all_c2_geometric_series_formula_is_resource_independent() -> None:
+    """`RC-ALL-C2` 산식 자체의 검증 — **자원과 무관하다**.
+
+    산식 원문 (§13.2.2): 등비수열 합 `A × ((1+i)^n − 1) / i`
+        A=100,000 · i=0.02 · n=20 → 100,000 × 24.29736979… = **2,429,737원**
+
+    분리해 두는 이유: 이 값이 틀리면 **모든 자원의** 20년 O&M 누계가 함께
+    틀린다. 자원 안에만 두면 어느 자원의 문제인지 구분이 늦다.
+    """
+    a, i, n = 100_000, 0.02, 20
+    assert to_won(a * ((1 + i) ** n - 1) / i) == 2_429_737
+
+
+@pytest.mark.req("FR-101-AC2")
+def test_rc_all_c2_fixed_om_20y_cumulative_matches_geometric_sum() -> None:
+    """`RC-ALL-C2` ESS 파라미터화 — 연 10만원 · 물가 2% · 20년 → 2,429,737원.
+
+    `won_sum` 은 **각 항을 반올림한 뒤 더한다**(NFR-103-M1). 그 합이 닫힌형과
+    일치해야 프로포마의 행별 합과 총계가 어긋나지 않는다.
+    """
+    ess = _p1_ess(fixed_om_won_per_year=100_000.0, inflation_pct=2.0)
+    assert ess.fixed_om(year=1) == 100_000
+    assert ess.fixed_om(year=2) == 102_000
+    assert won_sum(ess.fixed_om(year=y) for y in range(1, 21)) == 2_429_737
+
+
+@pytest.mark.req("FR-101-AC2")
+def test_rc_all_c3_variable_om_is_based_on_throughput_kwh() -> None:
+    """`RC-ALL-C3` 산식 원문 (§13.2.2): `처리량 × 단가`
+
+    **ESS 의 처리량은 방전 kWh** 다 (표 원문 「ESS 처리 kWh」).
+        1년차 2,920 kWh × 3원 = **8,760원** / 2년차 열화(SOH 0.98783…)로 8,653원
+    """
+    ess = _p1_ess(variable_om_won_per_kwh=3.0)
+    soh1 = 1.0 - 0.2 * max(1 / 20, 365 / 6000)
+
+    assert ess.variable_om(year=1) == 8_760
+    assert ess.variable_om(year=2) == to_won(10.0 * 0.8 * soh1 * 365 * 3.0)
+    assert ess.variable_om(year=2) < ess.variable_om(year=1)
+
+
+# ── RC-ALL-C4 교체비 ────────────────────────────────────────────────
+@pytest.mark.req("FR-104-AC4")
+def test_rc_all_c4_replacement_schedule_separates_battery_and_pcs() -> None:
+    """`RC-ALL-C4` — 「수명 도달 **다음 연도 초**」 + 부속설비 독립 스케줄.
+
+        배터리 수명 3년(사이클 1,000회) → 4·7·10·13·16·19년차 × 4,000,000원
+        PCS 수명 10년(본체와 무관)      → **11년차** × 2,000,000원
+
+    본체 수명만 보면 PCS 교체비가 통째로 빠진다 (도메인 원칙 4-3).
+    """
+    ess = _p1_ess(
+        cycle_life=1000, calendar_life=20, replacement_unit_won_per_kwh=400_000.0,
+        pcs_lifetime=10, pcs_cost_won=2_000_000.0,
+    )
+    schedule = ess.replacement_schedule(horizon=20)
+
+    assert sorted(schedule) == [4, 7, 10, 11, 13, 16, 19]
+    assert schedule[4] == 4_000_000
+    assert schedule[11] == 2_000_000
+    assert all(isinstance(v, Money) for v in schedule.values())
+
+    # 같은 해에 겹치면 **합산**한다 — 덮어쓰면 한쪽이 조용히 사라진다
+    overlap = _p1_ess(
+        cycle_life=1000, calendar_life=20, replacement_unit_won_per_kwh=400_000.0,
+        pcs_lifetime=3, pcs_cost_won=2_000_000.0,
+    )
+    assert overlap.replacement_schedule(horizon=5)[4] == 6_000_000
+
+
+# ── RC-ALL-C5 잔존가치 ──────────────────────────────────────────────
+@pytest.mark.req("FR-104-AC5")
+def test_rc_all_c5_salvage_value_is_prorated_by_remaining_life() -> None:
+    """`RC-ALL-C5` 산식 원문 (§13.2.2): `취득가 × 잔존수명 / 총수명` 최종연도 계상 후 할인.
+
+    ESS 파라미터화 (달력 25년 · 사이클 20,000회 → 수명 25년):
+        취득가   = 500,000 × 10 + 1,000,000 = 6,000,000원
+        잔존수명 = 25 − 20 = 5년
+        잔존가치 = 6,000,000 × 5/25 = **1,200,000원**
+        할인 후  = 1,200,000 / 1.045^20 = **497,571원**
+
+    **할인은 자원의 책임이 아니다** — `DER.salvage_value()` 는 할인율을 받지
+    않으며 CBA 계층(WP-7)이 할인한다. 마지막 단계를 테스트가 직접 보여 둔다.
+    """
+    ess = _p1_ess(
+        calendar_life=25, cycle_life=20000,
+        capex_unit_won_per_kwh=500_000.0, capex_extra_won=1_000_000.0,
+    )
+
+    assert ess.lifetime == 25
+    assert ess.salvage_value(year=20) == 1_200_000
+    assert to_won(int(ess.salvage_value(year=20)) / 1.045**20) == 497_571
+    assert ess.salvage_value(year=25) == 0  # 수명을 다 쓴 해에는 잔존가치가 없다
+
+
+@pytest.mark.req("FR-104-AC5")
+def test_rc_all_c5_salvage_counts_from_the_latest_acquisition() -> None:
+    """교체가 있었다면 잔존수명은 **마지막 취득 시점**부터 센다.
+
+    최초 취득분 기준으로 세면 교체 직후에도 잔존가치가 0으로 잡혀, 분석기간
+    말에 새 배터리가 통째로 사라진다.
+    """
+    ess = _p1_ess(
+        cycle_life=1000, calendar_life=20, capex_unit_won_per_kwh=500_000.0,
+        capex_extra_won=1_000_000.0, replacement_unit_won_per_kwh=400_000.0,
+    )
+    # 수명 3년, 마지막 교체 19년차(19·20·21년 사용) → 20년 말 잔존수명 1년
+    assert ess.salvage_value(year=20) == to_won(4_000_000 * 1 / 3)
+
+
+# ── FR-105-AC1 운전 방법 선언 ───────────────────────────────────────
+@pytest.mark.req("FR-105-AC1")
+def test_operating_modes_declared_match_spec_list() -> None:
+    """FR-105-AC1 원문: 「`ESS`: 자가소비 우선 / TOU 차익거래 / 피크 저감 /
+    백업 예비 확보 / 혼합(가중치)」 — 자원 클래스가 이 목록을 선언한다."""
+    assert {m.value for m in ESS.OPERATING_MODES} == {
+        "자가소비 우선",
+        "TOU 차익거래",
+        "피크 저감",
+        "백업 예비 확보",
+        "혼합(가중치)",
+    }
+
+
+@pytest.mark.req("FR-105-AC1")
+def test_two_instances_may_take_different_modes() -> None:
+    """FR-105-AC3 — 같은 유형 두 인스턴스가 서로 다른 운전 방법을 갖는다."""
+    household = _p1_ess(name="가구용ESS", mode=ESSOperatingMode.SELF_CONSUMPTION)
+    common = _p1_ess(name="공용부ESS", mode=ESSOperatingMode.PEAK_SHAVING)
+
+    assert household.mode is ESSOperatingMode.SELF_CONSUMPTION
+    assert common.mode is ESSOperatingMode.PEAK_SHAVING
+    assert household.discharge_hours != common.discharge_hours
+
+
+@pytest.mark.req("FR-105-AC1")
+def test_backup_reserve_mode_reduces_usable_energy() -> None:
+    """백업 예비 확보는 **가용량을 줄인다** — 줄지 않으면 예비가 이름뿐이다.
+
+    예비 25% → 가용 8 × 0.75 = 6 kWh, 연 방전 6 × 365 = 2,190 kWh
+    """
+    ess = _p1_ess(mode=ESSOperatingMode.BACKUP_RESERVE, backup_reserve_pct=25.0)
+    assert ess.usable_capacity_kwh(year=1) == pytest.approx(6.0, rel=1e-9)
+    assert ess.annual_discharge_kwh(year=1) == pytest.approx(2190.0, rel=1e-9)
+
+
+@pytest.mark.req("FR-105-AC1")
+def test_hybrid_mode_requires_weights_that_sum_to_one() -> None:
+    """혼합 모드는 가중치를 요구한다 — 없으면 무엇을 섞는지 판정할 수 없다."""
+    with pytest.raises(ValueError, match="가중치"):
+        _p1_ess(mode=ESSOperatingMode.HYBRID)
+
+    half = {ESSOperatingMode.TOU_ARBITRAGE: 0.5, ESSOperatingMode.PEAK_SHAVING: 0.2}
+    with pytest.raises(ValueError, match="합"):
+        _p1_ess(mode=ESSOperatingMode.HYBRID, mode_weights=half)
+
+    mixed = _p1_ess(
+        mode=ESSOperatingMode.HYBRID,
+        backup_reserve_pct=40.0,
+        mode_weights={
+            ESSOperatingMode.TOU_ARBITRAGE: 0.75,
+            ESSOperatingMode.BACKUP_RESERVE: 0.25,
+        },
+    )
+    # 예비 가중치 0.25 × 예비율 0.4 = 10% 만 예비로 묶인다
+    assert mixed.usable_capacity_kwh(year=1) == pytest.approx(8.0 * 0.9, rel=1e-9)
+
+
+# ── 해상도·계통 제약 ────────────────────────────────────────────────
+@pytest.mark.req("FR-301-AC2")
+def test_dispatch_totals_are_resolution_independent() -> None:
+    """15분(35,040 스텝) 해상도에서도 연 합계가 같다 (§7.5 · FR-301).
+
+    해상도를 바꿨더니 연 방전량이 달라지면 케이스 비교가 해상도에 좌우된다.
+    """
+    ess = _p1_ess(dt=900)
+    series = ess.dispatch(DispatchContext(steps=35_040, dt=900, year=1)).electric
+
+    assert sum(v for v in series if v > 0) == pytest.approx(2920.0, rel=1e-9)
+    assert -sum(v for v in series if v < 0) == pytest.approx(2920.0 / 0.9, rel=1e-9)
+
+
+@pytest.mark.req("FR-301-AC2")
+def test_dispatch_rejects_plan_that_exceeds_grid_limit() -> None:
+    """계통 연계 한도를 넘는 계획은 **거부하고 원인을 보고**한다 (FR-403 취지).
+
+    조용히 잘라내면 잘린 만큼의 편익이 사라지고, 남은 값으로 수지는 닫힌다.
+    """
+    ctx = DispatchContext(steps=24, dt=3600, year=1, grid_limit_kw=[0.5] * 24)
+    with pytest.raises(ValueError, match="계통 연계"):
+        _p1_ess().dispatch(ctx)
+
+
+@pytest.mark.req("FR-301-AC2")
+def test_dispatch_rejects_plan_that_exceeds_rated_power() -> None:
+    """정격출력을 넘는 운전 계획도 거부한다 — 없는 출력으로 편익이 나면 안 된다."""
+    ess = _p1_ess(capacity_kwh=200.0, power_kw=1.0, cycle_life=20000)
+    with pytest.raises(ValueError, match="정격출력"):
+        ess.dispatch(DispatchContext(steps=24, dt=3600, year=1))

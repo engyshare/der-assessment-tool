@@ -85,8 +85,15 @@ class ReferencePV(DER):
         빠진다. 그 누락은 회수기간을 짧게 만들고 필요 지원액을 과소
         산정하게 하는데, 결과 화면에는 아무 표시도 남지 않는다.
         """
+        # **교체는 수명 도달 *다음* 연도 초에 계상한다** (§13.2.2 C-4).
+        #
+        # 08-08 초판은 수명 연도(12년차)에 계상했다 — spec과 한 해 어긋났고,
+        # WP-1a 가 자원을 구현하며 그 어긋남을 짚었다. 12년차에 넣으면
+        # 12년 동안 쓴 설비의 교체비가 그 설비가 아직 살아 있는 해에
+        # 잡히고, 20년 분석의 마지막 교체가 분석기간 안으로 잘못 들어올 수
+        # 있다. **계약 쪽 참조 구현이 틀리면 자원 6종이 그것을 베낀다.**
         out: dict[int, Money] = {}
-        year = self.inverter_lifetime
+        year = self.inverter_lifetime + 1
         while year <= horizon:
             out[year] = to_won(self.capacity_kw * self.unit_capex * 0.15)
             year += self.inverter_lifetime
@@ -162,11 +169,16 @@ def test_inverter_replacement_is_not_lost_in_20_year_horizon() -> None:
     """
     pv = ReferencePV()
     schedule = pv.replacement_schedule(horizon=20)
-    assert 12 in schedule, (
-        "12년차 인버터 교체가 빠졌습니다. 본체 수명만 보고 있지 않은지 "
+    assert 13 in schedule, (
+        "13년차 인버터 교체가 빠졌습니다. 본체 수명만 보고 있지 않은지 "
         "확인하십시오 (FR-104-AC4)"
     )
-    assert 24 not in schedule, "분석기간(20년) 밖의 교체가 들어 있습니다"
+    assert 12 not in schedule, (
+        "교체를 수명 연도(12년차)에 계상했습니다. §13.2.2 C-4 는 **수명 도달 "
+        "다음 연도 초**를 규정합니다 — 12년차에 넣으면 아직 살아 있는 해에 "
+        "교체비가 잡힙니다"
+    )
+    assert 25 not in schedule, "분석기간(20년) 밖의 교체가 들어 있습니다"
 
 
 @pytest.mark.contract

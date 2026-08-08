@@ -12,9 +12,9 @@
 | 요구사항 | 97 |
 | 그중 Must-have | 71 |
 | 수용기준 총계 | 299 |
-| 자동 검증 매핑 | 7 |
+| 자동 검증 매핑 | 34 |
 | 수동 검증 매핑 | 8 |
-| **Must-have 미매핑** | **254** |
+| **Must-have 미매핑** | **227** |
 | 우선순위 미지정 요구사항 | 0 |
 | **Phase 미지정 요구사항** | **9** |
 
@@ -33,7 +33,7 @@
 > 감시하면서도 *언제까지* 지켜야 하는지는 말하지 못하는 상태입니다. Should-have만
 > 남았다면 R-1 정비 사항이며 게이트 판정에는 영향이 없습니다.
 
-> **미매핑 254건.** NFR-107은 미매핑 0건을 요구합니다.
+> **미매핑 227건.** NFR-107은 미매핑 0건을 요구합니다.
 >
 > 현재 저장소에 테스트가 없으므로 전건 미매핑인 것이 정상입니다. 이 표는
 > **Wave 0 시점의 작업 목록**으로 읽으십시오 — 각 행이 곧 작성해야 할 테스트
@@ -46,38 +46,38 @@
 | 요구사항 | 우선순위 | Phase | 수용기준 | 내용 | 검증 | 위치 |
 |---|---|---|---|---|---|---|
 | `FR-101` | Must-have | 1 | `FR-101-AC1` | 속성: name, tag, dt, carries_electric, carries_heat, carries_cool, consumes_fuel, lifetime,… | 자동 | test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py |
-|  |  | 1 | `FR-101-AC2` | 메서드: capex(), fixed_om(), variable_om(), replacement_schedule(), salvage_value(), dispatc… | 자동 | test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py |
+|  |  | 1 | `FR-101-AC2` | 메서드: capex(), fixed_om(), variable_om(), replacement_schedule(), salvage_value(), dispatc… | 자동 | test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_load.py, test_load.py, test_load.py, test_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py |
 |  |  | 1 | `FR-101-AC3` | 신규 자원 클래스가 위 인터페이스만 구현하면 코어 엔진 수정 없이 동작 (단위 테스트로 실증) | 자동 | test_der_contract.py, test_der_contract.py, test_smoke_wave0.py |
-|  |  | 1 | `FR-101-AC4` | 매체 플래그에 따라 엔진이 전기·열·냉 수지를 자동으로 분리 집계한다 | 자동 | test_der_contract.py, test_der_contract.py, test_smoke_wave0.py |
-| `FR-102` | Must-have | 1 | `FR-102-AC1.PV` | PV 태양광 (옥상/벽면 BIPV 구분) — 용량(kW), 이용률(%) 또는 8760 발전 시계열, 방위·경사, 연간 열화율, 인버터 수명 | **미매핑** | — |
-|  |  | 1 | `FR-102-AC1.ESS` | ESS 배터리 (신품/사용후배터리) — 정격용량(kWh), 정격출력(kW), RTE(%), SOC 상하한, 사이클수명, 달력수명, EOL 잔존율 | **미매핑** | — |
-|  |  | 1 | `FR-102-AC1.EV_V2G` | EV_V2G 전기차 + 양방향 충전기 — 대수, 배터리(kWh), 최대 충방전(kW), 접속가능시간대, 참여율, 열화 보상단가 | **미매핑** | — |
-|  |  | 1 | `FR-102-AC1.HeatPump` | HeatPump 히트펌프 (난방/급탕) — 정격 열출력(kW), COP 곡선(외기온 함수), 열부하 대응 방식 | **미매핑** | — |
-|  |  | 1 | `FR-102-AC1.Load` | Load 전기부하 (가구/공용부/상업) — 8760 부하 시계열 또는 월사용량+표준 프로파일, 연간 증가율 | **미매핑** | — |
-|  |  | 1 | `FR-102-AC1.ThermalLoad` | ThermalLoad 열부하 (난방·급탕) — 8760 열부하 시계열 또는 난방도일 기반 추정 | **미매핑** | — |
+|  |  | 1 | `FR-101-AC4` | 매체 플래그에 따라 엔진이 전기·열·냉 수지를 자동으로 분리 집계한다 | 자동 | test_der_contract.py, test_der_contract.py, test_smoke_wave0.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_pv.py, test_pv.py |
+| `FR-102` | Must-have | 1 | `FR-102-AC1.PV` | PV 태양광 (옥상/벽면 BIPV 구분) — 용량(kW), 이용률(%) 또는 8760 발전 시계열, 방위·경사, 연간 열화율, 인버터 수명 | 자동 | test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py |
+|  |  | 1 | `FR-102-AC1.ESS` | ESS 배터리 (신품/사용후배터리) — 정격용량(kWh), 정격출력(kW), RTE(%), SOC 상하한, 사이클수명, 달력수명, EOL 잔존율 | 자동 | test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py |
+|  |  | 1 | `FR-102-AC1.EV_V2G` | EV_V2G 전기차 + 양방향 충전기 — 대수, 배터리(kWh), 최대 충방전(kW), 접속가능시간대, 참여율, 열화 보상단가 | 자동 | test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py |
+|  |  | 1 | `FR-102-AC1.HeatPump` | HeatPump 히트펌프 (난방/급탕) — 정격 열출력(kW), COP 곡선(외기온 함수), 열부하 대응 방식 | 자동 | test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py |
+|  |  | 1 | `FR-102-AC1.Load` | Load 전기부하 (가구/공용부/상업) — 8760 부하 시계열 또는 월사용량+표준 프로파일, 연간 증가율 | 자동 | test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py |
+|  |  | 1 | `FR-102-AC1.ThermalLoad` | ThermalLoad 열부하 (난방·급탕) — 8760 열부하 시계열 또는 난방도일 기반 추정 | 자동 | test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py |
 |  |  | 2 | `FR-102-AC1.VPP` | VPP 통합발전소 (자원 집합 + 시장참여) — 집합 자원 ID 목록, 운영수수료(%), 시장참여 유형 | **미매핑** | — |
 |  |  | 2 | `FR-102-AC1.Boiler` | Boiler 보조 열원 (가스/전기) — 열효율, 연료단가, 연료종 | **미매핑** | — |
 |  |  | 3 | `FR-102-AC1.Genset` | Genset 비상·상시 발전기 — 정격출력, 열소비율, 연료단가, 최소부하율 | **미매핑** | — |
 | `FR-103` | Must-have | 1 | `FR-103-AC1` | 한 시나리오 내에 PV#1(햇빛소득마을 조건), PV#2(자가용 조건)이 동시 존재 | **미매핑** | — |
 |  |  | 1 | `FR-103-AC2` | 각 인스턴스는 독립적인 IncentiveScheme 참조를 가진다 (FR-604) | **미매핑** | — |
 |  |  | 1 | `FR-103-AC3` | 두 인스턴스의 현금흐름이 프로포마에서 분리된 행으로 표시된다 | **미매핑** | — |
-| `FR-104` | Must-have | 1 | `FR-104-AC1` | PV: 연 degradation_rate(%/년) 발전량 감소 | **미매핑** | — |
-|  |  | 1 | `FR-104-AC2` | ESS: 사이클 누적 + 달력 열화 중 보수적 값 적용, EOL(기본 80%) 도달 시 교체비 계상 | **미매핑** | — |
-|  |  | 1 | `FR-104-AC3` | 수명 도달 자원은 replace / retire 선택 가능 | **미매핑** | — |
-|  |  | 1 | `FR-104-AC4` | 인버터 등 부속설비의 독립 수명(10~12년)을 본체와 분리 관리 | 자동 | test_smoke_wave0.py |
-|  |  | 1 | `FR-104-AC5` | 분석기간 종료 시 잔존 수명 비례 잔존가치를 최종연도에 계상 | **미매핑** | — |
-| `FR-105` | Must-have | 1 | `FR-105-AC1` | 자원 클래스는 자신이 지원하는 운전 방법 목록을 선언한다. 예: | **미매핑** | — |
+| `FR-104` | Must-have | 1 | `FR-104-AC1` | PV: 연 degradation_rate(%/년) 발전량 감소 | 자동 | test_ev_v2g.py, test_heatpump.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py |
+|  |  | 1 | `FR-104-AC2` | ESS: 사이클 누적 + 달력 열화 중 보수적 값 적용, EOL(기본 80%) 도달 시 교체비 계상 | 자동 | test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ev_v2g.py, test_ev_v2g.py, test_pv.py, test_pv.py |
+|  |  | 1 | `FR-104-AC3` | 수명 도달 자원은 replace / retire 선택 가능 | 자동 | test_ev_v2g.py, test_load.py, test_load.py, test_pv.py, test_pv.py, test_pv.py, test_thermal_load.py |
+|  |  | 1 | `FR-104-AC4` | 인버터 등 부속설비의 독립 수명(10~12년)을 본체와 분리 관리 | 자동 | test_smoke_wave0.py, test_ess.py, test_ev_v2g.py, test_heatpump.py, test_heatpump.py, test_load.py, test_pv.py, test_pv.py, test_pv.py, test_thermal_load.py |
+|  |  | 1 | `FR-104-AC5` | 분석기간 종료 시 잔존 수명 비례 잔존가치를 최종연도에 계상 | 자동 | test_ess.py, test_ess.py, test_ev_v2g.py, test_heatpump.py, test_heatpump.py, test_load.py, test_load.py, test_pv.py, test_pv.py, test_pv.py, test_thermal_load.py |
+| `FR-105` | Must-have | 1 | `FR-105-AC1` | 자원 클래스는 자신이 지원하는 운전 방법 목록을 선언한다. 예: | 자동 | test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py |
 |  |  | 1 | `FR-105-AC2` | 운전 방법은 자원 클래스에 함께 정의되며, 신규 운전 방법 추가 시 코어 엔진 수정이 발생하지 않는다 (NFR-201과 동일 기준) | **미매핑** | — |
 |  |  | 1 | `FR-105-AC3` | 동일 시나리오 내에서 같은 유형의 두 인스턴스가 서로 다른 운전 방법을 가질 수 있다 (예: 가구용 ESS는 자가소비 우선, 공용부 ESS는 피크 저감) | **미매핑** | — |
 |  |  | 1 | `FR-105-AC4` | 선택한 운전 방법이 FR-302 디스패치 우선순위와 어떻게 결합되는지 리포트에 표기한다 | **미매핑** | — |
 |  |  | 1 | `FR-105-AC5` | 운전 방법을 케이스 그리드의 탐색 변수로 지정할 수 있다 (FR-801) | **미매핑** | — |
-| `FR-106` | Must-have | 1 | `FR-106-AC1` | CommonAsset은 capex() / fixed_om() / lifetime / replacement_schedule() / salvage_value() 를… | **미매핑** | — |
-|  |  | 1 | `FR-106-AC2` | 기본 제공 유형: CEMS(단지 통합 제어·모니터링), HEMS(가구 단위), 공용 계량·통신 설비 | **미매핑** | — |
-|  |  | 1 | `FR-106-AC3` | 소프트웨어 개발비와 하드웨어를 분리 계상한다. 감가상각 내용연수와 교체 주기가 다르며(SW는 재개발, HW는 교체), 잔존가치 산정도 달라진다 | **미매핑** | — |
-|  |  | 1 | `FR-106-AC4` | 연간 운영비(라이선스·클라우드·유지보수·관제 인건비)를 fixed_om()으로 계상하고 물가상승률을 적용한다 | **미매핑** | — |
-|  |  | 1 | `FR-106-AC5` | 안분 규칙을 선언적으로 지정한다: 가구 균등 배분 / 설비용량 비례 / 안분하지 않고 단지 총계로만 표시. 선택한 규칙이 리포트에 명시된다 | **미매핑** | — |
-|  |  | 1 | `FR-106-AC6` | 가구 단위 경제성 산출 시 안분된 공통비용이 별도 행으로 표시되어, 가구 자체 설비 비용과 구분된다 | **미매핑** | — |
-|  |  | 1 | `FR-106-AC7` | CommonAsset이 없는 모델(단독주택 등)도 정상 동작한다 (기본값 없음) | **미매핑** | — |
+| `FR-106` | Must-have | 1 | `FR-106-AC1` | CommonAsset은 capex() / fixed_om() / lifetime / replacement_schedule() / salvage_value() 를… | 자동 | test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py |
+|  |  | 1 | `FR-106-AC2` | 기본 제공 유형: CEMS(단지 통합 제어·모니터링), HEMS(가구 단위), 공용 계량·통신 설비 | 자동 | test_common_asset.py, test_common_asset.py, test_common_asset.py |
+|  |  | 1 | `FR-106-AC3` | 소프트웨어 개발비와 하드웨어를 분리 계상한다. 감가상각 내용연수와 교체 주기가 다르며(SW는 재개발, HW는 교체), 잔존가치 산정도 달라진다 | 자동 | test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py |
+|  |  | 1 | `FR-106-AC4` | 연간 운영비(라이선스·클라우드·유지보수·관제 인건비)를 fixed_om()으로 계상하고 물가상승률을 적용한다 | 자동 | test_common_asset.py, test_common_asset.py, test_common_asset.py |
+|  |  | 1 | `FR-106-AC5` | 안분 규칙을 선언적으로 지정한다: 가구 균등 배분 / 설비용량 비례 / 안분하지 않고 단지 총계로만 표시. 선택한 규칙이 리포트에 명시된다 | 자동 | test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py |
+|  |  | 1 | `FR-106-AC6` | 가구 단위 경제성 산출 시 안분된 공통비용이 별도 행으로 표시되어, 가구 자체 설비 비용과 구분된다 | 자동 | test_common_asset.py, test_common_asset.py, test_common_asset.py |
+|  |  | 1 | `FR-106-AC7` | CommonAsset이 없는 모델(단독주택 등)도 정상 동작한다 (기본값 없음) | 자동 | test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py |
 | `FR-201` | Must-have | 1 | `FR-201-AC1` | GUI에서 자원 추가/삭제/복제로 구성 가능하며, 구성 변경 시 엔진 코드 변경이 발생하지 않는다 | **미매핑** | — |
 |  |  | 1 | `FR-201-AC2` | 모델 정의 전체가 단일 JSON 문서로 export/import 된다 | **미매핑** | — |
 | `FR-202` | Must-have | 2 | `FR-202-AC1` | 하나의 AssumptionSet을 참조하는 여러 모델을 일괄 실행한다 | **미매핑** | — |
@@ -92,8 +92,8 @@
 |  |  | 1 | `FR-204-AC3` | 템플릿 로드 시 모든 파라미터에 기본값과 출처가 채워진다 | **미매핑** | — |
 | `FR-205` | Must-have | 1 | `FR-205-AC1` | 다음이 정산 로직에 반영된다 — 개별 세대 직접계약 / 단일계약+관리주체 경유 / 분산특구 직접거래 / 상계거래 / 잉여 직거래 / 집합 PPA / VPP 경유 | **미매핑** | — |
 | `FR-301` | Must-have | 1 | `FR-301-AC1` | 매 스텝 자원별 충·방전·발전·소비량과 계통 수·송전량을 산출 | **미매핑** | — |
-|  |  | 1 | `FR-301-AC2` | 전력·열 수지 균형식이 모든 스텝에서 오차 < 1e-6 kWh | **미매핑** | — |
-|  |  | 1 | `FR-301-AC3` | 시계열 행수 불일치 시 명확한 오류로 중단 | 자동 | test_der_contract.py |
+|  |  | 1 | `FR-301-AC2` | 전력·열 수지 균형식이 모든 스텝에서 오차 < 1e-6 kWh | 자동 | test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py |
+|  |  | 1 | `FR-301-AC3` | 시계열 행수 불일치 시 명확한 오류로 중단 | 자동 | test_der_contract.py, test_ev_v2g.py, test_heatpump.py |
 | `FR-302` | Must-have | 1 | `FR-302-AC1` | 다음 우선순위를 설정 가능한 순서로 적용 | **미매핑** | — |
 |  |  | 1 | `FR-302-AC2` | TOU 하 경부하 충전 / 최대부하 방전 차익거래 규칙을 옵션 활성화 | **미매핑** | — |
 |  |  | 1 | `FR-302-AC3` | 규칙 순서·활성화를 UI에서 변경 가능하며 효과가 결과에 반영된다 | **미매핑** | — |
@@ -104,19 +104,19 @@
 | `FR-304` | Nice-to-have | 3 | `FR-304-AC1` | PV·ESS 용량을 결정변수로 NPV 최대화 조합 산출. 연간 손익과 자본비의 시간 스케일 정합을 위해 연금 환산 계수를 적용한다 (부록 C.3 B-2) | **미매핑** | — |
 | `FR-305` | Nice-to-have | 3 | `FR-305-AC1` | 임의 시점 N시간 정전 시 부하 지속 시간 산출, EENS 화폐가치를 편익 계상 | **미매핑** | — |
 | `FR-401` | Must-have | 1 | `FR-401-AC1` | 편익 1종 = 독립 클래스 1개로 구현되고, 각 편익은 활성화 여부를 개별 토글할 수 있다. 편익을 추가하거나 비활성화해도 코어 엔진(core/engine/·c… | **미매핑** | — |
-|  |  | 1 | `FR-401-AC2.SelfConsumption` | SelfConsumption 자가소비 전기요금 절감 — (기존요금 − 신규요금), 누진·TOU 구조 반영 | **미매핑** | — |
-|  |  | 1 | `FR-401-AC2.SurplusSale` | SurplusSale 잉여전력 판매 — 잉여량 × 판매단가(직거래/상계/SMP) | **미매핑** | — |
-|  |  | 1 | `FR-401-AC2.REC` | REC REC 수익 — 발전량 × 가중치 × REC 단가 | **미매핑** | — |
+|  |  | 1 | `FR-401-AC2.SelfConsumption` | SelfConsumption 자가소비 전기요금 절감 — (기존요금 − 신규요금), 누진·TOU 구조 반영 | 자동 | test_pv.py |
+|  |  | 1 | `FR-401-AC2.SurplusSale` | SurplusSale 잉여전력 판매 — 잉여량 × 판매단가(직거래/상계/SMP) | 자동 | test_pv.py, test_pv.py |
+|  |  | 1 | `FR-401-AC2.REC` | REC REC 수익 — 발전량 × 가중치 × REC 단가 | 자동 | test_pv.py, test_pv.py |
 |  |  | 1 | `FR-401-AC2.DirectTrade` | DirectTrade 분산특구 직접거래 차익 — (약관요금 − 직접거래단가) × 거래량 − 거래지원수수료 | **미매핑** | — |
-|  |  | 1 | `FR-401-AC2.PeakShaving` | PeakShaving 기본요금(피크) 절감 — 월 최대수요 저감분 × 기본요금 단가 | **미매핑** | — |
-|  |  | 1 | `FR-401-AC2.HeatCostSaving` | HeatCostSaving 열 비용 절감 (히트펌프) — (기존 열원 연료비 − 히트펌프 전력비) | **미매핑** | — |
+|  |  | 1 | `FR-401-AC2.PeakShaving` | PeakShaving 기본요금(피크) 절감 — 월 최대수요 저감분 × 기본요금 단가 | 자동 | test_ess.py, test_ess.py |
+|  |  | 1 | `FR-401-AC2.HeatCostSaving` | HeatCostSaving 열 비용 절감 (히트펌프) — (기존 열원 연료비 − 히트펌프 전력비) | 자동 | test_heatpump.py, test_heatpump.py |
 |  |  | 2 | `FR-401-AC2.DemandResponse` | DemandResponse 수요반응 정산금 — 감축량 × 정산단가 (중복·배타 규칙 반영) | **미매핑** | — |
 |  |  | 2 | `FR-401-AC2.VPPMarket` | VPPMarket VPP 시장참여 수익 — 시장정산 − 운영수수료 | **미매핑** | — |
 |  |  | 3 | `FR-401-AC2.Resilience` | Resilience 정전 회피 편익 — EENS × VoLL | **미매핑** | — |
 |  |  | 3 | `FR-401-AC2.DistributedBenefit` | DistributedBenefit 분산편익 크레딧 — 송배전 회피 + 손실 감소 + 계통서비스 + 온실가스 + 회복력 (기본 0, FR-404) | **미매핑** | — |
 |  |  | 3 | `FR-401-AC2.CarbonCredit` | CarbonCredit 배출권 수익 — 감축량(tCO2) × KAU 단가 | **미매핑** | — |
 | `FR-402` | Must-have | 1 | `FR-402-AC1` | 동시 발생 효과는 중복이 아니다 — 지불 주체가 다르거나 물리량이 다르면 정상 계상한다. 중복은 같은 화폐 흐름을 두 번 세는 것으로 한정한다. 시스템은 자가소… | **미매핑** | — |
-|  |  | 1 | `FR-402-AC2.A` | 동일 물리량 이중 판매 — 같은 1 kWh를 자가소비 절감과 잉여판매로 동시 계상하거나 같은 시각 ESS 방전을 피크저감과 DR로 동시 계상하는 조합은 선언적 … | **미매핑** | — |
+|  |  | 1 | `FR-402-AC2.A` | 동일 물리량 이중 판매 — 같은 1 kWh를 자가소비 절감과 잉여판매로 동시 계상하거나 같은 시각 ESS 방전을 피크저감과 DR로 동시 계상하는 조합은 선언적 … | 자동 | test_pv.py |
 |  |  | 1 | `FR-402-AC2.B` | 인과 하류 편익이 상류에 이미 포함 — 배전망 회피 편익 ↔ 전기요금 절감처럼 망 비용이 이미 망이용요금으로 회수된 경우, 하류 편익은 요금에 미반영된 증분만 … | **미매핑** | — |
 |  |  | 1 | `FR-402-AC2.C` | 동일 효과의 이중 화폐화 — 같은 tCO2에 배출권 수익(사업자 현금)과 사회적 탄소비용(사회 편익)을 동시 계상하지 않는다. 관점당 하나의 화폐화 방법만 허용… | **미매핑** | — |
 |  |  | 1 | `FR-402-AC2.D` | 제도적 배타 — 상계거래 참여 시 REC 발급 제한, DR 정산금과 요금 인센티브 중복 수취 금지 등은 규제 프로파일에 종속된 배타 규칙으로 관리하고 제도 개정… | **미매핑** | — |
@@ -128,7 +128,7 @@
 |  |  | 1 | `FR-403-AC2` | 각 시각별로 어느 편익이 그 제약값에 기여했는지 기록한다 | **미매핑** | — |
 |  |  | 1 | `FR-403-AC3` | 시뮬레이션·최적화 실행 전에 min > max 충돌을 검사하고, 충돌 시 "2027-01-15 18:00에 ESS 방전 하한(예비력 확보)과 상한(SOC 제약)… | **미매핑** | — |
 |  |  | 1 | `FR-403-AC4` | 무한대 표현에는 math.inf를 사용하며 유한 대형 상수를 sentinel로 쓰지 않는다 | **미매핑** | — |
-| `FR-404` | Must-have | 1 | `FR-404-AC1` | 활성화 시 "정책 가정 편익 — 현행 제도 미반영" 경고를 리포트 상단에 표시 | **미매핑** | — |
+| `FR-404` | Must-have | 1 | `FR-404-AC1` | 활성화 시 "정책 가정 편익 — 현행 제도 미반영" 경고를 리포트 상단에 표시 | 자동 | test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py |
 |  |  | 1 | `FR-404-AC2` | 활성화하더라도 본편익 합계와 분리된 별도 소계로 표시하며, 주 지표(할인 회수기간)는 본편익 기준값과 크레딧 포함값을 모두 제시한다 | **미매핑** | — |
 |  |  | 1 | `FR-404-AC3` | 하위 항목(송배전 회피·손실 감소)은 FR-402 유형 B에 해당하므로, 현행 요금에 이미 반영된 부분을 제외한 미래 증설 회피 증분만 계상한다. 증분 분리 근… | **미매핑** | — |
 | `FR-501` | Must-have | 1 | `FR-501-AC1` | 주택용 누진제 (구간별 단가·기본요금·필수사용량 공제) | **미매핑** | — |
@@ -238,7 +238,7 @@
 |  |  | 1 | `FR-704-AC5` | 사회 관점 산출 시 보조금은 이전지출로 처리하여 편익에 포함하지 않는다 (분산자원 경제성 평가 원칙 원칙 2-3 관점 분리 — 「핵심 규칙 세 가지」 1항) | **미매핑** | — |
 |  |  | 1 | `FR-704-AC6` | 타 사업 기지원 설비(FR-611)의 관점별 계상 (v0.5 추가): 정부 관점 재정효율 지표의 분모(투입 국비)에는 본 사업 국비만 포함한다. 타 사업 국비는… | **미매핑** | — |
 |  |  | 1 | `FR-704-AC7` | 관점 전환 시 어떤 항목이 왜 포함/제외되었는지를 리포트에 표시한다 (관점 섞기가 가장 흔한 중복 오류 — 도메인 원칙 2-3) | **미매핑** | — |
-| `FR-705` | Must-have | 1 | `FR-705-AC1` | "설비 미설치 시 전기·열 비용"을 기준선으로 계산하고 모든 편익을 증분으로 산출. 기준선 자체 비용도 리포트에 표시 | **미매핑** | — |
+| `FR-705` | Must-have | 1 | `FR-705-AC1` | "설비 미설치 시 전기·열 비용"을 기준선으로 계산하고 모든 편익을 증분으로 산출. 기준선 자체 비용도 리포트에 표시 | 자동 | test_heatpump.py |
 | `FR-801` | Must-have | 1 | `FR-801-AC1` | 임의 파라미터를 "탐색 변수"로 지정하고 값 목록(예: [저, 중, 고] 또는 [100, 150, 200])을 부여 | **미매핑** | — |
 |  |  | 1 | `FR-801-AC2` | 탐색 변수로 지정 가능한 대상에는 스칼라 파라미터뿐 아니라 자원 운전 방법(FR-105), 규제 프로파일(FR-504), 시계열 데이터셋(FR-905) 도 포함… | **미매핑** | — |
 |  |  | 1 | `FR-801-AC3` | 시스템이 전조합(Cartesian product)을 생성하고 일괄 실행한다 | **미매핑** | — |
