@@ -14,7 +14,9 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from enum import StrEnum
+from types import MappingProxyType
 from typing import ClassVar
 
 from core.contracts.der import DER, DispatchContext, DispatchResult
@@ -54,12 +56,20 @@ class ESSOperatingMode(StrEnum):
 #: 자원이 시간대를 드는 이유는 FR-105-AC2 다 — 엔진이 표를 들면 운전 방법
 #: 하나 늘릴 때마다 엔진을 고쳐야 한다. 요금제 연동 최적화는 WP-6 의 몫이고,
 #: 여기 값은 자원 단독 검증(§13.2.1 결정성)용 손계산 가능한 기본 프로파일이다.
-_MODE_WINDOWS: dict[ESSOperatingMode, tuple[tuple[int, ...], tuple[int, ...]]] = {
-    ESSOperatingMode.SELF_CONSUMPTION: ((10, 11, 12, 13, 14, 15), (18, 19, 20, 21)),
-    ESSOperatingMode.TOU_ARBITRAGE: ((1, 2, 3, 4, 5, 6), (18, 19, 20, 21)),
-    ESSOperatingMode.PEAK_SHAVING: ((1, 2, 3, 4, 5, 6), (13, 14, 15, 16)),
-    ESSOperatingMode.BACKUP_RESERVE: ((1, 2, 3, 4, 5, 6), (18, 19, 20, 21)),
-}
+#:
+#: **`MappingProxyType` 인 이유 (NFR-205).** 평범한 `dict` 로 두면 모듈 수준
+#: 가변 상태다. 지금은 아무도 고치지 않지만 그것이 다음 사람도 고치지 않는다는
+#: 보장은 아니고, **케이스 그리드 병렬 실행(FR-805)에서 한 번의 변형은 다른
+#: 케이스의 결과를 조용히 바꾼다** — 조항의 근거인 DER-VET `Params.py` 가 정확히
+#: 그 형태였다. 읽기 전용으로 만들면 그 가능성 자체가 사라진다.
+_MODE_WINDOWS: Mapping[ESSOperatingMode, tuple[tuple[int, ...], tuple[int, ...]]] = (
+    MappingProxyType({
+        ESSOperatingMode.SELF_CONSUMPTION: ((10, 11, 12, 13, 14, 15), (18, 19, 20, 21)),
+        ESSOperatingMode.TOU_ARBITRAGE: ((1, 2, 3, 4, 5, 6), (18, 19, 20, 21)),
+        ESSOperatingMode.PEAK_SHAVING: ((1, 2, 3, 4, 5, 6), (13, 14, 15, 16)),
+        ESSOperatingMode.BACKUP_RESERVE: ((1, 2, 3, 4, 5, 6), (18, 19, 20, 21)),
+    })
+)
 
 
 class ESS(DER):

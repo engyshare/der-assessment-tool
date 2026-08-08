@@ -525,3 +525,31 @@ def test_dispatch_rejects_plan_that_exceeds_rated_power() -> None:
     ess = _p1_ess(capacity_kwh=200.0, power_kw=1.0, cycle_life=20000)
     with pytest.raises(ValueError, match="정격출력"):
         ess.dispatch(DispatchContext(steps=24, dt=3600, year=1))
+
+
+@pytest.mark.req("NFR-205-M1")
+def test_mode_windows_table_is_read_only() -> None:
+    """운전 시간대 표는 **읽기 전용**이다 (NFR-205).
+
+    모듈 수준 `dict` 였을 때는 아무도 고치지 않았지만, 그것이 다음 사람도
+    고치지 않는다는 보장은 아니다. **케이스 그리드 병렬 실행(FR-805)에서 한
+    번의 변형은 다른 케이스의 결과를 조용히 바꾼다** — 표가 바뀐 뒤에 도는
+    케이스만 다른 시간대로 운전하고, 그 결과는 그럴듯하다. 조항의 근거인
+    DER-VET `Params.py` 가 정확히 그 형태였다.
+
+    값도 함께 고정한다. 읽기 전용으로 만드는 과정에서 표가 바뀌면 `RC-ESS-P1`
+    의 손계산 오라클이 어긋나는데, 그 어긋남은 총량으로만 나타나 원인을 찾기
+    어렵다.
+    """
+    from core.der.ess import _MODE_WINDOWS
+
+    with pytest.raises(TypeError):
+        _MODE_WINDOWS[ESSOperatingMode.SELF_CONSUMPTION] = ((0,), (1,))  # type: ignore[index]
+
+    charge, discharge = _MODE_WINDOWS[ESSOperatingMode.SELF_CONSUMPTION]
+    assert charge == (10, 11, 12, 13, 14, 15)
+    assert discharge == (18, 19, 20, 21)
+    assert set(_MODE_WINDOWS) == set(ESSOperatingMode) - {ESSOperatingMode.HYBRID}, (
+        "운전 방법이 늘거나 줄었는데 표가 따라가지 않았습니다 — FR-105-AC2 는 "
+        "운전 방법을 자원이 소유하라고 요구합니다"
+    )

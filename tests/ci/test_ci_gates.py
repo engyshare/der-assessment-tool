@@ -509,3 +509,52 @@ def test_coverage_inputs_exit_2_when_the_artifact_is_absent(tmp_path: Path) -> N
         capture_output=True, text=True, check=False,
     ).returncode
     assert code == 2
+
+
+# ── NFR-202 · NFR-205 (작업 2.9) ─────────────────────────────────────
+
+@pytest.mark.req("NFR-202-M1")
+@pytest.mark.req("NFR-205-M1")
+def test_ci_runs_the_parameter_and_global_state_scan() -> None:
+    """CI 가 파라미터 하드코딩·전역 가변 상태 검사와 **그 음성 테스트**를 부른다.
+
+    음성 테스트를 함께 요구하는 이유: 이 검사는 「차단 0건」으로 통과하고, 그
+    통과가 «복제가 없다» 는 뜻인지 «문턱이 너무 높아 아무것도 보지 않는다» 는
+    뜻인지 결과만 보고는 구분되지 않는다. 문턱을 올리면 진짜 복제가 경고로
+    내려가고 **경고는 종료 코드 0** 이다 — 후퇴가 초록불로 나타난다.
+    """
+    spec = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    commands = "\n".join(
+        step["run"]
+        for job in spec["jobs"].values()
+        for step in job.get("steps", [])
+        if isinstance(step.get("run"), str)
+    )
+    assert "check_hardcoded_params.py" in commands, (
+        "CI 가 NFR-202·NFR-205 검사를 부르지 않습니다 (작업 2.9)"
+    )
+    assert "negtest_hardcoded_params.py" in commands, (
+        "검사의 감지 능력을 확인하지 않습니다 — 게이트를 켠 이상 게이트 자신이 "
+        "무언가를 검사한다는 증거가 CI 에 상주해야 합니다 (§13.0.1 ④)"
+    )
+
+
+@pytest.mark.req("NFR-205-M1")
+def test_no_module_or_class_level_mutable_containers() -> None:
+    """`core/`·`app/`·`infra/` 에 모듈·클래스 수준 가변 컨테이너가 없다.
+
+    조항의 근거는 DER-VET `Params.py` 의 클래스 변수 전역 상태이며, 그것이
+    **케이스 그리드 병렬 실행(FR-805)과 구획별 테스트 격리(§16 W-5)를 동시에**
+    불가능하게 만들었다.
+
+    **읽기 전용으로 쓰고 있어도 위반이다.** 실제로 `core/der/ess.py` 의
+    `_MODE_WINDOWS` 가 평범한 `dict` 였고 아무도 고치지 않았지만, 병렬 실행에서
+    한 번의 변형은 다른 케이스의 결과를 조용히 바꾼다 — `MappingProxyType` 으로
+    바꾸면 그 가능성 자체가 사라진다.
+    """
+    mod = _script("check_hardcoded_params")
+    root = REPO_ROOT
+    findings = mod.check_global_mutable(mod.source_files(root), root)
+    assert not findings, "전역 가변 상태: " + ", ".join(
+        f"{f.path}:{f.lineno} {f.detail}" for f in findings
+    )

@@ -66,6 +66,21 @@ jobs:
       - name: mypy strict (NFR-204)
         run: python -m mypy
 
+      # NFR-202(정책·시장 파라미터 하드코딩) · NFR-205(전역 가변 상태) — 작업 2.9.
+      #
+      # NFR-202 는 작업 16.1이 「나중에 값을 교체할 수 있다」를 세우기 위해 든
+      # 세 장치 중 셋째다. 대장(`assumptions.yaml`)과 대장 검사만으로는 부족
+      # 하다 — *"대장만 있으면 누군가 값을 소스에 옮겨 적는다."* 옮겨 적히는
+      # 순간 대장은 정본이 아니라 사본이 된다.
+      - name: NFR-202 · NFR-205 파라미터·전역 상태
+        run: python scripts/check_hardcoded_params.py
+
+      - name: 도구 감지 능력 확인 (음성 7 + 양성 4 + 경계 5)
+        # 이 검사는 「차단 0건」으로 통과한다. 그 통과가 «복제가 없다» 는 뜻인지
+        # «문턱이 너무 높아 아무것도 보지 않는다» 는 뜻인지 결과만 보고는
+        # 구분되지 않는다 (§13.0.1 ④). 문턱 값 자체도 함께 고정한다.
+        run: python scripts/negtest_hardcoded_params.py
+
       - name: import-linter — 구획 경계 4계약 (NFR-208)
         # `python -m importlinter.cli lint` 로 부르지 **않는다.** 그 모듈에는
         # `__main__` 가드가 없어 import만 되고 끝나며 **종료 코드 0**을 낸다 —
