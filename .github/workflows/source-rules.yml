@@ -183,3 +183,47 @@ jobs:
 
       - name: 도구 감지 능력 확인 (음성 테스트)
         run: python scripts/negtest_assumptions.py
+
+  # ── 파일 규모 (NFR-206) ───────────────────────────────────────────
+  #
+  # **경고이고 차단이 아니다.** NFR-206 은 Should-have 이고 측정 수단이
+  # `M1 lint 경고` 로 규정되어 있다. 차단으로 켜면 조항이 요구하지 않은 강제력을
+  # 갖고, 통과시키려고 근거 주석을 지우는 압력이 생긴다 — 조항의 근거
+  # (DER-VET `Params.py` 1,830줄)는 코드 스프롤을 막으려는 것이지 설명을
+  # 줄이려는 것이 아니다.
+  #
+  # 저장소 전체를 훑는 이유: 이 검사를 쓴 것은 WP-1e 하나뿐이었고 자기 파일
+  # 둘만 보았다. 나머지 넷은 감시 밖이었고 상한을 넘긴 것이 정확히 그 넷이다.
+  # 도구 파일 2건은 그 사각지대에서 811줄·571줄까지 자라 있었다.
+  file-size:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 파일 규모 검사
+        id: size
+        run: |
+          set +e
+          python scripts/check_file_size.py --strict | tee size.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: 요약
+        if: always()
+        run: |
+          {
+            echo "## 파일 규모 (NFR-206 · 500줄)"
+            echo
+            echo '```'
+            cat size.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 초과 시 경고 주석
+        if: steps.size.outputs.exit_code != '0'
+        run: |
+          echo "::warning::NFR-206 상한(500줄) 초과 파일이 있습니다. 작업 요약을 확인하십시오."
