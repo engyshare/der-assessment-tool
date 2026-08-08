@@ -61,9 +61,19 @@ jobs:
         # 위반을 심어도 초록불이다. 콘솔 스크립트를 부른다.
         run: lint-imports
 
-      - name: pytest + 커버리지
+      # `--cov-fail-under=85` 는 NFR-203-M1(작업 2.10)이다. 게이트 ①(변경분
+      # 95%)과 별개로 필요하다 — ①은 **신규 코드만** 보므로, 기존 코드의
+      # 커버리지가 서서히 내려가는 것을 아무도 보지 않는다. 하나는 들어오는
+      # 것을, 하나는 이미 있는 것을 지킨다.
+      #
+      # 85%는 조항 문면이다. 지금 90%이므로 여유가 있으나, `source = ["core"]`
+      # 때문에 **테스트가 import하지 않은 추상 인터페이스도 0%로 분모에 있다** —
+      # 구현이 붙으면 그것들이 먼저 채워진다. 하한을 올릴지는 그때 판단하며,
+      # 그것은 spec 개정이다(§16.5).
+      - name: pytest + 커버리지 (NFR-203 85%)
         run: |
-          python -m pytest --cov=core --cov-branch --cov-report=xml --cov-report=term
+          python -m pytest --cov=core --cov-branch --cov-report=xml \
+            --cov-report=term --cov-fail-under=85
 
       # ── 게이트 ① 변경분 커버리지 ≥ 95% (작업 2.5) ─────────────────
       #

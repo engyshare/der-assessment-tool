@@ -12,9 +12,9 @@
 | 요구사항 | 97 |
 | 그중 Must-have | 71 |
 | 수용기준 총계 | 299 |
-| 자동 검증 매핑 | 40 |
+| 자동 검증 매핑 | 45 |
 | 수동 검증 매핑 | 8 |
-| **Must-have 미매핑** | **221** |
+| **Must-have 미매핑** | **217** |
 | 우선순위 미지정 요구사항 | 0 |
 | **Phase 미지정 요구사항** | **9** |
 
@@ -33,7 +33,7 @@
 > 감시하면서도 *언제까지* 지켜야 하는지는 말하지 못하는 상태입니다. Should-have만
 > 남았다면 R-1 정비 사항이며 게이트 판정에는 영향이 없습니다.
 
-> **미매핑 221건.** NFR-107은 미매핑 0건을 요구합니다.
+> **미매핑 217건.** NFR-107은 미매핑 0건을 요구합니다.
 >
 > 현재 저장소에 테스트가 없으므로 전건 미매핑인 것이 정상입니다. 이 표는
 > **Wave 0 시점의 작업 목록**으로 읽으십시오 — 각 행이 곧 작성해야 할 테스트
@@ -313,17 +313,17 @@
 |  |  | 1 | `NFR-107-M1` | CI가 spec 수용기준 목록과 마커·YAML을 대조하여 미매핑 0건 확인. 구현: scripts/gen_traceability.py (Wave 0 산출물 0.… | **미매핑** | — |
 | `NFR-201` | Must-have | 1 | `NFR-201-M1` | 신규 자원 추가 PR에서 core/engine/, core/cba/ diff 0줄 | **미매핑** | — |
 | `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | **미매핑** | — |
-| `NFR-203` | Should-have | 1 | `NFR-203-M1` | pytest-cov CI 게이트 | **미매핑** | — |
+| `NFR-203` | Should-have | 1 | `NFR-203-M1` | pytest-cov CI 게이트 | 자동 | test_ci_gates.py |
 | `NFR-204` | Should-have | 1 | `NFR-204-M1` | mypy strict 통과 | **미매핑** | — |
 | `NFR-205` | Must-have | 1 | `NFR-205-M1` | 코드 리뷰 + lint 규칙. 근거: DER-VET Params.py의 클래스 변수 전역 상태는 동시 실행·테스트 격리를 불가능하게 만든다 (부록 C.5) | **미매핑** | — |
 | `NFR-206` | Should-have | 1 | `NFR-206-M1` | lint 경고. 근거: DER-VET Params.py 1,830줄의 유지보수 실패 사례 | **미매핑** | — |
 | `NFR-207` | Must-have | 1 | `NFR-207-AC1` | 등록은 패키지 디렉터리 스캔 또는 데코레이터 자동 수집으로 수행한다. 신규 자원 추가 시 core/der/__init__.py, REGISTRY = [...] … | 자동 | test_registry.py, test_registry.py, test_registry.py, test_registry.py, test_registry.py |
 |  |  | 1 | `NFR-207-AC2` | 등록 충돌(동일 tag 중복)은 기동 시점에 명확한 오류로 검출된다 | 자동 | test_registry.py, test_registry.py, test_registry.py |
 |  |  | 1 | `NFR-207-M1` | 신규 자원 추가 PR의 diff에 §16.4 공유 파일 목록의 변경 0줄 | 자동 | test_registry.py, test_registry.py, test_registry.py |
-| `NFR-208` | Must-have | 1 | `NFR-208-AC1` | 상위 계층은 하위 계층을 import할 수 있으나 역방향 import는 금지한다 (예: core/der/ → core/engine/ 금지) | **미매핑** | — |
-|  |  | 1 | `NFR-208-AC2` | 동일 계층의 형제 구획 간 직접 import를 금지한다 (예: core/valuestream/ → core/regulation/ 직접 참조 금지, core/co… | **미매핑** | — |
-|  |  | 1 | `NFR-208-AC3` | core/contracts/는 어떤 구획도 import하지 않는 순수 인터페이스·타입·단위 정의만 포함한다 | **미매핑** | — |
-|  |  | 1 | `NFR-208-M1` | import-linter 계약(layers + independence)을 CI에서 강제. 위반 0건 | **미매핑** | — |
+| `NFR-208` | Must-have | 1 | `NFR-208-AC1` | 상위 계층은 하위 계층을 import할 수 있으나 역방향 import는 금지한다 (예: core/der/ → core/engine/ 금지) | 자동 | test_import_boundaries.py |
+|  |  | 1 | `NFR-208-AC2` | 동일 계층의 형제 구획 간 직접 import를 금지한다 (예: core/valuestream/ → core/regulation/ 직접 참조 금지, core/co… | 자동 | test_import_boundaries.py |
+|  |  | 1 | `NFR-208-AC3` | core/contracts/는 어떤 구획도 import하지 않는 순수 인터페이스·타입·단위 정의만 포함한다 | 자동 | test_import_boundaries.py |
+|  |  | 1 | `NFR-208-M1` | import-linter 계약(layers + independence)을 CI에서 강제. 위반 0건 | 자동 | test_import_boundaries.py, test_import_boundaries.py |
 | `NFR-301` | Should-have | 1 | `NFR-301-M1` | 사용자 5명 태스크 수행 테스트 | 수동 | MC-2 (미수행) |
 | `NFR-302` | Should-have | 1 | `NFR-302-M1` | UI 검수 체크리스트 | 수동 | MC-3 (미수행) |
 | `NFR-303` | Should-have | 1 | `NFR-303-M1` | 오류 메시지 리뷰 체크리스트 | 수동 | MC-4 (미수행) |

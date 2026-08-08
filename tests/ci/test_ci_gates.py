@@ -32,6 +32,7 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "tests.yml"
 CHECKER = REPO_ROOT / "scripts" / "check_test_accompaniment.py"
 
 DIFF_COVER_MIN = 95  # NFR-105 Measurement 1
+TOTAL_COVER_MIN = 85  # NFR-203 (작업 2.10)
 
 
 def _script(stem: str):
@@ -411,6 +412,29 @@ def test_ci_validates_coverage_inputs_before_judging_them() -> None:
             f"잡 {name!r} 에서 입력 검증이 diff-cover 뒤에 있습니다 — 그 순서로는 "
             "게이트가 이미 통과한 뒤에 입력이 틀렸다는 사실이 보고됩니다"
         )
+
+
+@pytest.mark.req("NFR-203-M1")
+def test_ci_enforces_the_total_coverage_floor() -> None:
+    """전체 커버리지 하한 85% (작업 2.10).
+
+    **게이트 ①(변경분 95%)이 이것을 대신하지 못한다.** ①은 그 PR 이 추가·수정한
+    라인만 본다. 기존 코드에서 테스트를 지우거나, 커버되던 분기를 커버되지 않는
+    형태로 옮기면 변경분은 깨끗한데 전체는 내려간다 — 그 하락을 보는 눈이
+    없으면 아무도 알아채지 못한다. 하나는 들어오는 것을, 하나는 이미 있는
+    것을 지킨다.
+    """
+    spec = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    commands = "\n".join(
+        step["run"]
+        for job in spec["jobs"].values()
+        for step in job.get("steps", [])
+        if isinstance(step.get("run"), str)
+    )
+    assert f"--cov-fail-under={TOTAL_COVER_MIN}" in commands, (
+        f"전체 커버리지 하한 {TOTAL_COVER_MIN}% 가 CI 에 없습니다 — NFR-203-M1 은 "
+        "`pytest-cov CI 게이트` 이며, 값을 낮추는 것은 spec 개정입니다 (§16.5)"
+    )
 
 
 # ── 게이트 ① 입력 검증 자신의 감지 능력 ─────────────────────────────
