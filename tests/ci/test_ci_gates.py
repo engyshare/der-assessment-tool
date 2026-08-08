@@ -569,6 +569,7 @@ PRECOMMIT = REPO_ROOT / ".pre-commit-config.yaml"
 
 
 @pytest.mark.req("FR-1101-AC5")
+@pytest.mark.req("SC-5")
 def test_private_data_scan_runs_in_both_pre_commit_and_ci() -> None:
     """조항 문면이 **`pre-commit·CI에 둔다`** 이므로 둘 다 본다.
 
@@ -605,6 +606,7 @@ def test_private_data_scan_runs_in_both_pre_commit_and_ci() -> None:
 
 
 @pytest.mark.req("FR-1101-AC5")
+@pytest.mark.req("SC-5")
 def test_secret_scan_uses_full_history() -> None:
     """비밀 스캔은 **이력 전체**를 본다.
 
@@ -629,6 +631,7 @@ def test_secret_scan_uses_full_history() -> None:
 
 
 @pytest.mark.req("FR-1101-AC5")
+@pytest.mark.req("SC-8")
 def test_every_ledger_value_declares_its_disclosure_grade() -> None:
     """값을 가진 대장 항목은 **명시적으로** 공개 등급을 선언한다.
 
@@ -643,10 +646,9 @@ def test_every_ledger_value_declares_its_disclosure_grade() -> None:
     ledger = yaml.safe_load(
         (REPO_ROOT / "docs" / "assumptions.yaml").read_text(encoding="utf-8")
     )
-    # **`SC-8` 로 마킹할 수 없다.** SC 표의 행은 조항 ID 를 갖지만 수용기준
-    # 파서가 읽는 형식(`- **AC1**`)이 아니라 매핑 대상이 아니고, 실제로 마커를
-    # 달자 생성기가 «실재하지 않는 인용» 으로 잡았다. spec 쪽 결손이며 미해결에
-    # 등재했다 — 여기서는 같은 것을 요구하는 `FR-1101-AC5` 에 건다.
+    # `SC-8` 마커는 08-08에 §9 표를 추적표에 넣으면서 유효해졌다. 그전에는
+    # 이 마커를 달면 생성기가 «실재하지 않는 인용» 으로 잡았고 — 검사기는
+    # 옳았다 — 그때 **보안 조항 8건이 통째로 감시 밖**이라는 것이 드러났다.
     ungraded = [
         item["key"] for item in ledger["assumptions"]
         if item.get("value") is not None and item.get("disclosure") != "공개 가능"
@@ -654,4 +656,53 @@ def test_every_ledger_value_declares_its_disclosure_grade() -> None:
     assert not ungraded, (
         f"등급이 없거나 «공개 가능»이 아닌 값 항목: {ungraded}. 등급 미지정은 "
         "«비공개»로 간주되며 공개 저장소에 커밋될 수 없습니다 (SC-8)"
+    )
+
+
+@pytest.mark.req("SC-3")
+def test_personal_identifier_patterns_are_detected(tmp_path: Path) -> None:
+    """개별 식별정보 형태를 잡는다 — 그리고 **찾은 값을 보고서에 싣지 않는다.**
+
+    SC-3 은 *"실증 참여 가구의 개별 식별정보 미저장"* 을 요구한다. Q-3 부하
+    시계열은 실제 가구 데이터이고, 익명화 전 원본이 저장소에 들어오는 사고를
+    막을 수 있는 시점은 **커밋 전 한 번뿐**이다.
+
+    가리는 것도 함께 검사하는 이유: CI 로그와 작업 요약은 저장소보다 넓게
+    읽힌다. **보고서가 새 유출 경로가 되면 검사가 문제를 옮길 뿐이다.** 실제로
+    한 줄에 셋이 있을 때 각 발견이 나머지 둘을 그대로 실었고, 세 줄을 나란히
+    읽으면 원문이 복원됐다 — 이 검사가 그것을 잡았다.
+
+    **픽스처를 리터럴로 적지 않고 조립한다.** 적으면 이 파일이 검사 대상이므로
+    스스로 위반이 된다 —「검사 도구를 설명하는 문장이 그 검사에 걸린다」의
+    여덟 번째다. 해법은 앞선 일곱과 같다: **면제를 넓히지 않고 대상을 바꾼다.**
+    `tests/` 를 통째로 면제하면 진짜 유출이 테스트 픽스처에 섞여 들어와도
+    보이지 않는다.
+    """
+    mod = _script("check_disclosure")
+
+    rrn = "900101" + "-" + "1234567"
+    phone = "010" + "-1234-" + "5678"
+    email = "hong" + "@" + "somewhere.co.kr"
+    benign = "someone" + "@" + "example.com"
+
+    sample = tmp_path / "x.md"
+    sample.write_text(
+        f"참여자 {rrn} / 담당 {phone} / {email}\n예시는 {benign} 을 쓴다\n",
+        encoding="utf-8",
+    )
+    findings = mod.check_contents(["x.md"], tmp_path)
+    rules = {f.rule for f in findings}
+    assert "주민등록번호 형태" in rules
+    assert "전화번호 형태" in rules
+    assert "이메일 주소" in rules
+
+    blob = "\n".join(f.excerpt for f in findings)
+    for secret in (rrn, phone, email):
+        assert secret not in blob, (
+            "찾은 값이 보고서에 그대로 실렸습니다 — 검사가 유출을 막는 대신 "
+            "옮기고 있습니다. 한 줄에 여럿이면 각 발견이 나머지를 싣습니다"
+        )
+    assert benign not in blob, (
+        "`example.com` 예시를 개인정보로 오판합니다 — 오탐은 규칙을 넓히는 "
+        "압력을 만들고, 넓어진 규칙은 진짜 유출도 통과시킵니다"
     )

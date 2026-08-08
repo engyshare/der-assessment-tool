@@ -189,13 +189,29 @@ def check_contents(paths: list[str], root: Path) -> list[Finding]:
     return findings
 
 
+def _mask(matched: str) -> str:
+    return matched[:3] + "…" + "*" * max(0, min(6, len(matched) - 3))
+
+
 def _redact(line: str, matched: str) -> str:
     """찾은 값을 가린다. **보고서가 새 유출 경로가 되면 안 된다** — CI 로그와
     작업 요약은 저장소보다 넓게 읽힌다.
+
+    **자기 매치만 가리면 안 된다.** 한 줄에 식별정보가 여럿이면(주민번호 ·
+    전화번호 · 이메일이 한 줄에 있는 연락처 표가 흔하다) 그 줄에서 발견이
+    세 건 나오고, 각 발견이 **나머지 둘을 그대로 싣는다.** 세 줄을 나란히
+    읽으면 원문이 복원된다 — 검사가 유출을 막는 대신 **옮기는** 셈이다.
+    실제로 그 상태였고, `SC-3` 검증 케이스가 잡았다.
+
+    그래서 규칙 전건을 다시 적용해 **그 줄의 모든 일치**를 가린다.
     """
-    keep = matched[:3]
-    masked = keep + "…" + "*" * max(0, min(6, len(matched) - 3))
-    shown = line.replace(matched, masked)
+    shown = line
+    for _rule, pattern, _hint in CONTENT_RULES:
+        shown = pattern.sub(lambda m: _mask(m.group(0)), shown)
+    # 트리거가 된 값은 규칙 순회로 이미 가려졌지만, 호출부가 다른 경로로
+    # 넘긴 값도 확실히 지운다 — 가리기에서 «대체로 가려진» 은 실패다.
+    if matched in shown:
+        shown = shown.replace(matched, _mask(matched))
     return shown[:110]
 
 
