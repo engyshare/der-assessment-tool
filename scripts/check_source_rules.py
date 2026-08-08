@@ -466,6 +466,9 @@ def main() -> int:
                     help="lock의 vault_root 를 덮어씀")
     ap.add_argument("--update", action="store_true",
                     help="해시 표류를 lock에 반영한다. 앵커 표류는 반영하지 않는다")
+    ap.add_argument("--require-vault", action="store_true",
+                    help="정본을 하나라도 볼트로 읽지 못하면 종료 코드 2. "
+                         "볼트가 있는 환경(로컬·스케줄러)에서 쓴다")
     args = ap.parse_args()
 
     if not args.lock.is_file():
@@ -502,8 +505,10 @@ def main() -> int:
         return 2
 
     pending: dict[str, dict] = {}
+    origins: list[str] = []
     for entry in lock["sources"]:
         path, origin = resolve_source(entry, vault_root, repo_root, report)
+        origins.append(origin)
         if path is None:
             continue
         actual = check_source(entry, path, origin, report)
@@ -539,6 +544,29 @@ def main() -> int:
                 print(f"    {line}")
 
     print("─" * 72)
+
+    # **볼트로 읽지 못한 것을 「통과」로 읽지 않는다 (§13.0.1 ④).**
+    #
+    # 볼트가 없으면 이 검사는 저장소 사본을 정본 자리에 놓고 대조한다. 그 결과가
+    # 증명하는 것은 *"사본이 오염되지 않았다"* 뿐이며, **정본 개정은 원리상 보이지
+    # 않는다.** 그런데 화면에는 「통과」가 뜨고 종료 코드는 0이다.
+    #
+    # 2026-08-03 개정을 08-08까지 5일간 놓친 것이 정확히 이 상태였다. 그때도
+    # 「볼트 미접근」INFO 는 출력에 있었다 — **읽히지 않았을 뿐이다.** 사람이 둘째
+    # 줄을 확인하는 것에 기대는 장치는 반드시 같은 방식으로 다시 실패한다.
+    #
+    # CI 는 볼트에 구조적으로 접근할 수 없으므로 이 플래그를 켜지 않는다. 켜는
+    # 곳은 볼트가 있는 환경 — 로컬 세션 시작 절차와 작업 스케줄러(2.16)다.
+    if args.require_vault and any(o != "vault" for o in origins):
+        fell_back = sum(1 for o in origins if o != "vault")
+        print(f"볼트로 읽지 못한 정본 {fell_back}건 — --require-vault 위반",
+              file=sys.stderr)
+        print(f"  볼트 경로: {vault_root}", file=sys.stderr)
+        print("  저장소 사본으로 내려간 대조는 «사본이 오염되지 않았다»만 "
+              "증명하며, 정본 개정은 원리상 감지하지 못합니다.", file=sys.stderr)
+        print("  DER_VAULT_ROOT 를 설정하거나 --vault 로 경로를 주십시오.",
+              file=sys.stderr)
+        return 2
 
     if not report.drifted:
         print("통과 — 정본과 spec이 정합합니다")
