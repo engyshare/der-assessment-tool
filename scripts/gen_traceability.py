@@ -53,6 +53,7 @@ ID 없는 수용기준은 **문서 결함으로 보고하고 종료 코드 2**�
 from __future__ import annotations
 
 import argparse
+import ast
 import re
 import sys
 from dataclasses import dataclass, field
@@ -328,16 +329,100 @@ def parse_phase_appendix(path: Path) -> dict[str, str]:
     return out
 
 
-def collect_test_markers(tests_dir: Path) -> dict[str, list[str]]:
-    """수용기준 ID → 그것을 검증하는 테스트 파일 목록."""
-    mapping: dict[str, list[str]] = {}
+def _attr_path(node) -> str:
+    """`pytest.mark.req` 같은 점 표기를 문자열로 되돌린다."""
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
+    return ".".join(reversed(parts))
+
+
+def _marks(decorators) -> tuple[list[str], bool]:
+    """데코레이터 목록에서 (req 인용 ID들, manual 표기 여부)."""
+    reqs: list[str] = []
+    manual = False
+    for d in decorators:
+        target = d.func if isinstance(d, ast.Call) else d
+        name = _attr_path(target)
+        if not name.startswith("pytest.mark."):
+            continue
+        kind = name.split(".")[-1]
+        if kind == "manual":
+            manual = True
+        elif kind == "req" and isinstance(d, ast.Call):
+            for a in d.args:
+                if isinstance(a, ast.Constant) and isinstance(a.value, str):
+                    reqs.append(a.value)
+    return reqs, manual
+
+
+def collect_test_markers(tests_dir: Path) -> tuple[dict[str, list[tuple[str, bool]]], list[str]]:
+    """수용기준 ID → [(테스트 파일, manual 표기 여부)]. 그리고 파싱 결함.
+
+    **`@pytest.mark.manual` 을 함께 읽는다 (NFR-107-AC1.manual).**
+
+    v0.9까지 이 함수는 `@pytest.mark.req` 만 정규식으로 긁었다. 그 결과
+    `manual` 로 skip 처리된 **명세 스텁**이 매핑표에 `자동`으로 표시됐다 —
+    아무것도 실행하지 않는 테스트가 "실행·통과 확인" 칸에 앉는 것이며,
+    `NFR-107-AC1.manual`(실행하지 않고 매핑 존재만 확인)과
+    `NFR-107-AC4`(자동/수동 구분 표시)를 동시에 위반한다.
+
+    표 수용기준이 `AC1` 한 건으로 뭉쳐 있는 동안은 자동 쪽이 채워져
+    조항 전체가 충족된 것처럼 보였다. 2.15 ① 전개로 `AC1.manual` 이
+    독립 ID를 얻자 이 구멍이 미매핑으로 드러났고, 여기서 닫는다.
+
+    **정규식이 아니라 `ast` 로 읽는 이유**: 두 마커가 *같은 테스트에*
+    붙었는지를 판정해야 한다. 파일 단위 정규식으로는 파일 어딘가에
+    `manual` 이 있다는 것만 알 뿐, 그것이 이 `req` 의 짝인지 알 수 없다.
+    클래스 데코레이터와 모듈 `pytestmark` 도 상속시킨다 — pytest가
+    그렇게 동작하므로 도구도 같아야 한다.
+    """
+    mapping: dict[str, list[tuple[str, bool]]] = {}
+    defects: list[str] = []
     if not tests_dir.is_dir():
-        return mapping
+        return mapping, defects
+
     for py in sorted(tests_dir.rglob("*.py")):
         text = py.read_text(encoding="utf-8", errors="replace")
-        for cid in TEST_MARKER.findall(text):
-            mapping.setdefault(cid, []).append(str(py))
-    return mapping
+        try:
+            tree = ast.parse(text, filename=str(py))
+        except SyntaxError as e:
+            # 조용히 건너뛰면 그 파일의 마커가 통째로 사라지고, 해당
+            # 수용기준은 "아무도 검증하지 않는 것"처럼 보인다. 있는 인용을
+            # 지우는 오류이므로 결함으로 보고한다.
+            defects.append(f"{py.name} 파싱 실패 (L{e.lineno}) — "
+                           f"이 파일의 마커가 집계에서 통째로 빠집니다: {e.msg}")
+            continue
+
+        # 모듈 수준 pytestmark = [...] 도 전 테스트에 걸린다
+        mod_reqs: list[str] = []
+        mod_manual = False
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == "pytestmark" for t in node.targets):
+                items = node.value.elts if isinstance(node.value, (ast.List, ast.Tuple)) \
+                    else [node.value]
+                r, m = _marks(items)
+                mod_reqs += r
+                mod_manual = mod_manual or m
+
+        def walk(body, inherited_reqs: list[str], inherited_manual: bool):
+            for node in body:
+                if isinstance(node, ast.ClassDef):
+                    r, m = _marks(node.decorator_list)
+                    walk(node.body, inherited_reqs + r, inherited_manual or m)
+                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    r, m = _marks(node.decorator_list)
+                    for cid in inherited_reqs + r:
+                        mapping.setdefault(cid, []).append(
+                            (str(py), inherited_manual or m))
+
+        walk(tree.body, mod_reqs, mod_manual)
+
+    return mapping, defects
 
 
 def collect_manual(path: Path) -> tuple[dict[str, dict], list[str]]:
@@ -369,6 +454,12 @@ def render(reqs: list[Requirement], tests: dict[str, list[str]],
     rows: list[str] = []
 
     n_total = n_auto = n_manual = 0
+    # `manual` 스텁으로만 매핑됐는데 대장에 수행 기록이 없는 조항.
+    # AC1.manual 은 스텁을 매핑 형식으로 인정하지만, AC3 은 수행 일자·수행자·
+    # 결과를 대장에 남기라고 한다. 스텁만 있고 대장에 없으면 **매핑은 있으나
+    # 수행 기록이 원리상 생길 수 없는 상태**이며, 그대로 두면 "수동으로
+    # 검증됨"이 영원히 미수행을 가린다.
+    stub_without_record: list[str] = []
     unprioritized = [r.rid for r in reqs if r.priority == "미지정"]
     unphased = [r.rid for r in reqs if r.phase == "-"]
     unphased_must = [r.rid for r in reqs if r.phase == "-" and r.is_must]
@@ -377,9 +468,27 @@ def render(reqs: list[Requirement], tests: dict[str, list[str]],
         for i, crit in enumerate(req.criteria):
             n_total += 1
             if crit.cid in tests:
-                status = "자동"
-                where = ", ".join(Path(p).name for p in tests[crit.cid])
-                n_auto += 1
+                entries = tests[crit.cid]
+                # 하나라도 실행되는 테스트가 있으면 자동이다. 전부 manual
+                # 표기면 실행되지 않으므로 자동으로 셀 수 없다.
+                auto_hits = [p for p, is_manual in entries if not is_manual]
+                if auto_hits:
+                    status = "자동"
+                    where = ", ".join(Path(p).name for p in auto_hits)
+                    n_auto += 1
+                else:
+                    status = "수동"
+                    files = ", ".join(Path(p).name for p, _ in entries)
+                    n_manual += 1
+                    chk = manual.get(crit.cid)
+                    if chk:
+                        state = chk.get("status", "미수행")
+                        verdict = chk.get("verdict")
+                        where = (f'{files} (스텁) + {chk["id"]} '
+                                 f'({state}{"/" + verdict if verdict else ""})')
+                    else:
+                        where = f"{files} (스텁 — **수행 기록 없음**)"
+                        stub_without_record.append(f"{crit.cid} — {files}")
             elif crit.cid in manual:
                 chk = manual[crit.cid]
                 state = chk.get("status", "미수행")
@@ -539,7 +648,7 @@ Phase DoD 판정 시 미수행 건수를 확인합니다.
 `manual-checks.yaml` 머리말에 있습니다.
 """
 
-    return header + body + tail, unmapped
+    return header + body + tail, unmapped, stub_without_record
 
 
 def main() -> int:
@@ -589,8 +698,35 @@ def main() -> int:
                 f"{req.rid} — 본문 Priority 줄 Phase {req.phase} / "
                 f"부록 A.1 Phase {assigned}")
 
-    tests = collect_test_markers(args.tests)
+    tests, test_defects = collect_test_markers(args.tests)
+    if test_defects:
+        print(f"ERROR: 테스트 마커 수집 결함 {len(test_defects)}건", file=sys.stderr)
+        for d in test_defects:
+            print(f"  · {d}", file=sys.stderr)
+        return 2
+
     manual, orphan = collect_manual(args.manual)
+
+    # ── 게이트 자기참조 금지 (NFR-107-AC5 ⓒ) ────────────────────────
+    #
+    # `NFR-107-AC1.manual` 을 수동 대장에 등재해 충족시키면, 수동 예외 경로를
+    # 정당화하는 조항 자신이 그 예외 경로로 "검증됨" 처리된다. 그 순간
+    # **아무것도 검증되지 않은 채 미매핑 0건 초록불**이 뜬다.
+    #
+    # 이 상태는 표를 전개하지 않아도 이미 도달 가능했고, 금지 규칙이 문서에도
+    # 도구에도 없었다. spec v0.9에서 AC5 본문에 명문화했고 여기서 강제한다.
+    # 수동 항목은 *분류를 규정하는 조항*이 아니라 *분류된 조항*에 건다.
+    self_ref = sorted(cid for cid in manual
+                      if re.match(r"NFR-10[567]-", cid))
+    if self_ref:
+        print(f"ERROR: 게이트 자신을 수동 대장에 등재했습니다 {len(self_ref)}건",
+              file=sys.stderr)
+        for cid in self_ref:
+            print(f"  · {cid} ({manual[cid]['id']})", file=sys.stderr)
+        print("\n검증 게이트(NFR-105~107)의 수용기준은 수동 검증으로 자기충족될 수 "
+              "없습니다 (NFR-107-AC5). 수동 항목은 분류를 규정하는 조항이 아니라 "
+              "분류된 조항에 겁니다.", file=sys.stderr)
+        return 2
 
     # 매달린 참조 검사 — 대장이나 테스트 마커가 없는 수용기준을 가리키는 경우.
     #
@@ -604,9 +740,9 @@ def main() -> int:
                           f'(삭제되었거나 ID가 밀렸습니다)')
     for cid in sorted(set(tests) - known):
         orphan.append(f'테스트 마커 {cid} — 해당 수용기준이 spec에 없음 '
-                      f'({", ".join(Path(p).name for p in tests[cid])})')
+                      f'({", ".join(Path(p).name for p, _ in tests[cid])})')
 
-    content, unmapped = render(reqs, tests, manual, orphan, spec_path.name)
+    content, unmapped, stub_only = render(reqs, tests, manual, orphan, spec_path.name)
 
     if not args.check:
         args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -621,9 +757,11 @@ def main() -> int:
 
     n_crit = sum(len(r.criteria) for r in reqs)
     n_unphased = sum(1 for r in reqs if r.phase == "-")
+    n_stub = sum(1 for entries in tests.values()
+                 if entries and all(is_manual for _, is_manual in entries))
     print(f"요구사항 {len(reqs)}건 / 수용기준 {n_crit}건 / "
-          f"자동 {len(tests)}건 / 수동 {len(manual)}건 / "
-          f"Phase 미지정 {n_unphased}건")
+          f"자동 {len(tests) - n_stub}건 / 수동 {len(manual)}건 / "
+          f"수동 스텁 {n_stub}건 / Phase 미지정 {n_unphased}건")
 
     if conflicts:
         print(f"Phase 표기 충돌 {len(conflicts)}건 — 본문과 부록 A.1이 다릅니다")
@@ -634,6 +772,18 @@ def main() -> int:
         print(f"수동 대장 대상 없음 {len(orphan)}건 — criterion_id 누락")
         for o in orphan:
             print(f"  · {o}")
+
+    if stub_only:
+        # 결함이다. 매핑은 있으나 수행 기록이 생길 자리가 없다 — AC1.manual 은
+        # 스텁을 인정하지만 AC3 은 수행 일자·수행자·결과를 대장에 요구한다.
+        print(f"\nERROR: 수행 기록 없는 수동 스텁 {len(stub_only)}건", file=sys.stderr)
+        for s in stub_only:
+            print(f"  · {s}", file=sys.stderr)
+        print("\n`@pytest.mark.manual` 스텁은 매핑 형식으로 인정되지만(AC1.manual), "
+              "수행 일자·수행자·결과는 `docs/manual-checks.yaml`에 남겨야 합니다(AC3). "
+              "대장 등재 없이 스텁만 두면 '수동으로 검증됨'이 미수행을 영구히 가립니다.",
+              file=sys.stderr)
+        return 2
 
     if unmapped:
         print(f"Must-have 미매핑 {len(unmapped)}건")

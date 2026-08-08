@@ -18,10 +18,15 @@ on:
   push:
     paths:
       - "rslt/spec-*.md"
+      - "rslt/task-*.md"
       - "docs/source-rules.lock"
       - "docs/domain-rules.md"
       - "docs/evidence-standard.md"
-      - "scripts/check_source_rules.py"
+      - "docs/manual-checks.yaml"
+      - "docs/traceability.md"
+      - "docs/assumptions.yaml"
+      - "tests/**"
+      - "scripts/**"
       - ".github/workflows/source-rules.yml"
   pull_request:
   schedule:
@@ -77,14 +82,30 @@ jobs:
         run: |
           echo "::warning file=docs/source-rules.lock::정본 규칙 문서가 spec과 어긋납니다. 작업 요약을 확인하십시오."
 
-  # ── 수용기준 추적 매핑 (NFR-107) ──────────────────────────────────
+  # ── 수용기준 추적 매핑 (NFR-107) — 작업 2.7 게이트 ────────────────
   #
   # traceability.md 는 생성물이다. 커밋된 것이 지금 spec으로 다시 생성한 것과
   # 다르면, 누군가 spec을 고치고 표를 갱신하지 않았거나 표를 직접 편집한 것이다.
   # 둘 다 표를 믿을 수 없게 만든다.
+  #
+  # **이 게이트가 무엇을 판정하는가 — 「미매핑 0건」이 아니다.**
+  #
+  #   판정한다   ① spec 수용기준 선언에 결함이 없다 (종료 코드 2)
+  #              ② 커밋된 매핑표가 지금 spec과 일치한다
+  #              ③ 게이트 자신이 수동 대장으로 자기충족되지 않았다
+  #              ④ 수동 스텁에 수행 기록이 있다
+  #
+  #   판정하지 않는다   미매핑 0건. 그것은 **Phase 1 DoD(17.9)** 이며 현재
+  #                     기준선은 261건이다. 지금 절대 0을 요구하면 CI가 영구히
+  #                     빨간불이 되고, 통과시키려고 §13.0.2가 금지한 자기충족
+  #                     테스트를 짓게 된다 — 게이트가 막으려던 바로 그 상태다.
+  #
+  # 미매핑 수의 증가는 ②가 잡는다. Must-have 수용기준이 늘거나 인용이 빠지면
+  # 표가 달라지고, 갱신본을 커밋하는 순간 그 증가가 diff에 남아 사람이 본다.
+  # 별도 기준선 파일을 두지 않는 이유다 — 같은 사실이 두 곳에 있으면 어긋난다.
   traceability:
     runs-on: ubuntu-latest
-    continue-on-error: true      # Wave 0~1 동안은 경고. 미매핑이 정상 상태다
+    # v0.10(2.7): 경고 → **차단**. 선행 4건이 모두 충족되어 게이트를 켠다
     steps:
       - uses: actions/checkout@v4
 
@@ -96,16 +117,37 @@ jobs:
 
       - name: 매핑표 재생성 후 커밋본과 대조
         run: |
+          set +e
           cp docs/traceability.md /tmp/committed.md
-          python scripts/gen_traceability.py > /tmp/gen.log 2>&1 || true
+          python scripts/gen_traceability.py > /tmp/gen.log 2>&1
+          rc=$?
           cat /tmp/gen.log
+
+          # 종료 코드 2 = 결함. 이때 **매핑표는 생성되지 않는다.**
+          #
+          # 예전에는 `|| true` 로 코드를 버렸는데, 파일이 안 바뀌므로 아래
+          # diff 가 통과했다. 즉 spec 수용기준 선언에 결함이 있을 때 게이트가
+          # 조용히 초록불이 되는 구멍이 있었다 — 검사를 못 한 것을 통과로
+          # 읽던 상태다. 여기서 닫는다.
+          if [ "$rc" = "2" ]; then
+            echo "::error file=rslt::수용기준 선언 결함으로 매핑표를 생성하지 못했습니다. \
+          위 로그의 결함을 고치십시오."
+            exit 1
+          fi
+
+          # 종료 코드 1 = 미매핑 존재. 테스트가 없는 Wave 0에서는 정상이다.
           if ! diff -q /tmp/committed.md docs/traceability.md > /dev/null; then
             echo "::error file=docs/traceability.md::매핑표가 spec과 어긋납니다. \
           'python scripts/gen_traceability.py' 를 실행하고 결과를 커밋하십시오."
             diff /tmp/committed.md docs/traceability.md | head -40
             exit 1
           fi
-          echo "매핑표 최신 상태"
+          echo "매핑표 최신 상태 (종료 코드 $rc — 1은 미매핑 잔존이며 Wave 0에서 정상)"
+
+      - name: 도구 감지 능력 확인 (음성 테스트)
+        # 검사기가 통과했다는 사실만으로는 그것이 무언가를 검사한다는 증거가
+        # 되지 않는다 (§13.0.1 ④). 게이트를 켠 이상 게이트 자신도 검사한다.
+        run: python scripts/negtest_traceability.py
 
       - name: 요약
         if: always()
@@ -116,4 +158,28 @@ jobs:
             echo '```'
             cat /tmp/gen.log 2>/dev/null || echo "(생성 로그 없음)"
             echo '```'
+            echo
+            echo "미매핑 0건은 Phase 1 DoD(17.9)이며 이 게이트의 판정 대상이 아닙니다."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── 잠정 가정 대장 (§15.1) ────────────────────────────────────────
+  #
+  # 전제 데이터를 가정값으로 진행하기로 했으므로, 가정이 조용히 사실로 굳는
+  # 것을 막는 검사가 게이트에 있어야 한다. 특히 검증 정박점(Q-4·Q-5)에
+  # 가정값이 들어가면 우리가 만든 값으로 우리 계산을 검증하게 된다.
+  assumptions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install pyyaml
+
+      - name: 가정 대장 검사
+        run: python scripts/check_assumptions.py
+
+      - name: 도구 감지 능력 확인 (음성 테스트)
+        run: python scripts/negtest_assumptions.py

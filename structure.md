@@ -122,7 +122,7 @@ FR 58 / NFR 32 / UI 7 = **요구사항 97건**, 수용기준 **299건** (v0.9 �
 | 스크립트 | 입력 | 출력 | 무엇을 잡는가 |
 |---|---|---|---|
 | `check_source_rules.py` | 볼트(없으면 사본) · lock · spec | 판정 | ① 정본 해시 표류 ② 사본 오염 ③ 앵커 소실 ④ spec↔lock 인용 정합(양방향) ⑤ 폐지 좌표 인용 |
-| `gen_traceability.py` | spec · `manual-checks.yaml` · `tests/` | **`docs/traceability.md`** | Must-have 수용기준 중 검증 미매핑 (NFR-107) |
+| `gen_traceability.py` | spec · `manual-checks.yaml` · `tests/` | **`docs/traceability.md`** | ① 수용기준 선언 결함 ② 자동/수동 구분(`@pytest.mark.manual`) ③ 수행 기록 없는 스텁 ④ 게이트 자기참조 ⑤ 매달린 참조 ⑥ Must-have 미매핑 (NFR-107) |
 | `check_task_mapping.py` | 작업 목록 · `traceability.md` | 판정 | ① 형식 이탈 인용 ② 범위 초과 ③ 실재하지 않는 인용 ④ 미인용 Must-have ⑤ 상위 작업 간 중복 인용 |
 | `check_assumptions.py` | `assumptions.yaml` · spec §15.1 | 판정 | ① 부기 7종 결손 ② 신뢰도 어휘 ③ 근거 없는 `확정` ④ **검증 정박점에 가정값 주입** ⑤ 교체 경로 부재 ⑥ 민감도 정합 ⑦ Q 목록 양방향 |
 
@@ -142,10 +142,17 @@ python scripts/check_assumptions.py
 
 | 잡 | 내용 | 상태 |
 |---|---|---|
-| `collate` | 정본 대조 (볼트 없으므로 사본 기준) | `continue-on-error` — **경고** |
-| `traceability` | 매핑표 재생성 후 커밋본과 diff | `continue-on-error` — Wave 0~1 동안 경고 |
+| `collate` | 정본 대조 (볼트 없으므로 사본 기준) | `continue-on-error` — **경고**. 정본 개정은 잘못이 아니라 사건이며 PR을 막을 일이 아니다 |
+| `traceability` | 매핑표 재생성 후 커밋본과 diff + 음성·양성 8종 | **차단** (작업 2.7, 08-08 활성화) |
+| `assumptions` | 잠정 가정 대장 검사 + 음성 15종 | **차단** |
 
-트리거: spec/lock/사본/스크립트 push · PR · 매일 00:00 UTC(정본은 저장소 밖에서 바뀌므로 능동 확인).
+트리거: spec/작업목록/lock/사본/대장/`scripts/**`/`tests/**` push · PR · 매일 00:00 UTC(정본은 저장소 밖에서 바뀌므로 능동 확인).
+
+> **`traceability` 게이트는 「미매핑 0건」을 판정하지 않는다.** 그것은 Phase 1 DoD(17.9)이며 현재 기준선 261건이다. 게이트가 판정하는 것은 ⓐ spec 수용기준 선언 결함 0 ⓑ 커밋된 매핑표가 지금 spec과 일치 ⓒ 게이트 자신이 수동 대장으로 자기충족되지 않음 ⓓ 수동 스텁에 수행 기록 존재.
+>
+> **미매핑 증가는 ⓑ가 잡는다** — 표가 달라지고 갱신본을 커밋하는 순간 증가가 diff에 남는다. 별도 기준선 파일을 두지 않는 이유다.
+>
+> **08-08에 이 잡의 구멍 1건을 닫았다.** `gen_traceability.py ... || true`로 종료 코드를 버렸는데, 결함(코드 2)이면 매핑표가 **생성되지 않아** 파일이 안 바뀌고 diff가 통과했다 — 검사를 수행하지 못한 것을 통과로 읽던 상태다.
 
 ---
 
