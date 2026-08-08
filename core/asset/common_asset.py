@@ -107,6 +107,12 @@ class StandardCommonAsset(CommonAsset):
     #: 설비가 놓이는 층위 — "단지" 또는 "가구" (FR-106-AC2의 괄호 설명)
     scope: ClassVar[str]
 
+    #: **이 클래스 자체는 공통설비 «유형» 이 아니다** (NFR-207). CEMS·HEMS·공용
+    #: 계량통신이 공유하는 구현 기반이며, FR-106-AC2 가 열거한 유형은 그 셋이다.
+    #: 표식이 없으면 자동 등록기가 `tag` 미선언을 오류로 보고한다 — 조용히
+    #: 건너뛰지 않는 것은 `tag` 를 **잊은** 진짜 설비와 구분하기 위해서다.
+    REGISTRY_ABSTRACT: ClassVar[bool] = True
+
     def __init__(
         self,
         *,
