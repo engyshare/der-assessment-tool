@@ -197,10 +197,8 @@ def main() -> int:
 
         for name, fn, expect in CASES:
             rc, out = fn(d)
-            if expect:
-                hit = expect in out
-            else:
-                hit = rc == 0          # 양성 케이스는 fn 이 0을 돌려준다
+            # 양성 케이스는 expect 가 비어 있고, fn 이 판정해 0을 돌려준다
+            hit = (expect in out) if expect else (rc == 0)
             mark = "OK  " if hit else "MISS"
             if not hit:
                 fails += 1

@@ -60,14 +60,14 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 try:
     import yaml
 except ImportError:  # pragma: no cover
     print("ERROR: PyYAML이 필요합니다 — pip install pyyaml", file=sys.stderr)
-    raise SystemExit(2)
+    raise SystemExit(2) from None
 
 
 # ── spec 본문 추출 규칙 ────────────────────────────────────────────────
@@ -298,7 +298,7 @@ def check_source(entry: dict, path: Path, origin: str, report: Report) -> str | 
     expected = entry["sha256"]
 
     if actual != expected:
-        mtime = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).astimezone()
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, UTC).astimezone()
         if origin == "vault":
             headline = "해시 불일치 — 정본이 개정되었습니다"
             action = "§16.5.1 파생 관계표를 따라 영향 FR을 재검토하십시오."
@@ -518,7 +518,7 @@ def main() -> int:
             st = path.stat()
             pending[entry["path"]] = {
                 "sha256": actual,
-                "mtime": datetime.fromtimestamp(st.st_mtime, timezone.utc)
+                "mtime": datetime.fromtimestamp(st.st_mtime, UTC)
                                  .astimezone().isoformat(timespec="seconds"),
                 "size_bytes": st.st_size,
             }

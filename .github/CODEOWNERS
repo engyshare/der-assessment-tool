@@ -1,0 +1,66 @@
+# 구획 소유 — 작업 1.9 / spec §16.1 W-1 · §16.3
+#
+# **하나의 파일은 정확히 하나의 구획이 소유한다** (W-1). 두 구획이 같은
+# 파일을 편집해야 하는 상황이 생기면 그것은 분할이 잘못된 것이며, 파일을
+# 쪼개거나 계약을 만든다.
+#
+# ── 지금 이 파일의 한계를 밝힌다 ────────────────────────────────────
+#
+# GitHub CODEOWNERS 는 **실재하는 계정·팀**만 인식한다. 존재하지 않는 팀명을
+# 적으면 그 줄은 조용히 무시되고, 파일은 있는데 아무것도 강제하지 않는
+# 상태가 된다 — 이 저장소가 반복해서 만난 "통과 화면만 보면 정상" 유형이다.
+#
+# 그래서 지금은 **전 경로를 저장소 소유자에게** 배정하고, 구획 배정은
+# 주석으로만 남긴다. 구획별 담당자가 실제로 정해지면 아래 주석의 경로를
+# 그대로 쓰고 `@engyShare` 를 각 담당자로 바꾼다. 경로는 이미 검증되어
+# 있으므로 그때 새로 조사할 필요가 없다.
+#
+# 병렬 개발 격리를 **지금 실제로 강제하는 것은 import-linter**(NFR-208,
+# `.importlinter`)이며, 그쪽은 CI에서 동작한다. CODEOWNERS 는 리뷰 배정
+# 편의이지 격리 수단이 아니다.
+
+*                       @engyShare
+
+# ── 구획 배정 (§16.3) — 담당자 확정 시 이 목록을 활성화한다 ─────────
+#
+# WP-0  계약        core/contracts/  tests/contract/  .importlinter
+#                   ★ 단독 수행·병렬 불가. 전 구획의 선행조건
+# WP-1  자원·설비   core/der/  core/asset/  tests/der/  tests/asset/
+#                   ★ 1종 = 파일 1개 = 독립 작업 단위
+# WP-16 모델        core/model/  tests/model/
+# WP-2  전제        core/assumption/  tests/assumption/
+# WP-3  제도        core/regulation/  tests/regulation/
+# WP-4  편익        core/valuestream/  tests/valuestream/
+#                   ★ 편익 1종 = 파일 1개
+# WP-5  제약        core/constraint/  tests/constraint/
+# WP-6  엔진        core/engine/  tests/engine/
+# WP-7  CBA         core/cba/  tests/cba/
+# WP-8  지원        core/incentive/  tests/incentive/
+# WP-9  그리드      core/casegrid/  tests/casegrid/
+# WP-10 리포트      core/report/  tests/report/
+# WP-11 API         app/
+# WP-12 UI          web/
+# WP-13 영속성      infra/          ★ Alembic 단독 소유
+# WP-14 검증자산    fixtures/golden/  docs/assumptions.yaml
+# WP-15 CI·배포     .github/  Dockerfile  pyproject.toml
+
+# ── 공유 파일 (§16.4 W-4) ───────────────────────────────────────────
+#
+# 불가피하게 공유되는 파일은 전량 열거하고 단일 담당 구획을 지정한다.
+# 목록에 없는 파일의 공유 편집은 금지한다.
+#
+# 아래 넷은 **append-only** 로만 편집한다 — 기존 줄을 고치면 다른 구획의
+# 작업이 조용히 무효가 된다.
+
+/pyproject.toml         @engyShare
+/.importlinter          @engyShare
+/docs/manual-checks.yaml @engyShare
+/docs/assumptions.yaml  @engyShare
+
+# 생성물 — 사람이 편집하지 않는다. PR에 손편집이 섞이면 리뷰에서 막는다.
+/docs/traceability.md   @engyShare
+
+# 정본 사본 — §16.5.3 절차로만 갱신한다. 직접 편집 금지.
+/docs/domain-rules.md      @engyShare
+/docs/evidence-standard.md @engyShare
+/docs/source-rules.lock    @engyShare

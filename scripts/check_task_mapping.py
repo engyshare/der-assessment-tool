@@ -187,7 +187,7 @@ def main() -> int:
     print("─" * 78)
 
     if args.review:
-        for parent, tid, text, cites, _ in tasks:
+        for parent, tid, text, cites, _ in tasks:  # noqa: B007 — tid 는 아래 분기에서 쓰인다
             if not cites:
                 continue
             print(f"\n[{tid}] {text.strip()[:88]}")
@@ -217,10 +217,10 @@ def main() -> int:
 
     # ── 1. 범위 초과 ────────────────────────────────────────────────
     counts = defaultdict(int)
-    for cid, (_, req, _, _) in crit.items():
+    for _cid, (_, req, _, _) in crit.items():
         counts[req] += 1
     over = []
-    for req, kind, lo, hi in RANGE.findall(raw):
+    for req, kind, lo, hi in RANGE.findall(raw):  # noqa: B007 — kind 는 아래 집합 생성에 쓰인다
         if int(hi) > counts.get(req, 0):
             over.append((req, lo, hi, counts.get(req, 0)))
     if over:
@@ -276,7 +276,7 @@ def main() -> int:
 
     # ── 3. 상위 작업 간 중복 인용 ───────────────────────────────────
     owner = defaultdict(set)
-    for parent, tid, _, cites, _ in tasks:
+    for parent, _tid, _, cites, _ in tasks:
         for cid in cites:
             owner[cid].add(parent)
     dup = {c: p for c, p in owner.items() if len(p) > 1}

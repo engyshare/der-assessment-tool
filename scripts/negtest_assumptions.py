@@ -11,8 +11,8 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 sys.path.insert(0, str(HERE))
 
-import yaml
 import check_assumptions as ca
+import yaml
 
 LEDGER = REPO / "docs/assumptions.yaml"
 SPEC = next((REPO / "rslt").glob("spec-*.md"))

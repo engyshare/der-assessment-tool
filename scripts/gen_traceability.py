@@ -63,7 +63,7 @@ try:
     import yaml
 except ImportError:  # pragma: no cover
     print("ERROR: PyYAML이 필요합니다 — pip install pyyaml", file=sys.stderr)
-    raise SystemExit(2)
+    raise SystemExit(2) from None
 
 
 REQ_START = re.compile(r"^- \*\*((?:FR|NFR|UI)-\d+)\*\*\s*(.*)$")
@@ -359,6 +359,26 @@ def _marks(decorators) -> tuple[list[str], bool]:
     return reqs, manual
 
 
+def _walk_body(body, inherited_reqs: list[str], inherited_manual: bool,
+               path: str, mapping: dict[str, list[tuple[str, bool]]]) -> None:
+    """클래스·함수를 훑어 마커를 모은다.
+
+    파일 루프 안에 중첩 함수로 두지 않는 이유: 루프 변수를 클로저로 잡으면
+    (ruff B023) 나중에 지연 호출로 바뀌는 순간 **마지막 파일의 경로가 전
+    항목에 붙는다.** 지금은 즉시 호출이라 문제가 없지만, 그 사실은 코드
+    어디에도 적혀 있지 않아 다음 사람이 안전하게 고칠 수 없다.
+    """
+    for node in body:
+        if isinstance(node, ast.ClassDef):
+            r, m = _marks(node.decorator_list)
+            _walk_body(node.body, inherited_reqs + r,
+                       inherited_manual or m, path, mapping)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            r, m = _marks(node.decorator_list)
+            for cid in inherited_reqs + r:
+                mapping.setdefault(cid, []).append((path, inherited_manual or m))
+
+
 def collect_test_markers(tests_dir: Path) -> tuple[dict[str, list[tuple[str, bool]]], list[str]]:
     """수용기준 ID → [(테스트 파일, manual 표기 여부)]. 그리고 파싱 결함.
 
@@ -409,18 +429,7 @@ def collect_test_markers(tests_dir: Path) -> tuple[dict[str, list[tuple[str, boo
                 mod_reqs += r
                 mod_manual = mod_manual or m
 
-        def walk(body, inherited_reqs: list[str], inherited_manual: bool):
-            for node in body:
-                if isinstance(node, ast.ClassDef):
-                    r, m = _marks(node.decorator_list)
-                    walk(node.body, inherited_reqs + r, inherited_manual or m)
-                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    r, m = _marks(node.decorator_list)
-                    for cid in inherited_reqs + r:
-                        mapping.setdefault(cid, []).append(
-                            (str(py), inherited_manual or m))
-
-        walk(tree.body, mod_reqs, mod_manual)
+        _walk_body(tree.body, mod_reqs, mod_manual, str(py), mapping)
 
     return mapping, defects
 
@@ -552,11 +561,12 @@ def render(reqs: list[Requirement], tests: dict[str, list[str]],
 """
 
     if unphased:
+        must_note = f" — `{', '.join(unphased_must)}`" if unphased_must else ""
         header += f"""> **Phase 미지정 {len(unphased)}건 — §4.0 R-1 위반입니다.**
 >
 > `{", ".join(unphased)}`
 >
-> 그중 **Must-have {len(unphased_must)}건**{" — `" + ", ".join(unphased_must) + "`" if unphased_must else ""}
+> 그중 **Must-have {len(unphased_must)}건**{must_note}
 >
 > 우선순위(중요도)와 Phase(시점)는 별개 축이며 §4.0 R-1은 **둘 다** 요구합니다.
 > `Priority:` 줄의 인라인 표기와 부록 A.1 배정표 어느 쪽에서도 찾지 못했습니다.

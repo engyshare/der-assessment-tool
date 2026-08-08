@@ -1,7 +1,7 @@
 # 저장소 구조 — 무엇이 무엇을 낳는가
 
 > 파일 목록이 아니라 **의존 방향**을 적는다. "이 파일을 고치면 무엇이 따라 바뀌는가"에 답하는 것이 이 문서의 목적이다.
-> 갱신 시점: 2026-08-03 (코드 0줄, 문서·검증 인프라만 존재)
+> 갱신 시점: 2026-08-08 (Wave 0 종료 — `core/contracts/` 6모듈, 테스트 38건. 계산 코드는 아직 없다)
 
 ---
 
@@ -27,13 +27,33 @@
      (작업 목록 · 상위 17 / 하위 150)
             │
             │        docs/manual-checks.yaml (MC-1~8)
-            │        tests/ (@pytest.mark.req) — 아직 없음
+            │        tests/ (@pytest.mark.req / .manual)
             ▼                 │
    scripts/gen_traceability.py ◀┘
             │
             ▼
    docs/traceability.md  ← 자동 생성 · 수동 편집 금지
 ```
+
+**코드 쪽 의존 방향** (Wave 0에서 고정, `.importlinter`가 강제):
+
+```
+   app  ──▶ core/report ──▶ core/casegrid ──▶ core/incentive ──▶ core/cba
+                                                                    │
+                                          core/engine ◀─────────────┘
+                                               │
+                              core/constraint ◀┘
+                                     │
+                       core/valuestream ◀┘
+                              │
+                        core/model ◀┘
+                              │
+        core/der · core/asset · core/regulation · core/assumption   ← 서로 참조 금지
+                              │
+                     core/contracts   ← 아무도 import 하지 않는다 (NFR-208-AC3)
+```
+
+**`core/contracts/` 가 바닥이다.** 여기를 고치면 전 구획이 따라 바뀌므로, 변경은 ① 이슈 제기 → ② WP-0이 계약·계약테스트를 **한 PR로** 갱신 → ③ 영향 구획 통지 순으로만 한다 (§16.2). **구현 PR에 계약 변경을 섞지 않는다.**
 
 **단일 방향 규칙**: 볼트 → 사본 → spec → 작업 목록 → 테스트. 역방향 수정은 전부 금지다. 사본을 고치면 정본이 둘이 되고, `traceability.md`를 고치면 매핑표가 spec과 어긋난다.
 
@@ -125,6 +145,8 @@ FR 58 / NFR 32 / UI 7 = **요구사항 97건**, 수용기준 **299건** (v0.9 �
 | `gen_traceability.py` | spec · `manual-checks.yaml` · `tests/` | **`docs/traceability.md`** | ① 수용기준 선언 결함 ② 자동/수동 구분(`@pytest.mark.manual`) ③ 수행 기록 없는 스텁 ④ 게이트 자기참조 ⑤ 매달린 참조 ⑥ Must-have 미매핑 (NFR-107) |
 | `check_task_mapping.py` | 작업 목록 · `traceability.md` | 판정 | ① 형식 이탈 인용 ② 범위 초과 ③ 실재하지 않는 인용 ④ 미인용 Must-have ⑤ 상위 작업 간 중복 인용 |
 | `check_assumptions.py` | `assumptions.yaml` · spec §15.1 | 판정 | ① 부기 7종 결손 ② 신뢰도 어휘 ③ 근거 없는 `확정` ④ **검증 정박점에 가정값 주입** ⑤ 교체 경로 부재 ⑥ 민감도 정합 ⑦ Q 목록 양방향 |
+| `lint-imports` (`.importlinter`) | `core/` · `app/` · `infra/` | 판정 | 구획 경계 — NFR-208-AC1(역방향) · AC2(형제 직접 참조) · AC3(contracts 순수성) |
+| `pytest` | `tests/` | 판정 | 계약 준수 · Decimal 경계 · Wave 0 스모크 |
 
 **도구마다 목적이 다르다.** `gen_traceability`는 인용 ID가 *실재하는지*만 본다. 실재하지만 *엉뚱한 조항*을 가리키는 오귀속은 `check_task_mapping`의 「미인용 Must-have」가 남긴 **빈자리**로만 드러난다.
 

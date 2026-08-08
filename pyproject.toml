@@ -1,0 +1,84 @@
+[project]
+name = "der-evaluator"
+version = "0.1.0"
+description = "분산특구 사업모델 경제성 평가 프로그램"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "pytest-xdist>=3.5",
+    "import-linter>=2.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["core*", "app*", "infra*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    # 수용기준 추적 (NFR-107). scripts/gen_traceability.py 가 이 마커를 수집한다.
+    "req(criterion_id): 이 테스트가 검증하는 spec 수용기준 ID",
+    # 수동 검증 스텁 (NFR-107-AC1.manual). 실행하지 않고 매핑 존재만 확인한다.
+    # 이 마커를 단 테스트는 docs/manual-checks.yaml 에 함께 등재해야 한다 (AC3).
+    "manual: 사람이 수행하는 검증의 명세 스텁. CI는 실행하지 않는다",
+    "contract: 계약 테스트 (L3). 계약을 구현하는 쪽이 반드시 통과해야 한다",
+]
+addopts = "-q --strict-markers"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+# 규칙 집합을 명시한다. 비워 두면 ruff 판올림마다 검사 범위가 조용히
+# 바뀌어, 어제 통과한 코드가 오늘 실패하거나 그 반대가 된다.
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # isort
+    "B",         # flake8-bugbear — B023(루프 변수 클로저) 등 실제 버그
+    "SIM",       # flake8-simplify
+    "UP",        # pyupgrade
+    "PL",        # pylint
+    "RUF",
+]
+ignore = [
+    "PLR2004",   # magic value — 테스트에서 기대값 리터럴은 정상이다
+    "PLR0913",   # 인자 수 — 자원 생성자는 파라미터가 많은 것이 본질이다
+    "RUF002",    # 문서·주석이 한국어다. 전각 문자 경고는 전부 오탐이다
+    "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 검사 도구는 **선형 절차**다. 검사 N종을 순서대로 수행하고 각각을 보고하는
+# 구조이므로 분기·문장 수가 많은 것이 정상이며, 억지로 쪼개면 "어떤 순서로
+# 무엇을 검사하는가"가 흩어져 오히려 읽기 어려워진다. 복잡도 규칙만 면제하고
+# 버그 규칙(B·F·SIM)은 그대로 적용한다.
+"scripts/*.py" = ["PLR0911", "PLR0912", "PLR0915"]
+# 음성 테스트는 결함을 일부러 만들어 검사기에 먹인다. sys.path 를 조작한 뒤
+# import 하는 것도 그 성격상 불가피하다.
+"scripts/negtest_*.py" = ["PLW1510", "S603", "E402", "PLR0911", "PLR0912", "PLR0915"]
+# 테스트는 지역 import 로 검사 대상을 좁히는 것이 의도적이다 — 모듈 상단에
+# 올리면 "이 테스트가 무엇을 보는가"가 파일 전체로 번진다.
+"tests/*.py" = ["PLC0415"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["core"]
+
+[tool.coverage.run]
+branch = true
+source = ["core"]

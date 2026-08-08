@@ -1,0 +1,97 @@
+# 구획 경계 강제 — 작업 1.8 / spec NFR-208
+#
+# 격리를 문서 규칙으로만 두면 반드시 무너진다. 기계 검사 가능한 형태로
+# 고정해야 병렬 작업이 서로를 오염시키지 않는다 (NFR-208 근거).
+#
+# 실행: lint-imports
+#
+# 계약 3종이 spec의 AC 3건에 1:1 대응한다.
+#   contracts-are-pure  ← NFR-208-AC3  core/contracts 는 아무도 import하지 않는다
+#   layers              ← NFR-208-AC1  역방향 import 금지
+#   siblings-isolated   ← NFR-208-AC2  동일 계층 형제 구획 간 직접 import 금지
+
+[importlinter]
+root_packages =
+    core
+    app
+    infra
+
+# ── NFR-208-AC3 ──────────────────────────────────────────────────────
+#
+# `core.contracts` 는 순수 인터페이스·타입·단위 정의만 포함한다.
+# 여기가 무너지면 나머지 두 계약이 전부 무의미해진다 — 모든 구획이
+# contracts 를 경유하는데 contracts 자신이 구획을 참조하면 순환이 생기고,
+# 그 순환은 "계약을 통해서만 의존한다"는 규칙을 형식적으로만 만족시킨다.
+[importlinter:contract:contracts-are-pure]
+name = core.contracts 는 어떤 구획도 import 하지 않는다 (NFR-208-AC3)
+type = forbidden
+source_modules =
+    core.contracts
+forbidden_modules =
+    core.der
+    core.asset
+    core.model
+    core.assumption
+    core.regulation
+    core.valuestream
+    core.constraint
+    core.engine
+    core.cba
+    core.incentive
+    core.casegrid
+    core.report
+    app
+    infra
+
+# ── NFR-208-AC1 ──────────────────────────────────────────────────────
+#
+# 상위 계층은 하위를 import할 수 있으나 역방향은 금지한다.
+# 위가 상위, 아래가 하위다. 예: core.der → core.engine 은 금지된다.
+#
+# `core.model` 을 자원보다 위에 두는 이유: 모델은 자원 인스턴스 집합을
+# 구성하므로 자원을 알아야 하지만, 자원은 자신이 어느 모델에 속하는지
+# 몰라야 한다 — 알면 자원 1종 추가가 모델 코드 수정을 부른다 (NFR-201).
+[importlinter:contract:layers]
+name = 계층 역방향 import 금지 (NFR-208-AC1)
+type = layers
+layers =
+    app
+    core.report
+    core.casegrid
+    core.incentive
+    core.cba
+    core.engine
+    core.constraint
+    core.valuestream
+    core.model
+    core.der : core.asset : core.regulation : core.assumption
+    core.contracts
+containers =
+
+# ── NFR-208-AC2 ──────────────────────────────────────────────────────
+#
+# 동일 계층의 형제 구획은 서로를 직접 참조하지 않고 core.contracts 를
+# 경유한다. 직접 참조를 허용하면 두 구획이 동시에 진행될 때 한쪽의
+# 미완성 내부 표현에 다른 쪽이 묶이고, W-6(독립 완료 판정)이 깨진다.
+[importlinter:contract:siblings-isolated]
+name = 형제 구획 간 직접 import 금지 — contracts 경유 (NFR-208-AC2)
+type = independence
+modules =
+    core.der
+    core.asset
+    core.regulation
+    core.assumption
+
+# infra 는 저장만 담당하며 계산 구획을 알지 못한다.
+# 알게 되면 스키마 변경이 계산 코드를 흔들고, 그 반대도 성립한다.
+[importlinter:contract:infra-knows-only-contracts]
+name = infra 는 계약 외 계산 구획을 import 하지 않는다
+type = forbidden
+source_modules =
+    infra
+forbidden_modules =
+    core.engine
+    core.cba
+    core.casegrid
+    core.incentive
+    core.valuestream

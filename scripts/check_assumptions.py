@@ -57,7 +57,7 @@ try:
     import yaml
 except ImportError:
     print("ERROR: PyYAML이 필요합니다 — pip install pyyaml", file=sys.stderr)
-    raise SystemExit(2)
+    raise SystemExit(2) from None
 
 
 # 근거 표기 기준 5절이 정한 경제성 입력값 필수 부기 항목 7종.
@@ -135,7 +135,8 @@ def check(items: list, spec_qs: set[str]) -> list[str]:
 
         key = item.get("key")
         if is_blank(key):
-            defects.append("`key`가 없는 항목이 있습니다 — 교체 시 무엇을 고칠지 특정할 수 없습니다")
+            defects.append("`key`가 없는 항목이 있습니다 — "
+                           "교체 시 무엇을 고칠지 특정할 수 없습니다")
             continue
         if key in seen_keys:
             bad(item, "`key` 중복 — 같은 항목이 두 값을 갖게 됩니다")
@@ -152,22 +153,27 @@ def check(items: list, spec_qs: set[str]) -> list[str]:
         # 다르다 — derivation_method 에 "가정하면 안 되는 이유"가 들어간다.
         for f in ANNOTATION_FIELDS:
             if f not in item:
-                bad(item, f"부기 항목 `{f}` 필드 자체가 없습니다 (근거 표기 기준 5절 7종)")
+                bad(item, f"부기 항목 `{f}` 필드 자체가 없습니다 "
+                      "(근거 표기 기준 5절 7종)")
 
         if is_blank(item.get("derivation_method")):
-            bad(item, "`derivation_method`가 비었습니다 — 근거 없는 가정은 나중에 검증할 수 없습니다")
+            bad(item, "`derivation_method`가 비었습니다 — "
+                      "근거 없는 가정은 나중에 검증할 수 없습니다")
 
         # ── 2. 신뢰도 어휘 ───────────────────────────────────────────
         conf = item.get("confidence")
         if conf not in CONFIDENCE:
-            bad(item, f"`confidence`는 {sorted(CONFIDENCE)} 중 하나여야 합니다 (축 2): {conf!r}")
+            bad(item, f"`confidence`는 {sorted(CONFIDENCE)} 중 하나여야 합니다 "
+                      f"(축 2): {conf!r}")
 
         # ── 3. `확정` 주장의 근거 ────────────────────────────────────
         if conf in ("확정", "추정"):
             if is_blank(item.get("source")):
-                bad(item, f"`{conf}`을 주장하는데 `source`가 비었습니다 — 근거 없이 신뢰도를 올릴 수 없습니다")
+                bad(item, f"`{conf}`을 주장하는데 `source`가 비었습니다 — "
+                          "근거 없이 신뢰도를 올릴 수 없습니다")
             if is_blank(item.get("verified_at")):
-                bad(item, f"`{conf}`을 주장하는데 `verified_at`이 비었습니다 — 실제로 열어본 날짜가 필요합니다")
+                bad(item, f"`{conf}`을 주장하는데 `verified_at`이 비었습니다 — "
+                          "실제로 열어본 날짜가 필요합니다")
 
         # ── 4. blocked 칸의 값 — 자기충족 검증 차단 ──────────────────
         #
@@ -175,10 +181,12 @@ def check(items: list, spec_qs: set[str]) -> list[str]:
         if track == "blocked":
             if item.get("value") is not None:
                 bad(item, "**track: blocked 인데 `value`가 채워져 있습니다.** "
-                          "검증의 정박점을 가정으로 채우면 우리가 만든 값으로 우리 계산을 "
-                          "검증하게 됩니다 (§13.0.2 자기충족 테스트). 값을 비우고 판정을 유예하십시오")
+                          "검증의 정박점을 가정으로 채우면 우리가 만든 값으로 우리 "
+                          "계산을 검증하게 됩니다 (§13.0.2 자기충족 테스트). "
+                          "값을 비우고 판정을 유예하십시오")
             if item.get("sensitivity") is not None:
-                bad(item, "track: blocked 인데 `sensitivity`가 있습니다 — 없는 값에 범위를 줄 수 없습니다")
+                bad(item, "track: blocked 인데 `sensitivity`가 있습니다 — "
+                          "없는 값에 범위를 줄 수 없습니다")
             if not item.get("blocks"):
                 bad(item, "track: blocked 인데 `blocks`가 없습니다 — "
                           "무엇이 유예되는지 적지 않으면 그 판정이 조용히 통과로 세어집니다")
@@ -202,10 +210,12 @@ def check(items: list, spec_qs: set[str]) -> list[str]:
                     if not all(isinstance(x, (int, float)) for x in (lo, base, hi)):
                         bad(item, "`sensitivity` 값이 수치가 아닙니다")
                     elif not (lo <= base <= hi):
-                        bad(item, f"`sensitivity` 순서가 어긋납니다: {lo} ≤ {base} ≤ {hi} 이어야 합니다")
+                        bad(item, "`sensitivity` 순서가 어긋납니다: "
+                                  f"{lo} ≤ {base} ≤ {hi} 이어야 합니다")
                     elif item.get("value") != base:
-                        bad(item, f"`value`({item.get('value')})와 `sensitivity.base`({base})가 다릅니다 — "
-                                  "같은 사실이 두 값을 가지면 어느 쪽이 정본인지 판정할 수 없습니다")
+                        bad(item, f"`value`({item.get('value')})와 "
+                                  f"`sensitivity.base`({base})가 다릅니다 — 같은 사실이 "
+                                  "두 값을 가지면 어느 쪽이 정본인지 판정할 수 없습니다")
         elif track == "default0" and item.get("value") != 0:
             bad(item, f"track: default0 인데 `value`가 0이 아닙니다: {item.get('value')!r} — "
                       "제도 미확인 항목의 크기를 추정하면 없는 제도 위에 편익을 쌓게 됩니다")
