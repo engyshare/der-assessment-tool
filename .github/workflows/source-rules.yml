@@ -212,6 +212,19 @@ jobs:
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
           exit 0
 
+      - name: 코드 스프롤은 차단한다
+        # 총 줄 수 초과는 경고지만 **코드 줄 수 초과는 다르다** — 그것이 조항의
+        # 근거(DER-VET `Params.py` 1,830줄)에 해당하는 상태다. 현재 저장소는
+        # 코드 기준으로 전건 이내이므로 지금 켜도 초록불이며, 켜 두면 이후
+        # 코드가 상한을 넘는 순간 그때 잡힌다.
+        run: python scripts/check_file_size.py --code-strict
+
+      - name: 도구 감지 능력 확인 (음성 6 + 양성 2종)
+        # 「코드 스프롤 0건」이 *없다* 는 뜻인지 *못 잡는다* 는 뜻인지 결과만
+        # 보고는 구분되지 않는다 (§13.0.1 ④). 특히 독스트링을 과대 계산하면
+        # 진짜 스프롤이 「설명 밀도」로 새어 경고가 무해해 보인다.
+        run: python scripts/negtest_file_size.py
+
       - name: 요약
         if: always()
         run: |
