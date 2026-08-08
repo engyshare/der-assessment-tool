@@ -1,0 +1,514 @@
+# assumptions.yaml — 잠정 가정 대장 (Q-1~Q-13)
+#
+# spec §15.1이 "확보해야 한다"고 적은 외부 입력 13건을, 회신을 기다리지 않고
+# **가정값으로 채워 개발을 진행**하기 위한 대장이다. 동시에 16.6 확보 현황판을
+# 겸한다 — 무엇이 가정이고 무엇이 실측이며 언제 교체되는지가 한 파일에 있다.
+#
+# 왜 가정값으로 진행하는가
+#   외부 회신 리드타임은 개발과 무관하게 흐른다. 기다리면 코드가 멈추고,
+#   기다리지 않으면 근거 없는 수치가 코드에 박힌다. 셋째 길은 **가정을
+#   가정이라고 표시한 채 데이터로 두는 것**이며, spec은 이미 그 구조를 갖고 있다
+#   (FR-601 AssumptionSet · 부기 7종 · 신뢰도 3단계).
+#
+#   이 파일은 그 구조에 넣을 **씨앗 값**이고, 회신이 오면 값과 부기만 바꾼다.
+#   코드는 바뀌지 않는다 — 그것이 "나중에 변경 가능하도록"의 실질이다.
+#
+# 세 갈래로 나뉜다 — track 필드
+#
+#   assume    가정값으로 진행한다. 계산 입력이며 틀려도 민감도로 드러난다.
+#             sensitivity 범위를 반드시 갖는다 (FR-801 케이스 그리드의 탐색 축).
+#
+#   default0  제도 근거가 확인되지 않았으므로 **기본 비활성(값 0)** 으로 둔다.
+#             크기를 추정하지 않는다 — 제도가 없으면 편익은 작은 게 아니라 0이다.
+#             spec §15.1 Q-8 격상 사유와 FR-404가 이미 정한 원칙이다.
+#
+#   blocked   **가정하면 안 된다.** 검증의 정박점이므로 가정값을 넣는 순간
+#             그 검증이 자기충족이 된다 — 우리가 만든 수치로 우리 계산을
+#             검증하게 된다. 값 자리를 비워 두고 해당 판정을 유예한다.
+#             scripts/check_assumptions.py 가 이 칸에 값이 들어가는 것을 막는다.
+#
+# 왜 blocked 갈래를 따로 두는가 — 이것이 이 파일의 핵심이다
+#   Q-4(선행 실증의 원 계산 가정)는 17.4 SG-4(±15% 재현) 판정의 유일한
+#   정박점이고, Q-5(현행 엑셀)는 §13.3 1차 대조군이다. 이 둘을 가정으로
+#   채우면 "우리가 가정한 값을 우리 코드가 재현했다"가 되어 §13.0.2가 금지한
+#   자기충족 테스트와 정확히 같아진다. **틀린 값을 넣는 것보다 나쁘다** —
+#   틀린 값은 회신이 오면 드러나지만, 자기충족 검증은 초록불로 남는다.
+#
+# 부기 7종 (근거 표기 기준 5절 = spec FR-601-AC5.*)
+#   value_unit / base_year / applicable_scope / derivation_method /
+#   source / verified_at / confidence
+#   가정 항목이라고 부기를 생략하지 않는다. **무엇을 근거로 가정했는지가
+#   부기의 내용이 된다.** derivation_method 가 비면 검사기가 잡는다.
+#
+# 신뢰도 (근거 표기 기준 2절 — 축 2)
+#   확정 / 추정 / 가정.  이 파일의 값은 개발 착수 시점에 전건 `가정`이다.
+#   회신이 오면 `확정` 또는 `추정`으로 올리고 source·verified_at 을 채운다.
+#   `확정`을 주장하면서 source 가 비면 검사기가 결함으로 보고한다.
+#
+# 교체 절차
+#   1. 회신·자료 입수
+#   2. 이 파일의 value·sensitivity·부기 7종을 갱신하고 confidence 를 올린다
+#   3. python scripts/check_assumptions.py 통과 확인
+#   4. 영향도 상위 5위 내 항목이 바뀌었으면 골든 시나리오 기준값을 재산출한다
+#      (16.4). 그 전에는 회귀 실패가 정상이다 — 기준값이 옛 가정에 묶여 있다
+#
+# 이 파일은 코드가 아니라 데이터다. 수치를 코드에 옮겨 적지 않는다 (NFR-202).
+
+version: 1
+updated: "2026-08-08"
+spec_section: "§15.1"
+
+# ─────────────────────────────────────────────────────────────────────
+# 갈래 A — 가정값으로 진행 (계산 입력)
+# ─────────────────────────────────────────────────────────────────────
+
+assumptions:
+  - q_ref: "Q-1"
+    key: "capex.pv.rooftop"
+    title: "옥상 PV 설치단가"
+    track: "assume"
+    value: 1600000
+    sensitivity: { low: 1280000, base: 1600000, high: 1920000 }
+    value_unit: "원/kW (설치 완료 기준, 부가세 별도)"
+    base_year: "2026 (전망)"
+    applicable_scope: "주택용 3~10kW급 옥상 고정형. 대규모 발전사업용 단가와 다르다"
+    derivation_method: >-
+      가정. 공공 보급사업 주택용 단가가 최근 수년간 kW당 150만원대에서
+      완만히 하락해 온 추세를 2026년으로 연장한 값이다. 실측이 아니며
+      견적 표본도 없다. ±20%는 FR-801 결합 집합(설비단가·시공비)의
+      기본 3수준과 같은 폭으로 잡았다 — 별도 폭을 쓰면 케이스 그리드와
+      민감도 해석이 어긋난다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "최상"
+    impact_note: "CAPEX 직결. 보조율 산출(FR-608)의 기초이며 결과를 가장 크게 움직인다"
+    replace_when: "공공 단가 자료 또는 업계 견적 3사 이상 확보 시"
+
+  - q_ref: "Q-1"
+    key: "capex.pv.bipv_wall"
+    title: "벽면 BIPV 설치단가"
+    track: "assume"
+    value: 4000000
+    sensitivity: { low: 3000000, base: 4000000, high: 5200000 }
+    value_unit: "원/kW (설치 완료 기준, 부가세 별도)"
+    base_year: "2026 (전망)"
+    applicable_scope: "건물 외벽 수직 설치형. 옥상 고정형과 구조·시공이 다르다"
+    derivation_method: >-
+      가정. BIPV는 자재가 건축 마감재를 겸하고 시공이 건축공정에 묶여
+      옥상형의 2~3배로 알려져 있다. 옥상형 가정값의 2.5배를 취했다.
+      범위를 옥상형(±20%)보다 넓게(-25%/+30%) 잡은 것은 표본이 더
+      빈약하기 때문이며, 이 비대칭 자체가 불확실성의 표시다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "중간"
+    impact_note: "벽면 BIPV를 포함한 변형에서만 지배적. 기본 템플릿에는 없다"
+    replace_when: "Q-1과 동시. 옥상형과 별도 견적이 필요하다"
+
+  - q_ref: "Q-2"
+    key: "capex.ess.new"
+    title: "ESS 설치단가 (신품)"
+    track: "assume"
+    value: 500000
+    sensitivity: { low: 400000, base: 500000, high: 600000 }
+    value_unit: "원/kWh (PCS·설치 포함 시스템 단가)"
+    base_year: "2026 (전망)"
+    applicable_scope: "가정용·건물용 소규모(10~100kWh) 리튬 계열. MWh급 계통용과 다르다"
+    derivation_method: >-
+      가정. 셀 가격 하락이 시스템 단가로 완전히 전가되지 않는다는 점을
+      감안해 시스템 기준으로 잡았다. 소규모는 규모의 경제가 약해 계통용
+      단가를 그대로 쓰면 과소 계상된다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "최상"
+    impact_note: "ESS 보조율(메가특구 50% 참조)의 기초. FR-610 사후 평가와 직결"
+    replace_when: "업계 견적 확보 시. PCS 별도 견적인지 시스템 일괄인지 반드시 확인"
+
+  - q_ref: "Q-2"
+    key: "capex.ess.second_life"
+    title: "ESS 설치단가 (사용후배터리)"
+    track: "assume"
+    value: 300000
+    sensitivity: { low: 200000, base: 300000, high: 420000 }
+    value_unit: "원/kWh (PCS·설치·성능검사 포함)"
+    base_year: "2026 (전망)"
+    applicable_scope: "사용후 전기차 배터리 재사용. 잔존 성능 70~80% 전제"
+    derivation_method: >-
+      가정. 신품의 60%로 취했다. 셀 자체는 더 싸지만 성능검사·재조립·
+      보증 비용이 붙어 차이가 그만큼 벌어지지 않는다는 판단이다.
+      범위를 넓게(-33%/+40%) 잡았다 — 이 항목은 표본이 가장 빈약하다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "높음"
+    impact_note: >-
+      기존주택형이 사용후배터리 ESS를 전제한다. 다만 그 설비는 FR-611
+      기지원 대상이라 사업자 관점에서는 0원이므로, 이 단가는 사회·정부
+      관점에서만 결과를 움직인다
+    replace_when: "실증 지원사업의 실제 취득원가 확인 시. 그 값이 FR-611의 전액 계상액이 된다"
+
+  - q_ref: "Q-2"
+    key: "capex.ev_charger.v2g"
+    title: "V2G 양방향 충전기 단가"
+    track: "assume"
+    value: 10000000
+    sensitivity: { low: 7000000, base: 10000000, high: 15000000 }
+    value_unit: "원/대 (설치 포함)"
+    base_year: "2026 (전망)"
+    applicable_scope: "7kW급 가정용 양방향 충전기 1대"
+    derivation_method: >-
+      가정. 단방향 완속 충전기보다 전력변환·계량·통신이 더 들어가
+      수 배 비싸다는 점만 확실하다. 보급 초기라 단가 분산이 크므로
+      범위를 -30%/+50%로 크게 잡았다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "중간"
+    impact_note: >-
+      **비용은 계상되는데 편익은 0이다** — Q-8(V2G 정산 제도)이 default0
+      이므로 현 상태에서 V2G는 순수 비용으로만 나타난다. 이것은 오류가
+      아니라 제도 미비의 정직한 반영이며, Q-8 회신 전까지의 정상 상태다
+    replace_when: "업계 견적 확보 시"
+
+  - q_ref: "Q-2"
+    key: "capex.heatpump"
+    title: "히트펌프 설치단가"
+    track: "assume"
+    value: 1000000
+    sensitivity: { low: 800000, base: 1000000, high: 1200000 }
+    value_unit: "원/kW_th (정격 열출력 기준, 설치 포함)"
+    base_year: "2026 (전망)"
+    applicable_scope: "가정용 공기열 히트펌프 (난방+급탕). 지열·수열 제외"
+    derivation_method: >-
+      가정. 10kW급 가정용 설치비 1,000만원 수준을 정격 열출력으로 나눈
+      값이다. 단위를 대당이 아닌 kW_th당으로 잡은 것은 용량이 다른
+      가구를 같은 단가로 다루기 위해서이며, 소용량에서는 이 선형 가정이
+      과소 계상 쪽으로 틀릴 수 있다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "높음"
+    impact_note: "열비용 절감 편익(FR-401-AC2.HeatCostSaving)의 투자 측 대응항"
+    replace_when: "업계 견적 확보 시. COP 곡선(외기온 함수)을 함께 받을 것"
+
+  - q_ref: "Q-3"
+    key: "load.household.annual"
+    title: "가구당 연간 전력사용량 (부하 시계열 대체)"
+    track: "assume"
+    value: 3600
+    sensitivity: { low: 2700, base: 3600, high: 4800 }
+    value_unit: "kWh/호·년"
+    base_year: "2026 (전망)"
+    applicable_scope: "실증단지 참여 가구 평균. 공용부 부하는 별도 항목"
+    derivation_method: >-
+      가정. 실측 시계열(Q-3)이 없으므로 **월 사용량 + 표준 부하 프로파일**
+      경로로 대체한다 — FR-102-AC1.Load 가 이미 허용하는 입력 방식이다.
+      월 300kWh 수준을 연 환산했다. 시계열이 오면 이 항목을 버리고
+      실측 8760을 바인딩한다(FR-905).
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "높음"
+    impact_note: >-
+      자가소비율을 좌우하고, 자가소비율이 SelfConsumption·SurplusSale의
+      배분을 결정한다. 다만 표준 프로파일은 **형상**이 실측과 다르므로
+      총량을 맞춰도 시간대별 자가소비 매칭은 여전히 근사다
+    replace_when: >-
+      실증 가구 시계열 확보 시. **16.3 개인정보 처리 절차가 선행**한다 —
+      익명화되지 않은 원본은 저장소·DB에 반입하지 않는다 (SC-3)
+
+  - q_ref: "Q-5b"
+    key: "escalation.electricity_tariff"
+    title: "전기요금 장기 인상률"
+    track: "assume"
+    value: 2.5
+    sensitivity: { low: 1.0, base: 2.5, high: 4.0 }
+    value_unit: "%/년 (명목)"
+    base_year: "2026~2045 (20년 분석기간)"
+    applicable_scope: "주택용·일반용 요금 전반. 연료비 연동분을 포함한 실효 인상률"
+    derivation_method: >-
+      가정. 3수준(1.0 / 2.5 / 4.0)은 **spec FR-801-AC7.quick 의 빠른 탐색
+      기본 3변수 중 하나로 이미 채택되어 있던 값**이다. 새로 만들지 않고
+      그것을 정본으로 삼아 여기에 등재했다 — 같은 사실이 두 곳에서 다른
+      값을 갖는 것을 막는다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "최상"
+    impact_note: >-
+      20년 자가소비·열비용 절감 편익 누계를 좌우한다. 1.0%와 4.0%의
+      20년 누계 차이가 지원 필요액 판단을 뒤집을 수 있어, **단일 값이
+      아니라 3수준 전건을 항상 함께 제시**한다
+    replace_when: >-
+      배전사업자 중장기 재무전망 또는 전력수급기본계획 확보 시.
+      단, 이 항목은 확보되어도 `추정`을 넘기 어렵다 — 20년 전망이다
+
+  - q_ref: "Q-6"
+    key: "tariff.hv_single_contract.avg"
+    title: "고압 단일계약 평균단가"
+    track: "assume"
+    value: 150
+    sensitivity: { low: 120, base: 150, high: 190 }
+    value_unit: "원/kWh (기본요금 안분 포함 실효단가)"
+    base_year: "2026"
+    applicable_scope: "공용부 고압 단일계약. 가구부 주택용 누진과 별개"
+    derivation_method: >-
+      가정. 약관 원문 대신 실효단가 하나로 근사했다. **이 근사는 TU-6
+      (누진·TOU 혼재 모델링)이 해소되면 폐기된다** — 요금 엔진이 서면
+      단가가 아니라 약관 구조를 물어야 한다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "중간"
+    impact_note: "공용부 비중이 큰 구성에서만 지배적"
+    replace_when: "배전사업자 약관 확보 시. TU-6 판단과 함께 처리한다"
+
+  - q_ref: "Q-7"
+    key: "fee.direct_trade_support"
+    title: "거래지원수수료"
+    track: "assume"
+    value: 5
+    sensitivity: { low: 0, base: 5, high: 15 }
+    value_unit: "원/kWh"
+    base_year: "2026"
+    applicable_scope: "분산특구 직접거래 거래량 기준"
+    derivation_method: >-
+      가정. **현재 공시가 없다.** 0이면 직접거래 편익이 과대해지고 크게
+      잡으면 과소해지므로, 편익 크기 대비 작은 값을 두고 범위 하단에
+      0을 포함시켰다. 하단 0은 "수수료 면제" 케이스를 겸한다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "중간"
+    impact_note: "FR-401-AC2.DirectTrade 산식의 차감항. 거래량에 비례해 커진다"
+    replace_when: "제도 시행세칙 또는 배전사업자 공시 확인 시"
+
+  - q_ref: "Q-9"
+    key: "capex.modular_house.premium"
+    title: "모듈러 주택 설치비 증분"
+    track: "assume"
+    value: 15
+    sensitivity: { low: 0, base: 15, high: 30 }
+    value_unit: "% (일반주택 대비 증분)"
+    base_year: "2026"
+    applicable_scope: "모듈러형 변형에만 적용. 기본 템플릿에는 없다"
+    derivation_method: "가정. 공장 제작 프리미엄과 운송·기초 공사를 합쳐 15%로 잡았다"
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "낮음"
+    impact_note: "모듈러형 변형 한정. Phase 1 기본 시나리오에 영향 없음"
+    replace_when: "사업 기획 자료 확보 시"
+
+  - q_ref: "Q-11"
+    key: "capacity_factor.bipv_wall.ratio"
+    title: "벽면 BIPV 이용률 (남향 경사면 대비)"
+    track: "assume"
+    value: 65
+    sensitivity: { low: 55, base: 65, high: 75 }
+    value_unit: "% (남향 최적경사 대비 비율)"
+    base_year: "2026"
+    applicable_scope: "남향 수직면. 동·서향은 별도 계수가 필요하다"
+    derivation_method: >-
+      가정. 수직면은 여름 입사각이 불리하고 겨울에 유리해 연간으로는
+      최적경사의 60~70% 수준이라는 일반적 이해를 따랐다. **이 항목은
+      실측이 아니라 시뮬레이션으로 대체 가능하다** — 확보처가 외부가
+      아니라 우리 자신이므로 우선순위가 낮다
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "낮음"
+    impact_note: "벽면 BIPV 포함 변형 한정"
+    replace_when: "일사량 데이터 기반 시뮬레이션 수행 시 (외부 요청 불요)"
+
+  - q_ref: "Q-13"
+    key: "ops.hosting_budget"
+    title: "호스팅 예산"
+    track: "assume"
+    value: 20000
+    sensitivity: { low: 0, base: 20000, high: 50000 }
+    value_unit: "원/월"
+    base_year: "2026"
+    applicable_scope: "배포 형태 판단용. 계산 입력이 아니다"
+    derivation_method: >-
+      가정. 하단 0은 **무료 티어 또는 로컬 컨테이너 전용**을 뜻하며,
+      어느 경우에도 로컬 실행(NFR-503)은 성립하므로 이 항목이 개발
+      착수를 막지 않는다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "낮음"
+    impact_note: "§10.3 배포 모델 선택에만 관여. 경제성 산출에 들어가지 않는다"
+    replace_when: "사업 주관 측 확인 시. 3.6 착수 전까지는 무관"
+
+# ─────────────────────────────────────────────────────────────────────
+# 갈래 B — 제도 미확인이므로 기본 비활성 (값 0). 크기를 추정하지 않는다
+# ─────────────────────────────────────────────────────────────────────
+
+  - q_ref: "Q-8"
+    key: "benefit.v2g_discharge"
+    title: "V2G 방전 전력 정산 편익"
+    track: "default0"
+    value: 0
+    sensitivity: null
+    value_unit: "원/kWh"
+    base_year: "2026"
+    applicable_scope: "V2G 방전 전력의 계량·정산"
+    derivation_method: >-
+      **가정하지 않는다.** 제도 존부가 미확인이므로 기본 비활성(값 0)으로
+      둔다. spec §15.1 Q-8 격상 사유가 정한 처리다 — 제도가 없으면 편익은
+      크기 문제가 아니라 0이다. 정산단가를 추정해 넣으면 존재하지 않는
+      제도 위에 편익을 쌓게 된다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "최상"
+    impact_note: >-
+      에너지자립가구 자원 4종 중 하나가 편익 측에서 통째로 빠진 상태다.
+      RC-EV-B1 활성화 시 경고를 표시하고, 회수기간을 V2G 편익 포함/제외
+      두 값으로 병기한다. **V2G 충전기 비용은 계상되므로 현 상태의
+      결과는 V2G에 대해 보수적**이다
+    replace_when: >-
+      제도 소관 기관·계통운영기관·배전사업자에 고시·약관 확인 시.
+      확인되면 track 을 assume 으로 바꾸고 정산단가를 등재한다
+
+  - q_ref: "Q-8b"
+    key: "cost.v2g_degradation_compensation"
+    title: "V2G 배터리 열화 보상단가"
+    track: "default0"
+    value: 0
+    sensitivity: null
+    value_unit: "원/kWh"
+    base_year: "2026"
+    applicable_scope: "V2G 방전에 따른 차주 배터리 열화 보상"
+    derivation_method: >-
+      **가정하지 않는다.** Q-8이 default0인 동안 방전 자체가 0이므로
+      보상단가는 곱해질 대상이 없다. Q-8 없이 이 값만 정하는 것은
+      제도가 있다는 전제를 몰래 들여오는 것이다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "중간"
+    impact_note: "Q-8이 해소된 뒤에야 의미를 갖는다. 순서를 뒤집지 않는다"
+    replace_when: "Q-8 해소 후 업계·연구 자료 확보 시"
+
+  - q_ref: "Q-10"
+    key: "rule.dr_tariff_incentive_exclusion"
+    title: "DR 정산금 ↔ 요금 인센티브 배타 여부"
+    track: "default0"
+    value: 0
+    sensitivity: null
+    value_unit: "배타 규칙 (0 = 보수적 배타 적용)"
+    base_year: "2026"
+    applicable_scope: "FR-402-AC2.D 제도적 배타 규칙"
+    derivation_method: >-
+      **가정하지 않고 보수적으로 배타 처리한다.** FR-402-AC2.D 가 이미
+      정한 규칙이다 — 제도 근거에 도달하지 못한 항목은 배타 처리하고
+      그 사실을 표기한다. 중복 수취가 가능하다고 가정하면 편익이
+      과대해지고 필요 지원액이 과소 산정된다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "중간"
+    impact_note: "DR은 Phase 2 편익(FR-401-AC2.DemandResponse)이므로 Phase 1 결과에 영향 없음"
+    replace_when: "계통운영기관·배전사업자 확인 시"
+
+  - q_ref: "Q-12"
+    key: "benefit.distributed_credit"
+    title: "분산편익 크레딧 화폐화"
+    track: "default0"
+    value: 0
+    sensitivity: null
+    value_unit: "원"
+    base_year: "2026"
+    applicable_scope: "송배전 회피·손실 감소·계통서비스·온실가스·회복력"
+    derivation_method: >-
+      **가정하지 않는다.** FR-404가 이미 기본 비활성(값 0)으로 규정하고
+      있다 — 현행 제도 미도입, 국내 정량 연구 부재. 이 항목은 Q 대장에
+      있으나 실질적으로는 이미 해소된 설계 결정이다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "낮음"
+    impact_note: "Phase 3. 활성화 시에도 본편익과 분리 소계로만 표시된다"
+    replace_when: "해외 VOS 연구 검토 후 Phase 3에서 판단"
+
+# ─────────────────────────────────────────────────────────────────────
+# 갈래 C — 가정 불가. 값을 넣으면 검증이 자기충족이 된다
+# ─────────────────────────────────────────────────────────────────────
+
+  - q_ref: "Q-4"
+    key: "oracle.prior_demo_assumptions"
+    title: "선행 실증 발표자료의 원 계산 가정"
+    track: "blocked"
+    value: null
+    sensitivity: null
+    value_unit: null
+    base_year: null
+    applicable_scope: "SG-4 판정(선행 실증 수치 ±15% 재현)의 기준값"
+    derivation_method: >-
+      **가정하면 안 된다.** 이것은 계산 입력이 아니라 **검증의 정박점**이다.
+      우리가 가정한 값으로 우리 계산을 검증하면 §13.0.2가 금지한 자기충족
+      테스트가 되고, 그 상태는 초록불로 남아 스스로 드러나지 않는다.
+      틀린 값을 넣는 것보다 나쁘다 — 틀린 값은 회신이 오면 드러난다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "높음"
+    impact_note: >-
+      **17.4(SG-4 ±15%) 판정을 유예한다.** 이 항목이 비어 있는 동안
+      17.4는 미판정이며, 통과로도 실패로도 세지 않는다. Phase 1 DoD
+      집계 시 "미판정 1건"으로 남긴다
+    blocks: ["17.4", "SG-4"]
+    replace_when: "정책 소관 기관에서 발표자료의 원 계산 가정 확보 시"
+
+  - q_ref: "Q-5"
+    key: "oracle.legacy_excel_model"
+    title: "현행 엑셀 모형 (대조군)"
+    track: "blocked"
+    value: null
+    sensitivity: null
+    value_unit: null
+    base_year: null
+    applicable_scope: "§13.3 1차 대조군, 16.5 엑셀 대조 케이스의 기대값 출처"
+    derivation_method: >-
+      **가정하면 안 된다.** 대조군의 목적은 **독립적으로 만들어진 계산과
+      맞춰 보는 것**이다. 우리가 엑셀을 만들어 대조하면 같은 오해를 두 번
+      구현하고 두 번 다 통과한다 — 대조의 의미가 사라진다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    impact: "높음"
+    impact_note: >-
+      **대체 경로가 있다.** 16.5의 NPV·IRR·회수기간·융자 상환은 닫힌 형태
+      해석해가 있으므로 §13.0.2 **순위 1(해석해)** 로 검증할 수 있다.
+      다만 그것은 "산식이 맞다"만 보이고 "실무가 쓰는 전제와 맞다"는
+      보이지 않는다. 대조군은 후자를 위한 것이며 대체되지 않는다
+    blocks: ["16.5 실무 정합 확인", "§13.3 1차 대조군"]
+    replace_when: "사업 주관 측에서 셀 수식이 열린 엑셀 1건 입수 시"
+
+# ─────────────────────────────────────────────────────────────────────
+# 값을 갖지 않는 판단 — 참고용. 검사 대상이 아니다
+# ─────────────────────────────────────────────────────────────────────
+
+notes:
+  - subject: "왜 가정값에도 sensitivity 를 요구하는가"
+    text: >-
+      단일 값만 두면 그 값이 맞다는 인상을 준다. 범위를 함께 두면 결과가
+      범위 안에서 얼마나 흔들리는지가 같이 나오고, 흔들림이 결론을 바꾸는
+      항목이 무엇인지 드러난다(FR-1002 영향도 순위). 회신을 어느 항목부터
+      받아야 하는지도 그 순위가 답한다 — 16.6 현황판이 이 순위를 본다.
+
+  - subject: "가정값이 코드에 스며드는 것을 무엇이 막는가"
+    text: >-
+      NFR-202(수치 리터럴 스캔 lint)와 2.9 작업이 막는다. 이 파일의 값은
+      AssumptionSet 씨앗으로 로드되어야 하며, 소스에 리터럴로 적히면
+      lint가 잡는다. 그것이 "나중에 변경 가능"의 기계적 보증이다.
+
+  - subject: "이 대장과 spec §15.1의 관계"
+    text: >-
+      §15.1은 **무엇을 확보해야 하는가**의 정본이고, 이 파일은 **확보 전까지
+      무엇으로 대신하는가**의 정본이다. Q 목록 자체를 여기서 늘리거나 줄이지
+      않는다 — scripts/check_assumptions.py 가 양쪽 Q 목록을 대조한다.

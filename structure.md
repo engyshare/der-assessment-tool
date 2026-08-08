@@ -91,6 +91,7 @@ FR 58 / NFR 32 / UI 7 = **요구사항 97건**, 수용기준 **299건** (v0.9 �
 |---|---|
 | `rslt/spec 작성 시 원칙.md` (234줄) | 원칙 1-A~8-4. **spec을 어떻게 쓰는가**의 규칙. 도메인 원칙과 번호가 19개 충돌하므로 인용 시 출처 표지 필수 |
 | `docs/manual-checks.yaml` | 자동화 불가 수용기준의 수동 검증 대장 MC-1~MC-8. `criterion_id`로 건다 |
+| `docs/assumptions.yaml` | **잠정 가정 대장 + 확보 현황판.** spec §15.1 Q-1~Q-13을 세 갈래(가정 / 비활성 / 불가)로 판정하고, 가정 갈래는 값·민감도·부기 7종을 등재한다. **회신이 오면 이 파일만 바꾼다 — 코드는 바뀌지 않는다** |
 | `docs/README.md` | 사본의 성격과 개정 절차 |
 | `status.md` | 세션 인계용 진행 상태 |
 
@@ -116,21 +117,25 @@ FR 58 / NFR 32 / UI 7 = **요구사항 97건**, 수용기준 **299건** (v0.9 �
 
 ---
 
-## 3. 검증 도구 3종
+## 3. 검증 도구 4종
 
 | 스크립트 | 입력 | 출력 | 무엇을 잡는가 |
 |---|---|---|---|
 | `check_source_rules.py` | 볼트(없으면 사본) · lock · spec | 판정 | ① 정본 해시 표류 ② 사본 오염 ③ 앵커 소실 ④ spec↔lock 인용 정합(양방향) ⑤ 폐지 좌표 인용 |
 | `gen_traceability.py` | spec · `manual-checks.yaml` · `tests/` | **`docs/traceability.md`** | Must-have 수용기준 중 검증 미매핑 (NFR-107) |
-| `check_task_mapping.py` | 작업 목록 · `traceability.md` | 판정 | ① 범위 초과 인용 ② 미인용 Must-have ③ 상위 작업 간 중복 인용 |
+| `check_task_mapping.py` | 작업 목록 · `traceability.md` | 판정 | ① 형식 이탈 인용 ② 범위 초과 ③ 실재하지 않는 인용 ④ 미인용 Must-have ⑤ 상위 작업 간 중복 인용 |
+| `check_assumptions.py` | `assumptions.yaml` · spec §15.1 | 판정 | ① 부기 7종 결손 ② 신뢰도 어휘 ③ 근거 없는 `확정` ④ **검증 정박점에 가정값 주입** ⑤ 교체 경로 부재 ⑥ 민감도 정합 ⑦ Q 목록 양방향 |
 
-**세 도구는 목적이 다르다.** `gen_traceability`는 인용 ID가 *실재하는지*만 본다. 실재하지만 *엉뚱한 조항*을 가리키는 오귀속은 `check_task_mapping`의 「미인용 Must-have」가 남긴 **빈자리**로만 드러난다.
+**도구마다 목적이 다르다.** `gen_traceability`는 인용 ID가 *실재하는지*만 본다. 실재하지만 *엉뚱한 조항*을 가리키는 오귀속은 `check_task_mapping`의 「미인용 Must-have」가 남긴 **빈자리**로만 드러난다.
+
+`check_assumptions`는 계보가 다르다 — 앞의 셋이 *문서끼리 어긋나는 것*을 잡는다면, 이것은 **가정이 조용히 사실로 굳는 것**을 잡는다. 특히 검사 ④(검증 정박점에 가정값 주입)는 `NFR-107-AC5`의 「게이트 자신을 수동 대장에 등재 금지」와 같은 구조다 — **무엇을 재는 자를 재는 쪽이 만들면 안 된다.**
 
 실행 순서 (항상 정본 대조부터):
 ```bash
 python scripts/check_source_rules.py     # 정본이 바뀌었는지 먼저
 python scripts/gen_traceability.py
 python scripts/check_task_mapping.py
+python scripts/check_assumptions.py
 ```
 
 ### CI (`.github/workflows/source-rules.yml`)
