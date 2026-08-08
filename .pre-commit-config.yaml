@@ -1,0 +1,60 @@
+# 커밋 전 차단 — 작업 2.3 / spec SC-5·SC-8·FR-1101-AC5
+#
+# **훅과 CI 를 둘 다 두는 이유.** 훅은 로컬에서 `--no-verify` 한 줄로 우회할 수
+# 있고, CI 는 **이미 커밋된 뒤에** 본다. 비공개 데이터는 커밋되는 순간 이력에
+# 남으므로 「나중에 지우면 된다」가 성립하지 않는다 — 지우려면 저장소 이력을
+# 다시 써야 하고, 공개된 뒤라면 그것으로도 늦다. 08-03에 git 초기화를 정제
+# «후에» 한 것이 같은 이유였다.
+#
+# 설치:
+#   pip install pre-commit
+#   pre-commit install
+#
+# 전체 검사 (설치 없이 1회):
+#   pre-commit run --all-files
+
+repos:
+  # ── SC-5 비밀 문자열 ───────────────────────────────────────────────
+  #
+  # API 키·토큰은 gitleaks 가 본다. 같은 규칙을 우리 도구에 다시 쓰지 않는다 —
+  # 규칙이 두 곳에 있으면 반드시 갈리고, 갈린 쪽이 느슨하면 그쪽이 통로가 된다.
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+
+  # ── 일반 위생 ─────────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-added-large-files
+        # 실측 시계열이 통째로 들어오는 것을 크기로 한 번 더 막는다.
+        # Q-3 부하 데이터는 8760행 × 가구 수다.
+        args: ["--maxkb=512"]
+      - id: check-merge-conflict
+      - id: check-yaml
+        # 대장·워크플로가 깨진 채로 커밋되면 게이트가 «검사 불가» 로 멈춘다
+        args: ["--allow-multiple-documents"]
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+
+  # ── 이 프로젝트 고유의 비공개 유형 ─────────────────────────────────
+  #
+  # gitleaks 가 보지 않는 것만 본다 — 로컬 절대 경로, 비공개 시드 파일,
+  # 개별 식별정보 형태. **08-03에 43건을 손으로 정제하고도 남은 것이 있었고**,
+  # 08-08에 이 검사가 status.md 1건과 spec 2건을 더 찾았다.
+  - repo: local
+    hooks:
+      - id: check-disclosure
+        name: SC-3·SC-8 비공개 유입 검사
+        entry: python scripts/check_disclosure.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ruff
+        name: ruff
+        entry: python -m ruff check
+        language: system
+        types: [python]
+        require_serial: false

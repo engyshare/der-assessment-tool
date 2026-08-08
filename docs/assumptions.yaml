@@ -69,6 +69,28 @@ requests_sent: "2026-08-08"
 # 갈래 A — 가정값으로 진행 (계산 입력)
 # ─────────────────────────────────────────────────────────────────────
 
+# ── SC-8 민감도 등급 (08-08 신설) ────────────────────────────────────
+#
+# **등급 미지정은 「비공개」다** — SC-8 이 정한 안전한 기본값이다. 그러므로
+# 값을 가진 항목은 **명시적으로** `공개 가능` 이어야 하고, 적지 않은 것은
+# 통과가 아니라 결함이다(`check_assumptions.py` 가 막는다).
+#
+# **08-08 이전에는 이 필드가 아예 없었다.** 조항대로 읽으면 등재된 20건 전부가
+# 비공개인 채로 공개 저장소에 있었던 셈이다. 실제 내용은 전부 공개 가능한
+# 값이었지만 그 사실이 어디에도 적혀 있지 않았고, **그 상태로는 다음에 진짜
+# 업계 견적이 들어와도 아무것도 달라지지 않는다.**
+#
+# 지금 18건이 `공개 가능` 인 근거 —
+#   · 가정 13건  공개된 단가 추세를 연장한 **내 추정**이다. 업계 견적도
+#                미공표 제도 검토도 아니며, FR-1101-AC3 이 말하는 «합성 예시
+#                전제»가 정확히 이것이다
+#   · 비활성 4건 값이 0이다. 숨길 것이 없다
+#   · 확정 1건   법정 세율이고 출처가 공개되어 있다
+#
+# **가정 불가 2건에는 등급을 달지 않았다.** 값이 없으므로 새어 나갈 것이
+# 없고, 값이 도착하는 시점이 등급을 정할 시점이다 — 지금 미리 `공개 가능` 을
+# 달아 두면 **회신으로 받은 업계 수치가 이미 공개 등급을 달고 들어온다.**
+
 assumptions:
   - q_ref: "Q-1"
     key: "capex.pv.rooftop"
@@ -88,6 +110,7 @@ assumptions:
     source: null
     verified_at: null
     confidence: "가정"
+    disclosure: "공개 가능"
     impact: "최상"
     impact_note: "CAPEX 직결. 보조율 산출(FR-608)의 기초이며 결과를 가장 크게 움직인다"
     replace_when: "공공 단가 자료 또는 업계 견적 3사 이상 확보 시"
@@ -109,6 +132,7 @@ assumptions:
     source: null
     verified_at: null
     confidence: "가정"
+    disclosure: "공개 가능"
     impact: "중간"
     impact_note: "벽면 BIPV를 포함한 변형에서만 지배적. 기본 템플릿에는 없다"
     replace_when: "Q-1과 동시. 옥상형과 별도 견적이 필요하다"
@@ -129,6 +153,7 @@ assumptions:
     source: null
     verified_at: null
     confidence: "가정"
+    disclosure: "공개 가능"
     impact: "최상"
     impact_note: "ESS 보조율(메가특구 50% 참조)의 기초. FR-610 사후 평가와 직결"
     replace_when: "업계 견적 확보 시. PCS 별도 견적인지 시스템 일괄인지 반드시 확인"
@@ -149,6 +174,7 @@ assumptions:
     source: null
     verified_at: null
     confidence: "가정"
+    disclosure: "공개 가능"
     impact: "높음"
     impact_note: >-
       기존주택형이 사용후배터리 ESS를 전제한다. 다만 그 설비는 FR-611
@@ -172,6 +198,7 @@ assumptions:
     source: null
     verified_at: null
     confidence: "가정"
+    disclosure: "공개 가능"
     impact: "중간"
     impact_note: >-
       **비용은 계상되는데 편익은 0이다** — Q-8(V2G 정산 제도)이 default0
@@ -196,6 +223,7 @@ assumptions:
     source: null
     verified_at: null
     confidence: "가정"
+    disclosure: "공개 가능"
     impact: "높음"
     impact_note: "열비용 절감 편익(FR-401-AC2.HeatCostSaving)의 투자 측 대응항"
     replace_when: "업계 견적 확보 시. COP 곡선(외기온 함수)을 함께 받을 것"
@@ -217,6 +245,7 @@ assumptions:
     source: null
     verified_at: null
     confidence: "가정"
+    disclosure: "공개 가능"
     impact: "높음"
     impact_note: >-
       자가소비율을 좌우하고, 자가소비율이 SelfConsumption·SurplusSale의
@@ -243,6 +272,7 @@ assumptions:
     source: null
     verified_at: null
     confidence: "가정"
+    disclosure: "공개 가능"
     impact: "최상"
     impact_note: >-
       20년 자가소비·열비용 절감 편익 누계를 좌우한다. 1.0%와 4.0%의
@@ -268,6 +298,7 @@ assumptions:
     source: null
     verified_at: null
     confidence: "가정"
+    disclosure: "공개 가능"
     impact: "중간"
     impact_note: "공용부 비중이 큰 구성에서만 지배적"
     replace_when: "배전사업자 약관 확보 시. TU-6 판단과 함께 처리한다"
@@ -288,6 +319,7 @@ assumptions:
     source: null
     verified_at: null
     confidence: "가정"
+    disclosure: "공개 가능"
     impact: "중간"
     impact_note: "FR-401-AC2.DirectTrade 산식의 차감항. 거래량에 비례해 커진다"
     replace_when: "제도 시행세칙 또는 배전사업자 공시 확인 시"
@@ -305,6 +337,7 @@ assumptions:
     source: null
     verified_at: null
     confidence: "가정"
+    disclosure: "공개 가능"
     impact: "낮음"
     impact_note: "모듈러형 변형 한정. Phase 1 기본 시나리오에 영향 없음"
     replace_when: "사업 기획 자료 확보 시"
@@ -326,6 +359,7 @@ assumptions:
     source: null
     verified_at: null
     confidence: "가정"
+    disclosure: "공개 가능"
     impact: "낮음"
     impact_note: "벽면 BIPV 포함 변형 한정"
     replace_when: "일사량 데이터 기반 시뮬레이션 수행 시 (외부 요청 불요)"
@@ -346,6 +380,7 @@ assumptions:
     source: null
     verified_at: null
     confidence: "가정"
+    disclosure: "공개 가능"
     impact: "낮음"
     impact_note: "§10.3 배포 모델 선택에만 관여. 경제성 산출에 들어가지 않는다"
     replace_when: "사업 주관 측 확인 시. 3.6 착수 전까지는 무관"
@@ -371,6 +406,7 @@ assumptions:
     source: null
     verified_at: null
     confidence: "가정"
+    disclosure: "공개 가능"
     impact: "최상"
     impact_note: >-
       에너지자립가구 자원 4종 중 하나가 편익 측에서 통째로 빠진 상태다.
@@ -397,6 +433,7 @@ assumptions:
     source: null
     verified_at: null
     confidence: "가정"
+    disclosure: "공개 가능"
     impact: "중간"
     impact_note: "Q-8이 해소된 뒤에야 의미를 갖는다. 순서를 뒤집지 않는다"
     replace_when: "Q-8 해소 후 업계·연구 자료 확보 시"
@@ -418,6 +455,7 @@ assumptions:
     source: null
     verified_at: null
     confidence: "가정"
+    disclosure: "공개 가능"
     impact: "중간"
     impact_note: "DR은 Phase 2 편익(FR-401-AC2.DemandResponse)이므로 Phase 1 결과에 영향 없음"
     replace_when: "계통운영기관·배전사업자 확인 시"
@@ -438,6 +476,7 @@ assumptions:
     source: null
     verified_at: null
     confidence: "가정"
+    disclosure: "공개 가능"
     impact: "낮음"
     impact_note: "Phase 3. 활성화 시에도 본편익과 분리 소계로만 표시된다"
     replace_when: "해외 VOS 연구 검토 후 Phase 3에서 판단"
@@ -526,6 +565,7 @@ assumptions:
     source: "부가가치세법 제30조 (세율)"
     verified_at: "2026-08-08"
     confidence: "확정"
+    disclosure: "공개 가능"
     impact: "중간"
     impact_note: >-
       **금액은 크지만 관점에 따라 상쇄된다.** 사업자 관점에서는 매입세액

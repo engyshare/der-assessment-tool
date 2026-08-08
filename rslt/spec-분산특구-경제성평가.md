@@ -2296,7 +2296,7 @@ python scripts/check_source_rules.py --strict   # 표류를 차단 사유로 취
 
 **둘 다 충족할 때만 "채택"**이다. 비자명성이 없으면 차용이 아니라 독립 도달이고, 적합성이 없으면 불필요한 복잡도다.
 
-검토 대상: `<DER-VET 체크아웃 경로>` (EPRI DER-VET v1.2 + StorageVET, 총 약 12,560 LOC)
+검토 대상: **EPRI DER-VET v1.2 + StorageVET** 로컬 체크아웃 (총 약 12,560 LOC). 경로는 검토자마다 다르므로 적지 않는다 — 공개 저장소에 로컬 구조를 남기지 않는다(SC-3)
 
 ---
 
@@ -2477,7 +2477,7 @@ lifetime_npv_alpha = npf.npv(self.npv_discount_rate, [0] + dollar_per_year)
 
 ## 부록 D. 참조 자료
 
-**설계 검토 대상** — 경로는 `<DER-VET 체크아웃 경로>` 기준 (v0.3에서 실경로로 정정)
+**설계 검토 대상** — 아래 파일 경로는 DER-VET 저장소 **루트 기준 상대 경로**다 (v0.3에서 실경로로 정정, v0.10에서 로컬 절대 경로 제거 — SC-3)
 
 - EPRI DER-VET v1.2 / StorageVET (BSD 3-Clause)
   - `storagevet/storagevet/SystemRequirement.py:41` (sentinel), `:195~205` (`__eq__`, `__hash__` 부재) — C.2 A-1 / C.5

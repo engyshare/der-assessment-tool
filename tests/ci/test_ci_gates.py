@@ -486,7 +486,10 @@ def test_coverage_inputs_accept_matching_and_absolute_paths(tmp_path: Path) -> N
     """
     mod = _script("check_coverage_inputs")
     assert mod.missing(["core/der/pv.py"], {"core/der/pv.py"}) == []
-    assert mod.missing(["core/der/pv.py"], {"/home/runner/work/x/core/der/pv.py"}) == []
+    # 절대 경로 예시에 홈 디렉터리 형태를 쓰지 않는다 — 2.3 검사가 그것을
+    # 「사용자 이름 노출」로 잡는다(SC-3). 규칙을 느슨하게 하는 대신 예시를
+    # 바꾼다: 오탐을 없애려고 검사를 무르게 하면 진짜 유출도 함께 통과한다.
+    assert mod.missing(["core/der/pv.py"], {"/build/ci/x/core/der/pv.py"}) == []
 
     xml = tmp_path / "coverage.xml"
     xml.write_text(
@@ -557,4 +560,98 @@ def test_no_module_or_class_level_mutable_containers() -> None:
     findings = mod.check_global_mutable(mod.source_files(root), root)
     assert not findings, "전역 가변 상태: " + ", ".join(
         f"{f.path}:{f.lineno} {f.detail}" for f in findings
+    )
+
+
+# ── SC-3 · SC-5 · SC-8 비공개 유입 차단 (작업 2.3) ───────────────────
+
+PRECOMMIT = REPO_ROOT / ".pre-commit-config.yaml"
+
+
+@pytest.mark.req("FR-1101-AC5")
+def test_private_data_scan_runs_in_both_pre_commit_and_ci() -> None:
+    """조항 문면이 **`pre-commit·CI에 둔다`** 이므로 둘 다 본다.
+
+    한쪽만으로는 성립하지 않는다. 훅은 로컬에서 `--no-verify` 한 줄로 우회되고,
+    CI 는 **이미 커밋된 뒤에** 본다. 비공개 데이터는 커밋되는 순간 이력에
+    남으므로 「나중에 지우면 된다」가 성립하지 않는다 — 지우려면 저장소 이력을
+    다시 써야 하고, 공개된 뒤라면 그것으로도 늦다.
+    """
+    assert PRECOMMIT.is_file(), f"pre-commit 설정이 없습니다: {PRECOMMIT}"
+    hooks = yaml.safe_load(PRECOMMIT.read_text(encoding="utf-8"))
+    ids = {
+        h.get("id")
+        for repo in hooks["repos"]
+        for h in repo.get("hooks", [])
+    }
+    assert "gitleaks" in ids, "pre-commit 에 gitleaks 가 없습니다 (SC-5)"
+    assert "check-disclosure" in ids, (
+        "pre-commit 에 비공개 유입 검사가 없습니다 (SC-3·SC-8)"
+    )
+
+    spec = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    commands = "\n".join(
+        step["run"]
+        for job in spec["jobs"].values()
+        for step in job.get("steps", [])
+        if isinstance(step.get("run"), str)
+    )
+    assert "gitleaks" in commands, "CI 에 gitleaks 잡이 없습니다 (SC-5)"
+    assert "check_disclosure.py" in commands, "CI 에 비공개 유입 검사가 없습니다"
+    assert "negtest_disclosure.py" in commands, (
+        "검사의 감지 능력을 확인하지 않습니다 — 비밀 스캔은 규칙이 조용히 "
+        "무력해져도 **매일 초록불**이고, 알아차리는 시점은 이미 공개된 뒤입니다"
+    )
+
+
+@pytest.mark.req("FR-1101-AC5")
+def test_secret_scan_uses_full_history() -> None:
+    """비밀 스캔은 **이력 전체**를 본다.
+
+    얕은 클론이면 과거 커밋에 남은 비밀을 보지 못한 채 초록불이 된다.
+    **비밀은 지워도 이력에 남는 것이 문제**이므로, 최근 커밋만 보는 스캔은
+    정확히 그 문제를 놓친다.
+    """
+    spec = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    for name, job in spec["jobs"].items():
+        commands = "\n".join(
+            step["run"] for step in job.get("steps", []) if isinstance(step.get("run"), str)
+        )
+        if "gitleaks" not in commands:
+            continue
+        checkouts = [
+            step for step in job["steps"]
+            if isinstance(step.get("uses"), str) and step["uses"].startswith("actions/checkout")
+        ]
+        assert any(
+            str(step.get("with", {}).get("fetch-depth")) == "0" for step in checkouts
+        ), f"잡 {name!r} 이 얕은 클론입니다 — 과거 커밋의 비밀을 보지 못합니다"
+
+
+@pytest.mark.req("FR-1101-AC5")
+def test_every_ledger_value_declares_its_disclosure_grade() -> None:
+    """값을 가진 대장 항목은 **명시적으로** 공개 등급을 선언한다.
+
+    SC-8 은 **등급 미지정을 「비공개」로 간주**한다(안전한 기본값). 이 저장소는
+    공개 저장소이므로(FR-1101-AC1) 등급을 적지 않은 값은 «커밋될 수 없는 것이
+    커밋된 상태»다.
+
+    **08-08 이전에는 이 필드가 아예 없었다.** 실제 내용은 전부 공개 가능한
+    값이었지만 그 사실이 어디에도 적혀 있지 않았고, 그 상태로는 **다음에 진짜
+    업계 견적이 들어와도 아무것도 달라지지 않는다.**
+    """
+    ledger = yaml.safe_load(
+        (REPO_ROOT / "docs" / "assumptions.yaml").read_text(encoding="utf-8")
+    )
+    # **`SC-8` 로 마킹할 수 없다.** SC 표의 행은 조항 ID 를 갖지만 수용기준
+    # 파서가 읽는 형식(`- **AC1**`)이 아니라 매핑 대상이 아니고, 실제로 마커를
+    # 달자 생성기가 «실재하지 않는 인용» 으로 잡았다. spec 쪽 결손이며 미해결에
+    # 등재했다 — 여기서는 같은 것을 요구하는 `FR-1101-AC5` 에 건다.
+    ungraded = [
+        item["key"] for item in ledger["assumptions"]
+        if item.get("value") is not None and item.get("disclosure") != "공개 가능"
+    ]
+    assert not ungraded, (
+        f"등급이 없거나 «공개 가능»이 아닌 값 항목: {ungraded}. 등급 미지정은 "
+        "«비공개»로 간주되며 공개 저장소에 커밋될 수 없습니다 (SC-8)"
     )

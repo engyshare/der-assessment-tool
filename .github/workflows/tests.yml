@@ -28,6 +28,55 @@ on:
   workflow_dispatch:
 
 jobs:
+  # ── SC-5 비밀 문자열 (작업 2.3) ────────────────────────────────────
+  #
+  # **별도 잡인 이유.** gitleaks 는 저장소 **이력 전체**를 훑으므로 테스트 잡의
+  # 얕은 관심사와 수명이 다르고, 실패했을 때 «무엇이 유출됐나» 만 보이면 된다.
+  # 우리 도구(`check_disclosure.py`)는 gitleaks 가 보지 않는 것 — 로컬 절대
+  # 경로·비공개 시드 파일·개별 식별정보 — 만 보며, 규칙을 두 곳에 두지 않는다.
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 이력 전체를 본다. 얕은 클론이면 **과거 커밋에 남은 비밀을 보지
+          # 못한 채 초록불**이 된다 — 비밀은 지워도 이력에 남는 것이 문제이므로
+          # 최근 커밋만 보는 스캔은 정확히 그 문제를 놓친다.
+          fetch-depth: 0
+
+      - name: gitleaks
+        # 액션 대신 릴리스 바이너리를 쓴다 — 조직 저장소에서 라이선스 키를
+        # 요구하는 경로를 피하고, 판올림 시점을 우리가 고정한다.
+        env:
+          GITLEAKS_VERSION: "8.18.4"
+        run: |
+          set -euo pipefail
+          curl -sSL -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          /tmp/gitleaks detect --source . --redact --verbose
+
+      - name: 스캔이 실제로 잡는지 확인
+        # 「탐지 0건」이 «비밀이 없다» 는 뜻인지 «규칙이 아무것도 매치하지
+        # 않는다» 는 뜻인지 결과만 보고는 구분되지 않는다 (§13.0.1 ④).
+        # 가짜 키를 심어 **탐지되는 것**을 확인하고 지운다.
+        run: |
+          set -uo pipefail
+          printf 'aws_secret_access_key = "%s"\n' \
+            "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" > /tmp/planted.txt
+          cp /tmp/planted.txt ./_negtest_secret.txt
+          set +e
+          /tmp/gitleaks detect --source . --no-git --redact > /tmp/out.txt 2>&1
+          rc=$?
+          set -e
+          rm -f ./_negtest_secret.txt
+          if [ "$rc" = "0" ]; then
+            echo "::error::심어 둔 가짜 키를 gitleaks 가 잡지 못했습니다 — 스캔이 무력합니다"
+            cat /tmp/out.txt
+            exit 1
+          fi
+          echo "심어 둔 키를 탐지했습니다 (종료 코드 $rc) — 스캔이 살아 있습니다"
+
   # ── 테스트·정적검사 ────────────────────────────────────────────────
   #
   # 08-08까지 CI에는 이 잡이 **없었다.** pytest·ruff·import-linter 는 사람이
@@ -80,6 +129,21 @@ jobs:
         # «문턱이 너무 높아 아무것도 보지 않는다» 는 뜻인지 결과만 보고는
         # 구분되지 않는다 (§13.0.1 ④). 문턱 값 자체도 함께 고정한다.
         run: python scripts/negtest_hardcoded_params.py
+
+      # SC-3·SC-8 비공개 유입 — 작업 2.3.
+      #
+      # pre-commit 훅과 **둘 다** 둔다. 훅은 `--no-verify` 한 줄로 우회되고,
+      # CI 는 이미 커밋된 뒤에 본다. 비공개 데이터는 커밋되는 순간 이력에
+      # 남으므로 「나중에 지우면 된다」가 성립하지 않는다.
+      - name: SC-3 · SC-8 비공개 유입
+        run: python scripts/check_disclosure.py
+
+      - name: 도구 감지 능력 확인 (음성 9 + 양성 6 + 경계 2)
+        # 비밀 스캔은 규칙이 조용히 무력해져도 **매일 초록불**이고, 알아차리는
+        # 시점은 이미 공개된 뒤다. 양성을 함께 보는 이유가 여기서 더 크다 —
+        # 오탐이 잦으면 규칙을 넓히는 압력이 생기고, 넓어진 규칙은 진짜 유출도
+        # 통과시킨다.
+        run: python scripts/negtest_disclosure.py
 
       - name: import-linter — 구획 경계 4계약 (NFR-208)
         # `python -m importlinter.cli lint` 로 부르지 **않는다.** 그 모듈에는
