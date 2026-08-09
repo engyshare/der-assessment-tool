@@ -66,10 +66,41 @@ jobs:
         # 「탐지 0건」이 «비밀이 없다» 는 뜻인지 «규칙이 아무것도 매치하지
         # 않는다» 는 뜻인지 결과만 보고는 구분되지 않는다 (§13.0.1 ④).
         # 가짜 키를 심어 **탐지되는 것**을 확인하고 지운다.
+        # **08-09 정정 — 이 단계는 통과할 수 없는 상태였고 한 번도 실행되지
+        # 않아 드러나지 않았다.** 심어 둔 키가 AWS 문서의 예시 키
+        # (`wJalrXUtnFEMI/…EXAMPLEKEY`)였고, **gitleaks 는 그것을 기본
+        # 허용목록에 두어 의도적으로 무시한다.** 즉 「스캔이 살아 있는가」를
+        # 확인하려고 심은 것이 스캔이 절대 잡지 않는 값이었다.
+        #
+        # 그런데 앞 단계(gitleaks)가 오탐으로 먼저 실패해 이 단계는 계속
+        # `skipped` 였다. **빨간불 하나가 다른 빨간불을 가리고 있었던 것**이며,
+        # 앞 단계를 고치자마자 이것이 처음으로 돌면서 드러났다.
+        #
+        # 이제 **실제로 탐지되는 값**을 심는다. 세 가지를 한꺼번에 심어
+        # 규칙군이 넓게 살아 있는지 본다 — 하나만 심으면 그 규칙 하나가
+        # 죽었을 때 «스캔이 무력하다» 와 «그 규칙만 죽었다» 가 구별되지 않는다.
+        #
+        # **심는 값을 조각으로 조립한다 — 리터럴로 적으면 푸시가 막힌다.**
+        # 실측: 완성된 Slack 토큰을 이 파일에 적었더니 **GitHub push
+        # protection 이 푸시를 거절**했다(`GH013 … Slack API Token,
+        # tests.yml:90`). 스캐너가 살아 있음을 증명하려고 심은 값이 다른
+        # 스캐너에 걸린 것이며, **그쪽도 제 일을 한 것이다.**
+        #
+        # 08-08 에 `SC-3` 탐지기를 검증하는 테스트가 탐지 대상을 리터럴로
+        # 들고 있어 스스로 위반이 됐을 때와 **같은 형태이고 해법도 같다** —
+        # 면제를 넓히지 않고 **대상을 바꾼다.** 조각으로 조립하면 소스에는
+        # 비밀 모양이 남지 않고 실행 시점에만 완성된다.
         run: |
           set -uo pipefail
-          printf 'aws_secret_access_key = "%s"\n' \
-            "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" > /tmp/planted.txt
+          aws_a="K7pQ2mXvR9tLwZ4n"; aws_b="B6cF8jH1sD3gY5aU0eI7oT2r"
+          gen_a="aB3xY9kL2mQ7pR4t"; gen_b="W8vZ1nC5dF6gH0jKuI7oP2sD"
+          slk_a="xox"; slk_b="b-2451234567-2451234567-"
+          slk_c="QwErTyUiOpAsDfGhJkLzXcVb"
+          {
+            printf 'aws_secret_access_key = "%s%s"\n' "$aws_a" "$aws_b"
+            printf 'service_token: "%s%s"\n'          "$gen_a" "$gen_b"
+            printf 'SLACK_TOKEN=%s%s%s\n'             "$slk_a" "$slk_b" "$slk_c"
+          } > /tmp/planted.txt
           cp /tmp/planted.txt ./_negtest_secret.txt
           set +e
           # **게이트와 같은 `--config` 로 돌린다.** 빠뜨리면 이 음성 확인이

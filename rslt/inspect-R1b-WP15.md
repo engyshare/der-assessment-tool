@@ -71,7 +71,7 @@ python -m pytest tests/ci tests/golden/test_privacy_procedure.py -p no:cacheprov
 → .............EE......EE.F...E........
 → 1 failed, 5 errors
 → 실패: core/model/__init__.py:10 __all__, core/model/settlement.py:5 SUPPORTED_STRUCTURES 전역 가변 상태
-→ 오류: tmp_path fixture가 C:\Users\Public\Documents\ESTsoft\CreatorTemp\pytest-of-dl 접근 거부
+→ 오류: tmp_path fixture가 <사용자 경로> 접근 거부
 → PYTEST_TARGET_RECHECK_RC=1
 ```
 

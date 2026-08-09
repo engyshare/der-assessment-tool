@@ -1,6 +1,17 @@
-"""core/model — 구획 WP-16.
+from core.model.model import Model
+from core.model.schemas import (
+    ContractConfig,
+    DERConfig,
+    LoadConfig,
+    ModelConfig,
+    RegulationConfig,
+)
 
-모델 구성·계약구조 정산·템플릿 (FR-201, FR-204, FR-205)
-
-소유 경로 밖 파일을 건드리지 않는다 (§16.1 W-1).
-"""
+__all__ = (
+    "ContractConfig",
+    "DERConfig",
+    "LoadConfig",
+    "Model",
+    "ModelConfig",
+    "RegulationConfig",
+)
