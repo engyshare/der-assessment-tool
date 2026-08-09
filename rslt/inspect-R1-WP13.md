@@ -28,7 +28,7 @@
 
 ## 지적 사항
 
-- 공식 pytest와 음성 테스트 일부는 현재 환경의 임시 디렉터리 권한 문제 때문에 판정 불가다. 첫 실패 경로: `C:\Users\Public\Documents\ESTsoft\CreatorTemp\pytest-of-dl`.
+- 공식 pytest와 음성 테스트 일부는 현재 환경의 임시 디렉터리 권한 문제 때문에 판정 불가다. 첫 실패 경로: `<사용자 임시 경로>`.
 - 재시도 중 생성된 `.tmp_inspect_pytest`는 접근 권한 오류로 제거하지 못했다. 삭제 시도는 도구 안전 정책에 의해 차단되었다.
 - 전역 작업트리에 WP-13 외 변경이 많다. 특히 `pyproject.toml`의 `pip-audit` 추가, `.github/**`, `README.md` 변경은 WP-13 브리프 소유 경로가 아니다. 다만 혼재 작업트리라 귀속은 판정하지 않았다.
 
@@ -123,14 +123,14 @@ ERROR tests/infra/test_tsstore.py::test_write_accepts_both_supported_resolutions
 ERROR tests/infra/test_tsstore.py::test_metadata_embeds_kind_year_and_format
 ERROR tests/infra/test_tsstore.py::test_checksum_is_actually_sha256_of_file_bytes
 대표 오류:
-PermissionError: [WinError 5] 액세스가 거부되었습니다: 'C:\\Users\\Public\\Documents\\ESTsoft\\CreatorTemp\\pytest-of-dl'
+PermissionError: [WinError 5] 액세스가 거부되었습니다: '<시스템 임시 경로>'
 rc=1
 ```
 
 ```text
-$env:PYTHONDONTWRITEBYTECODE='1'; $env:TMP='D:\Dev\260802_DER_evaluator\.tmp_inspect'; $env:TEMP='D:\Dev\260802_DER_evaluator\.tmp_inspect'; python -m pytest tests/infra/ -p no:cacheprovider --no-cov -q --basetemp .tmp_inspect_pytest; Write-Output "rc=$LASTEXITCODE"
+$env:PYTHONDONTWRITEBYTECODE='1'; $env:TMP='<시스템 임시 경로>'; $env:TEMP='<시스템 임시 경로>'; python -m pytest tests/infra/ -p no:cacheprovider --no-cov -q --basetemp .tmp_inspect_pytest; Write-Output "rc=$LASTEXITCODE"
 ......EE...E..EEEEE..EEEEE......EEEEEEEEEE                               [100%]rc=1
-PermissionError: [WinError 5] 액세스가 거부되었습니다: 'D:\\Dev\\260802_DER_evaluator\\.tmp_inspect_pytest'
+PermissionError: [WinError 5] 액세스가 거부되었습니다: '<시스템 임시 경로>'
 ```
 
 ```text
@@ -203,7 +203,7 @@ rc=0
 
 ```text
 python scripts/negtest_traceability.py; Write-Output "rc=$LASTEXITCODE"
-PermissionError: [WinError 5] 액세스가 거부되었습니다: 'C:\\Users\\Public\\Documents\\ESTsoft\\CreatorTemp\\tmpksak29h5'
+PermissionError: [WinError 5] 액세스가 거부되었습니다: '<시스템 임시 경로>'
 rc=1
 
 python scripts/negtest_assumptions.py; Write-Output "rc=$LASTEXITCODE"
@@ -211,15 +211,15 @@ python scripts/negtest_assumptions.py; Write-Output "rc=$LASTEXITCODE"
 rc=0
 
 python scripts/negtest_file_size.py; Write-Output "rc=$LASTEXITCODE"
-PermissionError: [WinError 5] 액세스가 거부되었습니다: 'C:\\Users\\Public\\Documents\\ESTsoft\\CreatorTemp\\tmp3w4b3i2m'
+PermissionError: [WinError 5] 액세스가 거부되었습니다: '<시스템 임시 경로>'
 rc=1
 
 python scripts/negtest_hardcoded_params.py; Write-Output "rc=$LASTEXITCODE"
-PermissionError: [WinError 5] 액세스가 거부되었습니다: 'C:\\Users\\Public\\Documents\\ESTsoft\\CreatorTemp\\negtest-params-58b02per\\core'
+PermissionError: [WinError 5] 액세스가 거부되었습니다: '<시스템 임시 경로>'
 rc=1
 
 python scripts/negtest_disclosure.py; Write-Output "rc=$LASTEXITCODE"
-PermissionError: [Errno 13] Permission denied: 'C:\\Users\\Public\\Documents\\ESTsoft\\CreatorTemp\\negtest-disclosure-onix7jzj\\notes.md'
+PermissionError: [Errno 13] Permission denied: '<시스템 임시 경로>'
 rc=1
 ```
 

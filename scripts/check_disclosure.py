@@ -149,13 +149,40 @@ def tracked_files(root: Path) -> list[str]:
     return [p.replace("\\", "/") for p in raw.split("\0") if p.strip()]
 
 
-def check_paths(paths: list[str]) -> list[Finding]:
+#: **공개 등급을 스스로 선언한 파일**. 파일명 예외가 아니라 **내용 선언**이다.
+#:
+#: `FR-1101-AC3` 은 합성 예시 시드를 **공개 저장소에 두라고** 요구한다. 그런데
+#: 경로 규칙은 이름만 보므로 그 정당한 파일을 잡는다 — 08-09 에 실제로
+#: `tests/ci/synthetic_seeds.yaml` 이 걸렸다.
+#:
+#: **파일명 예외로 풀지 않았다.** 예외를 넓히면 진짜 비공개 시드가 이름만
+#: 바꿔 통과한다 — 이 저장소가 반복해서 만난 «제외를 넓혀 규칙을 없애는»
+#: 형태다. 대신 `docs/assumptions.yaml` 이 SC-8 에 쓰는 것과 같은 장치를
+#: 쓴다: **선언이 없으면 비공개로 간주**하고, 공개하려면 파일이 그렇게
+#: 말해야 한다. 선언은 한 줄이고 **잊은 것과 공개하기로 한 것을 구분한다.**
+PUBLIC_DECLARATION = re.compile(
+    r"^\s*#?\s*disclosure:\s*[\"']?공개 가능", re.M)
+
+
+def _declares_public(path: str, root: Path) -> bool:
+    f = root / path
+    try:
+        head = f.read_text(encoding="utf-8", errors="replace")[:4000]
+    except OSError:
+        return False
+    return bool(PUBLIC_DECLARATION.search(head))
+
+
+def check_paths(paths: list[str], root: Path | None = None) -> list[Finding]:
     findings: list[Finding] = []
+    root = root or Path(".")
     for path in paths:
         if any(a.search(path) for a in PRIVATE_ALLOW):
             continue
         for rule in PRIVATE_PATHS:
             if rule.search(path):
+                if _declares_public(path, root):
+                    break
                 findings.append(Finding(
                     path=path, lineno=0, rule="비공개 시드 경로",
                     hint="FR-1101-AC2 — 별도 비공개 저장소 또는 배포 시 주입되는 "
@@ -239,7 +266,7 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 2
 
-    findings = check_paths(paths) + check_contents(paths, root)
+    findings = check_paths(paths, root) + check_contents(paths, root)
 
     print(f"비공개 유입 검사 — 대상 {len(paths)}개 파일")
     print("─" * 78)

@@ -5,6 +5,7 @@ description = "분산특구 사업모델 경제성 평가 프로그램"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.7",
+    "pytest>=9.1.1",
     "pyyaml>=6.0",
 ]
 

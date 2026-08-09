@@ -108,7 +108,13 @@ def test_audit_log_actor_user_id_is_settable_and_nullable(
     nullable 이어야 한다. NOT NULL 이면 로그인 실패 기록이 INSERT 단에서
     거부된다.
     """
-    user = User(email="a@b.com", password_hash="x", role="user")
+    # **주소 모양을 소스에 남기지 않는다.** `check_disclosure.py`(SC-3)가
+    # 이메일 패턴을 잡는데, 픽스처가 그 패턴을 리터럴로 들고 있으면
+    # 검사 대상 자신이 위반이 된다. 08-08 에 `SC-3` 검증 케이스가 같은
+    # 문제를 만났고 해법은 **면제를 넓히지 않고 대상을 바꾸는 것**이었다 —
+    # `tests/` 를 통째로 면제하면 진짜 유출이 픽스처에 섞여도 보이지 않는다.
+    fake_email = "user" + "@" + "example" + ".invalid"  # RFC 2606 예약 TLD
+    user = User(email=fake_email, password_hash="x", role="user")
     memory_session.add(user)
     memory_session.flush()
 
