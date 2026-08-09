@@ -12,9 +12,9 @@
 | 요구사항 | 105 |
 | 그중 Must-have | 79 |
 | 수용기준 총계 | 307 |
-| 자동 검증 매핑 | 128 |
-| 수동 검증 매핑 | 8 |
-| **Must-have 미매핑** | **144** |
+| 자동 검증 매핑 | 234 |
+| 수동 검증 매핑 | 7 |
+| **Must-have 미매핑** | **40** |
 | 우선순위 미지정 요구사항 | 0 |
 | **Phase 미지정 요구사항** | **9** |
 
@@ -33,20 +33,7 @@
 > 감시하면서도 *언제까지* 지켜야 하는지는 말하지 못하는 상태입니다. Should-have만
 > 남았다면 R-1 정비 사항이며 게이트 판정에는 영향이 없습니다.
 
-> **대상이 없는 검증 항목 3건 — 매달린 참조입니다.**
->
-> · 테스트 마커 FR-103 — 해당 수용기준이 spec에 없음 (test_financial_isolation.py)
-> · 테스트 마커 FR-204 — 해당 수용기준이 spec에 없음 (test_templates.py)
-> · 테스트 마커 FR-205 — 해당 수용기준이 spec에 없음 (test_settlement.py)
->
-> 이 항목들은 **아무것도 검증하지 않습니다.** 수용기준이 삭제되었거나 ID가
-> 밀렸는데 참조를 갱신하지 않은 상태이며, 요구사항 쪽에서는 그냥 `미매핑`으로만
-> 보이므로 원인이 드러나지 않습니다.
->
-> `criterion_id` 누락이라면 지정하십시오. 요구사항 단위로 걸면 자동화 가능한
-> 수용기준까지 "수동으로 검증됨"으로 표시되어 커버리지가 과대 계상됩니다.
-
-> **미매핑 144건.** NFR-107은 미매핑 0건을 요구합니다.
+> **미매핑 40건.** NFR-107은 미매핑 0건을 요구합니다.
 >
 > 현재 저장소에 테스트가 없으므로 전건 미매핑인 것이 정상입니다. 이 표는
 > **Wave 0 시점의 작업 목록**으로 읽으십시오 — 각 행이 곧 작성해야 할 테스트
@@ -61,7 +48,7 @@
 | `FR-101` | Must-have | 1 | `FR-101-AC1` | 속성: name, tag, dt, carries_electric, carries_heat, carries_cool, consumes_fuel, lifetime,… | 자동 | test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py |
 |  |  | 1 | `FR-101-AC2` | 메서드: capex(), fixed_om(), variable_om(), replacement_schedule(), salvage_value(), dispatc… | 자동 | test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_load.py, test_load.py, test_load.py, test_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py |
 |  |  | 1 | `FR-101-AC3` | 신규 자원 클래스가 위 인터페이스만 구현하면 코어 엔진 수정 없이 동작 (단위 테스트로 실증) | 자동 | test_der_contract.py, test_der_contract.py, test_smoke_wave0.py |
-|  |  | 1 | `FR-101-AC4` | 매체 플래그에 따라 엔진이 전기·열·냉 수지를 자동으로 분리 집계한다 | 자동 | test_der_contract.py, test_der_contract.py, test_der_contract.py, test_smoke_wave0.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_pv.py, test_pv.py |
+|  |  | 1 | `FR-101-AC4` | 매체 플래그에 따라 엔진이 전기·열·냉 수지를 자동으로 분리 집계한다 | 자동 | test_der_contract.py, test_der_contract.py, test_der_contract.py, test_smoke_wave0.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_pv.py, test_pv.py, test_rule_based.py |
 | `FR-102` | Must-have | 1 | `FR-102-AC1.PV` | PV 태양광 (옥상/벽면 BIPV 구분) — 용량(kW), 이용률(%) 또는 8760 발전 시계열, 방위·경사, 연간 열화율, 인버터 수명 | 자동 | test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py |
 |  |  | 1 | `FR-102-AC1.ESS` | ESS 배터리 (신품/사용후배터리) — 정격용량(kWh), 정격출력(kW), RTE(%), SOC 상하한, 사이클수명, 달력수명, EOL 잔존율 | 자동 | test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py |
 |  |  | 1 | `FR-102-AC1.EV_V2G` | EV_V2G 전기차 + 양방향 충전기 — 대수, 배터리(kWh), 최대 충방전(kW), 접속가능시간대, 참여율, 열화 보상단가 | 자동 | test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py |
@@ -71,9 +58,9 @@
 |  |  | 2 | `FR-102-AC1.VPP` | VPP 통합발전소 (자원 집합 + 시장참여) — 집합 자원 ID 목록, 운영수수료(%), 시장참여 유형 | **미매핑** | — |
 |  |  | 2 | `FR-102-AC1.Boiler` | Boiler 보조 열원 (가스/전기) — 열효율, 연료단가, 연료종 | **미매핑** | — |
 |  |  | 3 | `FR-102-AC1.Genset` | Genset 비상·상시 발전기 — 정격출력, 열소비율, 연료단가, 최소부하율 | **미매핑** | — |
-| `FR-103` | Must-have | 1 | `FR-103-AC1` | 한 시나리오 내에 PV#1(햇빛소득마을 조건), PV#2(자가용 조건)이 동시 존재 | **미매핑** | — |
-|  |  | 1 | `FR-103-AC2` | 각 인스턴스는 독립적인 IncentiveScheme 참조를 가진다 (FR-604) | **미매핑** | — |
-|  |  | 1 | `FR-103-AC3` | 두 인스턴스의 현금흐름이 프로포마에서 분리된 행으로 표시된다 | **미매핑** | — |
+| `FR-103` | Must-have | 1 | `FR-103-AC1` | 한 시나리오 내에 PV#1(햇빛소득마을 조건), PV#2(자가용 조건)이 동시 존재 | 자동 | test_financial_isolation.py |
+|  |  | 1 | `FR-103-AC2` | 각 인스턴스는 독립적인 IncentiveScheme 참조를 가진다 (FR-604) | 자동 | test_financial_isolation.py |
+|  |  | 1 | `FR-103-AC3` | 두 인스턴스의 현금흐름이 프로포마에서 분리된 행으로 표시된다 | 자동 | test_financial_isolation.py |
 | `FR-104` | Must-have | 1 | `FR-104-AC1` | PV: 연 degradation_rate(%/년) 발전량 감소 | 자동 | test_ev_v2g.py, test_heatpump.py, test_heatpump.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py |
 |  |  | 1 | `FR-104-AC2` | ESS: 사이클 누적 + 달력 열화 중 보수적 값 적용, EOL(기본 80%) 도달 시 교체비 계상 | 자동 | test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ev_v2g.py, test_ev_v2g.py, test_pv.py, test_pv.py |
 |  |  | 1 | `FR-104-AC3` | 수명 도달 자원은 replace / retire 선택 가능 | 자동 | test_ev_v2g.py, test_load.py, test_load.py, test_pv.py, test_pv.py, test_pv.py, test_thermal_load.py |
@@ -100,16 +87,16 @@
 | `FR-203` | Should-have | - | `FR-203-AC1` | Site(가구/건물) N개를 Community(단지)로 묶을 수 있다 | **미매핑** | — |
 |  |  | - | `FR-203-AC2` | 가구 단위 경제성과 단지 통합 경제성을 모두 산출한다 | **미매핑** | — |
 |  |  | - | `FR-203-AC3` | 통합 시 발생하는 상계·공유 효과를 "통합 편익" 항목으로 분리 정량화한다 | **미매핑** | — |
-| `FR-204` | Must-have | 1 | `FR-204-AC1` | Phase 1: 에너지자립가구 모델 — PV + 히트펌프 + EV/V2G + ESS, 10~20가구, 기존주택형/모듈러주택형 2 변형 | **미매핑** | — |
-|  |  | 2 | `FR-204-AC2` | 마을단위 분산특구 6개 모델, 아파트 마이크로그리드 모델 | **미매핑** | — |
-|  |  | 1 | `FR-204-AC3` | 템플릿 로드 시 모든 파라미터에 기본값과 출처가 채워진다 | **미매핑** | — |
-| `FR-205` | Must-have | 1 | `FR-205-AC1` | 다음이 정산 로직에 반영된다 — 개별 세대 직접계약 / 단일계약+관리주체 경유 / 분산특구 직접거래 / 상계거래 / 잉여 직거래 / 집합 PPA / VPP 경유 | **미매핑** | — |
-| `FR-301` | Must-have | 1 | `FR-301-AC1` | 매 스텝 자원별 충·방전·발전·소비량과 계통 수·송전량을 산출 | 자동 | test_der_contract.py, test_der_contract.py |
-|  |  | 1 | `FR-301-AC2` | 전력·열 수지 균형식이 모든 스텝에서 오차 < 1e-6 kWh | 자동 | test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py |
-|  |  | 1 | `FR-301-AC3` | 시계열 행수 불일치 시 명확한 오류로 중단 | 자동 | test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_ev_v2g.py, test_heatpump.py |
-| `FR-302` | Must-have | 1 | `FR-302-AC1` | 다음 우선순위를 설정 가능한 순서로 적용 | **미매핑** | — |
-|  |  | 1 | `FR-302-AC2` | TOU 하 경부하 충전 / 최대부하 방전 차익거래 규칙을 옵션 활성화 | **미매핑** | — |
-|  |  | 1 | `FR-302-AC3` | 규칙 순서·활성화를 UI에서 변경 가능하며 효과가 결과에 반영된다 | **미매핑** | — |
+| `FR-204` | Must-have | 1 | `FR-204-AC1` | Phase 1: 에너지자립가구 모델 — PV + 히트펌프 + EV/V2G + ESS, 10~20가구, 기존주택형/모듈러주택형 2 변형 | 자동 | test_templates.py |
+|  |  | 2 | `FR-204-AC2` | 마을단위 분산특구 6개 모델, 아파트 마이크로그리드 모델 | 자동 | test_templates.py |
+|  |  | 1 | `FR-204-AC3` | 템플릿 로드 시 모든 파라미터에 기본값과 출처가 채워진다 | 자동 | test_templates.py |
+| `FR-205` | Must-have | 1 | `FR-205-AC1` | 다음이 정산 로직에 반영된다 — 개별 세대 직접계약 / 단일계약+관리주체 경유 / 분산특구 직접거래 / 상계거래 / 잉여 직거래 / 집합 PPA / VPP 경유 | 자동 | test_settlement.py |
+| `FR-301` | Must-have | 1 | `FR-301-AC1` | 매 스텝 자원별 충·방전·발전·소비량과 계통 수·송전량을 산출 | 자동 | test_der_contract.py, test_der_contract.py, test_rule_based.py |
+|  |  | 1 | `FR-301-AC2` | 전력·열 수지 균형식이 모든 스텝에서 오차 < 1e-6 kWh | 자동 | test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_rule_based.py |
+|  |  | 1 | `FR-301-AC3` | 시계열 행수 불일치 시 명확한 오류로 중단 | 자동 | test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_ev_v2g.py, test_heatpump.py, test_rule_based.py, test_rule_based.py |
+| `FR-302` | Must-have | 1 | `FR-302-AC1` | 다음 우선순위를 설정 가능한 순서로 적용 | 자동 | test_rule_based.py |
+|  |  | 1 | `FR-302-AC2` | TOU 하 경부하 충전 / 최대부하 방전 차익거래 규칙을 옵션 활성화 | 자동 | test_rule_based.py |
+|  |  | 1 | `FR-302-AC3` | 규칙 순서·활성화를 UI에서 변경 가능하며 효과가 결과에 반영된다 | 자동 | test_rule_based.py |
 | `FR-303` | Should-have | - | `FR-303-AC1` | 목적함수: 분석기간 총비용 최소화. 자원·SOC·계통 제약을 선형 제약으로 표현 | **미매핑** | — |
 |  |  | - | `FR-303-AC2` | 최적화 창: 월 또는 연 단위 선택 | **미매핑** | — |
 |  |  | - | `FR-303-AC3` | 동일 시나리오에서 MILP 총비용 ≤ 룰기반 총비용 을 회귀 테스트로 보장 | **미매핑** | — |
@@ -136,7 +123,7 @@
 |  |  | 1 | `FR-402-AC4` | 배타 규칙은 코드가 아닌 선언적 규칙 테이블로 관리한다. 각 규칙은 (편익A, 편익B, 배타유형 A~D, 근거, 적용 규제 프로파일) 을 보유한다 | **미매핑** | — |
 |  |  | 1 | `FR-402-AC5` | 편익을 활성화할 때 시스템은 분산자원 경제성 평가 원칙 「부록 A. 편익 항목 추가 시 실무 적용 절차」 의 4문항 판정을 통과했는지 확인하고, 지불 주체가 특… | **미매핑** | — |
 |  |  | 1 | `FR-402-AC6` | 리포트에 "편익 계상 내역" 을 표시한다: 계상된 편익 / 배타로 제외된 편익 / 증분만 계상된 편익(유형 B) / 미화폐화로 0 처리된 편익 | **미매핑** | — |
-|  |  | 1 | `FR-402-AC7` | 관점별(FR-704) 편익 집합이 서로 다름을 리포트에 명시하고, 보조금은 사회 관점에서 이전지출로 처리하여 편익에 포함하지 않는다 | **미매핑** | — |
+|  |  | 1 | `FR-402-AC7` | 관점별(FR-704) 편익 집합이 서로 다름을 리포트에 명시하고, 보조금은 사회 관점에서 이전지출로 처리하여 편익에 포함하지 않는다 | 자동 | test_transfer.py |
 | `FR-403` | Must-have | 1 | `FR-403-AC1` | 편익별 제약을 개별 제약으로 쌓지 않고, 제약 유형별 단일 시계열로 min/max 합성한다 | 자동 | test_conflict.py |
 |  |  | 1 | `FR-403-AC2` | 각 시각별로 어느 편익이 그 제약값에 기여했는지 기록한다 | 자동 | test_conflict.py |
 |  |  | 1 | `FR-403-AC3` | 시뮬레이션·최적화 실행 전에 min > max 충돌을 검사하고, 충돌 시 "2027-01-15 18:00에 ESS 방전 하한(예비력 확보)과 상한(SOC 제약)… | 자동 | test_conflict.py |
@@ -191,86 +178,86 @@
 | `FR-603` | Must-have | 1 | `FR-603-AC1` | 항목 필드 (v0.5 정정): (자원유형, 규격, 단가·단위, 기준일·기준연도·버전, 적용 범위·조건, 산출 방법·표본, 출처(문서명·위치·전체URL), 최종확… | 자동 | test_catalog.py |
 |  |  | 1 | `FR-603-AC2` | 카탈로그 값과 사용자 변경값이 리포트에서 시각적으로 구분된다 | 자동 | test_catalog.py |
 |  |  | 1 | `FR-603-AC3` | 기준연도가 분석연도와 다르면 물가 조정 후 사용하며 조정 내역을 표시한다 | 자동 | test_catalog.py |
-| `FR-604` | Must-have | 1 | `FR-604-AC1` | 스킴 구성 | **미매핑** | — |
-|  |  | 1 | `FR-604-AC2` | 보조: 보조율(%) 또는 정액(원), 상한, 대상 비용 범위(설비비만 / 설치비 포함) | **미매핑** | — |
-|  |  | 1 | `FR-604-AC3` | 융자: 융자율(%), 연이자율, 거치기간(년), 상환기간(년), 상환방식(원리금균등/원금균등/만기일시) | **미매핑** | — |
-|  |  | 1 | `FR-604-AC4` | 자부담: 잔여 비율 자동 계산 | **미매핑** | — |
-|  |  | 1 | `FR-604-AC5` | 세제: 세액공제율, 감가상각 방식·내용연수 | **미매핑** | — |
-|  |  | 1 | `FR-604-AC6` | 지원 주체: 국비 / 지방비 / 민간 | **미매핑** | — |
-|  |  | 1 | `FR-604-AC7` | 보조 확정액 + 융자 확정액 + 자부담액 = 대상 총사업비 (오차 1원 이내) | **미매핑** | — |
-|  |  | 1 | `FR-604-AC8` | 보조 확정액 = min(대상비용 × 보조율, 보조 상한) 또는 정액 | **미매핑** | — |
-|  |  | 1 | `FR-604-AC9` | 자부담액은 잔여로 자동 계산되며 음수가 될 수 없다 | **미매핑** | — |
-| `FR-605` | Must-have | 1 | `FR-605-AC1` | 자원 유형별 상이한 조건이 한 시나리오에서 동시 적용되고 프로포마에 분리 표시된다 | **미매핑** | — |
-| `FR-606` | Must-have | 1 | `FR-606-AC1` | 거치기간 중 이자만, 상환기간 중 원리금 상환 스케줄 생성 | **미매핑** | — |
-|  |  | 1 | `FR-606-AC2` | 상환 스케줄이 프로포마 독립 행으로 표시되고 총 이자비용이 별도 집계된다 | **미매핑** | — |
-| `FR-607` | Must-have | 1 | `FR-607-AC1` | 모든 실행에서 지원 0 케이스가 자동 포함되어 결과 상단에 표시된다 | **미매핑** | — |
-|  |  | 1 | `FR-607-AC2` | "무지원 시 회수기간 XX년 / 목표 대비 부족분 YY년" 형태로 격차를 명시한다 | **미매핑** | — |
-|  |  | 1 | `FR-607-AC3` | 기준선의 정의 (v0.5 추가): 지원 0은 본 사업의 지원이 0을 뜻한다. 타 사업으로 확정 지원된 설비는 기준선에 포함하고, 지원 예정(미확정)은 제외한다.… | **미매핑** | — |
-| `FR-608` | Must-have | 1 | `FR-608-AC1` | 목표 지정: "할인 회수기간 ≤ 10년" / "NPV ≥ 0" / "IRR ≥ 5%" 중 택일 또는 복수 | **미매핑** | — |
-|  |  | 1 | `FR-608-AC2` | 지정한 단일 변수(기본: 보조율)를 이분 탐색하여 목표 달성 최소값을 0.1%p 정밀도로 산출 | **미매핑** | — |
-|  |  | 1 | `FR-608-AC3` | 단조성 검사 (v0.3 추가): 이분 탐색은 목표 지표가 탐색 변수에 대해 단조라는 가정에 의존한다. 보조 상한·정액 보조·계단형 조건이 섞이면 비단조 구간이 … | **미매핑** | — |
-|  |  | 1 | `FR-608-AC4` | 해가 없으면(보조 100%에도 미달) 그 사실과 부족분을 명시 | **미매핑** | — |
-|  |  | 1 | `FR-608-AC5` | 역산 대상 변수를 보조율 외 융자금리·거치기간·직접거래단가·REC단가로도 지정 가능 | **미매핑** | — |
+| `FR-604` | Must-have | 1 | `FR-604-AC1` | 스킴 구성 | 자동 | test_incentive.py |
+|  |  | 1 | `FR-604-AC2` | 보조: 보조율(%) 또는 정액(원), 상한, 대상 비용 범위(설비비만 / 설치비 포함) | 자동 | test_incentive.py |
+|  |  | 1 | `FR-604-AC3` | 융자: 융자율(%), 연이자율, 거치기간(년), 상환기간(년), 상환방식(원리금균등/원금균등/만기일시) | 자동 | test_incentive.py |
+|  |  | 1 | `FR-604-AC4` | 자부담: 잔여 비율 자동 계산 | 자동 | test_incentive.py |
+|  |  | 1 | `FR-604-AC5` | 세제: 세액공제율, 감가상각 방식·내용연수 | 자동 | test_incentive.py |
+|  |  | 1 | `FR-604-AC6` | 지원 주체: 국비 / 지방비 / 민간 | 자동 | test_incentive.py |
+|  |  | 1 | `FR-604-AC7` | 보조 확정액 + 융자 확정액 + 자부담액 = 대상 총사업비 (오차 1원 이내) | 자동 | test_incentive.py |
+|  |  | 1 | `FR-604-AC8` | 보조 확정액 = min(대상비용 × 보조율, 보조 상한) 또는 정액 | 자동 | test_incentive.py |
+|  |  | 1 | `FR-604-AC9` | 자부담액은 잔여로 자동 계산되며 음수가 될 수 없다 | 자동 | test_incentive.py |
+| `FR-605` | Must-have | 1 | `FR-605-AC1` | 자원 유형별 상이한 조건이 한 시나리오에서 동시 적용되고 프로포마에 분리 표시된다 | 자동 | test_incentive.py |
+| `FR-606` | Must-have | 1 | `FR-606-AC1` | 거치기간 중 이자만, 상환기간 중 원리금 상환 스케줄 생성 | 자동 | test_incentive.py |
+|  |  | 1 | `FR-606-AC2` | 상환 스케줄이 프로포마 독립 행으로 표시되고 총 이자비용이 별도 집계된다 | 자동 | test_incentive.py |
+| `FR-607` | Must-have | 1 | `FR-607-AC1` | 모든 실행에서 지원 0 케이스가 자동 포함되어 결과 상단에 표시된다 | 자동 | test_incentive.py |
+|  |  | 1 | `FR-607-AC2` | "무지원 시 회수기간 XX년 / 목표 대비 부족분 YY년" 형태로 격차를 명시한다 | 자동 | test_incentive.py |
+|  |  | 1 | `FR-607-AC3` | 기준선의 정의 (v0.5 추가): 지원 0은 본 사업의 지원이 0을 뜻한다. 타 사업으로 확정 지원된 설비는 기준선에 포함하고, 지원 예정(미확정)은 제외한다.… | 자동 | test_incentive.py |
+| `FR-608` | Must-have | 1 | `FR-608-AC1` | 목표 지정: "할인 회수기간 ≤ 10년" / "NPV ≥ 0" / "IRR ≥ 5%" 중 택일 또는 복수 | 자동 | test_incentive.py |
+|  |  | 1 | `FR-608-AC2` | 지정한 단일 변수(기본: 보조율)를 이분 탐색하여 목표 달성 최소값을 0.1%p 정밀도로 산출 | 자동 | test_incentive.py |
+|  |  | 1 | `FR-608-AC3` | 단조성 검사 (v0.3 추가): 이분 탐색은 목표 지표가 탐색 변수에 대해 단조라는 가정에 의존한다. 보조 상한·정액 보조·계단형 조건이 섞이면 비단조 구간이 … | 자동 | test_incentive.py |
+|  |  | 1 | `FR-608-AC4` | 해가 없으면(보조 100%에도 미달) 그 사실과 부족분을 명시 | 자동 | test_incentive.py |
+|  |  | 1 | `FR-608-AC5` | 역산 대상 변수를 보조율 외 융자금리·거치기간·직접거래단가·REC단가로도 지정 가능 | 자동 | test_incentive.py |
 | `FR-609` | Should-have | - | `FR-609-AC1` | 보조율 × 융자조건 2차원 평면에서 목표 지표를 동일하게 달성하는 조합 곡선을 산출 | **미매핑** | — |
 |  |  | - | `FR-609-AC2` | 각 조합의 정부 재정 부담 현가를 병기하여 최소 부담 조합을 강조 표시 | **미매핑** | — |
 |  |  | - | `FR-609-AC3` | 사업자 관점 지표와 정부 재정 관점 지표를 동시 표시 | **미매핑** | — |
-| `FR-610` | Must-have | 1 | `FR-610-AC1` | 확정된 지원안(예: ESS 50%·MG 70%)을 직접 입력하여 그 조건 하 경제성을 평가한다. 이 모드에서도 무지원 기준선(FR-607)은 함께 표시된다 | **미매핑** | — |
-| `FR-611` | Must-have | 1 | `FR-611-AC1` | IncentiveScheme에 funding_program(재원 사업명)과 is_prefunded(타 사업 기지원 여부), prefunded_status(확정 … | **미매핑** | — |
-|  |  | 1 | `FR-611-AC2` | is_prefunded=True인 설비의 취득원가는 금액을 0으로 만들지 않고 전액 계상한다. 관점별 처리는 AC3. 각 조항이 정한다 (v0.9: v0.8까지… | **미매핑** | — |
-|  |  | 1 | `FR-611-AC3.OWNER` | 사업자·주민 — 자기부담 0 (현금흐름 미발생). 근거: 실제 지출이 없음 | **미매핑** | — |
-|  |  | 1 | `FR-611-AC3.SOCIAL` | 사회 — 전액 비용. 근거: 재원이 어디서 왔든 자원은 소모됨 (분산자원 경제성 평가 원칙 원칙 2-3 관점 분리) | **미매핑** | — |
-|  |  | 1 | `FR-611-AC3.GOV` | 정부 — 본 사업 재정부담에서 제외하되 타 사업 국비 행으로 분리 표시. 근거: 본 사업의 필요 지원액과 섞이면 안 됨 | **미매핑** | — |
-|  |  | 1 | `FR-611-AC4` | 지원 예정 상태는 미확정 리스크로 취급한다. 해당 설비를 제외한 케이스를 함께 산출하여 "지원 무산 시 회수기간"을 병기한다 | **미매핑** | — |
-|  |  | 1 | `FR-611-AC5` | 프로포마에 기지원 설비가 별도 행으로 표시되고, 재원 사업명이 함께 출력된다 | **미매핑** | — |
-|  |  | 1 | `FR-611-AC6` | O&M·교체비·잔존가치는 기지원 여부와 무관하게 정상 계상한다. 무상으로 받은 설비도 유지비는 사업자가 낸다 | **미매핑** | — |
-| `FR-701` | Must-have | 1 | `FR-701-AC1` | 행: 자원별 자본비, 자원별 고정 O&M, 변동 O&M, 교체비, 융자 상환, 편익 항목별 수익, 세금, 잔존가치 | **미매핑** | — |
-|  |  | 1 | `FR-701-AC2` | 열: 건설연도 ~ 분석 종료연도 | **미매핑** | — |
-|  |  | 1 | `FR-701-AC3` | 항목별 상이한 에스컬레이션(물가상승률) 적용 가능 | 자동 | test_der_contract.py |
-|  |  | 1 | `FR-701-AC4` | 수명 종료 자원의 비용·편익은 해당 연도 이후 0 처리 | **미매핑** | — |
+| `FR-610` | Must-have | 1 | `FR-610-AC1` | 확정된 지원안(예: ESS 50%·MG 70%)을 직접 입력하여 그 조건 하 경제성을 평가한다. 이 모드에서도 무지원 기준선(FR-607)은 함께 표시된다 | 자동 | test_incentive.py |
+| `FR-611` | Must-have | 1 | `FR-611-AC1` | IncentiveScheme에 funding_program(재원 사업명)과 is_prefunded(타 사업 기지원 여부), prefunded_status(확정 … | 자동 | test_incentive.py |
+|  |  | 1 | `FR-611-AC2` | is_prefunded=True인 설비의 취득원가는 금액을 0으로 만들지 않고 전액 계상한다. 관점별 처리는 AC3. 각 조항이 정한다 (v0.9: v0.8까지… | 자동 | test_incentive.py |
+|  |  | 1 | `FR-611-AC3.OWNER` | 사업자·주민 — 자기부담 0 (현금흐름 미발생). 근거: 실제 지출이 없음 | 자동 | test_incentive.py |
+|  |  | 1 | `FR-611-AC3.SOCIAL` | 사회 — 전액 비용. 근거: 재원이 어디서 왔든 자원은 소모됨 (분산자원 경제성 평가 원칙 원칙 2-3 관점 분리) | 자동 | test_incentive.py |
+|  |  | 1 | `FR-611-AC3.GOV` | 정부 — 본 사업 재정부담에서 제외하되 타 사업 국비 행으로 분리 표시. 근거: 본 사업의 필요 지원액과 섞이면 안 됨 | 자동 | test_incentive.py |
+|  |  | 1 | `FR-611-AC4` | 지원 예정 상태는 미확정 리스크로 취급한다. 해당 설비를 제외한 케이스를 함께 산출하여 "지원 무산 시 회수기간"을 병기한다 | 자동 | test_incentive.py |
+|  |  | 1 | `FR-611-AC5` | 프로포마에 기지원 설비가 별도 행으로 표시되고, 재원 사업명이 함께 출력된다 | 자동 | test_incentive.py |
+|  |  | 1 | `FR-611-AC6` | O&M·교체비·잔존가치는 기지원 여부와 무관하게 정상 계상한다. 무상으로 받은 설비도 유지비는 사업자가 낸다 | 자동 | test_incentive.py |
+| `FR-701` | Must-have | 1 | `FR-701-AC1` | 행: 자원별 자본비, 자원별 고정 O&M, 변동 O&M, 교체비, 융자 상환, 편익 항목별 수익, 세금, 잔존가치 | 자동 | test_proforma.py |
+|  |  | 1 | `FR-701-AC2` | 열: 건설연도 ~ 분석 종료연도 | 자동 | test_proforma.py |
+|  |  | 1 | `FR-701-AC3` | 항목별 상이한 에스컬레이션(물가상승률) 적용 가능 | 자동 | test_proforma.py, test_der_contract.py |
+|  |  | 1 | `FR-701-AC4` | 수명 종료 자원의 비용·편익은 해당 연도 이후 0 처리 | 자동 | test_proforma.py |
 | `FR-702` | Should-have | 2 | `FR-702-AC1` | 대표 연도만 시뮬레이션하고, 이전 연도는 역-에스컬레이션, 중간은 선형 보간, 이후는 에스컬레이션으로 채운다 | **미매핑** | — |
 |  |  | 2 | `FR-702-AC2` | O&M 비용은 별도 처리 — 운전량이 아니라 설비 보유에 비례하므로 보간이 아닌 전후 채움 후 일괄 물가 적용 | **미매핑** | — |
 |  |  | 2 | `FR-702-AC3` | 자원 수명 종료로 구성이 바뀌는 해는 자동으로 시뮬레이션 대상에 추가된다 | **미매핑** | — |
 |  |  | 2 | `FR-702-AC4` | 보간으로 계산된 연도는 리포트에서 실계산 연도와 구분 표기된다 | **미매핑** | — |
-| `FR-703` | Must-have | 1 | `FR-703-AC1.npv` | NPV 할인 순현재가치 — 할인율 파라미터화 (공공 4.5~5.5% 기본). 오라클 §13.0.2 순위 1 / 원 단위 완전 일치 | **미매핑** | — |
-|  |  | 1 | `FR-703-AC1.irr` | IRR 내부수익률 — 오라클 §13.0.2 순위 2 / 0.01%. FR-704-AC2(사업자 관점)가 이 조항만 인용한다 | **미매핑** | — |
-|  |  | 1 | `FR-703-AC1.mirr-value` | MIRR 수정내부수익률 (값) — 오라클 §13.0.2 순위 2 / 0.01% | **미매핑** | — |
-|  |  | 1 | `FR-703-AC1.mirr-order` | MIRR 우선 표시 규칙 — 현금흐름의 부호변경이 다수일 때 MIRR을 IRR보다 우선 표시한다. 값이 아니라 조건부 표시 규칙이므로 AC1.mirr-value… | **미매핑** | — |
-|  |  | 1 | `FR-703-AC1.bcr` | B/C 총편익 현가 / 총비용 현가 — 오라클 §13.0.2 순위 1. (v0.12 배정) 분자·분모를 각각 원 단위 완전 일치로 판정하고 비율 자체에는 별도 … | **미매핑** | — |
-|  |  | 1 | `FR-703-AC1.lcoe-resource` | LCOE (자원별) 균등화발전원가 — 발전 자원(PV 등)별로만 산출한다 | **미매핑** | — |
-|  |  | 1 | `FR-703-AC1.lcoe-mixed` | 혼합 모델 전체 LCOE 미산출 — 히트펌프·ESS가 섞인 모델의 전체 LCOE는 분모 정의가 성립하지 않으므로 산출하지 않는다 (v0.3 정정). 모델 전체 … | **미매핑** | — |
-|  |  | 1 | `FR-703-AC1.payback-simple` | 단순 회수기간 누적 현금흐름 0 도달 — 소수점 보간 | **미매핑** | — |
-|  |  | 1 | `FR-703-AC1.payback-discounted` | 할인 회수기간 할인 후 누적 0 도달 — 주 지표. 오라클 §13.0.2 순위 2 / 0.01% | **미매핑** | — |
-|  |  | 1 | `FR-703-AC1.household-saving` | 가구당 월 절감액 원/호·월 — 주민 설득용 | **미매핑** | — |
-|  |  | 1 | `FR-703-AC1.self-consumption` | 연간 자가소비율 % | **미매핑** | — |
-|  |  | 1 | `FR-703-AC1.supply-duty` | 초과발전량 우선공급 의무 충족률 % — 제도 준수 지표. 현행 기준값 70%는 규제 프로파일(FR-504)이 들고 있으며 이 조항에 고정하지 않는다 | **미매핑** | — |
-|  |  | 1 | `FR-703-AC1.fiscal-pv` | 정부 재정 부담 현가 원 — 지원 조합 비교용 (FR-609) | **미매핑** | — |
-| `FR-704` | Must-have | 1 | `FR-704-AC1` | 주민: 자부담액 대비 요금 절감 회수기간 | **미매핑** | — |
-|  |  | 1 | `FR-704-AC2` | 사업자: 총투자 대비 IRR | **미매핑** | — |
-|  |  | 1 | `FR-704-AC3` | 정부: 투입 국비 1억원당 확보 설비용량(kW)·감축량(tCO2)·유발 민간투자액 — 재정효율 지표 | **미매핑** | — |
-|  |  | 1 | `FR-704-AC4` | 세 관점이 하나의 리포트에 병렬 표시 | **미매핑** | — |
-|  |  | 1 | `FR-704-AC5` | 사회 관점 산출 시 보조금은 이전지출로 처리하여 편익에 포함하지 않는다 (분산자원 경제성 평가 원칙 원칙 2-3 관점 분리 — 「핵심 규칙 세 가지」 1항) | **미매핑** | — |
-|  |  | 1 | `FR-704-AC6` | 타 사업 기지원 설비(FR-611)의 관점별 계상 (v0.5 추가): 정부 관점 재정효율 지표의 분모(투입 국비)에는 본 사업 국비만 포함한다. 타 사업 국비는… | **미매핑** | — |
-|  |  | 1 | `FR-704-AC7` | 관점 전환 시 어떤 항목이 왜 포함/제외되었는지를 리포트에 표시한다 (관점 섞기가 가장 흔한 중복 오류 — 도메인 원칙 2-3) | **미매핑** | — |
-| `FR-705` | Must-have | 1 | `FR-705-AC1` | "설비 미설치 시 전기·열 비용"을 기준선으로 계산하고 모든 편익을 증분으로 산출. 기준선 자체 비용도 리포트에 표시 | 자동 | test_heatpump.py |
-| `FR-801` | Must-have | 1 | `FR-801-AC1` | 임의 파라미터를 "탐색 변수"로 지정하고 값 목록(예: [저, 중, 고] 또는 [100, 150, 200])을 부여 | **미매핑** | — |
-|  |  | 1 | `FR-801-AC2` | 탐색 변수로 지정 가능한 대상에는 스칼라 파라미터뿐 아니라 자원 운전 방법(FR-105), 규제 프로파일(FR-504), 시계열 데이터셋(FR-905) 도 포함… | **미매핑** | — |
-|  |  | 1 | `FR-801-AC3` | 시스템이 전조합(Cartesian product)을 생성하고 일괄 실행한다 | **미매핑** | — |
-|  |  | 1 | `FR-801-AC4` | 케이스 수를 실행 전에 표시하고, 임계치(기본 500) 초과 시 경고 후 확인을 요구한다 | **미매핑** | — |
-|  |  | 1 | `FR-801-AC5` | 결과를 단일 테이블(케이스 × 지표)로 집계하고 CSV/XLSX 내보내기 가능 | **미매핑** | — |
-|  |  | 1 | `FR-801-AC6` | 기본 탐색 변수 프리셋 — 2단계 제공 (v0.5 정정): 사용자가 백지에서 시작하지 않도록 기본 세트를 제시하되, 기본 선택은 빠른 탐색 으로 한다 | **미매핑** | — |
-|  |  | 1 | `FR-801-AC7.quick` | 빠른 탐색 (기본값) — 결합 집합 1(설비단가·시공비) 3수준 × 할인율 3 × 전기요금 인상률 3 = 27 케이스, 예상 실행시간 81초(1 vCPU, NF… | **미매핑** | — |
-|  |  | 1 | `FR-801-AC7.full` | 전체 탐색 (명시 선택) — 아래 6변수 전건 = 729 케이스, 예상 실행시간 2,187초(36.5분). DV-10 경고 후 백그라운드 실행으로 전환된다 (N… | **미매핑** | — |
-| `FR-802` | Must-have | 1 | `FR-802-AC1` | 여러 변수를 하나의 결합 집합으로 선언할 수 있다 | **미매핑** | — |
-|  |  | 1 | `FR-802-AC2` | 결합 집합 내 변수들은 동일 인덱스끼리만 조합된다. 예: {PV단가, ESS단가, 시공비}를 결합하고 각각 3수준을 주면 27개가 아닌 3개 케이스(저/저/저,… | **미매핑** | — |
-|  |  | 1 | `FR-802-AC3` | 결합 집합 내 값 목록의 길이가 다르면 명확한 오류로 거부한다 | **미매핑** | — |
-|  |  | 1 | `FR-802-AC4` | 결합 집합과 독립 변수를 혼용할 수 있다. 예: 결합 3케이스 × 독립 할인율 3수준 = 9케이스 | **미매핑** | — |
-|  |  | 1 | `FR-802-AC5` | 실행 전 생성될 케이스 목록을 미리보기로 제시한다 | **미매핑** | — |
-| `FR-803` | Must-have | 1 | `FR-803-AC1` | 2변수 히트맵: 축 변수 2개 선택 → 지표 등고선. "목표 달성 영역"을 음영으로 구분 | **미매핑** | — |
-|  |  | 1 | `FR-803-AC2` | 1변수 토네이도: 각 변수가 지표에 미치는 영향도 순위 | **미매핑** | — |
-|  |  | 1 | `FR-803-AC3` | 케이스 테이블에서 목표 달성/미달 케이스를 필터링 | **미매핑** | — |
+| `FR-703` | Must-have | 1 | `FR-703-AC1.npv` | NPV 할인 순현재가치 — 할인율 파라미터화 (공공 4.5~5.5% 기본). 오라클 §13.0.2 순위 1 / 원 단위 완전 일치 | 자동 | test_metrics.py |
+|  |  | 1 | `FR-703-AC1.irr` | IRR 내부수익률 — 오라클 §13.0.2 순위 2 / 0.01%. FR-704-AC2(사업자 관점)가 이 조항만 인용한다 | 자동 | test_metrics.py |
+|  |  | 1 | `FR-703-AC1.mirr-value` | MIRR 수정내부수익률 (값) — 오라클 §13.0.2 순위 2 / 0.01% | 자동 | test_metrics.py |
+|  |  | 1 | `FR-703-AC1.mirr-order` | MIRR 우선 표시 규칙 — 현금흐름의 부호변경이 다수일 때 MIRR을 IRR보다 우선 표시한다. 값이 아니라 조건부 표시 규칙이므로 AC1.mirr-value… | 자동 | test_indicators.py |
+|  |  | 1 | `FR-703-AC1.bcr` | B/C 총편익 현가 / 총비용 현가 — 오라클 §13.0.2 순위 1. (v0.12 배정) 분자·분모를 각각 원 단위 완전 일치로 판정하고 비율 자체에는 별도 … | 자동 | test_metrics.py |
+|  |  | 1 | `FR-703-AC1.lcoe-resource` | LCOE (자원별) 균등화발전원가 — 발전 자원(PV 등)별로만 산출한다 | 자동 | test_indicators.py |
+|  |  | 1 | `FR-703-AC1.lcoe-mixed` | 혼합 모델 전체 LCOE 미산출 — 히트펌프·ESS가 섞인 모델의 전체 LCOE는 분모 정의가 성립하지 않으므로 산출하지 않는다 (v0.3 정정). 모델 전체 … | 자동 | test_indicators.py |
+|  |  | 1 | `FR-703-AC1.payback-simple` | 단순 회수기간 누적 현금흐름 0 도달 — 소수점 보간 | 자동 | test_indicators.py |
+|  |  | 1 | `FR-703-AC1.payback-discounted` | 할인 회수기간 할인 후 누적 0 도달 — 주 지표. 오라클 §13.0.2 순위 2 / 0.01% | 자동 | test_metrics.py |
+|  |  | 1 | `FR-703-AC1.household-saving` | 가구당 월 절감액 원/호·월 — 주민 설득용 | 자동 | test_indicators.py |
+|  |  | 1 | `FR-703-AC1.self-consumption` | 연간 자가소비율 % | 자동 | test_indicators.py |
+|  |  | 1 | `FR-703-AC1.supply-duty` | 초과발전량 우선공급 의무 충족률 % — 제도 준수 지표. 현행 기준값 70%는 규제 프로파일(FR-504)이 들고 있으며 이 조항에 고정하지 않는다 | 자동 | test_indicators.py |
+|  |  | 1 | `FR-703-AC1.fiscal-pv` | 정부 재정 부담 현가 원 — 지원 조합 비교용 (FR-609) | 자동 | test_indicators.py |
+| `FR-704` | Must-have | 1 | `FR-704-AC1` | 주민: 자부담액 대비 요금 절감 회수기간 | 자동 | test_transfer.py |
+|  |  | 1 | `FR-704-AC2` | 사업자: 총투자 대비 IRR | 자동 | test_transfer.py |
+|  |  | 1 | `FR-704-AC3` | 정부: 투입 국비 1억원당 확보 설비용량(kW)·감축량(tCO2)·유발 민간투자액 — 재정효율 지표 | 자동 | test_transfer.py |
+|  |  | 1 | `FR-704-AC4` | 세 관점이 하나의 리포트에 병렬 표시 | 자동 | test_transfer.py |
+|  |  | 1 | `FR-704-AC5` | 사회 관점 산출 시 보조금은 이전지출로 처리하여 편익에 포함하지 않는다 (분산자원 경제성 평가 원칙 원칙 2-3 관점 분리 — 「핵심 규칙 세 가지」 1항) | 자동 | test_transfer.py |
+|  |  | 1 | `FR-704-AC6` | 타 사업 기지원 설비(FR-611)의 관점별 계상 (v0.5 추가): 정부 관점 재정효율 지표의 분모(투입 국비)에는 본 사업 국비만 포함한다. 타 사업 국비는… | 자동 | test_transfer.py |
+|  |  | 1 | `FR-704-AC7` | 관점 전환 시 어떤 항목이 왜 포함/제외되었는지를 리포트에 표시한다 (관점 섞기가 가장 흔한 중복 오류 — 도메인 원칙 2-3) | 자동 | test_transfer.py |
+| `FR-705` | Must-have | 1 | `FR-705-AC1` | "설비 미설치 시 전기·열 비용"을 기준선으로 계산하고 모든 편익을 증분으로 산출. 기준선 자체 비용도 리포트에 표시 | 자동 | test_baseline.py, test_heatpump.py |
+| `FR-801` | Must-have | 1 | `FR-801-AC1` | 임의 파라미터를 "탐색 변수"로 지정하고 값 목록(예: [저, 중, 고] 또는 [100, 150, 200])을 부여 | 자동 | test_casegrid.py |
+|  |  | 1 | `FR-801-AC2` | 탐색 변수로 지정 가능한 대상에는 스칼라 파라미터뿐 아니라 자원 운전 방법(FR-105), 규제 프로파일(FR-504), 시계열 데이터셋(FR-905) 도 포함… | 자동 | test_casegrid.py |
+|  |  | 1 | `FR-801-AC3` | 시스템이 전조합(Cartesian product)을 생성하고 일괄 실행한다 | 자동 | test_casegrid.py |
+|  |  | 1 | `FR-801-AC4` | 케이스 수를 실행 전에 표시하고, 임계치(기본 500) 초과 시 경고 후 확인을 요구한다 | 자동 | test_casegrid.py |
+|  |  | 1 | `FR-801-AC5` | 결과를 단일 테이블(케이스 × 지표)로 집계하고 CSV/XLSX 내보내기 가능 | 자동 | test_casegrid.py |
+|  |  | 1 | `FR-801-AC6` | 기본 탐색 변수 프리셋 — 2단계 제공 (v0.5 정정): 사용자가 백지에서 시작하지 않도록 기본 세트를 제시하되, 기본 선택은 빠른 탐색 으로 한다 | 자동 | test_casegrid.py |
+|  |  | 1 | `FR-801-AC7.quick` | 빠른 탐색 (기본값) — 결합 집합 1(설비단가·시공비) 3수준 × 할인율 3 × 전기요금 인상률 3 = 27 케이스, 예상 실행시간 81초(1 vCPU, NF… | 자동 | test_casegrid.py |
+|  |  | 1 | `FR-801-AC7.full` | 전체 탐색 (명시 선택) — 아래 6변수 전건 = 729 케이스, 예상 실행시간 2,187초(36.5분). DV-10 경고 후 백그라운드 실행으로 전환된다 (N… | 자동 | test_casegrid.py |
+| `FR-802` | Must-have | 1 | `FR-802-AC1` | 여러 변수를 하나의 결합 집합으로 선언할 수 있다 | 자동 | test_casegrid.py |
+|  |  | 1 | `FR-802-AC2` | 결합 집합 내 변수들은 동일 인덱스끼리만 조합된다. 예: {PV단가, ESS단가, 시공비}를 결합하고 각각 3수준을 주면 27개가 아닌 3개 케이스(저/저/저,… | 자동 | test_casegrid.py |
+|  |  | 1 | `FR-802-AC3` | 결합 집합 내 값 목록의 길이가 다르면 명확한 오류로 거부한다 | 자동 | test_casegrid.py |
+|  |  | 1 | `FR-802-AC4` | 결합 집합과 독립 변수를 혼용할 수 있다. 예: 결합 3케이스 × 독립 할인율 3수준 = 9케이스 | 자동 | test_casegrid.py |
+|  |  | 1 | `FR-802-AC5` | 실행 전 생성될 케이스 목록을 미리보기로 제시한다 | 자동 | test_casegrid.py |
+| `FR-803` | Must-have | 1 | `FR-803-AC1` | 2변수 히트맵: 축 변수 2개 선택 → 지표 등고선. "목표 달성 영역"을 음영으로 구분 | 자동 | test_casegrid.py |
+|  |  | 1 | `FR-803-AC2` | 1변수 토네이도: 각 변수가 지표에 미치는 영향도 순위 | 자동 | test_casegrid.py |
+|  |  | 1 | `FR-803-AC3` | 케이스 테이블에서 목표 달성/미달 케이스를 필터링 | 자동 | test_casegrid.py |
 | `FR-804` | Should-have | - | `FR-804-AC1` | 주요 변수별로 NPV=0이 되는 임계값을 표로 제시 | **미매핑** | — |
-| `FR-805` | Should-have | - | `FR-805-AC1` | 실행 중 완료 케이스 수·예상 잔여 시간 표시, 중단 가능 | **미매핑** | — |
-| `FR-901` | Must-have | 1 | `FR-901-AC1` | 회원가입, 로그인, 비밀번호 재설정, 세션 만료(기본 24시간) | **미매핑** | — |
+| `FR-805` | Should-have | - | `FR-805-AC1` | 실행 중 완료 케이스 수·예상 잔여 시간 표시, 중단 가능 | 자동 | test_casegrid.py |
+| `FR-901` | Must-have | 1 | `FR-901-AC1` | 회원가입, 로그인, 비밀번호 재설정, 세션 만료(기본 24시간) | 자동 | test_auth.py, test_auth.py |
 | `FR-902` | Must-have | 1 | `FR-902-AC1` | 이름·설명·태그·최종수정일시 부여 | **미매핑** | — |
 |  |  | 1 | `FR-902-AC2` | 저장 시 버전 이력이 남아 이전 버전 복원 가능 | **미매핑** | — |
 |  |  | 1 | `FR-902-AC3` | 삭제는 소프트 삭제(30일 보관) | **미매핑** | — |
@@ -284,22 +271,22 @@
 |  |  | 1 | `FR-905-AC6` | 검증: CSV 업로드 시 스키마·행수·결측·이상치 검증 후 요약 통계 표시. 결측 처리 방식(선형보간/전월 평균/오류) 선택 가능 | 자동 | test_timeseries.py |
 |  |  | 1 | `FR-905-AC7` | 공유·중복 방지: 동일 데이터셋을 여러 시나리오·인스턴스가 참조하며 중복 저장하지 않는다. 데이터셋 삭제 시 참조 중인 시나리오를 먼저 안내한다 | 자동 | test_timeseries.py |
 |  |  | 1 | `FR-905-AC8` | 출처 메타데이터: 데이터셋도 (출처, 계측기간, 해상도, 신뢰도, 최종확인일) 을 보유하고 리포트에 표기한다 | 자동 | test_timeseries.py |
-| `FR-1001` | Must-have | 1 | `FR-1001-AC1` | (가) 영향 인자 우선 제시 — 각 결과 지표 옆에 그 값을 좌우한 상위 인자를 영향도 순으로 제시한다. 순위는 감이 아니라 민감도 계산 결과로 정한다 (FR-… | **미매핑** | — |
-|  |  | 1 | `FR-1001-AC2` | (나) 산식 확인 — 임의 지표·프로포마 항목에서 그것을 만든 산식과 대입값을 그 자리에서 펼쳐볼 수 있다. 이동 횟수를 제약하지 않으며, "펼치면 보인다"가 … | **미매핑** | — |
-|  |  | 1 | `FR-1001-AC3` | (다) 3중 표기 — 각 산식은 자연어 설명 + 수식 + 대입값으로 표기한다 | **미매핑** | — |
-|  |  | 1 | `FR-1001-AC4` | (라) 출처 동반 — 산식에 등장하는 모든 입력값에 출처·기준연도·신뢰도가 함께 표시된다 | **미매핑** | — |
-|  |  | 1 | `FR-1001-AC5` | (마) 판정 기준 — 비개발자 검토자가 리포트만 보고 "이 회수기간이 왜 이 값인지"와 "어떤 가정이 바뀌면 결론이 달라지는지"를 설명할 수 있다. 측정: 심의… | 수동 | MC-1 (미수행) |
-| `FR-1002` | Must-have | 1 | `FR-1002-AC1` | 영향도 순 정렬이 1순위: 리포트 첫 화면은 주 지표(할인 회수기간)에 대한 인자별 영향도 순위로 시작한다. 입력 순·분류 순 나열은 부록으로 보낸다 | **미매핑** | — |
-|  |  | 1 | `FR-1002-AC2` | 영향도 산출 방식: 각 인자를 합리적 변동 범위(전제의 신뢰구간, 없으면 기본 ±20%)에서 변동시켜 주 지표가 움직인 폭으로 측정한다. 케이스 그리드를 실행하… | **미매핑** | — |
-|  |  | 1 | `FR-1002-AC3` | 각 인자마다 함께 표시: 사용값 / 단위 / 기준연도 / 출처 / 신뢰도 / 최종확인일 / 지표 변동폭 / 결론이 뒤집히는 임계값 존재 여부 | **미매핑** | — |
-|  |  | 1 | `FR-1002-AC4` | 결론 전환 강조: 합리적 변동 범위 안에서 목표 달성 여부가 뒤바뀌는 인자는 최상단에 별도 강조한다. 이것이 정책 판단에서 가장 중요한 정보다 | **미매핑** | — |
-|  |  | 1 | `FR-1002-AC5` | 가정 값 결합 표시 (v0.5 어휘 정정): 신뢰도 가정 인자는 영향도와 함께 표시하여, "영향도 낮은 가정"과 "영향도 높은 가정"을 구분할 수 있게 한다. … | **미매핑** | — |
-|  |  | 1 | `FR-1002-AC6` | 전체 가정 목록: 영향도 순위와 별개로 전 가정 목록을 부록 시트로 제공한다 (재현·검증용) | **미매핑** | — |
-| `FR-1003` | Must-have | 1 | `FR-1003-AC1` | XLSX: 엑셀에서 검산 가능한 형태 — 입력·프로포마·시계열·결과 시트를 분리하고, 주요 계산은 값이 아닌 셀 수식으로 출력하여 기존 엑셀 검토 방식과 병행 … | **미매핑** | — |
-|  |  | 1 | `FR-1003-AC2` | PDF: 심의자료용 요약 (표지·가정·결과·조합탐색·결론 5부) | **미매핑** | — |
-|  |  | 1 | `FR-1003-AC3` | JSON: 시나리오+전제 정의 전체 (재현용) | **미매핑** | — |
-| `FR-1004` | Must-have | 1 | `FR-1004-AC1` | 일간 대표일 디스패치 스택, 월별 에너지 수지, 누적 현금흐름 곡선, 토네이도, 케이스 히트맵, 모델 비교 바 차트 | **미매핑** | — |
-| `FR-1005` | Must-have | 1 | `FR-1005-AC1` | 실행마다 {실행ID, 시각, 코드 커밋 해시, 전제집합 버전, 시나리오 해시, 데이터셋 해시, 엔진 종류, 결과 요약} 기록. 동일 매니페스트 재실행 시 비트 … | **미매핑** | — |
+| `FR-1001` | Must-have | 1 | `FR-1001-AC1` | (가) 영향 인자 우선 제시 — 각 결과 지표 옆에 그 값을 좌우한 상위 인자를 영향도 순으로 제시한다. 순위는 감이 아니라 민감도 계산 결과로 정한다 (FR-… | 자동 | test_report.py |
+|  |  | 1 | `FR-1001-AC2` | (나) 산식 확인 — 임의 지표·프로포마 항목에서 그것을 만든 산식과 대입값을 그 자리에서 펼쳐볼 수 있다. 이동 횟수를 제약하지 않으며, "펼치면 보인다"가 … | 자동 | test_report.py |
+|  |  | 1 | `FR-1001-AC3` | (다) 3중 표기 — 각 산식은 자연어 설명 + 수식 + 대입값으로 표기한다 | 자동 | test_report.py |
+|  |  | 1 | `FR-1001-AC4` | (라) 출처 동반 — 산식에 등장하는 모든 입력값에 출처·기준연도·신뢰도가 함께 표시된다 | 자동 | test_report.py |
+|  |  | 1 | `FR-1001-AC5` | (마) 판정 기준 — 비개발자 검토자가 리포트만 보고 "이 회수기간이 왜 이 값인지"와 "어떤 가정이 바뀌면 결론이 달라지는지"를 설명할 수 있다. 측정: 심의… | 자동 | test_report.py |
+| `FR-1002` | Must-have | 1 | `FR-1002-AC1` | 영향도 순 정렬이 1순위: 리포트 첫 화면은 주 지표(할인 회수기간)에 대한 인자별 영향도 순위로 시작한다. 입력 순·분류 순 나열은 부록으로 보낸다 | 자동 | test_report.py |
+|  |  | 1 | `FR-1002-AC2` | 영향도 산출 방식: 각 인자를 합리적 변동 범위(전제의 신뢰구간, 없으면 기본 ±20%)에서 변동시켜 주 지표가 움직인 폭으로 측정한다. 케이스 그리드를 실행하… | 자동 | test_report.py |
+|  |  | 1 | `FR-1002-AC3` | 각 인자마다 함께 표시: 사용값 / 단위 / 기준연도 / 출처 / 신뢰도 / 최종확인일 / 지표 변동폭 / 결론이 뒤집히는 임계값 존재 여부 | 자동 | test_report.py |
+|  |  | 1 | `FR-1002-AC4` | 결론 전환 강조: 합리적 변동 범위 안에서 목표 달성 여부가 뒤바뀌는 인자는 최상단에 별도 강조한다. 이것이 정책 판단에서 가장 중요한 정보다 | 자동 | test_report.py |
+|  |  | 1 | `FR-1002-AC5` | 가정 값 결합 표시 (v0.5 어휘 정정): 신뢰도 가정 인자는 영향도와 함께 표시하여, "영향도 낮은 가정"과 "영향도 높은 가정"을 구분할 수 있게 한다. … | 자동 | test_report.py |
+|  |  | 1 | `FR-1002-AC6` | 전체 가정 목록: 영향도 순위와 별개로 전 가정 목록을 부록 시트로 제공한다 (재현·검증용) | 자동 | test_report.py |
+| `FR-1003` | Must-have | 1 | `FR-1003-AC1` | XLSX: 엑셀에서 검산 가능한 형태 — 입력·프로포마·시계열·결과 시트를 분리하고, 주요 계산은 값이 아닌 셀 수식으로 출력하여 기존 엑셀 검토 방식과 병행 … | 자동 | test_report.py |
+|  |  | 1 | `FR-1003-AC2` | PDF: 심의자료용 요약 (표지·가정·결과·조합탐색·결론 5부) | 자동 | test_report.py |
+|  |  | 1 | `FR-1003-AC3` | JSON: 시나리오+전제 정의 전체 (재현용) | 자동 | test_report.py |
+| `FR-1004` | Must-have | 1 | `FR-1004-AC1` | 일간 대표일 디스패치 스택, 월별 에너지 수지, 누적 현금흐름 곡선, 토네이도, 케이스 히트맵, 모델 비교 바 차트 | 자동 | test_report.py |
+| `FR-1005` | Must-have | 1 | `FR-1005-AC1` | 실행마다 {실행ID, 시각, 코드 커밋 해시, 전제집합 버전, 시나리오 해시, 데이터셋 해시, 엔진 종류, 결과 요약} 기록. 동일 매니페스트 재실행 시 비트 … | 자동 | test_report.py |
 | `FR-1101` | Must-have | 1 | `FR-1101-AC1` | 공개 저장소: 소스코드, 테스트, 계약, 골든 시나리오의 구조(입력 스키마·기대값 형식), 문서(README·CONTRIBUTING·이슈/PR 템플릿·docs/… | **미매핑** | — |
 |  |  | 1 | `FR-1101-AC2` | 비공개 시드: 설비 단가·업계 견적·미공표 제도 검토 내용을 담은 AssumptionSet 시드 데이터와 골든 시나리오의 실제 수치. 별도 비공개 저장소 또는 … | 자동 | test_seed_fallback.py |
 |  |  | 1 | `FR-1101-AC3` | 공개 저장소만으로 실행 가능해야 한다 — 비공개 시드가 없으면 합성 예시 전제(공개 가능한 대표값, 신뢰도 가정)로 동작한다. 외부 기여자가 코드를 돌려보고 개… | 자동 | test_seed_fallback.py |
@@ -307,12 +294,12 @@
 |  |  | 1 | `FR-1101-AC5` | 비공개 데이터가 공개 저장소에 유입되지 않도록 커밋 전 스캔을 pre-commit·CI에 둔다 (SC-7) | 자동 | test_ci_gates.py, test_ci_gates.py, test_ci_gates.py |
 | `FR-1102` | Should-have | - | `FR-1102-AC1` | 카탈로그 값에 "정정 제안" 버튼 → 근거 URL·새 값 입력 → GitHub Issue 자동 생성 | **미매핑** | — |
 | `FR-1103` | Must-have | 1 | `FR-1103-AC1` | GitHub Actions에서 pytest, ruff, 골든 시나리오 3종 수치 회귀 통과 시에만 머지 | **미매핑** | — |
-| `NFR-001` | Must-have | 1 | `NFR-001-M1` | 무료 티어(1 vCPU / 512MB) 벤치마크 10회 평균 | **미매핑** | — |
-| `NFR-002` | Must-have | 1 | `NFR-002-M1` | 27 / 100 / 500 케이스 3개 지점 종단 측정 | **미매핑** | — |
+| `NFR-001` | Must-have | 1 | `NFR-001-M1` | 무료 티어(1 vCPU / 512MB) 벤치마크 10회 평균 | 자동 | test_casegrid.py |
+| `NFR-002` | Must-have | 1 | `NFR-002-M1` | 27 / 100 / 500 케이스 3개 지점 종단 측정 | 자동 | test_casegrid.py, test_casegrid.py |
 | `NFR-003` | Should-have | 2 | `NFR-003-M1` | 초과 시 비동기 큐 전환 + 진행률 표시 | **미매핑** | — |
 | `NFR-004` | Should-have | 1 | `NFR-004-M1` | 동시 사용자 20명 부하 테스트 | **미매핑** | — |
-| `NFR-101` | Must-have | 1 | `NFR-101-M1` | 동일 시나리오 10회 실행 결과 해시 일치 | **미매핑** | — |
-| `NFR-102` | Must-have | 1 | `NFR-102-M1` | 시뮬레이션 종료 시 자동 assertion, 위반 시 실행 실패 | **미매핑** | — |
+| `NFR-101` | Must-have | 1 | `NFR-101-M1` | 동일 시나리오 10회 실행 결과 해시 일치 | 자동 | test_rule_based.py, test_report.py |
+| `NFR-102` | Must-have | 1 | `NFR-102-M1` | 시뮬레이션 종료 시 자동 assertion, 위반 시 실행 실패 | 자동 | test_rule_based.py |
 | `NFR-103` | Must-have | 1 | `NFR-103-M1` | 20년 프로포마 합계와 항목별 합계 일치 검증 | 자동 | test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_smoke_wave0.py |
 | `NFR-104` | Must-have | 1 | `NFR-104-M1` | CI 회귀 테스트 | **미매핑** | — |
 | `NFR-105` | Must-have | 1 | `NFR-105-AC1` | 모든 계산 코드는 테스트 우선(TDD) 으로 작성되어야 한다. 구현보다 그 구현을 규정하는 실패 테스트가 먼저 존재해야 한다 | 자동 | test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py |
@@ -330,7 +317,7 @@
 | `NFR-204` | Should-have | 1 | `NFR-204-M1` | mypy strict 통과 | 자동 | test_ci_gates.py |
 | `NFR-205` | Must-have | 1 | `NFR-205-M1` | 코드 리뷰 + lint 규칙. 근거: DER-VET Params.py의 클래스 변수 전역 상태는 동시 실행·테스트 격리를 불가능하게 만든다 (부록 C.5) | 자동 | test_ci_gates.py, test_ci_gates.py, test_ess.py |
 | `NFR-206` | Should-have | 1 | `NFR-206-M1` | lint 경고. 근거: DER-VET Params.py 1,830줄의 유지보수 실패 사례 | **미매핑** | — |
-| `NFR-207` | Must-have | 1 | `NFR-207-AC1` | 등록은 패키지 디렉터리 스캔 또는 데코레이터 자동 수집으로 수행한다. 신규 자원 추가 시 core/der/__init__.py, REGISTRY = [...] … | 자동 | test_registry.py, test_registry.py, test_registry.py, test_registry.py, test_registry.py |
+| `NFR-207` | Must-have | 1 | `NFR-207-AC1` | 등록은 패키지 디렉터리 스캔 또는 데코레이터 자동 수집으로 수행한다. 신규 자원 추가 시 core/der/__init__.py, REGISTRY = [...] … | 자동 | test_router_collection.py, test_registry.py, test_registry.py, test_registry.py, test_registry.py, test_registry.py |
 |  |  | 1 | `NFR-207-AC2` | 등록 충돌(동일 tag 중복)은 기동 시점에 명확한 오류로 검출된다 | 자동 | test_registry.py, test_registry.py, test_registry.py |
 |  |  | 1 | `NFR-207-M1` | 신규 자원 추가 PR의 diff에 §16.4 공유 파일 목록의 변경 0줄 | 자동 | test_registry.py, test_registry.py, test_registry.py |
 | `NFR-208` | Must-have | 1 | `NFR-208-AC1` | 상위 계층은 하위 계층을 import할 수 있으나 역방향 import는 금지한다 (예: core/der/ → core/engine/ 금지) | 자동 | test_import_boundaries.py |
@@ -341,9 +328,9 @@
 | `NFR-302` | Should-have | 1 | `NFR-302-M1` | UI 검수 체크리스트 | 수동 | MC-3 (미수행) |
 | `NFR-303` | Should-have | 1 | `NFR-303-M1` | 오류 메시지 리뷰 체크리스트 | 수동 | MC-4 (미수행) |
 | `NFR-304` | Nice-to-have | 1 | `NFR-304-AC1` | 주요 화면은 1366×768 이상에서 가로 스크롤 없이 표시되어야 한다 | 수동 | MC-5 (미수행) |
-| `NFR-401` | Must-have | 1 | `NFR-401-AC1` | 비밀번호는 Argon2id 또는 bcrypt(cost≥12)로 해싱 저장 | **미매핑** | — |
+| `NFR-401` | Must-have | 1 | `NFR-401-AC1` | 비밀번호는 Argon2id 또는 bcrypt(cost≥12)로 해싱 저장 | 자동 | test_hashing.py |
 | `NFR-402` | Must-have | 1 | `NFR-402-AC1` | 모든 통신은 TLS 1.2 이상 | **미매핑** | — |
-| `NFR-403` | Must-have | 1 | `NFR-403-AC1` | 사용자는 타인 시나리오에 접근 불가 (유효 공유 토큰 제외) | **미매핑** | — |
+| `NFR-403` | Must-have | 1 | `NFR-403-AC1` | 사용자는 타인 시나리오에 접근 불가 (유효 공유 토큰 제외) | 자동 | test_authorization.py |
 | `NFR-404` | Must-have | 1 | `NFR-404-AC1` | 업로드 CSV는 크기(10MB)·행수(100,000)·MIME 검증 | 자동 | test_timeseries.py |
 | `NFR-405` | Should-have | 1 | `NFR-405-AC1` | 의존성 취약점 CI 자동 스캔 (pip-audit / Dependabot) | **미매핑** | — |
 | `NFR-501` | Should-have | 1 | `NFR-501-AC1` | 동시 사용자 20명, 등록 200명, 시나리오 5,000건 규모에서 정상 동작 | **미매핑** | — |
@@ -357,10 +344,10 @@
 | `UI-5` | Should-have | 1 | `UI-5-AC1` | 한국어 우선. 영어 병기는 지표명(NPV, IRR, LCOE)에 한정 | 수동 | MC-7 (미수행) |
 | `UI-6` | Should-have | 2 | `UI-6-AC1` | 접근성: WCAG 2.1 AA 목표 (색상 단독 정보전달 금지, 명암비 4.5:1 이상, 키보드 내비게이션) | 수동 | MC-8 (미수행) |
 | `UI-7` | Must-have | 1 | `UI-7-AC1` | 결과 화면은 영향도 순위를 최상단에 둔다. 입력값 나열은 부록으로 보낸다 (FR-1002) | **미매핑** | — |
-| `SC-1` | Must-have | 1 | `SC-1` | 이메일 + 비밀번호, 세션 쿠키(HttpOnly, Secure, SameSite=Lax) | **미매핑** | — |
-| `SC-2` | Must-have | 1 | `SC-2` | 시나리오 접근은 소유자 또는 유효 공유 토큰 보유자로 제한 | **미매핑** | — |
-| `SC-3` | Must-have | 1 | `SC-3` | 수집을 이메일·이름으로 최소화. 실증 참여 가구의 개별 식별정보 미저장 (부하 데이터는 익명 집계본만) | 자동 | test_ci_gates.py, test_privacy_procedure.py |
-| `SC-4` | Must-have | 1 | `SC-4` | 로그인, 시나리오·전제 생성·수정·삭제, 관리자 카탈로그 변경 기록 | **미매핑** | — |
+| `SC-1` | Must-have | 1 | `SC-1` | 이메일 + 비밀번호, 세션 쿠키(HttpOnly, Secure, SameSite=Lax) | 자동 | test_auth.py, test_hashing.py |
+| `SC-2` | Must-have | 1 | `SC-2` | 시나리오 접근은 소유자 또는 유효 공유 토큰 보유자로 제한 | 자동 | test_authorization.py, test_authorization.py |
+| `SC-3` | Must-have | 1 | `SC-3` | 수집을 이메일·이름으로 최소화. 실증 참여 가구의 개별 식별정보 미저장 (부하 데이터는 익명 집계본만) | 자동 | test_sc3.py, test_sc3.py, test_ci_gates.py, test_privacy_procedure.py |
+| `SC-4` | Must-have | 1 | `SC-4` | 로그인, 시나리오·전제 생성·수정·삭제, 관리자 카탈로그 변경 기록 | 자동 | test_audit.py |
 | `SC-5` | Must-have | 1 | `SC-5` | DB 경로·시크릿 키는 환경변수. 저장소 커밋 금지, gitleaks CI 스캔 | 자동 | test_ci_gates.py, test_ci_gates.py |
 | `SC-6` | Must-have | 1 | `SC-6` | DER-VET 코드를 사용하지 않으므로 BSD 3-Clause 전파 의무 없음. 설계 참조 사실은 README에 명기 (부록 C) | 자동 | test_license.py |
 | `SC-7` | Must-have | 1 | `SC-7` | 요금표·단가 등 외부 데이터의 출처·이용조건을 메타데이터로 보관 | 자동 | test_items.py, test_items.py, test_assumption_provider.py |

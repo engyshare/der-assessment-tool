@@ -4,9 +4,12 @@ version = "0.1.0"
 description = "분산특구 사업모델 경제성 평가 프로그램"
 requires-python = ">=3.11"
 dependencies = [
+    "matplotlib>=3.11.1",
+    "openpyxl>=3.1.5",
     "pydantic>=2.7",
     "pytest>=9.1.1",
     "pyyaml>=6.0",
+    "reportlab>=5.0.0",
 ]
 
 [project.optional-dependencies]
@@ -18,6 +21,16 @@ persistence = [          # WP-13 (작업 3.0)
     "SQLAlchemy>=2.0",
     "alembic>=1.13",
     "pyarrow>=16.0",
+]
+api = [                  # WP-11 (작업 14.0)
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    "httpx>=0.27",       # 테스트 클라이언트
+    # NFR-401-AC1 · SC-1 — 조항은 Argon2id 또는 bcrypt(cost≥12) 를 허용한다.
+    # **Argon2id 를 쓴다.** 조항이 그것을 먼저 열거하고, 비밀번호 해싱에서
+    # 메모리 하드 함수가 GPU 대량 시도에 더 강하다. 다만 **선택 자체를
+    # 소스에 숨기지 않는다** — 어느 쪽을 썼는지는 검증 케이스가 말해야 한다.
+    "argon2-cffi>=23.1",
 ]
 dev = [
     "pytest>=8.0",

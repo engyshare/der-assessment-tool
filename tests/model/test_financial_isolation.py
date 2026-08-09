@@ -5,7 +5,7 @@ from core.model.schemas import ContractConfig, DERConfig, ModelConfig
 from tests.model.test_model import _Assumptions
 
 
-@pytest.mark.req("FR-103")
+@pytest.mark.req("FR-103-AC1", "FR-103-AC2", "FR-103-AC3")
 def test_financial_isolation_between_instances():
     """FR-103: 동일 유형 자원의 인스턴스별 속성 분리 확인.
 

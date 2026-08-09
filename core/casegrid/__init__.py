@@ -1,6 +1,62 @@
-"""core/casegrid — 구획 WP-9.
+"""Case-grid generation, execution, aggregation, and benchmark harness."""
 
-조합 생성·결합 필터·병렬 실행·집계 (FR-801~803, FR-805)
+from core.casegrid.analysis import (
+    compare_metric,
+    feasible_region,
+    filter_results,
+    tornado_ranking,
+)
+from core.casegrid.execution import (
+    CaseGridExecutionCancelled,
+    execution_plan,
+    run_cases,
+)
+from core.casegrid.export import ResultTable, result_table
+from core.casegrid.grid import (
+    CaseGrid,
+    full_preset_grid,
+    quick_preset_grid,
+)
+from core.casegrid.models import (
+    Case,
+    CaseResult,
+    CaseVariable,
+    CoupledSet,
+    EnvironmentProfile,
+    FeasibleCell,
+    PerformancePoint,
+    Progress,
+    RunPlan,
+    TornadoInfluence,
+)
+from core.casegrid.performance import (
+    detect_environment,
+    measure_performance,
+)
 
-소유 경로 밖 파일을 건드리지 않는다 (§16.1 W-1).
-"""
+__all__ = (
+    "Case",
+    "CaseGrid",
+    "CaseGridExecutionCancelled",
+    "CaseResult",
+    "CaseVariable",
+    "CoupledSet",
+    "EnvironmentProfile",
+    "FeasibleCell",
+    "PerformancePoint",
+    "Progress",
+    "ResultTable",
+    "RunPlan",
+    "TornadoInfluence",
+    "compare_metric",
+    "detect_environment",
+    "execution_plan",
+    "feasible_region",
+    "filter_results",
+    "full_preset_grid",
+    "measure_performance",
+    "quick_preset_grid",
+    "result_table",
+    "run_cases",
+    "tornado_ranking",
+)

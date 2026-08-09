@@ -36,7 +36,7 @@ class _MockAssumptions(AssumptionProvider):
         return None
 
 
-@pytest.mark.req("FR-204")
+@pytest.mark.req("FR-204-AC1", "FR-204-AC2", "FR-204-AC3")
 def test_energy_independent_house_template():
     """FR-204-AC1, AC2, AC3: 에너지자립가구 2변형 템플릿 검증."""
     provider = _MockAssumptions()

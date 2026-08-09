@@ -1,6 +1,17 @@
-"""core/engine — 구획 WP-6.
+"""WP-6 dispatch engine implementation."""
 
-룰기반 디스패치 (FR-301, FR-302)
+from core.engine.rule_based import (
+    DEFAULT_RULE_ORDER,
+    DispatchRule,
+    RuleBasedEngine,
+    dispatch_digest,
+    media_balance_error,
+)
 
-소유 경로 밖 파일을 건드리지 않는다 (§16.1 W-1).
-"""
+__all__ = (
+    "DEFAULT_RULE_ORDER",
+    "DispatchRule",
+    "RuleBasedEngine",
+    "dispatch_digest",
+    "media_balance_error",
+)
