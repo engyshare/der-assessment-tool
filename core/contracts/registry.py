@@ -126,7 +126,22 @@ def discover(package: ModuleType, contract: type[T]) -> dict[str, type[T]]:
     **그 자원을 아예 보지 않은 채 초록불**이 된다 — 순회 검사가 검사 대상을
     잃는 것이므로 누락 하나가 아니라 검사 자체가 무의미해진다.
     """
-    load_package_modules(package)
+    # **지금 파일로 존재하는 모듈만 자원으로 센다.**
+    #
+    # `__subclasses__()` 는 클래스 객체가 살아 있는 한 계속 돌려준다. 파일을
+    # 지우고 `sys.modules` 에서 빼도 **그 클래스를 참조하는 무언가가 남아
+    # 있으면 레지스트리에 계속 잡힌다.** 08-09 에 실제로 그랬다 — 인수 판정
+    # 시험(17.10·17.11)이 임시 자원 파일을 놓았다 지웠는데, 같은 프로세스
+    # 안에서 클래스가 살아남아 **자원이 8종인데 10종으로 세어졌고** 계약
+    # 테스트 3건이 깨졌다.
+    #
+    # 그 실패는 «시끄러운» 쪽이라 드러났지만 **반대 방향이 더 위험하다** —
+    # 유령 자원이 검증 케이스 없이 등록되면 NFR-106(순회 케이스 누락 검사)이
+    # 없는 자원을 검사하려 들거나, 세지 말아야 할 것을 세고 통과한다.
+    #
+    # 그래서 이름 목록으로 좁힌다. **파일이 없으면 자원이 아니다.**
+    live = {f"{package.__name__}.{name}"
+            for name in load_package_modules(package)}
     prefix = f"{package.__name__}."
 
     registry: dict[str, type[T]] = {}
@@ -134,6 +149,8 @@ def discover(package: ModuleType, contract: type[T]) -> dict[str, type[T]]:
     missing: list[str] = []
 
     for cls in _concrete_subclasses(contract, prefix):
+        if cls.__module__ not in live:
+            continue    # 파일이 사라진 모듈의 잔존 클래스 — 자원이 아니다
         where = f"{cls.__module__}.{cls.__qualname__}"
         # **표식은 선언한 클래스에만 적용된다** — `getattr` 로 보면 상속되어
         # `StandardCommonAsset` 을 상속한 CEMS·HEMS·공용 계량통신 **셋 전부가**

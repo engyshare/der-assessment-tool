@@ -381,3 +381,67 @@ def _make_package(root: Path, name: str, files: dict[str, str]):
     for mod in [m for m in sys.modules if m == name or m.startswith(f"{name}.")]:
         del sys.modules[mod]
     return importlib.import_module(name)
+
+
+@pytest.mark.contract
+@pytest.mark.req("NFR-207-AC1")
+def test_registry_ignores_classes_whose_file_is_gone() -> None:
+    """**파일이 사라진 모듈의 잔존 클래스는 자원이 아니다.**
+
+    `__subclasses__()` 는 클래스 객체가 살아 있는 한 계속 돌려준다. 파일을
+    지우고 `sys.modules` 에서 빼도 그 클래스를 참조하는 무언가가 남아 있으면
+    레지스트리에 계속 잡힌다.
+
+    08-09 에 실제로 그랬다 — 인수 판정 시험(17.10·17.11)이 임시 자원 파일을
+    놓았다 지웠는데 같은 프로세스 안에서 클래스가 살아남아 **자원이 8종인데
+    10종으로 세어졌고** 계약 테스트 3건이 깨졌다.
+
+    그 실패는 «시끄러운» 쪽이라 드러났지만 **반대 방향이 더 위험하다** —
+    유령 자원이 검증 케이스 없이 등록되면 `NFR-106`(순회 케이스 누락 검사)이
+    없는 자원을 검사하려 들거나, 세지 말아야 할 것을 세고 통과한다.
+    """
+    import core.der
+    from core.contracts.der import DER
+    from core.contracts.registry import discover
+
+    before = set(discover(core.der, DER))
+    ghost = Path(core.der.__path__[0]) / "zz_ghost_probe.py"
+    ghost.write_text(
+        "from core.contracts.der import DER\n"
+        "class GhostProbe(DER):\n"
+        "    tag = 'GhostProbe'\n"
+        "    def __init__(self) -> None:\n"
+        "        super().__init__(name='g', lifetime=1, carries_electric=True)\n"
+        "    def capex(self, *, year): return Money(0)\n"
+        "    def capex_vat(self, *, year): return Money(0)\n"
+        "    def fixed_om(self, *, year): return Money(0)\n"
+        "    def variable_om(self, *, year): return Money(0)\n"
+        "    def salvage_value(self, *, year): return Money(0)\n"
+        "    def replacement_schedule(self): return ()\n"
+        "    def dispatch(self, ctx): raise NotImplementedError\n"
+        "from core.contracts.units import Money\n",
+        encoding="utf-8")
+    try:
+        importlib.invalidate_caches()
+        # ① 양성 — 파일이 있으면 **실제로 는다.** 이것이 없으면 아래 ②의
+        #    「줄었다」가 «필터가 동작했다» 인지 «애초에 안 늘었다» 인지
+        #    구별되지 않는다.
+        with_ghost = set(discover(core.der, DER))
+        assert "GhostProbe" in with_ghost, (
+            "파일을 놓았는데 레지스트리가 늘지 않았습니다 — 이 시험 자체가 "
+            "성립하지 않습니다 (NFR-207-AC1 의 「파일 하나 = 자원 하나」)"
+        )
+    finally:
+        ghost.unlink(missing_ok=True)
+        for pyc in (Path(core.der.__path__[0]) / "__pycache__").glob("zz_ghost_probe*"):
+            pyc.unlink(missing_ok=True)
+        importlib.invalidate_caches()
+
+    # ② 음성 — 파일이 사라지면 **클래스가 아직 살아 있어도** 빠진다.
+    #    `sys.modules` 에서 빼지 않았는데도 빠지는 것이 요점이다.
+    after = set(discover(core.der, DER))
+    assert "GhostProbe" not in after, (
+        "파일이 사라졌는데 레지스트리에 남아 있습니다 — `__subclasses__()` "
+        "잔존이 유령 자원을 만듭니다"
+    )
+    assert after == before, f"레지스트리가 원상태로 돌아오지 않았습니다: {after ^ before}"
