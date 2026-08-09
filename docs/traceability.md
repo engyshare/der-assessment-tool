@@ -310,7 +310,7 @@
 |  |  | 1 | `NFR-107-AC3` | 수동 검증 항목은 수행 일자·수행자·결과를 docs/manual-checks.yaml에 기록한다. 기록이 없는 항목은 미수행으로 간주한다 | 자동 | test_traceability_gate.py |
 |  |  | 1 | `NFR-107-AC4` | 매핑표(docs/traceability.md)는 CI가 자동 생성하며 자동/수동을 구분 표시한다 | 자동 | test_traceability_gate.py |
 |  |  | 1 | `NFR-107-AC5` | 수동 검증 분류의 정본은 docs/manual-checks.yaml이다. spec은 어느 수용기준이 수동인지 열거하지 않는다. 대장의 전건에 대해 ⓐ crite… | 자동 | test_traceability_gate.py |
-|  |  | 1 | `NFR-107-M1` | CI가 spec 수용기준 목록과 마커·YAML을 대조하여 미매핑 0건 확인. 구현: scripts/gen_traceability.py (Wave 0 산출물 0.… | 자동 | test_17_9_dod9.py, test_traceability_gate.py |
+|  |  | 1 | `NFR-107-M1` | CI가 spec 수용기준 목록과 마커·YAML을 대조하여 미매핑 0건 확인. 구현: scripts/gen_traceability.py (Wave 0 산출물 0.… | 자동 | test_17_9_dod9.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_traceability_gate.py |
 | `NFR-201` | Must-have | 1 | `NFR-201-M1` | 신규 자원 추가 PR에서 core/engine/, core/cba/ diff 0줄 | 자동 | test_phase1_measurements.py |
 | `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | 자동 | test_ci_gates.py, test_assumption_provider.py, test_assumption_provider.py, test_der_contract.py, test_der_contract.py, test_tariff.py |
 | `NFR-203` | Should-have | 1 | `NFR-203-M1` | pytest-cov CI 게이트 | 자동 | test_ci_gates.py |
