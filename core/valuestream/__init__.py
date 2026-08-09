@@ -22,12 +22,12 @@ from core.valuestream.self_consumption import SelfConsumption
 from core.valuestream.surplus_sale import SurplusSale
 
 __all__ = (
-    "SelfConsumption",
-    "SurplusSale",
     "REC",
     "DirectTrade",
-    "PeakShaving",
-    "HeatCostSaving",
     "DistributedBenefit",
     "DistributedSubItems",
+    "HeatCostSaving",
+    "PeakShaving",
+    "SelfConsumption",
+    "SurplusSale",
 )

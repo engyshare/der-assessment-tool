@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from core.contracts.der import DispatchResult
-from core.contracts.units import Money, ZERO, to_won
+from core.contracts.units import ZERO, Money, to_won
 from core.contracts.valuestream import ExclusionType, Payer, ValueStream
 
 

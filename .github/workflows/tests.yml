@@ -54,7 +54,13 @@ jobs:
           curl -sSL -o /tmp/gitleaks.tar.gz \
             "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
-          /tmp/gitleaks detect --source . --redact --verbose
+          # `--config` 를 명시한다. 빠뜨리면 기본 규칙만 돌아 **08-08 이후
+          # 계속 빨간불이던 오탐 8건**(대장의 `key:` 필드)이 되살아난다.
+          # 설정 파일의 존재를 먼저 단언하는 이유: 이름이 바뀌거나 사라지면
+          # gitleaks 는 조용히 기본 설정으로 내려가고, 그때 «면제가 넓어진
+          # 것」과 «면제가 사라진 것」이 결과만으로는 구별되지 않는다.
+          test -f .gitleaks.toml
+          /tmp/gitleaks detect --source . --config .gitleaks.toml --redact --verbose
 
       - name: 스캔이 실제로 잡는지 확인
         # 「탐지 0건」이 «비밀이 없다» 는 뜻인지 «규칙이 아무것도 매치하지
@@ -66,7 +72,12 @@ jobs:
             "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" > /tmp/planted.txt
           cp /tmp/planted.txt ./_negtest_secret.txt
           set +e
-          /tmp/gitleaks detect --source . --no-git --redact > /tmp/out.txt 2>&1
+          # **게이트와 같은 `--config` 로 돌린다.** 빠뜨리면 이 음성 확인이
+          # 기본 규칙을 검증하게 되어 «우리 설정이 무언가를 잡는다» 는
+          # 증거가 되지 못한다 — 검증 대상과 검증에 쓰는 설정이 다르면
+          # 그 통과는 다른 것에 대한 통과다.
+          /tmp/gitleaks detect --source . --config .gitleaks.toml \
+            --no-git --redact > /tmp/out.txt 2>&1
           rc=$?
           set -e
           rm -f ./_negtest_secret.txt
@@ -101,8 +112,31 @@ jobs:
       - name: 의존성
         run: pip install -e ".[dev,persistence]"
 
+      # NFR-405-AC1 (작업 2.12) — *"의존성 취약점 CI 자동 스캔"*.
+      #
+      # **조항이 요구하는 것은 「스캔이 돈다」이지 「취약점이 0건이다」가
+      # 아니다.** NFR-405 는 **Should-have** 이고 조항 자신이 *"자동 스캔이
+      # 없어도 시스템은 동작한다"* 고 적어 두었다. 발견 즉시 차단으로 켜면
+      # 우리가 고칠 수 없는 상류 라이브러리의 미수정 취약점 하나로 CI 가
+      # 영구히 빨간불이 되고, **통과할 수 없는 검사는 꺼진다** — NFR-206 을
+      # 차단이 아니라 경고로 켠 것과 같은 판단이다(2.9).
+      #
+      # 그래서 **발견은 경고, 미수행은 실패**로 가른다. 이 저장소가 반복해서
+      # 만난 간극이 「검사가 통과했다」와 「검사가 무언가를 검사했다」이며,
+      # 여기서 지켜야 할 것은 후자다. 출력이 비면 스캔이 돌지 않은 것이고
+      # 그때는 멈춘다 — `|| true` 로 종료 코드만 버리면 도구가 없어도
+      # 초록불이 된다(2.7 에서 닫은 구멍과 같은 형태).
       - name: 의존성 취약점 스캔 (NFR-405)
-        run: pip-audit
+        run: |
+          set -uo pipefail
+          pip-audit --progress-spinner off | tee audit.txt || true
+          if [ ! -s audit.txt ]; then
+            echo "::error::pip-audit 이 아무 출력도 내지 않았습니다 — 스캔이 돌지 않았습니다"
+            exit 1
+          fi
+          if grep -qiE "GHSA-|PYSEC-|CVE-" audit.txt; then
+            echo "::warning::의존성 취약점이 있습니다 (위 목록). NFR-405 는 Should-have 이므로 차단하지 않습니다"
+          fi
 
       - name: ruff
         run: python -m ruff check core tests scripts

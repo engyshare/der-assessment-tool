@@ -12,9 +12,9 @@
 | 요구사항 | 105 |
 | 그중 Must-have | 79 |
 | 수용기준 총계 | 307 |
-| 자동 검증 매핑 | 116 |
+| 자동 검증 매핑 | 128 |
 | 수동 검증 매핑 | 8 |
-| **Must-have 미매핑** | **156** |
+| **Must-have 미매핑** | **144** |
 | 우선순위 미지정 요구사항 | 0 |
 | **Phase 미지정 요구사항** | **9** |
 
@@ -33,7 +33,20 @@
 > 감시하면서도 *언제까지* 지켜야 하는지는 말하지 못하는 상태입니다. Should-have만
 > 남았다면 R-1 정비 사항이며 게이트 판정에는 영향이 없습니다.
 
-> **미매핑 156건.** NFR-107은 미매핑 0건을 요구합니다.
+> **대상이 없는 검증 항목 3건 — 매달린 참조입니다.**
+>
+> · 테스트 마커 FR-103 — 해당 수용기준이 spec에 없음 (test_financial_isolation.py)
+> · 테스트 마커 FR-204 — 해당 수용기준이 spec에 없음 (test_templates.py)
+> · 테스트 마커 FR-205 — 해당 수용기준이 spec에 없음 (test_settlement.py)
+>
+> 이 항목들은 **아무것도 검증하지 않습니다.** 수용기준이 삭제되었거나 ID가
+> 밀렸는데 참조를 갱신하지 않은 상태이며, 요구사항 쪽에서는 그냥 `미매핑`으로만
+> 보이므로 원인이 드러나지 않습니다.
+>
+> `criterion_id` 누락이라면 지정하십시오. 요구사항 단위로 걸면 자동화 가능한
+> 수용기준까지 "수동으로 검증됨"으로 표시되어 커버리지가 과대 계상됩니다.
+
+> **미매핑 144건.** NFR-107은 미매핑 0건을 요구합니다.
 >
 > 현재 저장소에 테스트가 없으므로 전건 미매핑인 것이 정상입니다. 이 표는
 > **Wave 0 시점의 작업 목록**으로 읽으십시오 — 각 행이 곧 작성해야 할 테스트
@@ -78,8 +91,8 @@
 |  |  | 1 | `FR-106-AC5` | 안분 규칙을 선언적으로 지정한다: 가구 균등 배분 / 설비용량 비례 / 안분하지 않고 단지 총계로만 표시. 선택한 규칙이 리포트에 명시된다 | 자동 | test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py |
 |  |  | 1 | `FR-106-AC6` | 가구 단위 경제성 산출 시 안분된 공통비용이 별도 행으로 표시되어, 가구 자체 설비 비용과 구분된다 | 자동 | test_common_asset.py, test_common_asset.py, test_common_asset.py |
 |  |  | 1 | `FR-106-AC7` | CommonAsset이 없는 모델(단독주택 등)도 정상 동작한다 (기본값 없음) | 자동 | test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py |
-| `FR-201` | Must-have | 1 | `FR-201-AC1` | GUI에서 자원 추가/삭제/복제로 구성 가능하며, 구성 변경 시 엔진 코드 변경이 발생하지 않는다 | **미매핑** | — |
-|  |  | 1 | `FR-201-AC2` | 모델 정의 전체가 단일 JSON 문서로 export/import 된다 | **미매핑** | — |
+| `FR-201` | Must-have | 1 | `FR-201-AC1` | GUI에서 자원 추가/삭제/복제로 구성 가능하며, 구성 변경 시 엔진 코드 변경이 발생하지 않는다 | 자동 | test_model.py |
+|  |  | 1 | `FR-201-AC2` | 모델 정의 전체가 단일 JSON 문서로 export/import 된다 | 자동 | test_model.py |
 | `FR-202` | Must-have | 2 | `FR-202-AC1` | 하나의 AssumptionSet을 참조하는 여러 모델을 일괄 실행한다 | **미매핑** | — |
 |  |  | 2 | `FR-202-AC2` | 비교표에 모델별 NPV·IRR·회수기간·필요 지원율을 나란히 표시한다 | **미매핑** | — |
 |  |  | 2 | `FR-202-AC3` | 전제가 동일함이 시스템적으로 보장되며(동일 AssumptionSet ID 표시), 모델별로 다른 값이 사용된 항목은 별도 강조된다 | **미매핑** | — |
@@ -103,31 +116,31 @@
 |  |  | - | `FR-303-AC4` | Infeasible 시 어떤 제약이 충돌했고 어느 편익이 원인인지 진단 (FR-403 연계) | **미매핑** | — |
 | `FR-304` | Nice-to-have | 3 | `FR-304-AC1` | PV·ESS 용량을 결정변수로 NPV 최대화 조합 산출. 연간 손익과 자본비의 시간 스케일 정합을 위해 연금 환산 계수를 적용한다 (부록 C.3 B-2) | **미매핑** | — |
 | `FR-305` | Nice-to-have | 3 | `FR-305-AC1` | 임의 시점 N시간 정전 시 부하 지속 시간 산출, EENS 화폐가치를 편익 계상 | **미매핑** | — |
-| `FR-401` | Must-have | 1 | `FR-401-AC1` | 편익 1종 = 독립 클래스 1개로 구현되고, 각 편익은 활성화 여부를 개별 토글할 수 있다. 편익을 추가하거나 비활성화해도 코어 엔진(core/engine/·c… | 자동 | test_der_contract.py, test_der_contract.py |
-|  |  | 1 | `FR-401-AC2.SelfConsumption` | SelfConsumption 자가소비 전기요금 절감 — (기존요금 − 신규요금), 누진·TOU 구조 반영 | 자동 | test_pv.py |
-|  |  | 1 | `FR-401-AC2.SurplusSale` | SurplusSale 잉여전력 판매 — 잉여량 × 판매단가(직거래/상계/SMP) | 자동 | test_pv.py, test_pv.py |
-|  |  | 1 | `FR-401-AC2.REC` | REC REC 수익 — 발전량 × 가중치 × REC 단가 | 자동 | test_pv.py, test_pv.py |
-|  |  | 1 | `FR-401-AC2.DirectTrade` | DirectTrade 분산특구 직접거래 차익 — (약관요금 − 직접거래단가) × 거래량 − 거래지원수수료 | **미매핑** | — |
-|  |  | 1 | `FR-401-AC2.PeakShaving` | PeakShaving 기본요금(피크) 절감 — 월 최대수요 저감분 × 기본요금 단가 | 자동 | test_ess.py, test_ess.py |
-|  |  | 1 | `FR-401-AC2.HeatCostSaving` | HeatCostSaving 열 비용 절감 (히트펌프) — (기존 열원 연료비 − 히트펌프 전력비) | 자동 | test_heatpump.py, test_heatpump.py |
+| `FR-401` | Must-have | 1 | `FR-401-AC1` | 편익 1종 = 독립 클래스 1개로 구현되고, 각 편익은 활성화 여부를 개별 토글할 수 있다. 편익을 추가하거나 비활성화해도 코어 엔진(core/engine/·c… | 자동 | test_der_contract.py, test_der_contract.py, test_formulas.py |
+|  |  | 1 | `FR-401-AC2.SelfConsumption` | SelfConsumption 자가소비 전기요금 절감 — (기존요금 − 신규요금), 누진·TOU 구조 반영 | 자동 | test_pv.py, test_formulas.py |
+|  |  | 1 | `FR-401-AC2.SurplusSale` | SurplusSale 잉여전력 판매 — 잉여량 × 판매단가(직거래/상계/SMP) | 자동 | test_pv.py, test_pv.py, test_formulas.py |
+|  |  | 1 | `FR-401-AC2.REC` | REC REC 수익 — 발전량 × 가중치 × REC 단가 | 자동 | test_pv.py, test_pv.py, test_formulas.py |
+|  |  | 1 | `FR-401-AC2.DirectTrade` | DirectTrade 분산특구 직접거래 차익 — (약관요금 − 직접거래단가) × 거래량 − 거래지원수수료 | 자동 | test_formulas.py |
+|  |  | 1 | `FR-401-AC2.PeakShaving` | PeakShaving 기본요금(피크) 절감 — 월 최대수요 저감분 × 기본요금 단가 | 자동 | test_ess.py, test_ess.py, test_formulas.py |
+|  |  | 1 | `FR-401-AC2.HeatCostSaving` | HeatCostSaving 열 비용 절감 (히트펌프) — (기존 열원 연료비 − 히트펌프 전력비) | 자동 | test_heatpump.py, test_heatpump.py, test_formulas.py |
 |  |  | 2 | `FR-401-AC2.DemandResponse` | DemandResponse 수요반응 정산금 — 감축량 × 정산단가 (중복·배타 규칙 반영) | **미매핑** | — |
 |  |  | 2 | `FR-401-AC2.VPPMarket` | VPPMarket VPP 시장참여 수익 — 시장정산 − 운영수수료 | **미매핑** | — |
 |  |  | 3 | `FR-401-AC2.Resilience` | Resilience 정전 회피 편익 — EENS × VoLL | **미매핑** | — |
-|  |  | 3 | `FR-401-AC2.DistributedBenefit` | DistributedBenefit 분산편익 크레딧 — 송배전 회피 + 손실 감소 + 계통서비스 + 온실가스 + 회복력 (기본 0, FR-404) | **미매핑** | — |
+|  |  | 3 | `FR-401-AC2.DistributedBenefit` | DistributedBenefit 분산편익 크레딧 — 송배전 회피 + 손실 감소 + 계통서비스 + 온실가스 + 회복력 (기본 0, FR-404) | 자동 | test_formulas.py |
 |  |  | 3 | `FR-401-AC2.CarbonCredit` | CarbonCredit 배출권 수익 — 감축량(tCO2) × KAU 단가 | **미매핑** | — |
-| `FR-402` | Must-have | 1 | `FR-402-AC1` | 동시 발생 효과는 중복이 아니다 — 지불 주체가 다르거나 물리량이 다르면 정상 계상한다. 중복은 같은 화폐 흐름을 두 번 세는 것으로 한정한다. 시스템은 자가소… | **미매핑** | — |
-|  |  | 1 | `FR-402-AC2.A` | 동일 물리량 이중 판매 — 같은 1 kWh를 자가소비 절감과 잉여판매로 동시 계상하거나 같은 시각 ESS 방전을 피크저감과 DR로 동시 계상하는 조합은 선언적 … | 자동 | test_pv.py |
-|  |  | 1 | `FR-402-AC2.B` | 인과 하류 편익이 상류에 이미 포함 — 배전망 회피 편익 ↔ 전기요금 절감처럼 망 비용이 이미 망이용요금으로 회수된 경우, 하류 편익은 요금에 미반영된 증분만 … | **미매핑** | — |
-|  |  | 1 | `FR-402-AC2.C` | 동일 효과의 이중 화폐화 — 같은 tCO2에 배출권 수익(사업자 현금)과 사회적 탄소비용(사회 편익)을 동시 계상하지 않는다. 관점당 하나의 화폐화 방법만 허용… | **미매핑** | — |
-|  |  | 1 | `FR-402-AC2.D` | 제도적 배타 — 상계거래 참여 시 REC 발급 제한, DR 정산금과 요금 인센티브 중복 수취 금지 등은 규제 프로파일에 종속된 배타 규칙으로 관리하고 제도 개정… | **미매핑** | — |
+| `FR-402` | Must-have | 1 | `FR-402-AC1` | 동시 발생 효과는 중복이 아니다 — 지불 주체가 다르거나 물리량이 다르면 정상 계상한다. 중복은 같은 화폐 흐름을 두 번 세는 것으로 한정한다. 시스템은 자가소… | 자동 | test_exclusion.py |
+|  |  | 1 | `FR-402-AC2.A` | 동일 물리량 이중 판매 — 같은 1 kWh를 자가소비 절감과 잉여판매로 동시 계상하거나 같은 시각 ESS 방전을 피크저감과 DR로 동시 계상하는 조합은 선언적 … | 자동 | test_pv.py, test_exclusion.py, test_exclusion.py |
+|  |  | 1 | `FR-402-AC2.B` | 인과 하류 편익이 상류에 이미 포함 — 배전망 회피 편익 ↔ 전기요금 절감처럼 망 비용이 이미 망이용요금으로 회수된 경우, 하류 편익은 요금에 미반영된 증분만 … | 자동 | test_exclusion.py |
+|  |  | 1 | `FR-402-AC2.C` | 동일 효과의 이중 화폐화 — 같은 tCO2에 배출권 수익(사업자 현금)과 사회적 탄소비용(사회 편익)을 동시 계상하지 않는다. 관점당 하나의 화폐화 방법만 허용… | 자동 | test_exclusion.py |
+|  |  | 1 | `FR-402-AC2.D` | 제도적 배타 — 상계거래 참여 시 REC 발급 제한, DR 정산금과 요금 인센티브 중복 수취 금지 등은 규제 프로파일에 종속된 배타 규칙으로 관리하고 제도 개정… | 자동 | test_exclusion.py |
 |  |  | 1 | `FR-402-AC4` | 배타 규칙은 코드가 아닌 선언적 규칙 테이블로 관리한다. 각 규칙은 (편익A, 편익B, 배타유형 A~D, 근거, 적용 규제 프로파일) 을 보유한다 | **미매핑** | — |
 |  |  | 1 | `FR-402-AC5` | 편익을 활성화할 때 시스템은 분산자원 경제성 평가 원칙 「부록 A. 편익 항목 추가 시 실무 적용 절차」 의 4문항 판정을 통과했는지 확인하고, 지불 주체가 특… | **미매핑** | — |
 |  |  | 1 | `FR-402-AC6` | 리포트에 "편익 계상 내역" 을 표시한다: 계상된 편익 / 배타로 제외된 편익 / 증분만 계상된 편익(유형 B) / 미화폐화로 0 처리된 편익 | **미매핑** | — |
 |  |  | 1 | `FR-402-AC7` | 관점별(FR-704) 편익 집합이 서로 다름을 리포트에 명시하고, 보조금은 사회 관점에서 이전지출로 처리하여 편익에 포함하지 않는다 | **미매핑** | — |
-| `FR-403` | Must-have | 1 | `FR-403-AC1` | 편익별 제약을 개별 제약으로 쌓지 않고, 제약 유형별 단일 시계열로 min/max 합성한다 | **미매핑** | — |
-|  |  | 1 | `FR-403-AC2` | 각 시각별로 어느 편익이 그 제약값에 기여했는지 기록한다 | **미매핑** | — |
-|  |  | 1 | `FR-403-AC3` | 시뮬레이션·최적화 실행 전에 min > max 충돌을 검사하고, 충돌 시 "2027-01-15 18:00에 ESS 방전 하한(예비력 확보)과 상한(SOC 제약)… | **미매핑** | — |
-|  |  | 1 | `FR-403-AC4` | 무한대 표현에는 math.inf를 사용하며 유한 대형 상수를 sentinel로 쓰지 않는다 | **미매핑** | — |
+| `FR-403` | Must-have | 1 | `FR-403-AC1` | 편익별 제약을 개별 제약으로 쌓지 않고, 제약 유형별 단일 시계열로 min/max 합성한다 | 자동 | test_conflict.py |
+|  |  | 1 | `FR-403-AC2` | 각 시각별로 어느 편익이 그 제약값에 기여했는지 기록한다 | 자동 | test_conflict.py |
+|  |  | 1 | `FR-403-AC3` | 시뮬레이션·최적화 실행 전에 min > max 충돌을 검사하고, 충돌 시 "2027-01-15 18:00에 ESS 방전 하한(예비력 확보)과 상한(SOC 제약)… | 자동 | test_conflict.py |
+|  |  | 1 | `FR-403-AC4` | 무한대 표현에는 math.inf를 사용하며 유한 대형 상수를 sentinel로 쓰지 않는다 | 자동 | test_conflict.py |
 | `FR-404` | Must-have | 1 | `FR-404-AC1` | 활성화 시 "정책 가정 편익 — 현행 제도 미반영" 경고를 리포트 상단에 표시 | 자동 | test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py |
 |  |  | 1 | `FR-404-AC2` | 활성화하더라도 본편익 합계와 분리된 별도 소계로 표시하며, 주 지표(할인 회수기간)는 본편익 기준값과 크레딧 포함값을 모두 제시한다 | **미매핑** | — |
 |  |  | 1 | `FR-404-AC3` | 하위 항목(송배전 회피·손실 감소)은 FR-402 유형 B에 해당하므로, 현행 요금에 이미 반영된 부분을 제외한 미래 증설 회피 증분만 계상한다. 증분 분리 근… | **미매핑** | — |
