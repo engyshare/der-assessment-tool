@@ -1,7 +1,7 @@
 """Application 서비스 5종 — 작업 14.5.
 
     Assumption    전제 집합 관리 (FR-601 계열을 앱 계층에서 노출)
-    Scenario      시나리오 저장·불러오기 (14.4)
+    Scenario      시나리오 저장·불러오기 (14.4 / FR-902)
     CaseGrid      케이스 그리드 정의 (FR-802)
     Run           실행 이력·비동기 실행 (14.8)
     SupportSolver 지원 조합 도출 (FR-609)
@@ -11,6 +11,8 @@
 (§16.1 W-6).
 """
 from __future__ import annotations
+
+from datetime import datetime
 
 from app.services.scenario_store import (
     InMemoryScenarioStore,
@@ -34,12 +36,15 @@ class AssumptionService:
 
 
 class ScenarioService:
-    """시나리오 저장·불러오기 — ``ScenarioStore`` 위의 비즈니스 로직."""
+    """시나리오 저장·불러오기 — ``ScenarioStore`` 위의 비즈니스 로직 (FR-902)."""
 
     def __init__(self, store: ScenarioStore) -> None:
         self._store = store
 
     def create(self, record: ScenarioRecord) -> ScenarioRecord:
+        return self._store.save(record)
+
+    def update(self, record: ScenarioRecord) -> ScenarioRecord:
         return self._store.save(record)
 
     def get(self, scenario_id: int) -> ScenarioRecord | None:
@@ -48,8 +53,20 @@ class ScenarioService:
     def list_for_owner(self, owner_id: int) -> list[ScenarioRecord]:
         return self._store.list_active(owner_id)
 
+    def list_versions(self, scenario_id: int) -> list[ScenarioRecord]:
+        return self._store.list_versions(scenario_id)
+
+    def restore_version(self, scenario_id: int, version: int) -> ScenarioRecord:
+        return self._store.restore_version(scenario_id, version)
+
     def delete(self, scenario_id: int) -> None:
         self._store.soft_delete(scenario_id)
+
+    def restore(self, scenario_id: int) -> ScenarioRecord:
+        return self._store.restore(scenario_id)
+
+    def purge_expired(self, now: datetime | None = None) -> int:
+        return self._store.purge_expired(now)
 
 
 class CaseGridService:

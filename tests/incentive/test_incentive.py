@@ -6,7 +6,7 @@ import pytest
 from core.contracts.units import Money
 from core.incentive.calculator import build_capex_cashflows, calculate_loan_schedule
 from core.incentive.schemas import IncentiveScheme
-from core.incentive.solver import solve_min_subsidy_rate
+from core.incentive.solver import generate_iso_support_curve, solve_min_subsidy_rate
 
 
 def _scheme(**kwargs: Any) -> IncentiveScheme:
@@ -250,3 +250,47 @@ def test_resource_differential_support() -> None:
 
     assert cf_pv[0].amounts[1] == Money(-700)
     assert cf_ess[0].amounts[1] == Money(-500)
+
+
+@pytest.mark.req("FR-609-AC1", "FR-609-AC2", "FR-609-AC3")
+def test_generate_iso_support_curve() -> None:
+    """FR-609-AC1, AC2, AC3: 등가 지원 조합 곡선 산출 및 최소 재정부담 조합 강조 검증.
+
+    손으로 계산한 기대값:
+    사업자 NPV = -1000 + 1000 * s + 500 * lr * (0.05 - li)
+    정부 재정 부담 현가(gov_fiscal_pv) = 1050 * s + 500 * lr * (0.05 - li)
+    목표 사업자 NPV = 0.0 일 때:
+    - (lr=0.0, li=0.0): s=1.000, owner_npv=0.0, gov_fiscal_pv=1050.0
+    - (lr=0.5, li=0.02): s=0.9925, owner_npv=0.0, gov_fiscal_pv=1049.625
+    - (lr=0.8, li=0.00): s=0.9800, owner_npv=0.0, gov_fiscal_pv=1049.0 (최소)
+    모든 조합에서 사업자 NPV=0.0을 달성하는 등가 곡선이다.
+    """
+
+    def eval_model(
+        subsidy_rate: float, loan_rate: float, loan_interest: float
+    ) -> tuple[float, float]:
+        owner_npv = (
+            -1000.0 + 1000.0 * subsidy_rate + 500.0 * loan_rate * (0.05 - loan_interest)
+        )
+        gov_fiscal_pv = 1050.0 * subsidy_rate + 500.0 * loan_rate * (0.05 - loan_interest)
+        return owner_npv, gov_fiscal_pv
+
+    loan_candidates = [
+        (0.0, 0.0),
+        (0.5, 0.02),
+        (0.8, 0.0),
+    ]
+
+    result = generate_iso_support_curve(
+        eval_model, target_value=0.0, target_type="NPV", loan_candidates=loan_candidates
+    )
+
+    assert len(result.points) == 3
+    # FR-609-AC1: 목표 NPV=0.0 달성 등가 곡선 포인트 확인 (0.1%p 정밀도 내)
+    for pt in result.points:
+        assert abs(pt.owner_metric - 0.0) <= 1.0
+
+    # FR-609-AC2 & AC3: 정부 재정 부담 현가 병기 및 최소 부담 조합 존재 확인
+    assert result.min_fiscal_point is not None
+    assert result.min_fiscal_point.is_minimum_fiscal_burden is True
+    assert result.min_fiscal_point.loan_rate == 0.8

@@ -9,9 +9,12 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
-import tempfile
+import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -19,11 +22,24 @@ REPO = HERE.parent
 GEN = HERE / "gen_traceability.py"
 SPEC = next((REPO / "rslt").glob("spec-*.md"))
 MANUAL = REPO / "docs/manual-checks.yaml"
+TMP_ROOT = HERE / "_tmp_negtrace"
+
+
+@contextmanager
+def workspace() -> Iterator[Path]:
+    TMP_ROOT.mkdir(exist_ok=True)
+    path = TMP_ROOT / uuid.uuid4().hex
+    path.mkdir()
+    try:
+        yield path
+    finally:
+        if path.resolve().is_relative_to(TMP_ROOT.resolve()):
+            shutil.rmtree(path, ignore_errors=True)
 
 
 def run(tests_dir: Path, manual: Path = MANUAL, out: Path | None = None):
-    with tempfile.TemporaryDirectory() as td:
-        target = out or (Path(td) / "out.md")
+    with workspace() as td:
+        target = out or (td / "out.md")
         p = subprocess.run(
             [sys.executable, str(GEN), "--spec", str(SPEC),
              "--manual", str(manual), "--tests", str(tests_dir),
@@ -185,8 +201,7 @@ case("폐기된 조항을 가리키는 마커", c_dangling, "해당 수용기준
 
 def main() -> int:
     fails = 0
-    with tempfile.TemporaryDirectory() as td:
-        d = Path(td)
+    with workspace() as d:
         (d / "empty").mkdir()
 
         rc, out = baseline(d)

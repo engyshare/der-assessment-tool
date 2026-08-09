@@ -80,3 +80,79 @@ def solve_min_subsidy_rate(  # noqa: PLR0912
                 best_rate = rate
                 break
         return SolverResult(success=True, subsidy_rate=best_rate)
+
+
+class IsoSupportPoint(NamedTuple):
+    """FR-609-AC1, AC2, AC3: 등가 지원 조합 상의 한 지점."""
+
+    subsidy_rate: float
+    loan_rate: float
+    loan_interest: float
+    owner_metric: float
+    gov_fiscal_pv: float
+    is_minimum_fiscal_burden: bool = False
+
+
+class IsoSupportCurveResult(NamedTuple):
+    """FR-609-AC1, AC2: 등가 지원 조합 곡선 산출 결과."""
+
+    points: list[IsoSupportPoint]
+    min_fiscal_point: IsoSupportPoint | None
+
+
+def generate_iso_support_curve(
+    evaluate_func: Callable[[float, float, float], tuple[float, float]],
+    target_value: float,
+    target_type: Literal["NPV", "IRR", "PAYBACK"],
+    loan_candidates: list[tuple[float, float]],
+    precision: float = 0.001,
+) -> IsoSupportCurveResult:
+    """FR-609-AC1, AC2, AC3: 등가 지원 조합(iso-support curve) 산출.
+
+    보조율 × 융자조건 2차원 평면에서 목표 지표를 동일하게 달성하는 조합 곡선을 산출하고,
+    정부 재정 부담 현가를 병기하여 최소 부담 조합을 구한다.
+    evaluate_func(subsidy_rate, loan_rate, loan_interest) -> (owner_metric, gov_fiscal_pv)
+    """
+    raw_points: list[dict[str, float]] = []
+    min_fiscal: float = float("inf")
+    min_idx: int | None = None
+
+    for loan_rate, loan_interest in loan_candidates:
+
+        def eval_sub(s: float, lr: float = loan_rate, li: float = loan_interest) -> float:
+            return evaluate_func(s, lr, li)[0]
+
+        res = solve_min_subsidy_rate(eval_sub, target_value, target_type, precision)
+        if res.success:
+            s_rate = res.subsidy_rate
+            owner_val, gov_pv = evaluate_func(s_rate, loan_rate, loan_interest)
+            raw_points.append(
+                {
+                    "subsidy_rate": s_rate,
+                    "loan_rate": loan_rate,
+                    "loan_interest": loan_interest,
+                    "owner_metric": owner_val,
+                    "gov_fiscal_pv": gov_pv,
+                }
+            )
+            if gov_pv < min_fiscal:
+                min_fiscal = gov_pv
+                min_idx = len(raw_points) - 1
+
+    points: list[IsoSupportPoint] = []
+    min_point: IsoSupportPoint | None = None
+    for i, pt in enumerate(raw_points):
+        is_min = i == min_idx
+        iso_pt = IsoSupportPoint(
+            subsidy_rate=pt["subsidy_rate"],
+            loan_rate=pt["loan_rate"],
+            loan_interest=pt["loan_interest"],
+            owner_metric=pt["owner_metric"],
+            gov_fiscal_pv=pt["gov_fiscal_pv"],
+            is_minimum_fiscal_burden=is_min,
+        )
+        points.append(iso_pt)
+        if is_min:
+            min_point = iso_pt
+
+    return IsoSupportCurveResult(points=points, min_fiscal_point=min_point)

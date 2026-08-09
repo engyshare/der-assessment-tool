@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
@@ -55,7 +56,11 @@ class ScenarioStore(Protocol):
     def load(self, scenario_id: int) -> ScenarioRecord | None: ...
     def list_active(self, owner_id: int) -> list[ScenarioRecord]: ...
     def list_versions(self, scenario_id: int) -> list[ScenarioRecord]: ...
+    def restore_version(
+        self, scenario_id: int, version: int
+    ) -> ScenarioRecord: ...
     def soft_delete(self, scenario_id: int) -> None: ...
+    def restore(self, scenario_id: int) -> ScenarioRecord: ...
     def purge_expired(self, now: datetime | None = None) -> int: ...
 
 
@@ -68,35 +73,91 @@ class InMemoryScenarioStore:
 
     def __init__(self) -> None:
         self._records: dict[int, ScenarioRecord] = {}
+        self._history: dict[int, list[ScenarioRecord]] = {}
         self._next_id = 1
 
     def save(self, record: ScenarioRecord) -> ScenarioRecord:
+        now = datetime.now(UTC)
         if record.id == 0:
             record.id = self._next_id
             self._next_id += 1
-        record.updated_at = datetime.now(UTC)
-        self._records[record.id] = record
-        return record
+            record.version = 1
+            record.created_at = now
+            record.updated_at = now
+            snapshot = dataclasses.replace(record)
+            self._records[record.id] = snapshot
+            self._history[record.id] = [snapshot]
+            return snapshot
+
+        existing = self._records.get(record.id)
+        if existing is None:
+            raise KeyError(f"시나리오 {record.id} 가 없습니다")
+
+        new_version = existing.version + 1
+        updated = dataclasses.replace(
+            record,
+            id=existing.id,
+            owner_id=existing.owner_id,
+            version=new_version,
+            created_at=existing.created_at,
+            updated_at=now,
+            deleted_at=existing.deleted_at,
+        )
+        self._records[record.id] = updated
+        if record.id not in self._history:
+            self._history[record.id] = []
+        self._history[record.id].append(updated)
+        return updated
 
     def load(self, scenario_id: int) -> ScenarioRecord | None:
         return self._records.get(scenario_id)
 
     def list_active(self, owner_id: int) -> list[ScenarioRecord]:
         return [
-            r for r in self._records.values()
+            r
+            for r in self._records.values()
             if r.owner_id == owner_id and not r.is_deleted
         ]
 
     def list_versions(self, scenario_id: int) -> list[ScenarioRecord]:
-        """버전 이력 — 같은 시나리오의 여러 판. 단순화: id 로 직접 찾는다."""
-        rec = self._records.get(scenario_id)
-        return [rec] if rec else []
+        """버전 이력 — 저장된 버전 전체 목록."""
+        return list(self._history.get(scenario_id, []))
+
+    def restore_version(self, scenario_id: int, version: int) -> ScenarioRecord:
+        """이전 버전 복원 (FR-902-AC2). 복원도 새 버전으로 이력에 기록된다."""
+        history = self._history.get(scenario_id, [])
+        target = next((v for v in history if v.version == version), None)
+        if target is None:
+            raise KeyError(f"시나리오 {scenario_id} 의 버전 {version} 이 없습니다")
+
+        current = self._records.get(scenario_id)
+        if current is None:
+            raise KeyError(f"시나리오 {scenario_id} 가 없습니다")
+
+        now = datetime.now(UTC)
+        restored = dataclasses.replace(
+            target,
+            version=current.version + 1,
+            updated_at=now,
+            deleted_at=None,
+        )
+        self._records[scenario_id] = restored
+        self._history[scenario_id].append(restored)
+        return restored
 
     def soft_delete(self, scenario_id: int) -> None:
         rec = self._records.get(scenario_id)
         if rec is None:
             raise KeyError(f"시나리오 {scenario_id} 가 없습니다")
         rec.soft_delete()
+
+    def restore(self, scenario_id: int) -> ScenarioRecord:
+        """소프트 삭제 복원 (FR-902-AC3)."""
+        rec = self._records.get(scenario_id)
+        if rec is None:
+            raise KeyError(f"시나리오 {scenario_id} 가 없습니다")
+        rec.restore()
+        return rec
 
     def purge_expired(self, now: datetime | None = None) -> int:
         """``SOFT_DELETE_RETENTION_DAYS`` 지난 소프트삭제 행을 진짜 삭제한다.
@@ -108,9 +169,11 @@ class InMemoryScenarioStore:
             days=SOFT_DELETE_RETENTION_DAYS
         )
         expired = [
-            rid for rid, r in self._records.items()
+            rid
+            for rid, r in self._records.items()
             if r.deleted_at is not None and r.deleted_at < cutoff
         ]
         for rid in expired:
             del self._records[rid]
+            self._history.pop(rid, None)
         return len(expired)

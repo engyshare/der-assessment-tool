@@ -1,0 +1,122 @@
+:root {
+  color: #172026;
+  background: #f7f9fb;
+  font-family: "Segoe UI", "Apple SD Gothic Neo", system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -3rem;
+}
+
+.skip-link:focus {
+  top: 1rem;
+}
+
+.topbar {
+  align-items: center;
+  background: #ffffff;
+  border-bottom: 1px solid #d8dee4;
+  display: flex;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+}
+
+.topbar a {
+  color: #064f7a;
+  margin-left: 1rem;
+}
+
+.band {
+  border-bottom: 1px solid #d8dee4;
+  padding: 1.5rem;
+}
+
+.steps,
+.impact-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.field-grid,
+.cards,
+.visual-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
+.field label,
+.card h3 {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 0.4rem;
+}
+
+.control {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+}
+
+input[type="number"] {
+  border: 1px solid #8c9aa8;
+  border-radius: 4px;
+  font: inherit;
+  min-height: 2.25rem;
+  padding: 0 0.5rem;
+  width: 9rem;
+}
+
+.unit {
+  color: #34495e;
+  font-weight: 700;
+  min-width: 3rem;
+}
+
+.tip {
+  border: 1px solid #6a7885;
+  border-radius: 50%;
+  height: 1.75rem;
+  width: 1.75rem;
+}
+
+.card,
+.assumptions article,
+.error-message,
+#regulations article {
+  background: #ffffff;
+  border: 1px solid #d8dee4;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.assumption-badge {
+  background: #ffd84d;
+  border: 1px solid #8a6d00;
+  border-radius: 999px;
+  color: #1f1a00;
+  display: inline-block;
+  font-weight: 800;
+  margin-right: 0.5rem;
+  padding: 0.2rem 0.55rem;
+}
+
+.error-message {
+  border-left: 4px solid #b42318;
+  display: grid;
+  gap: 0.25rem;
+}
+
+button:focus,
+a:focus,
+input:focus {
+  outline: 3px solid #0b6fa4;
+  outline-offset: 2px;
+}
+

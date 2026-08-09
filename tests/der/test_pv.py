@@ -347,7 +347,7 @@ def test_rc_all_c5_zero_when_lifetime_exhausted() -> None:
 
 # ── 운전 방법 (FR-105) ───────────────────────────────────────────────
 
-@pytest.mark.req("FR-105-AC1")
+@pytest.mark.req("FR-105-AC1", "FR-105-AC2")
 def test_pv_declares_operating_modes() -> None:
     """자원 클래스가 운전 방법 목록을 **선언**한다 — 엔진이 들고 있으면 신규
     운전 방법 추가가 코어 수정이 된다 (FR-105-AC1·AC2 · NFR-201).
@@ -396,7 +396,7 @@ def test_grid_limit_violation_is_an_error_outside_curtailment_mode() -> None:
         pv.dispatch(ctx)
 
 
-@pytest.mark.req("FR-105-AC1")
+@pytest.mark.req("FR-105-AC1", "FR-105-AC3")
 def test_same_type_instances_can_hold_different_modes() -> None:
     """같은 유형의 두 인스턴스가 서로 다른 운전 방법을 갖는다 (FR-105-AC3)."""
     a = make_pv_1kw(name="옥상PV", operating_mode=OperatingMode.SELF_CONSUMPTION_FIRST)

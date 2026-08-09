@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>분산특구 경제성 평가</title>
+  <link rel="stylesheet" href="/static/wp12.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">본문으로 이동</a>
+  <header class="topbar">
+    <h1>분산특구 경제성 평가</h1>
+    <nav aria-label="주요 화면">
+      <a href="#wizard">마법사</a>
+      <a href="#advanced">고급 모드</a>
+      <a href="#results">결과</a>
+      <a href="#regulations">제도 관리</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section id="wizard" class="band" aria-labelledby="wizard-title">
+      <h2 id="wizard-title">마법사</h2>
+      <ol class="steps">
+        <li>시나리오 선택</li>
+        <li>전제 확인</li>
+        <li>실행</li>
+        <li>내보내기</li>
+      </ol>
+      <button type="button">다음 단계</button>
+    </section>
+
+    <section id="advanced" class="band" aria-labelledby="advanced-title">
+      <h2 id="advanced-title">고급 모드</h2>
+      <form aria-label="전체 파라미터">
+        <div class="field-grid">
+          {% for item in inputs %}
+          <div class="field">
+            <label for="{{ item.id }}">{{ item.label }}</label>
+            <div class="control">
+              <input
+                id="{{ item.id }}"
+                name="{{ item.id }}"
+                type="number"
+                value="{{ item.value }}"
+                step="{{ item.step }}"
+                aria-describedby="{{ item.id }}-unit {{ item.id }}-tip"
+              >
+              <span id="{{ item.id }}-unit" class="unit" data-unit-for="{{ item.id }}">
+                {{ item.unit }}
+              </span>
+              <button
+                type="button"
+                class="tip"
+                aria-label="{{ item.label }} 도움말: 단위 {{ item.unit }}, {{ item.help }} 기본값 출처 {{ item.source }}"
+                title="단위 {{ item.unit }} · {{ item.help }} · 기본값 출처 {{ item.source }}"
+                id="{{ item.id }}-tip"
+              >?</button>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </form>
+    </section>
+
+    <section id="results" class="band results" aria-labelledby="results-title">
+      <h2 id="results-title">결과 대시보드</h2>
+
+      <section id="impact-ranking" aria-labelledby="impact-title">
+        <h3 id="impact-title">영향도 순위</h3>
+        <ol class="impact-list">
+          {% for item in influences %}
+          <li data-rank="{{ item.rank }}">
+            <strong>{{ item.name }}</strong>
+            <span>{{ "{:,}".format(item.impact) }}원</span>
+          </li>
+          {% endfor %}
+        </ol>
+      </section>
+
+      <section class="cards" aria-label="무지원 기준선 대비 증분">
+        {% for card in result_cards %}
+        <article
+          class="card"
+          data-metric="{{ card.metric }}"
+          data-supported="{{ card.supported }}"
+          data-baseline="{{ card.baseline }}"
+          data-delta="{{ card.delta }}"
+        >
+          <h3>{{ card.metric }}</h3>
+          <dl>
+            <dt>지원 케이스</dt><dd>{{ card.supported }}{{ card.unit }}</dd>
+            <dt>무지원 기준선</dt><dd>{{ card.baseline }}{{ card.unit }}</dd>
+            <dt>증분</dt><dd>{{ card.delta }}{{ card.unit }}</dd>
+          </dl>
+        </article>
+        {% endfor %}
+      </section>
+
+      <section class="assumptions" aria-label="가정 영향도">
+        <h3>가정 영향도</h3>
+        {% for item in assumptions %}
+        <article>
+          <span class="assumption-badge" aria-label="가정 값">! 가정</span>
+          <strong>{{ item.label }}</strong>
+          <span>{{ item.value }}</span>
+          <span>영향도 {{ item.impact }}</span>
+        </article>
+        {% endfor %}
+      </section>
+
+      <section class="visual-grid" aria-label="결과 시각화">
+        <h3>디스패치 스택</h3>
+        <h3>월별 수지</h3>
+        <h3>누적 현금흐름</h3>
+        <h3>토네이도</h3>
+        <h3>히트맵</h3>
+        <h3>모델 비교</h3>
+      </section>
+
+      <section id="result-input-appendix" aria-labelledby="appendix-title">
+        <h3 id="appendix-title">입력값 부록</h3>
+        <dl>
+          {% for item in inputs %}
+          <dt>{{ item.label }}</dt>
+          <dd>{{ item.value }}{{ item.unit }}</dd>
+          {% endfor %}
+        </dl>
+      </section>
+    </section>
+
+    <section id="validation" class="band" aria-labelledby="validation-title">
+      <h2 id="validation-title">입력 오류</h2>
+      {% for error in errors %}
+      <article class="error-message" role="alert">
+        <strong>필드: {{ error.field }}</strong>
+        <span>사유: {{ error.reason }}</span>
+        <span>조치: {{ error.action }}</span>
+      </article>
+      {% endfor %}
+    </section>
+
+    <section id="regulations" class="band" aria-labelledby="regulations-title">
+      <h2 id="regulations-title">제도 관리</h2>
+      {% for item in regulation_versions %}
+      <article>
+        <strong>{{ item.name }}</strong>
+        <span>버전 {{ item.version }}</span>
+        <span>diff: {{ item.diff }}</span>
+      </article>
+      {% endfor %}
+    </section>
+  </main>
+</body>
+</html>

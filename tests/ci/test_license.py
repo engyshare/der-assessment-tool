@@ -3,6 +3,22 @@ from pathlib import Path
 import pytest
 
 
+@pytest.mark.req("FR-1101-AC1")
+def test_public_repository_includes_basic_contribution_documents() -> None:
+    root_dir = Path(__file__).parent.parent.parent
+    required = [
+        "README.md",
+        "CONTRIBUTING.md",
+        ".github/ISSUE_TEMPLATE/bug_report.md",
+        ".github/pull_request_template.md",
+        "docs/domain-rules.md",
+    ]
+
+    missing = [name for name in required if not (root_dir / name).is_file()]
+
+    assert missing == []
+
+
 @pytest.mark.req("SC-6")
 def test_license_and_der_vet_attribution():
     """
