@@ -21,6 +21,9 @@ class Model:
     def __init__(self, config: ModelConfig, provider: AssumptionProvider) -> None:
         self.config = config
         self.name = config.name
+        # 어느 전제 위에서 지어졌는지를 모델이 스스로 안다. 이것이 없으면
+        # 비교 실행기(FR-202)가 「같은 전제인가」를 밖에서 짐작해야 한다.
+        self.provider = provider
 
         self.resources = self._build_resources(config.resources, provider)
 

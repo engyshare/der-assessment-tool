@@ -1,6 +1,7 @@
 import os
 from collections.abc import Mapping
 from datetime import date
+from types import MappingProxyType
 from typing import Any
 
 import yaml  # type: ignore
@@ -127,3 +128,11 @@ class AssumptionSet(AssumptionProvider):
     def get_overrides(self) -> Mapping[str, Any]:
         """적용된 오버라이드 내역 반환."""
         return self._overrides
+
+    def items(self) -> Mapping[str, AssumptionItem]:
+        """항목 전체를 읽기 전용으로 내놓는다.
+
+        가변 dict 를 그대로 내주면 밖에서 대장을 고칠 수 있고, 그것은
+        NFR-205 가 막으려는 전역 가변 상태와 같은 결과가 된다.
+        """
+        return MappingProxyType(dict(self._items))

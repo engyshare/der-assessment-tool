@@ -12,9 +12,9 @@
 | 요구사항 | 105 |
 | 그중 Must-have | 79 |
 | 수용기준 총계 | 307 |
-| 자동 검증 매핑 | 275 |
+| 자동 검증 매핑 | 278 |
 | 수동 검증 매핑 | 3 |
-| **Must-have 미매핑** | **11** |
+| **Must-have 미매핑** | **8** |
 | 우선순위 미지정 요구사항 | 0 |
 | **Phase 미지정 요구사항** | **9** |
 
@@ -33,7 +33,7 @@
 > 감시하면서도 *언제까지* 지켜야 하는지는 말하지 못하는 상태입니다. Should-have만
 > 남았다면 R-1 정비 사항이며 게이트 판정에는 영향이 없습니다.
 
-> **미매핑 11건.** NFR-107은 미매핑 0건을 요구합니다.
+> **미매핑 8건.** NFR-107은 미매핑 0건을 요구합니다.
 >
 > 현재 저장소에 테스트가 없으므로 전건 미매핑인 것이 정상입니다. 이 표는
 > **Wave 0 시점의 작업 목록**으로 읽으십시오 — 각 행이 곧 작성해야 할 테스트
@@ -80,9 +80,9 @@
 |  |  | 1 | `FR-106-AC7` | CommonAsset이 없는 모델(단독주택 등)도 정상 동작한다 (기본값 없음) | 자동 | test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py |
 | `FR-201` | Must-have | 1 | `FR-201-AC1` | GUI에서 자원 추가/삭제/복제로 구성 가능하며, 구성 변경 시 엔진 코드 변경이 발생하지 않는다 | 자동 | test_model.py |
 |  |  | 1 | `FR-201-AC2` | 모델 정의 전체가 단일 JSON 문서로 export/import 된다 | 자동 | test_model.py |
-| `FR-202` | Must-have | 1 | `FR-202-AC1` | 하나의 AssumptionSet을 참조하는 여러 모델을 일괄 실행한다 | **미매핑** | — |
-|  |  | 1 | `FR-202-AC2` | 비교표에 모델별 NPV·IRR·회수기간·필요 지원율을 나란히 표시한다 | **미매핑** | — |
-|  |  | 1 | `FR-202-AC3` | 전제가 동일함이 시스템적으로 보장되며(동일 AssumptionSet ID 표시), 모델별로 다른 값이 사용된 항목은 별도 강조된다 | **미매핑** | — |
+| `FR-202` | Must-have | 1 | `FR-202-AC1` | 하나의 AssumptionSet을 참조하는 여러 모델을 일괄 실행한다 | 자동 | test_comparison.py, test_comparison.py, test_comparison.py |
+|  |  | 1 | `FR-202-AC2` | 비교표에 모델별 NPV·IRR·회수기간·필요 지원율을 나란히 표시한다 | 자동 | test_comparison.py, test_comparison.py, test_comparison.py |
+|  |  | 1 | `FR-202-AC3` | 전제가 동일함이 시스템적으로 보장되며(동일 AssumptionSet ID 표시), 모델별로 다른 값이 사용된 항목은 별도 강조된다 | 자동 | test_comparison.py, test_comparison.py, test_comparison.py |
 |  |  | 2 | `FR-202-AC4` | 모델 간 구성 차이(자원 유무·용량)를 diff 뷰로 제시한다 | **미매핑** | — |
 | `FR-203` | Should-have | - | `FR-203-AC1` | Site(가구/건물) N개를 Community(단지)로 묶을 수 있다 | **미매핑** | — |
 |  |  | - | `FR-203-AC2` | 가구 단위 경제성과 단지 통합 경제성을 모두 산출한다 | **미매핑** | — |
