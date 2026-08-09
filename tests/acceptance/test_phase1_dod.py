@@ -166,20 +166,41 @@ def test_dod4_empirical_validation_data_match() -> None:
 def test_dod5_influence_ranking_and_formula_representation() -> None:
     """17.5 DoD 5: 영향도 순 주요 인자 제시 및 산식 3중 표기 (SG-3).
 
-    손계산 기대값:
-    - 민감도 영향도: B(impact=5000) > A(10) > C(5). 입력 순서와 무관하게 B가 1위로 정렬.
-    - 산식 표기: '자연어', '수식', '대입값' 3중 표기가 포함됨.
-    """
-    variables = {
-        "A": {"base": 100, "impact": 10},
-        "B": {"base": 200, "impact": 5000},
-        "C": {"base": 300, "impact": 5},
-    }
-    ranked = rank_influences(variables)
-    assert ranked[0]["name"] == "B"
-    assert ranked[1]["name"] == "A"
-    assert ranked[2]["name"] == "C"
+    영향도 검증 (metric_fn = 항등 함수):
+      dominant: base=100, low=1, high=1000  → delta = |1000 - 1| = 999
+      minor:    base=100, low=95, high=105  → delta = |105 - 95| = 10
+      mid:      base=100, low=80, high=120  → delta = |120 - 80| = 40
 
+    FR-1001-AC1 · FR-1002-AC1 요구: 영향도가 큰 인자가 앞에 와야 한다.
+    따라서 dominant(999) > mid(40) > minor(10) 순이어야 한다.
+    """
+
+    def identity(x: float) -> float:
+        return x
+
+    variables = {
+        "minor": {"base": 100.0, "low": 95.0, "high": 105.0},
+        "dominant": {"base": 100.0, "low": 1.0, "high": 1000.0},
+        "mid": {"base": 100.0, "low": 80.0, "high": 120.0},
+    }
+    ranked = rank_influences(variables, metric_fn=identity)
+
+    # 영향도(delta) 내림차순 정렬 검증: 큰 것이 앞에 온다
+    deltas = [row["delta"] for row in ranked]
+    assert deltas == sorted(deltas, reverse=True), (
+        "영향도 내림차순이 아닙니다: "
+        f"{list(zip([r['name'] for r in ranked], deltas, strict=True))}"
+    )
+
+    # dominant 의 delta 가 minor 보다 크고, dominant 가 더 앞에 있어야 한다
+    dominant_idx = next(i for i, r in enumerate(ranked) if r["name"] == "dominant")
+    minor_idx = next(i for i, r in enumerate(ranked) if r["name"] == "minor")
+    assert dominant_idx < minor_idx, (
+        f"dominant(delta=999)가 minor(delta=10)보다 뒤에 있다: "
+        f"dominant={dominant_idx}, minor={minor_idx}"
+    )
+
+    # 산식 3중 표기 검증 (FR-1001-AC3)
     pdf_content = generate_pdf()
     assert "자연어" in pdf_content["formulas"]
     assert "수식" in pdf_content["formulas"]

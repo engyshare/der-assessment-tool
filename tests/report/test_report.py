@@ -10,26 +10,37 @@ from core.report.sensitivity import rank_influences
 @pytest.mark.req("FR-1001-AC1")
 def test_influence_ranking_no_input_order() -> None:
     """13.1, 13.2: 영향 인자는 입력 순이 아니라
-    민감도 계산에 의한 순위로 제시되어야 함 (FR-1001-AC1)
+    민감도 계산에 의한 순위로 제시되어야 함 (FR-1001-AC1).
+
+    영향폭 계산 (metric_fn = 항등 함수):
+      B: low=1, high=1000  → delta = |1000 - 1| = 999  (가장 큼)
+      A: low=80, high=120  → delta = |120 - 80|  = 40
+      C: low=240, high=360 → delta = |360 - 240| = 120
+    따라서 B(999) > C(120) > A(40). B 가 1위.
     """
-    # 임의로 한 인자를 매우 지배적으로 만듦
+
+    def identity(x: float) -> float:
+        return x
+
     variables = {
-        "A": {"base": 100, "impact": 10},
-        "B": {"base": 200, "impact": 5000},  # B가 지배적
-        "C": {"base": 300, "impact": 5}
+        "A": {"base": 100.0, "low": 80.0, "high": 120.0},
+        "B": {"base": 100.0, "low": 1.0, "high": 1000.0},   # B 가 지배적
+        "C": {"base": 300.0, "low": 240.0, "high": 360.0},
     }
-    ranked = rank_influences(variables)
-    assert ranked[0]["name"] == "B"  # B가 1위로 나와야 함
+    ranked = rank_influences(variables, metric_fn=identity)
+    assert ranked[0]["name"] == "B"  # B 가 1위로 나와야 함
 
 
 @pytest.mark.req("FR-1002-AC1", "FR-1002-AC2", "FR-1002-AC4")
 def test_sensitivity_thresholds() -> None:
-    """13.1: 임계값 산출 및 여유폭 표시 (FR-1002-AC1, AC2, AC4)"""
+    """13.1: 임계값 산출 및 여유폭 표시 (FR-1002-AC1, AC2, AC4).
+
+    rank_influences 결과에 threshold / margin_pct 필드가 반드시 있어야 한다.
+    """
     variables = {
-        "price": {"base": 100, "impact": 10},
+        "price": {"base": 100.0, "low": 50.0, "high": 150.0},
     }
     ranked = rank_influences(variables)
-    # mock logic for test
     assert "margin_pct" in ranked[0]
     assert "threshold" in ranked[0]
 

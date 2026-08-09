@@ -245,14 +245,14 @@
 |  |  | 1 | `FR-801-AC4` | 케이스 수를 실행 전에 표시하고, 임계치(기본 500) 초과 시 경고 후 확인을 요구한다 | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-801-AC5` | 결과를 단일 테이블(케이스 × 지표)로 집계하고 CSV/XLSX 내보내기 가능 | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-801-AC6` | 기본 탐색 변수 프리셋 — 2단계 제공 (v0.5 정정): 사용자가 백지에서 시작하지 않도록 기본 세트를 제시하되, 기본 선택은 빠른 탐색 으로 한다 | 자동 | test_casegrid.py |
-|  |  | 1 | `FR-801-AC7.quick` | 빠른 탐색 (기본값) — 결합 집합 1(설비단가·시공비) 3수준 × 할인율 3 × 전기요금 인상률 3 = 27 케이스, 예상 실행시간 81초(1 vCPU, NF… | 자동 | test_phase1_dod.py, test_casegrid.py |
+|  |  | 1 | `FR-801-AC7.quick` | 빠른 탐색 (기본값) — 결합 집합 1(설비단가·시공비) 3수준 × 할인율 3 × 전기요금 인상률 3 = 27 케이스, 예상 실행시간 81초(1 vCPU, NF… | 자동 | test_phase1_dod.py, test_17_2_dod2.py, test_casegrid.py |
 |  |  | 1 | `FR-801-AC7.full` | 전체 탐색 (명시 선택) — 아래 6변수 전건 = 729 케이스, 예상 실행시간 2,187초(36.5분). DV-10 경고 후 백그라운드 실행으로 전환된다 (N… | 자동 | test_casegrid.py |
 | `FR-802` | Must-have | 1 | `FR-802-AC1` | 여러 변수를 하나의 결합 집합으로 선언할 수 있다 | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-802-AC2` | 결합 집합 내 변수들은 동일 인덱스끼리만 조합된다. 예: {PV단가, ESS단가, 시공비}를 결합하고 각각 3수준을 주면 27개가 아닌 3개 케이스(저/저/저,… | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-802-AC3` | 결합 집합 내 값 목록의 길이가 다르면 명확한 오류로 거부한다 | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-802-AC4` | 결합 집합과 독립 변수를 혼용할 수 있다. 예: 결합 3케이스 × 독립 할인율 3수준 = 9케이스 | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-802-AC5` | 실행 전 생성될 케이스 목록을 미리보기로 제시한다 | 자동 | test_casegrid.py |
-| `FR-803` | Must-have | 1 | `FR-803-AC1` | 2변수 히트맵: 축 변수 2개 선택 → 지표 등고선. "목표 달성 영역"을 음영으로 구분 | 자동 | test_phase1_dod.py, test_casegrid.py |
+| `FR-803` | Must-have | 1 | `FR-803-AC1` | 2변수 히트맵: 축 변수 2개 선택 → 지표 등고선. "목표 달성 영역"을 음영으로 구분 | 자동 | test_phase1_dod.py, test_17_2_dod2.py, test_casegrid.py |
 |  |  | 1 | `FR-803-AC2` | 1변수 토네이도: 각 변수가 지표에 미치는 영향도 순위 | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-803-AC3` | 케이스 테이블에서 목표 달성/미달 케이스를 필터링 | 자동 | test_casegrid.py |
 | `FR-804` | Should-have | - | `FR-804-AC1` | 주요 변수별로 NPV=0이 되는 임계값을 표로 제시 | **미매핑** | — |
@@ -276,10 +276,10 @@
 |  |  | 1 | `FR-1001-AC3` | (다) 3중 표기 — 각 산식은 자연어 설명 + 수식 + 대입값으로 표기한다 | 자동 | test_phase1_dod.py, test_report.py |
 |  |  | 1 | `FR-1001-AC4` | (라) 출처 동반 — 산식에 등장하는 모든 입력값에 출처·기준연도·신뢰도가 함께 표시된다 | 자동 | test_report.py |
 |  |  | 1 | `FR-1001-AC5` | (마) 판정 기준 — 비개발자 검토자가 리포트만 보고 "이 회수기간이 왜 이 값인지"와 "어떤 가정이 바뀌면 결론이 달라지는지"를 설명할 수 있다. 측정: 심의… | 자동 | test_report.py |
-| `FR-1002` | Must-have | 1 | `FR-1002-AC1` | 영향도 순 정렬이 1순위: 리포트 첫 화면은 주 지표(할인 회수기간)에 대한 인자별 영향도 순위로 시작한다. 입력 순·분류 순 나열은 부록으로 보낸다 | 자동 | test_phase1_dod.py, test_report.py |
-|  |  | 1 | `FR-1002-AC2` | 영향도 산출 방식: 각 인자를 합리적 변동 범위(전제의 신뢰구간, 없으면 기본 ±20%)에서 변동시켜 주 지표가 움직인 폭으로 측정한다. 케이스 그리드를 실행하… | 자동 | test_report.py |
+| `FR-1002` | Must-have | 1 | `FR-1002-AC1` | 영향도 순 정렬이 1순위: 리포트 첫 화면은 주 지표(할인 회수기간)에 대한 인자별 영향도 순위로 시작한다. 입력 순·분류 순 나열은 부록으로 보낸다 | 자동 | test_phase1_dod.py, test_report.py, test_sensitivity_real.py |
+|  |  | 1 | `FR-1002-AC2` | 영향도 산출 방식: 각 인자를 합리적 변동 범위(전제의 신뢰구간, 없으면 기본 ±20%)에서 변동시켜 주 지표가 움직인 폭으로 측정한다. 케이스 그리드를 실행하… | 자동 | test_report.py, test_sensitivity_real.py |
 |  |  | 1 | `FR-1002-AC3` | 각 인자마다 함께 표시: 사용값 / 단위 / 기준연도 / 출처 / 신뢰도 / 최종확인일 / 지표 변동폭 / 결론이 뒤집히는 임계값 존재 여부 | 자동 | test_report.py |
-|  |  | 1 | `FR-1002-AC4` | 결론 전환 강조: 합리적 변동 범위 안에서 목표 달성 여부가 뒤바뀌는 인자는 최상단에 별도 강조한다. 이것이 정책 판단에서 가장 중요한 정보다 | 자동 | test_report.py |
+|  |  | 1 | `FR-1002-AC4` | 결론 전환 강조: 합리적 변동 범위 안에서 목표 달성 여부가 뒤바뀌는 인자는 최상단에 별도 강조한다. 이것이 정책 판단에서 가장 중요한 정보다 | 자동 | test_report.py, test_sensitivity_real.py, test_sensitivity_real.py |
 |  |  | 1 | `FR-1002-AC5` | 가정 값 결합 표시 (v0.5 어휘 정정): 신뢰도 가정 인자는 영향도와 함께 표시하여, "영향도 낮은 가정"과 "영향도 높은 가정"을 구분할 수 있게 한다. … | 자동 | test_report.py |
 |  |  | 1 | `FR-1002-AC6` | 전체 가정 목록: 영향도 순위와 별개로 전 가정 목록을 부록 시트로 제공한다 (재현·검증용) | 자동 | test_report.py |
 | `FR-1003` | Must-have | 1 | `FR-1003-AC1` | XLSX: 엑셀에서 검산 가능한 형태 — 입력·프로포마·시계열·결과 시트를 분리하고, 주요 계산은 값이 아닌 셀 수식으로 출력하여 기존 엑셀 검토 방식과 병행 … | 자동 | test_report.py |
@@ -301,7 +301,7 @@
 | `NFR-101` | Must-have | 1 | `NFR-101-M1` | 동일 시나리오 10회 실행 결과 해시 일치 | 자동 | test_rule_based.py, test_report.py |
 | `NFR-102` | Must-have | 1 | `NFR-102-M1` | 시뮬레이션 종료 시 자동 assertion, 위반 시 실행 실패 | 자동 | test_rule_based.py |
 | `NFR-103` | Must-have | 1 | `NFR-103-M1` | 20년 프로포마 합계와 항목별 합계 일치 검증 | 자동 | test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_smoke_wave0.py |
-| `NFR-104` | Must-have | 1 | `NFR-104-M1` | CI 회귀 테스트 | 자동 | test_17_7_dod7.py, test_performance_and_golden.py, test_performance_and_golden.py, test_regression_scenarios.py |
+| `NFR-104` | Must-have | 1 | `NFR-104-M1` | CI 회귀 테스트 | 자동 | test_17_7_dod7.py, test_performance_and_golden.py, test_performance_and_golden.py, test_performance_and_golden.py, test_regression_scenarios.py |
 | `NFR-105` | Must-have | 1 | `NFR-105-AC1` | 모든 계산 코드는 테스트 우선(TDD) 으로 작성되어야 한다. 구현보다 그 구현을 규정하는 실패 테스트가 먼저 존재해야 한다 | 자동 | test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py |
 | `NFR-106` | Must-have | 1 | `NFR-106-M1` | CI가 자원 레지스트리를 순회하여 각 자원에 대해 비용측 5종·편익측 전건 케이스의 존재와 통과를 확인한다. 케이스가 누락된 자원이 1건이라도 있으면 실패 | 자동 | test_17_8_dod8.py, test_phase1_measurements.py |
 | `NFR-107` | Must-have | 1 | `NFR-107-AC1.auto` | 자동 검증 — 매핑 형식은 @pytest.mark.req("FR-104-AC3"). CI는 테스트를 실행하고 통과를 확인한다 | 자동 | test_traceability_gate.py |
@@ -310,7 +310,7 @@
 |  |  | 1 | `NFR-107-AC3` | 수동 검증 항목은 수행 일자·수행자·결과를 docs/manual-checks.yaml에 기록한다. 기록이 없는 항목은 미수행으로 간주한다 | 자동 | test_traceability_gate.py |
 |  |  | 1 | `NFR-107-AC4` | 매핑표(docs/traceability.md)는 CI가 자동 생성하며 자동/수동을 구분 표시한다 | 자동 | test_traceability_gate.py |
 |  |  | 1 | `NFR-107-AC5` | 수동 검증 분류의 정본은 docs/manual-checks.yaml이다. spec은 어느 수용기준이 수동인지 열거하지 않는다. 대장의 전건에 대해 ⓐ crite… | 자동 | test_traceability_gate.py |
-|  |  | 1 | `NFR-107-M1` | CI가 spec 수용기준 목록과 마커·YAML을 대조하여 미매핑 0건 확인. 구현: scripts/gen_traceability.py (Wave 0 산출물 0.… | 자동 | test_17_9_dod9.py, test_traceability_gate.py |
+|  |  | 1 | `NFR-107-M1` | CI가 spec 수용기준 목록과 마커·YAML을 대조하여 미매핑 0건 확인. 구현: scripts/gen_traceability.py (Wave 0 산출물 0.… | 자동 | test_17_9_dod9.py, test_17_9_dod9.py, test_traceability_gate.py |
 | `NFR-201` | Must-have | 1 | `NFR-201-M1` | 신규 자원 추가 PR에서 core/engine/, core/cba/ diff 0줄 | 자동 | test_phase1_measurements.py |
 | `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | 자동 | test_ci_gates.py, test_assumption_provider.py, test_assumption_provider.py, test_der_contract.py, test_der_contract.py, test_tariff.py |
 | `NFR-203` | Should-have | 1 | `NFR-203-M1` | pytest-cov CI 게이트 | 자동 | test_ci_gates.py |
