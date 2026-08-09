@@ -4,7 +4,11 @@ from typing import Any
 import pytest
 
 from core.contracts.units import Money
-from core.incentive.calculator import build_capex_cashflows, calculate_loan_schedule
+from core.incentive.calculator import (
+    build_capex_cashflows,
+    build_prefunding_risk_cases,
+    calculate_loan_schedule,
+)
 from core.incentive.schemas import IncentiveScheme
 from core.incentive.solver import generate_iso_support_curve, solve_min_subsidy_rate
 
@@ -147,7 +151,12 @@ def test_build_capex_cashflows_prefunded_basics() -> None:
     남고 금액만 0**이다 — 행까지 사라지면 리포트에서 그 설비가 통째로
     보이지 않게 된다.
     """
-    scheme_prefunded = _scheme(subsidy_rate=1.0, is_prefunded=True, funding_program="대여사업")
+    scheme_prefunded = _scheme(
+        subsidy_rate=1.0,
+        is_prefunded=True,
+        funding_program="대여사업",
+        prefunded_status="확정 지원",
+    )
     cf_pre_owner = build_capex_cashflows(scheme_prefunded, 1000, "OWNER")
     assert len(cf_pre_owner) == 1
     assert cf_pre_owner[0].amounts[1] == Money(0)
@@ -166,7 +175,12 @@ def test_build_capex_cashflows_viewpoints() -> None:
     (Rationale: *"하나의 보조율로는 표현할 수 없다"*), 두 관점을 한 자리에서
     대조해 **갈린다는 사실 자체**를 단언한다.
     """
-    scheme_pre = _scheme(subsidy_rate=1.0, is_prefunded=True, funding_program="대여사업")
+    scheme_pre = _scheme(
+        subsidy_rate=1.0,
+        is_prefunded=True,
+        funding_program="대여사업",
+        prefunded_status="확정 지원",
+    )
 
     # OWNER 관점 — 자기부담 0
     cf_owner = build_capex_cashflows(scheme_pre, 1000, "OWNER")
@@ -182,24 +196,55 @@ def test_build_capex_cashflows_viewpoints() -> None:
     assert cf_owner[0].amounts[1] != cf_gov[0].amounts[1]
 
 
-@pytest.mark.req("FR-611-AC4", "FR-611-AC5", "FR-611-AC6")
-def test_build_capex_cashflows_misc() -> None:
-    """FR-611-AC4, AC5, AC6: 혼재된 설비 운영 및 표시 (stub)"""
-    pass
+@pytest.mark.req("FR-611-AC4")
+def test_build_prefunding_risk_cases_add_support_failure_variant_for_planned_support() -> None:
+    """FR-611-AC4: `지원 예정`은 미확정 리스크이므로 **병기 케이스**를 함께 만든다.
+
+    손계산 오라클:
+    - 본 케이스(지원 도착 가정): 사업자 초기투자비 = **0원**
+    - 병기 케이스(지원 무산): **해당 설비 제외** 이므로 CAPEX 행 자체가 **없다**
+
+    0원이 아니라 **행 없음**이어야 하는 이유:
+    0원 행을 남기면 설비는 있는 것으로 보이는데 비용만 0원이어서, AC4가 요구한
+    "해당 설비를 제외한 케이스"가 아니다.
+    """
+    scheme_planned = _scheme(
+        subsidy_rate=1.0,
+        is_prefunded=True,
+        funding_program="대여사업",
+        prefunded_status="지원 예정",
+    )
+
+    cases = build_prefunding_risk_cases(scheme_planned, 1000, "OWNER")
+
+    assert len(cases.current_rows) == 1
+    assert cases.current_rows[0].amounts[1] == Money(0)
+    assert cases.support_failure_rows == ()
+    assert cases.support_failure_note == "지원 무산 시 회수기간은 해당 설비 제외 케이스로 병기"
 
 
 @pytest.mark.req("FR-607-AC1", "FR-607-AC2", "FR-607-AC3")
 def test_build_capex_cashflows_baseline() -> None:
-    """FR-607: 무지원 기준선"""
+    """FR-607: 무지원 기준선 — 확정 기지원은 포함, 지원 예정은 제외.
+
+    손계산 오라클:
+    - 신규 설비: 본 사업 지원 0 → 사업자 CAPEX **-1,000원**
+    - 확정 기지원: 기준선 포함된 소여 → 사업자 현금흐름 **0원**
+    - 지원 예정: 기준선 제외 → **행 없음**
+    """
     scheme_new = _scheme(subsidy_rate=0.4)
     cf_base_new = build_capex_cashflows(scheme_new, 1000, "OWNER", is_baseline=True)
     assert cf_base_new[0].amounts[1] == Money(-1000)
 
     # 확정 지원은 기준선에 포함된다 (FR-607). 기준선이라고 해서 사업자가
     # 내지 않은 돈을 낸 것으로 되돌리지는 않으므로 자기부담은 여전히 0이다.
-    scheme_pre = _scheme(subsidy_rate=1.0, is_prefunded=True)
+    scheme_pre = _scheme(subsidy_rate=1.0, is_prefunded=True, prefunded_status="확정 지원")
     cf_base_pre = build_capex_cashflows(scheme_pre, 1000, "OWNER", is_baseline=True)
     assert cf_base_pre[0].amounts[1] == Money(0)
+
+    scheme_planned = _scheme(subsidy_rate=1.0, is_prefunded=True, prefunded_status="지원 예정")
+    cf_base_planned = build_capex_cashflows(scheme_planned, 1000, "OWNER", is_baseline=True)
+    assert cf_base_planned == []
 
 
 @pytest.mark.req("FR-608-AC1", "FR-608-AC2", "FR-608-AC4")

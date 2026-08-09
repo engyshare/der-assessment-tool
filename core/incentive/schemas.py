@@ -62,6 +62,21 @@ class IncentiveScheme(BaseModel):
             )
         return self
 
+    @model_validator(mode="after")
+    def _validate_prefunding_status(self) -> IncentiveScheme:
+        if self.is_prefunded:
+            if self.prefunded_status not in ("확정 지원", "지원 예정"):
+                raise ValueError(
+                    "기지원 설비는 prefunded_status 를 '확정 지원' 또는 '지원 예정'으로 "
+                    "명시해야 합니다"
+                )
+            return self
+        if self.prefunded_status is not None:
+            raise ValueError(
+                "prefunded_status 는 is_prefunded=True 인 설비에만 지정합니다"
+            )
+        return self
+
     def calculate_financing(self, total_capex: float | Decimal) -> dict[str, Money]:
         """자금조달 항등식 산출 (FR-604-AC4, AC7, AC8, AC9)"""
         capex_won = to_won(total_capex)

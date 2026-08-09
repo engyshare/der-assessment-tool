@@ -1,9 +1,25 @@
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, NamedTuple
 
 from core.contracts.schemas import CashFlowRow
 from core.contracts.units import Money, to_won
 from core.incentive.schemas import IncentiveScheme
+
+
+class PrefundingRiskCases(NamedTuple):
+    """FR-611-AC4: 지원 예정 설비의 현재/무산 병기 케이스."""
+
+    current_rows: tuple[CashFlowRow, ...]
+    support_failure_rows: tuple[CashFlowRow, ...] | None
+    support_failure_note: str | None
+
+
+def _is_planned_prefunding(scheme: IncentiveScheme | None) -> bool:
+    return bool(
+        scheme is not None
+        and scheme.is_prefunded
+        and scheme.prefunded_status == "지원 예정"
+    )
 
 
 def calculate_loan_schedule(
@@ -65,12 +81,18 @@ def build_capex_cashflows(
     if capex_won == Decimal(0):
         return []
 
-    # 무지원 기준선(Baseline)일 경우, 지원을 0으로 둔 가상 스킴 적용
-    # 기지원 확정(is_prefunded=True)인 경우는 기존 스킴 유지
-    if is_baseline and (scheme is None or not scheme.is_prefunded):
+    if scheme is None:
         scheme = IncentiveScheme.create_baseline()
 
-    if scheme is None:
+    # FR-607/FR-611-AC4: `지원 예정`은 기준선에서 제외된 병기 케이스다.
+    # 설비를 아예 빼는 것이므로 CAPEX 행도 없다. 0원 행을 남기면 "설비는 있는데
+    # 비용만 0"인 모델이 되어 AC4의 「해당 설비를 제외한 케이스」가 아니다.
+    if is_baseline and _is_planned_prefunding(scheme):
+        return []
+
+    # 무지원 기준선(Baseline)일 경우, 지원을 0으로 둔 가상 스킴 적용.
+    # 단 기지원 **확정** 설비는 기준선에 포함된 소여이므로 기존 스킴 유지.
+    if is_baseline and not scheme.is_prefunded:
         scheme = IncentiveScheme.create_baseline()
 
     # FR-611-AC2: 기지원 설비는 본 사업의 지원액 0원 처리
@@ -126,3 +148,29 @@ def build_capex_cashflows(
             # 일단 정부지출 관점의 보조금만 명시)
 
     return rows
+
+
+def build_prefunding_risk_cases(
+    scheme: IncentiveScheme | None,
+    capex: float | Decimal,
+    viewpoint: Literal["OWNER", "PARTICIPANT", "GOV"],
+) -> PrefundingRiskCases:
+    """FR-611-AC4: `지원 예정`인 설비는 **현재안 + 무산안**을 함께 꺼낸다.
+
+    현재안은 입력 스킴 그대로 계산한다. 무산안은 **해당 설비 제외**이므로
+    CAPEX 행이 빈 튜플이다. 회수기간 병기는 상위 계층이 이 두 케이스를 각각
+    평가해 붙인다.
+    """
+    current_rows = tuple(build_capex_cashflows(scheme, capex, viewpoint))
+    if not _is_planned_prefunding(scheme):
+        return PrefundingRiskCases(
+            current_rows=current_rows,
+            support_failure_rows=None,
+            support_failure_note=None,
+        )
+
+    return PrefundingRiskCases(
+        current_rows=current_rows,
+        support_failure_rows=(),
+        support_failure_note="지원 무산 시 회수기간은 해당 설비 제외 케이스로 병기",
+    )
