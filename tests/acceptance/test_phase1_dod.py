@@ -1,27 +1,41 @@
 """Phase 1 Acceptance DoD Tests (17.1 ~ 17.6) — WP-17A."""
 
 import time
+from datetime import date
 
 import pytest
 
+from core.assumption.provider import AssumptionSet
 from core.casegrid import (
     feasible_region,
     quick_preset_grid,
     run_cases,
 )
 from core.contracts.assumptions import AssumptionProvider, AssumptionValue
-from core.contracts.valuestream import ExclusionType
+from core.contracts.der import DispatchResult
+from core.contracts.units import Money, to_won
+from core.contracts.valuestream import ExclusionType, ValueStream
+from core.der.pv import PV
 from core.incentive.calculator import build_capex_cashflows
 from core.incentive.schemas import IncentiveScheme
 from core.incentive.solver import solve_min_subsidy_rate
 from core.model.templates import create_energy_independent_house
 from core.report.pdf import generate_pdf
 from core.report.sensitivity import rank_influences
-from core.valuestream import SelfConsumption, SurplusSale
+from core.valuestream import (
+    REC,
+    DirectTrade,
+    DistributedBenefit,
+    DistributedSubItems,
+    SelfConsumption,
+    SurplusSale,
+)
 from core.valuestream.exclusion_table import (
     DEFAULT_EXCLUSION_RULES,
     collect_exclusions,
+    rules_for_profile,
 )
+from core.valuestream.report import build_report
 
 
 class _AcceptanceMockAssumptions(AssumptionProvider):
@@ -50,7 +64,7 @@ class _AcceptanceMockAssumptions(AssumptionProvider):
                 applicable_scope="전국",
                 derivation_method="시무추정",
                 source="assumptions.yaml",
-                verified_at="2026-08-09",
+                verified_at=date.fromisoformat("2026-08-09"),
                 confidence="가정",
             )
         return None
@@ -119,10 +133,31 @@ def test_dod2_casegrid_27cases_performance_and_heatmap() -> None:
 def test_dod3_baseline_payback_and_goal_seek_subsidy() -> None:
     """17.3 DoD 3: 무지원 회수기간 + 목표 달성 최소 보조율 자동 산출 (G-3).
 
-    손계산 기대값:
-    - capex = 1000원, 무지원(is_baseline=True) 시 자부담 유출액 = -1000원.
-    - eval_func(rate) = -100 + 200 * rate 일 때, NPV >= 0 목표 최소 보조율은 0.5 (50.0%).
+    손계산 기대값 및 조항 검증:
+    1. 무지원(is_baseline=True) 현금흐름:
+       - capex.pv.rooftop = 1,600,000 원/kW (docs/assumptions.yaml)
+       - 3 kW PV 자원 본체 CAPEX = 1,600,000 × 3 = 4,800,000 원 (net capex)
+       - tax.vat_rate = 0.10 (docs/assumptions.yaml)
+       - 3 kW PV 부가세 = 4,800,000 × 0.10 = 480,000 원 (spec §13.2.2 C-1 본체와 분리 계상)
+       - 무지원 기준선 적용 시 초기 1년차 자부담 유출액 = -4,800,000원 (본체)
+       - 2~20년차 투자 현금흐름은 0원 (다년도 현금흐름 구조 검증)
+
+    2. 목표 달성 최소 보조율 역산 (solve_min_subsidy_rate):
+       - NPV 목표: eval_npv(rate) = -100 + 200 * rate = 0 => rate = 0.5 (50.0%)
+       - Payback 목표: eval_payback(rate) = 15.0 - 10.0 * rate = 10.0년 => rate = 0.5 (50.0%)
     """
+    assumptions = AssumptionSet.load_from_yaml("docs/assumptions.yaml")
+    pv_unit = assumptions.get("capex.pv.rooftop")
+    vat_item = assumptions.get("tax.vat_rate")
+
+    unit_capex_won = (
+        float(pv_unit.value) if pv_unit and pv_unit.value is not None else 1600000.0
+    )
+    vat_rate = (
+        float(vat_item.value) if vat_item and vat_item.value is not None else 0.10
+    )
+
+    # 1. 무지원 기준선 현금흐름 산출 및 다년도 검증
     scheme = IncentiveScheme(
         subsidy_rate=0.3,
         loan_rate=0.0,
@@ -134,18 +169,51 @@ def test_dod3_baseline_payback_and_goal_seek_subsidy() -> None:
         sponsor="국비",
     )
 
-    # 무지원 기준선 현금흐름 산출
-    cf_baseline = build_capex_cashflows(scheme, 1000, "OWNER", is_baseline=True)
-    assert len(cf_baseline) == 1
-    assert cf_baseline[0].amounts[1] == -1000
+    capacity_kw = 3.0
+    net_capex = unit_capex_won * capacity_kw
+    cf_baseline = build_capex_cashflows(scheme, net_capex, "OWNER", is_baseline=True)
 
-    # 목표 달성 최소 보조율 역산
+    assert len(cf_baseline) == 1
+    assert cf_baseline[0].amounts[1] == Money(-to_won(net_capex))
+
+    # 2. spec §13.2.2 C-1 CAPEX 본체 및 부가세 분리 계상 + 다년도(20년) 검증
+    pv = PV(
+        name="테스트PV",
+        capacity_kw=capacity_kw,
+        unit_capex_won_per_kw=unit_capex_won,
+        capacity_factor=0.15,
+        vat_rate=vat_rate,
+        operating_mode="자가소비 우선",
+    )
+
+    expected_net_capex = Money(to_won(net_capex))
+    expected_vat = Money(to_won(net_capex * vat_rate))
+
+    # 1년차: 본체와 부가세가 독립 분리 계상됨
+    assert pv.capex(year=1) == expected_net_capex
+    assert pv.capex_vat(year=1) == expected_vat
+
+    # 2~20년차: 다년도 수명 동안 초년도 이후 CAPEX 유출 0원
+    for yr in range(2, 21):
+        assert pv.capex(year=yr) == Money(0)
+        assert pv.capex_vat(year=yr) == Money(0)
+
+    # 3. 목표 달성 최소 보조율 역산 (NPV 및 회수기간)
     def eval_npv(rate: float) -> float:
         return -100.0 + (200.0 * rate)
 
-    res = solve_min_subsidy_rate(eval_npv, target_value=0.0, target_type="NPV")
-    assert res.success is True
-    assert abs(res.subsidy_rate - 0.5) <= 0.001
+    res_npv = solve_min_subsidy_rate(eval_npv, target_value=0.0, target_type="NPV")
+    assert res_npv.success is True
+    assert abs(res_npv.subsidy_rate - 0.5) <= 0.001
+
+    def eval_payback(rate: float) -> float:
+        return 15.0 - (10.0 * rate)
+
+    res_pb = solve_min_subsidy_rate(
+        eval_payback, target_value=10.0, target_type="PAYBACK"
+    )
+    assert res_pb.success is True
+    assert abs(res_pb.subsidy_rate - 0.5) <= 0.001
 
 
 @pytest.mark.skip(
@@ -207,18 +275,182 @@ def test_dod5_influence_ranking_and_formula_representation() -> None:
     assert "대입값" in pdf_content["formulas"]
 
 
+def _create_valuestream_for_tag(tag: str, assumptions: AssumptionSet) -> ValueStream:
+    """tags 로부터 ValueStream 객체를 정본 파라미터 기반으로 생성을 보조하는 헬퍼."""
+    if tag == "SelfConsumption":
+        bill_item = assumptions.get("load.household.annual")
+        tariff_item = assumptions.get("tariff.hv_single_contract.avg")
+        annual_kwh = (
+            float(bill_item.value)
+            if bill_item and bill_item.value is not None
+            else 3600.0
+        )
+        rate = (
+            float(tariff_item.value)
+            if tariff_item and tariff_item.value is not None
+            else 150.0
+        )
+        return SelfConsumption(
+            baseline_annual_bill_won=annual_kwh * rate,
+            new_annual_bill_won=annual_kwh * rate * 0.4,
+        )
+    elif tag == "SurplusSale":
+        tariff_item = assumptions.get("tariff.hv_single_contract.avg")
+        rate = (
+            float(tariff_item.value)
+            if tariff_item and tariff_item.value is not None
+            else 150.0
+        )
+        return SurplusSale(sale_price_won_per_kwh=rate)
+    elif tag == "DirectTrade":
+        tariff_item = assumptions.get("tariff.hv_single_contract.avg")
+        fee_item = assumptions.get("fee.direct_trade_support")
+        t_rate = (
+            float(tariff_item.value)
+            if tariff_item and tariff_item.value is not None
+            else 150.0
+        )
+        f_rate = (
+            float(fee_item.value)
+            if fee_item and fee_item.value is not None
+            else 5.0
+        )
+        return DirectTrade(
+            tariff_won_per_kwh=t_rate,
+            trade_price_won_per_kwh=t_rate * 0.8,
+            trade_volume_kwh=1000.0,
+            support_fee_won=f_rate,
+        )
+    elif tag == "DistributedBenefit":
+        return DistributedBenefit(
+            sub_items=DistributedSubItems(
+                transmission_avoidance_won=10000.0,
+                loss_reduction_won=5000.0,
+            )
+        )
+    elif tag == "REC":
+        return REC(weight=1.0, rec_price_won_per_unit=50000.0)
+    else:
+        raise ValueError(f"지원하지 않는 편익 태그입니다: {tag}")
+
+
+# 독립적인 기대 근거(Rationale) 테이블 — 테스트 코드 내 정의 (자기충족 검증 방지)
+EXPECTED_RATIONALES: dict[tuple[str, str], str] = {
+    ("SelfConsumption", "SurplusSale"): (
+        "같은 1 kWh 를 자가소비 절감과 잉여판매로 동시 계상할 수 없다"
+    ),
+    ("SurplusSale", "DirectTrade"): (
+        "같은 잉여량을 상계거래와 직접거래로 동시 정산할 수 없다"
+    ),
+    ("DistributedBenefit", "SelfConsumption"): (
+        "송배전 회피·손실 감소는 현행 망이용요금에 반영 — "
+        "미래 증설 회피 증분만 계상 (원칙 2-1)"
+    ),
+    ("REC", "SurplusSale"): (
+        "상계거래 참여 설비의 REC 발급 제한 (제도 한정)"
+    ),
+}
+
+
 @pytest.mark.req("FR-402-AC1", "FR-402-AC2.A", "FR-402-AC6")
 def test_dod6_benefit_breakdown_and_exclusion_enforcement() -> None:
     """17.6 DoD 6: 편익 계상 내역 표시 및 배타 위반 조합 감지.
 
-    손계산 기대값:
-    - 선언적 배타 규칙 테이블(DEFAULT_EXCLUSION_RULES)이 존재함.
-    - 동일 물리량 이중 계상(자가소비 + 잉여판매 동시 100% 적용 등 유형 A) 시 배타 규칙 감지됨.
+    손계산 기대값, 독립 근거 검증 및 양성/음성 쌍(Spec 13.2.1) 순회 검증:
+    - 선언적 배타 규칙 테이블(DEFAULT_EXCLUSION_RULES) 내 등록된 규칙 전건을 순회하며 검사함.
+    - [양성] 규칙 활성화 시 배타 수집(collect_exclusions)이 각 규칙에 해당하는
+      (benefit_a, benefit_b, exclusion_type) 및 비어있지 않은 독립 기대 근거를 정확히 감지함.
+    - [양성] 편익 리포트(build_report) 생성 시 유형별 분류:
+      - 유형 A/C/D 배타: '배타제외' 상태 분류
+      - 유형 B 배타 (인과 하류): benefit_a 가 '증분만' 상태로 분류
+    - [음성] 해당 규칙을 활성 목록에서 제외(inactive_rules)할 경우, 동일한 조합이
+      배타로 감지되지 않음을 확인하여 규칙의 실질적 판정 주도성을 입증함 (spec 13.2.1).
     """
     assert len(DEFAULT_EXCLUSION_RULES) > 0
 
-    sc = SelfConsumption(baseline_annual_bill_won=300, new_annual_bill_won=120)
-    ss = SurplusSale(sale_price_won_per_kwh=100)
-    exclusions = collect_exclusions([sc, ss])
-    assert len(exclusions) >= 1
-    assert any(ex[2] == ExclusionType.A for ex in exclusions)
+    assumptions = AssumptionSet.load_from_yaml("docs/assumptions.yaml")
+    dispatch = DispatchResult.zeros(24)
+
+    # 등록된 배타 규칙 전건 자동 검사 (양성/음성 쌍 및 독립 근거 단언)
+    for rule in DEFAULT_EXCLUSION_RULES:
+        stream_a = _create_valuestream_for_tag(rule.benefit_a, assumptions)
+        stream_b = _create_valuestream_for_tag(rule.benefit_b, assumptions)
+        streams = [stream_a, stream_b]
+
+        active_rules = rules_for_profile(
+            rule.applies_to_profile, DEFAULT_EXCLUSION_RULES
+        )
+
+        # -------------------------------------------------------------
+        # 1. 양성 검증 (Positive Case): 규칙 활성화 시 배타 감지
+        # -------------------------------------------------------------
+        exclusions = collect_exclusions(streams, active_rules)
+
+        matched = [
+            ex
+            for ex in exclusions
+            if ex[2] == rule.exclusion_type
+            and {ex[0], ex[1]} == {rule.benefit_a, rule.benefit_b}
+        ]
+        assert len(matched) == 1, (
+            f"양성 검증 실패 (배타 규칙 감지 안 됨): {rule.benefit_a} ↔ {rule.benefit_b} "
+            f"(유형 {rule.exclusion_type.value})"
+        )
+
+        # 독립 기대값 대조 & 비어있지 않음 단언 (자기충족 검증 제거)
+        detected_rationale = matched[0][3]
+        expected_rationale = EXPECTED_RATIONALES[(rule.benefit_a, rule.benefit_b)]
+        assert bool(detected_rationale and detected_rationale.strip()), (
+            f"배타 근거가 비어 있음: {rule.benefit_a} ↔ {rule.benefit_b}"
+        )
+        assert detected_rationale == expected_rationale, (
+            f"배타 근거 불일치 (독립 기대값과 다름): {rule.benefit_a} ↔ {rule.benefit_b}\n"
+            f"감지값: {detected_rationale!r}\n기대값: {expected_rationale!r}"
+        )
+
+        # build_report 리포트 분리 계상 내역 상태 단언 (FR-402-AC6)
+        report = build_report(
+            streams, dispatch, year=1, profile=rule.applies_to_profile
+        )
+        lines_by_tag = {line.tag: line for line in report.all_lines()}
+
+        assert rule.benefit_a in lines_by_tag
+        assert rule.benefit_b in lines_by_tag
+
+        if rule.exclusion_type == ExclusionType.B:
+            assert lines_by_tag[rule.benefit_a].state == "증분만"
+            assert lines_by_tag[rule.benefit_b].state in ("계상됨", "미화폐화0")
+        else:
+            assert lines_by_tag[rule.benefit_a].state == "배타제외"
+            assert lines_by_tag[rule.benefit_b].state == "배타제외"
+
+        # -------------------------------------------------------------
+        # 2. 음성 검증 (Negative Case): 해당 규칙 제외 시 배타 감지 안 됨 (Spec 13.2.1)
+        # -------------------------------------------------------------
+        inactive_rules = tuple(r for r in active_rules if r != rule)
+        neg_exclusions = collect_exclusions(streams, inactive_rules)
+        neg_matched = [
+            ex
+            for ex in neg_exclusions
+            if {ex[0], ex[1]} == {rule.benefit_a, rule.benefit_b}
+        ]
+        assert len(neg_matched) == 0, (
+            f"음성 검증 실패 (규칙 비활성화 시에도 배타가 감지됨): "
+            f"{rule.benefit_a} ↔ {rule.benefit_b}"
+        )
+
+    # 3. 추가 음성 검증: 배타 관계가 없는 편익 조합 (SelfConsumption ↔ REC)
+    non_ex_a = _create_valuestream_for_tag("SelfConsumption", assumptions)
+    non_ex_b = _create_valuestream_for_tag("REC", assumptions)
+    non_ex_streams = [non_ex_a, non_ex_b]
+
+    non_ex_exclusions = collect_exclusions(non_ex_streams, DEFAULT_EXCLUSION_RULES)
+    assert len(non_ex_exclusions) == 0, (
+        "음성 검증 실패: 배타 관계가 없는 편익 조합(SelfConsumption ↔ REC)이 배타로 감지됨"
+    )
+
+    non_ex_report = build_report(non_ex_streams, dispatch, year=1, profile=None)
+    non_ex_lines = {line.tag: line for line in non_ex_report.all_lines()}
+    assert non_ex_lines["SelfConsumption"].state in ("계상됨", "미화폐화0")
+    assert non_ex_lines["REC"].state in ("계상됨", "미화폐화0")
+
