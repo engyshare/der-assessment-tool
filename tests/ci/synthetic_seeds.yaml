@@ -1,0 +1,10 @@
+version: "0.1"
+assumptions:
+  - key: "capex.pv"
+    value: 1200000
+    value_unit: "원/kW"
+    confidence: "가정"
+  - key: "capex.ess"
+    value: 600000
+    value_unit: "원/kWh"
+    confidence: "가정"

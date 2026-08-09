@@ -168,3 +168,38 @@ def test_provider_contract_does_not_import_any_partition() -> None:
         if name.startswith(("core_", "app", "infra"))
     }
     assert not imported, f"구획 심볼이 계약에 들어왔습니다: {imported}"
+
+
+@pytest.mark.contract
+@pytest.mark.req("SC-7")
+def test_usage_terms_crosses_the_boundary_and_is_not_one_of_the_seven() -> None:
+    """이용조건이 **경계까지** 실린다 — 그리고 부기 7종이 아니다 (`SC-7`).
+
+    `SC-7` 은 *"외부 데이터의 **출처·이용조건** 보관"* 을 요구한다. 부기 7종의
+    `source` 가 출처를 담당하고 이 칸이 이용조건을 담당한다. **7종에 넣지
+    않은 이유**는 그 목록의 정본이 [[근거 표기 기준]] 이고 우리가 그것을 바꿀
+    수 없기 때문이다.
+
+    **R1 점검이 «마커는 있으나 이용조건은 아직 어디에도 없다» 를 잡았다** —
+    매핑표는 초록불인데 조항은 검증되지 않은 상태였다. 08-08에 §9 보안 조항
+    8건을 추적표에 넣은 이유가 바로 그 상태를 막으려던 것이고, 같은 형태가
+    **마커 안쪽에서** 재현됐다.
+
+    대장과 구획 내부 자료구조에만 두면 리포트가 이용조건을 표시할 수 없고,
+    **표시할 수 없는 보관은 「보관했다」의 증거가 되지 않는다.**
+    """
+    provider = _Stub(tax__vat_rate=0.10)
+    item = provider.require("tax.vat_rate")
+
+    # 자리가 있다. 그리고 기본값은 「제약 없음」이 아니라 **「확인하지 않음」**이다
+    assert hasattr(item, "usage_terms")
+    assert item.usage_terms is None
+
+    # 7종에는 들어가지 않는다 — 그 목록은 정본이 정하고 여기서 늘리지 않는다
+    seven = ("value_unit", "base_year", "applicable_scope", "derivation_method",
+             "source", "verified_at", "confidence")
+    assert "usage_terms" not in seven
+
+    # 경계 참조에는 싣지 않는다 — 참조는 «어디서 왔는가» 만 나른다.
+    # 이용조건 본문은 길고, 프로포마 한 행에 수십 건이 붙는다
+    assert not hasattr(item.as_ref(), "usage_terms")

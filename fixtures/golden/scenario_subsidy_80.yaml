@@ -1,0 +1,19 @@
+# 골든 시나리오: 에너지자립가구 보조 80%
+# 
+# 기준값 출처: 선행 실증 발표자료 (에너지자립주택) - §13.0.2 오라클 순위 3 (외부 공표 실적, 허용오차 ±15%)
+# 전제 대장 버전: docs/assumptions.yaml version 1
+# 
+# (주의: 현재 엔진 및 CBA 모듈이 Wave 2에 해당하여 실제 종단 산출 경로가 없음.
+# 본 파일은 확보 가능한 외부 공표 실적 기준값만 정의하며 나머지는 미완(TBD) 상태임.)
+
+scenario: "energy_independent_household"
+subsidy_rate: 0.80
+
+assumptions_version: 1
+oracle_rank: 3
+oracle_source: "선행 실증 발표자료 (에너지자립주택)"
+error_tolerance: "±15%"
+
+expected_values:
+  payback_period_years: null # TBD
+  npv_won: null # TBD

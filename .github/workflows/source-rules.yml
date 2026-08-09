@@ -240,3 +240,16 @@ jobs:
         if: steps.size.outputs.exit_code != '0'
         run: |
           echo "::warning::NFR-206 상한(500줄) 초과 파일이 있습니다. 작업 요약을 확인하십시오."
+
+  # ── 구획 배정 검사 (작업 2.11) ─────────────────────────────────────────
+  partition-assignment:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 구획 배정 검사
+        run: python scripts/check_partition_assignment.py
+      - name: 도구 감지 능력 확인 (음성 테스트)
+        run: python scripts/negtest_partition_assignment.py

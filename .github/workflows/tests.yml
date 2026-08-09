@@ -99,7 +99,10 @@ jobs:
           python-version: "3.11"
 
       - name: 의존성
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,persistence]"
+
+      - name: 의존성 취약점 스캔 (NFR-405)
+        run: pip-audit
 
       - name: ruff
         run: python -m ruff check core tests scripts
