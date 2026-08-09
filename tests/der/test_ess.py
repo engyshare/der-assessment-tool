@@ -13,6 +13,8 @@ import pytest
 from core.contracts.der import DER, DispatchContext
 from core.contracts.units import ENERGY_TOLERANCE_KWH, Money, to_won, won_sum
 from core.der.ess import ESS, ESSOperatingMode
+from core.incentive.calculator import build_capex_cashflows
+from core.incentive.schemas import IncentiveScheme
 from tests.contract.test_der_contract import DERContractTests
 
 
@@ -26,6 +28,24 @@ def _p1_ess(**overrides) -> ESS:
     }
     params.update(overrides)
     return ESS(**params)
+
+
+def _prefunded_scheme(program: str = "사용후배터리 실증 지원사업") -> IncentiveScheme:
+    return IncentiveScheme(
+        subsidy_rate=0.0,
+        subsidy_fixed=None,
+        subsidy_limit=None,
+        loan_rate=0.0,
+        loan_interest=0.0,
+        loan_grace_years=0,
+        loan_repayment_years=0,
+        loan_repayment_type="원리금균등",
+        tax_credit_rate=0.0,
+        sponsor="국비",
+        funding_program=program,
+        is_prefunded=True,
+        prefunded_status="확정 지원",
+    )
 
 
 class TestESSContract(DERContractTests):
@@ -265,6 +285,61 @@ def test_rc_ess_b2_peak_shaving_benefit() -> None:
     # 저감 kW 는 정격출력을 넘을 수 없다 — 넘기면 없는 출력으로 편익이 난다
     capped = _p1_ess(power_kw=1.0, capacity_kwh=100.0, cycle_life=20000)
     assert capped.reducible_peak_kw(year=1) == pytest.approx(1.0, rel=1e-9)
+
+
+@pytest.mark.req("FR-611-AC1")
+@pytest.mark.req("FR-611-AC2")
+@pytest.mark.req("FR-611-AC3.OWNER")
+@pytest.mark.req("FR-611-AC3.SOCIAL")
+@pytest.mark.req("FR-611-AC3.GOV")
+@pytest.mark.req("FR-611-AC5")
+@pytest.mark.req("FR-611-AC6")
+def test_rc_ess_b3_prefunded_ess_is_zero_to_owner_full_to_society_and_split_for_gov() -> None:
+    """`RC-ESS-B3` 오라클 (§13.2.3 ESS 표):
+
+        취득가         = 2,000,000 × 10 = **20,000,000원**
+        사업자 관점    = **0원**
+        사회 관점      = **20,000,000원**
+        정부 관점      = 본 사업 0원 + `타 사업 국비` 행 **20,000,000원**
+        고정 O&M       = **100,000원/년**
+        변동 O&M       = 2,920 × 3 = **8,760원/년**
+        교체비         = 4·7·10·13·16·19년차 × **4,000,000원**
+        잔존가치(20년) = 19년차 교체분 4,000,000 × 1/3 = **1,333,333원**
+
+    경계 짝: `타 사업 국비` 행에는 **재원 사업명**이 남아 있어야 한다. 빠지면
+    20,000,000원이 어느 사업에서 온 돈인지 리포트에서 사라진다.
+    """
+    ess = _p1_ess(
+        cycle_life=1000,
+        calendar_life=20,
+        capex_unit_won_per_kwh=2_000_000.0,
+        fixed_om_won_per_year=100_000.0,
+        variable_om_won_per_kwh=3.0,
+        replacement_unit_won_per_kwh=400_000.0,
+    )
+    scheme = _prefunded_scheme()
+    acquisition = ess.capex(year=1)
+
+    owner_rows = build_capex_cashflows(scheme, acquisition, "OWNER")
+    gov_rows = build_capex_cashflows(scheme, acquisition, "GOV")
+
+    assert acquisition == Money(20_000_000)
+    assert sum((row.total() for row in owner_rows), Money(0)) == Money(0)
+    assert len(gov_rows) == 1
+    assert gov_rows[0].tag == "capex.prefunded_subsidy"
+    assert gov_rows[0].total() == Money(-20_000_000)
+    assert scheme.funding_program in gov_rows[0].label
+    assert ess.fixed_om(year=1) == Money(100_000)
+    assert ess.variable_om(year=1) == Money(8_760)
+    assert ess.replacement_schedule(horizon=20) == {
+        4: Money(4_000_000),
+        7: Money(4_000_000),
+        10: Money(4_000_000),
+        13: Money(4_000_000),
+        16: Money(4_000_000),
+        19: Money(4_000_000),
+    }
+    assert ess.salvage_value(year=20) == Money(1_333_333)
 
 
 # ── RC-ESS-X1 SOC 하한 침범 ─────────────────────────────────────────

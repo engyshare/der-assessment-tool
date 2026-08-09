@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import math
+from decimal import Decimal
 
 import pytest
 
@@ -232,11 +233,18 @@ def test_rejects_growth_rate_out_of_range() -> None:
         make_thermal_load(annual_growth_rate=1.5)
 
 
-# ── 공통 비용 5종 (§13.2.2) ──────────────────────────────────────────
+# ── RC-ALL-C1 CAPEX ──────────────────────────────────────────────────
 
 @pytest.mark.req("FR-101-AC2")
-def test_capex_and_vat_are_separated() -> None:
-    """C-1: `단가 × 용량 + 부대비`, 부가세 별도."""
+def test_rc_all_c1_capex_and_vat_are_separated_for_thermal_load() -> None:
+    """`RC-ALL-C1` 산식 원문 (§13.2.2): `단가 × 용량 + 부대비`, 부가세는 별도 항목.
+
+        ThermalLoad 파라미터화: 1,000,000 × 5 + 300,000 = **5,300,000원**
+        부가세               : 5,300,000 × 10% = **530,000원**
+
+    경계 짝: 초기 투자와 세액은 **1년차에만** 있다. 이후 연도에 남으면 없는 설비에
+    다시 세금이 붙는 셈이다.
+    """
     tl = make_thermal_load(
         capacity_kw=5.0,
         unit_cost_won_per_kw=1_000_000.0,
@@ -245,60 +253,103 @@ def test_capex_and_vat_are_separated() -> None:
     )
     assert tl.capex(year=1) == Money(5_300_000)
     assert tl.capex_vat(year=1) == Money(530_000)
-    assert tl.capex(year=3) == Money(0)
+    assert tl.capex(year=2) == Money(0)
+    assert tl.capex_vat(year=2) == Money(0)
 
 
-@pytest.mark.req("FR-101-AC2")
-def test_zero_cost_thermal_load_returns_money_zero_for_all_five() -> None:
-    """설비비 0인 열부하도 다섯 메서드가 `Money(0)` 을 정상 반환한다."""
-    tl = make_thermal_load()
-    for name in ("capex", "capex_vat", "fixed_om", "variable_om", "salvage_value"):
-        value = getattr(tl, name)(year=1)
-        assert isinstance(value, Money)
-        assert value == Money(0)
-    assert tl.replacement_schedule(horizon=20) == {}
-
+# ── RC-ALL-C2 고정 O&M ───────────────────────────────────────────────
 
 @pytest.mark.req("FR-101-AC2")
-def test_fixed_om_20y_total_matches_geometric_series() -> None:
-    """C-2: A=100,000 i=0.02 n=20 → **2,429,737원**."""
+def test_rc_all_c2_fixed_om_20y_total_matches_geometric_series_for_thermal_load() -> None:
+    """`RC-ALL-C2` 산식 원문 (§13.2.2): 등비수열 합 `A × ((1+i)^n − 1) / i`.
+
+        ThermalLoad 파라미터화: A=100,000원, i=0.02, n=20
+        20년 누계 = 100,000 × ((1.02^20 − 1) / 0.02) = **2,429,737원**
+
+    경계 짝: A=0이면 물가계수만으로 비용이 생기면 안 된다.
+    """
     tl = make_thermal_load(fixed_om_won_per_year=OM_A, escalation_rate=OM_I)
     closed_form = OM_A * ((1.0 + OM_I) ** OM_N - 1.0) / OM_I
+
+    assert tl.fixed_om(year=1) == Money(100_000)
+    assert tl.fixed_om(year=2) == Money(102_000)
     assert to_won(closed_form) == OM_20Y_TOTAL
     assert won_sum(tl.fixed_om(year=y) for y in range(1, OM_N + 1)) == OM_20Y_TOTAL
+    assert make_thermal_load(escalation_rate=OM_I).fixed_om(year=7) == Money(0)
 
+
+# ── RC-ALL-C3 변동 O&M ───────────────────────────────────────────────
 
 @pytest.mark.req("FR-101-AC2")
-def test_variable_om_is_throughput_times_unit_price() -> None:
-    """C-3: 열부하의 처리량은 **연간 열 소비 kWh_th** 다."""
-    tl = make_thermal_load(variable_om_won_per_kwh=3.0)
-    assert tl.variable_om(year=1) == to_won(ANNUAL_HEAT_KWH * 3.0)
+def test_rc_all_c3_variable_om_uses_thermal_throughput_not_capacity() -> None:
+    """`RC-ALL-C3` 산식 원문 (§13.2.2): `처리량 × 단가`.
 
+        ThermalLoad 처리량 = 연간 열소비 **2,000 kWh_th**
+        1년차 O&M          = 2,000 × 3 = **6,000원**
+        2년차 O&M          = 2,000 × 1.015 × 3 × 1.02 = 6,211.8 → **6,212원**
+
+    경계 짝: 단가가 0이면 성장률·물가가 있어도 0원이어야 한다.
+    """
+    tl = make_thermal_load(
+        annual_growth_rate=0.015,
+        escalation_rate=0.02,
+        variable_om_won_per_kwh=3.0,
+    )
+    assert tl.variable_om(year=1) == Money(6_000)
+    assert tl.variable_om(year=2) == Money(6_212)
+    assert make_thermal_load(
+        annual_growth_rate=0.015,
+        escalation_rate=0.02,
+        variable_om_won_per_kwh=0.0,
+    ).variable_om(year=7) == Money(0)
+
+
+# ── RC-ALL-C4 교체비 ─────────────────────────────────────────────────
 
 @pytest.mark.req("FR-104-AC3")
 @pytest.mark.req("FR-104-AC4")
-def test_replacement_is_booked_at_the_year_after_life_is_reached() -> None:
-    """C-4: 수명 도달 다음 연도 초, 부속설비는 독립 스케줄."""
+def test_rc_all_c4_replacement_is_booked_the_year_after_life_and_not_before() -> None:
+    """`RC-ALL-C4` 산식 원문 (§13.2.2): 수명 도달 **다음 연도 초**에 계상한다.
+
+        순환펌프 12년 수명 400,000원 → **13년차 400,000원**
+        본체 5kW × 1,000,000원/kW   → **26년차 5,000,000원**
+
+    경계 짝: 12년차까지는 순환펌프 교체비가 아직 0원이어야 한다.
+    """
     tl = make_thermal_load(
         lifetime=25,
         capacity_kw=5.0,
         unit_cost_won_per_kw=1_000_000.0,
         subcomponents=[("순환펌프", 12, 400_000.0)],
     )
+    assert tl.replacement_schedule(horizon=12) == {}
     assert tl.replacement_schedule(horizon=20) == {13: Money(400_000)}
 
     longer = tl.replacement_schedule(horizon=30)
+    assert sorted(longer) == [13, 25, 26]
     assert longer[25] == Money(400_000)
     assert longer[26] == Money(5_000_000)
 
 
+# ── RC-ALL-C5 잔존가치 ───────────────────────────────────────────────
+
 @pytest.mark.req("FR-104-AC5")
-def test_salvage_value_is_prorated_by_remaining_life() -> None:
-    """C-5: `취득가 × 잔존수명/총수명`, 할인은 재무 계층이 한다."""
+def test_rc_all_c5_salvage_value_is_prorated_and_zero_at_eol() -> None:
+    """`RC-ALL-C5` 산식 원문 (§13.2.2): `취득가 × 잔존수명 / 총수명`을 최종연도에 계상 후 할인.
+
+        ThermalLoad 파라미터화: 1,000,000 × 5 = **5,000,000원**
+        20년 종료 시 잔존수명      = 25 − 20 = **5년**
+        명목 잔존가치             = 5,000,000 × 5/25 = **1,000,000원**
+        20년 할인(4.5%)          = 1,000,000 / 1.045^20 = **414,643원**
+
+    경계 짝: 수명을 다 쓴 25년차 잔존가치는 0원이다.
+    """
     tl = make_thermal_load(
         lifetime=25, capacity_kw=5.0, unit_cost_won_per_kw=1_000_000.0
     )
+
     assert tl.salvage_value(year=20) == Money(1_000_000)
+    assert to_won(Decimal("1000000") / Decimal("1.045") ** 20) == Money(414_643)
     assert tl.salvage_value(year=25) == Money(0)
 
 

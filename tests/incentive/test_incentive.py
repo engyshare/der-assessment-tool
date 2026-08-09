@@ -140,27 +140,46 @@ def test_calculate_loan_schedule_types() -> None:
 
 @pytest.mark.req("FR-611-AC1", "FR-611-AC2")
 def test_build_capex_cashflows_prefunded_basics() -> None:
-    """FR-611-AC1, AC2: 기지원 설비 기본 특성"""
+    """FR-611-AC1, AC2: 기지원 설비 기본 특성.
+
+    `AC2` 는 취득원가를 **0으로 만들지 않고 전액 계상**하라고 한다. 0이 되는
+    것은 관점별 현금흐름이지 취득원가가 아니므로, 사업자 관점에도 **행은
+    남고 금액만 0**이다 — 행까지 사라지면 리포트에서 그 설비가 통째로
+    보이지 않게 된다.
+    """
     scheme_prefunded = _scheme(subsidy_rate=1.0, is_prefunded=True, funding_program="대여사업")
     cf_pre_owner = build_capex_cashflows(scheme_prefunded, 1000, "OWNER")
     assert len(cf_pre_owner) == 1
-    assert cf_pre_owner[0].amounts[1] == Money(-1000)
+    assert cf_pre_owner[0].amounts[1] == Money(0)
 
 
 @pytest.mark.req("FR-611-AC3.OWNER", "FR-611-AC3.SOCIAL", "FR-611-AC3.GOV")
 def test_build_capex_cashflows_viewpoints() -> None:
-    """FR-611-AC3: 관점별 기지원 설비 계상"""
+    """FR-611-AC3: 관점별 기지원 설비 계상 — **세 지갑이 서로 다른 값을 본다.**
+
+    `AC3.OWNER` 는 *"사업자·주민 — 자기부담 0 (현금흐름 미발생). 근거: 실제
+    지출이 없음"* 이다. **이 테스트는 v0.13 이전까지 그 정반대인 전액 지출을
+    고정하고 있었고**, 조항 ID 에 매핑까지 돼 있어 매핑표에서는 초록불로
+    보였다. 미매핑보다 나쁜 상태였다.
+
+    같은 금액이 관점에 따라 0 / 전액으로 갈리는 것이 `FR-611` 의 요점이므로
+    (Rationale: *"하나의 보조율로는 표현할 수 없다"*), 두 관점을 한 자리에서
+    대조해 **갈린다는 사실 자체**를 단언한다.
+    """
     scheme_pre = _scheme(subsidy_rate=1.0, is_prefunded=True, funding_program="대여사업")
 
-    # OWNER 관점
+    # OWNER 관점 — 자기부담 0
     cf_owner = build_capex_cashflows(scheme_pre, 1000, "OWNER")
-    assert cf_owner[0].amounts[1] == Money(-1000)
+    assert cf_owner[0].amounts[1] == Money(0)
 
-    # GOV 관점
+    # GOV 관점 — 타 사업 국비로 전액, 재원 사업명 동반
     cf_gov = build_capex_cashflows(scheme_pre, 1000, "GOV")
     assert cf_gov[0].amounts[1] == Money(-1000)
     assert cf_gov[0].tag == "capex.prefunded_subsidy"
     assert "대여사업" in cf_gov[0].label
+
+    # 두 관점이 실제로 갈린다 — 같아지면 FR-611 이 무의미해진다
+    assert cf_owner[0].amounts[1] != cf_gov[0].amounts[1]
 
 
 @pytest.mark.req("FR-611-AC4", "FR-611-AC5", "FR-611-AC6")
@@ -176,9 +195,11 @@ def test_build_capex_cashflows_baseline() -> None:
     cf_base_new = build_capex_cashflows(scheme_new, 1000, "OWNER", is_baseline=True)
     assert cf_base_new[0].amounts[1] == Money(-1000)
 
+    # 확정 지원은 기준선에 포함된다 (FR-607). 기준선이라고 해서 사업자가
+    # 내지 않은 돈을 낸 것으로 되돌리지는 않으므로 자기부담은 여전히 0이다.
     scheme_pre = _scheme(subsidy_rate=1.0, is_prefunded=True)
     cf_base_pre = build_capex_cashflows(scheme_pre, 1000, "OWNER", is_baseline=True)
-    assert cf_base_pre[0].amounts[1] == Money(-1000)
+    assert cf_base_pre[0].amounts[1] == Money(0)
 
 
 @pytest.mark.req("FR-608-AC1", "FR-608-AC2", "FR-608-AC4")

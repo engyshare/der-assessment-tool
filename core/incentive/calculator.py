@@ -75,8 +75,18 @@ def build_capex_cashflows(
 
     # FR-611-AC2: 기지원 설비는 본 사업의 지원액 0원 처리
     if scheme.is_prefunded:
-        # 기지원 설비는 이미 재원이 확정되었으므로, 본 사업의 신규 보조금은 0
-        financing = {"subsidy": Money(0), "loan": Money(0), "equity": capex_won}
+        # 기지원 설비는 이미 재원이 확정되었으므로, 본 사업의 신규 보조금은 0.
+        #
+        # **자부담도 0이다** (FR-611-AC3.OWNER: *"사업자·주민 — 자기부담 0
+        # (현금흐름 미발생). 근거: 실제 지출이 없음"*). 여기에 `capex_won` 을
+        # 넣으면 타 사업이 낸 돈이 사업자 지갑에서 나간 것으로 잡혀, 조항이
+        # 막으려던 바로 그 왜곡이 생긴다 — FR-611 의 Rationale 은 *"보조율
+        # 100%로 우겨넣으면 본 사업의 필요 지원액에 타 사업 국비가 섞여 지원
+        # 수준 산출이 왜곡된다"* 고 적었고, 부호만 반대인 같은 오류다.
+        #
+        # 취득원가 자체는 0으로 만들지 않는다 (AC2 「전액 계상」). 0이 되는
+        # 것은 **관점별 현금흐름**이지 취득원가가 아니다.
+        financing = {"subsidy": Money(0), "loan": Money(0), "equity": Money(0)}
     else:
         financing = scheme.calculate_financing(capex_won)
 
