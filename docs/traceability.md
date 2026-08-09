@@ -208,8 +208,8 @@
 |  |  | 1 | `FR-611-AC3.SOCIAL` | 사회 — 전액 비용. 근거: 재원이 어디서 왔든 자원은 소모됨 (분산자원 경제성 평가 원칙 원칙 2-3 관점 분리) | 자동 | test_ess.py, test_incentive.py |
 |  |  | 1 | `FR-611-AC3.GOV` | 정부 — 본 사업 재정부담에서 제외하되 타 사업 국비 행으로 분리 표시. 근거: 본 사업의 필요 지원액과 섞이면 안 됨 | 자동 | test_ess.py, test_incentive.py |
 |  |  | 1 | `FR-611-AC4` | 지원 예정 상태는 미확정 리스크로 취급한다. 해당 설비를 제외한 케이스를 함께 산출하여 "지원 무산 시 회수기간"을 병기한다 | 자동 | test_incentive.py |
-|  |  | 1 | `FR-611-AC5` | 프로포마에 기지원 설비가 별도 행으로 표시되고, 재원 사업명이 함께 출력된다 | 자동 | test_ess.py, test_incentive.py |
-|  |  | 1 | `FR-611-AC6` | O&M·교체비·잔존가치는 기지원 여부와 무관하게 정상 계상한다. 무상으로 받은 설비도 유지비는 사업자가 낸다 | 자동 | test_ess.py, test_incentive.py |
+|  |  | 1 | `FR-611-AC5` | 프로포마에 기지원 설비가 별도 행으로 표시되고, 재원 사업명이 함께 출력된다 | 자동 | test_ess.py |
+|  |  | 1 | `FR-611-AC6` | O&M·교체비·잔존가치는 기지원 여부와 무관하게 정상 계상한다. 무상으로 받은 설비도 유지비는 사업자가 낸다 | 자동 | test_ess.py |
 | `FR-701` | Must-have | 1 | `FR-701-AC1` | 행: 자원별 자본비, 자원별 고정 O&M, 변동 O&M, 교체비, 융자 상환, 편익 항목별 수익, 세금, 잔존가치 | 자동 | test_proforma.py |
 |  |  | 1 | `FR-701-AC2` | 열: 건설연도 ~ 분석 종료연도 | 자동 | test_proforma.py |
 |  |  | 1 | `FR-701-AC3` | 항목별 상이한 에스컬레이션(물가상승률) 적용 가능 | 자동 | test_proforma.py, test_der_contract.py |
@@ -293,7 +293,7 @@
 |  |  | 1 | `FR-1101-AC4` | CI는 공개 저장소만으로 통과해야 한다. 비공개 수치에 의존하는 골든 회귀는 별도 잡으로 분리하고, 공개 CI에는 합성 전제 기반 회귀를 둔다 | 자동 | test_seed_fallback.py |
 |  |  | 1 | `FR-1101-AC5` | 비공개 데이터가 공개 저장소에 유입되지 않도록 커밋 전 스캔을 pre-commit·CI에 둔다 (SC-7) | 자동 | test_ci_gates.py, test_ci_gates.py, test_ci_gates.py |
 | `FR-1102` | Should-have | - | `FR-1102-AC1` | 카탈로그 값에 "정정 제안" 버튼 → 근거 URL·새 값 입력 → GitHub Issue 자동 생성 | **미매핑** | — |
-| `FR-1103` | Must-have | 1 | `FR-1103-AC1` | GitHub Actions에서 pytest, ruff, 골든 시나리오 3종 수치 회귀 통과 시에만 머지 | 자동 | test_17_7_dod7.py, test_phase1_measurements.py |
+| `FR-1103` | Must-have | 1 | `FR-1103-AC1` | GitHub Actions에서 pytest, ruff, 골든 시나리오 3종 수치 회귀 통과 시에만 머지 | 자동 | test_17_7_dod7.py, test_17_7_dod7.py, test_17_7_dod7.py, test_17_7_dod7.py, test_17_7_dod7.py, test_17_7_dod7.py, test_17_7_dod7.py, test_phase1_measurements.py |
 | `NFR-001` | Must-have | 1 | `NFR-001-M1` | 무료 티어(1 vCPU / 512MB) 벤치마크 10회 평균 | 자동 | test_casegrid.py, test_casegrid.py |
 | `NFR-002` | Must-have | 1 | `NFR-002-M1` | 27 / 100 / 500 케이스 3개 지점 종단 측정 | 자동 | test_casegrid.py, test_casegrid.py |
 | `NFR-003` | Should-have | 2 | `NFR-003-M1` | 초과 시 비동기 큐 전환 + 진행률 표시 | **미매핑** | — |
@@ -301,7 +301,7 @@
 | `NFR-101` | Must-have | 1 | `NFR-101-M1` | 동일 시나리오 10회 실행 결과 해시 일치 | 자동 | test_rule_based.py, test_report.py |
 | `NFR-102` | Must-have | 1 | `NFR-102-M1` | 시뮬레이션 종료 시 자동 assertion, 위반 시 실행 실패 | 자동 | test_rule_based.py |
 | `NFR-103` | Must-have | 1 | `NFR-103-M1` | 20년 프로포마 합계와 항목별 합계 일치 검증 | 자동 | test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_money_boundary.py, test_smoke_wave0.py |
-| `NFR-104` | Must-have | 1 | `NFR-104-M1` | CI 회귀 테스트 | 자동 | test_17_7_dod7.py, test_performance_and_golden.py, test_performance_and_golden.py, test_performance_and_golden.py, test_regression_scenarios.py |
+| `NFR-104` | Must-have | 1 | `NFR-104-M1` | CI 회귀 테스트 | 자동 | test_17_7_dod7.py, test_17_7_dod7.py, test_performance_and_golden.py, test_performance_and_golden.py, test_performance_and_golden.py, test_regression_scenarios.py |
 | `NFR-105` | Must-have | 1 | `NFR-105-AC1` | 모든 계산 코드는 테스트 우선(TDD) 으로 작성되어야 한다. 구현보다 그 구현을 규정하는 실패 테스트가 먼저 존재해야 한다 | 자동 | test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py, test_ci_gates.py |
 | `NFR-106` | Must-have | 1 | `NFR-106-M1` | CI가 자원 레지스트리를 순회하여 각 자원에 대해 비용측 5종·편익측 전건 케이스의 존재와 통과를 확인한다. 케이스가 누락된 자원이 1건이라도 있으면 실패 | 자동 | test_17_8_dod8.py, test_17_8_dod8.py, test_17_8_dod8.py, test_17_8_dod8.py, test_17_8_dod8.py, test_17_8_dod8.py, test_phase1_measurements.py |
 | `NFR-107` | Must-have | 1 | `NFR-107-AC1.auto` | 자동 검증 — 매핑 형식은 @pytest.mark.req("FR-104-AC3"). CI는 테스트를 실행하고 통과를 확인한다 | 자동 | test_traceability_gate.py |
