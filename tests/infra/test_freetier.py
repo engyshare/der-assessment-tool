@@ -28,6 +28,7 @@ from __future__ import annotations
 import ast
 import inspect
 import shutil
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -71,26 +72,78 @@ def test_tu2_decision_documented_in_freetier_module() -> None:
     assert "판정 근거" in docstring or "드라이버" in docstring
 
 
-def test_litestream_replica_class_exists_as_production_strategy() -> None:
-    """LitestreamReplica 클래스가 운영 전략으로 정의되어 있다."""
-    assert issubclass(LitestreamReplica, object)
-    # Protocol 만족 여부 — runtime_checkable 이므로 isinstance 가 작동한다.
+def test_litestream_replica_satisfies_the_replication_protocol() -> None:
+    """`LitestreamReplica` 가 운영 전략으로서 Protocol 을 만족한다.
+
+    `issubclass(X, object)` 로는 아무것도 판정할 수 없다 — 파이썬의 모든
+    클래스가 참이므로 어떤 클래스를 넣어도 통과한다. 판정하는 것은
+    `runtime_checkable` Protocol 소속뿐이고, 그것이 «코드 교체 없이 전략만
+    바뀐다»(모듈 독스트링 TU-2)를 성립시키는 유일한 근거다.
+    """
     instance = LitestreamReplica("s3://bucket/db")
     assert isinstance(instance, ReplicationStrategy)
+    # 대체 전략도 같은 Protocol 을 만족해야 교체가 성립한다.
+    assert isinstance(FilesystemReplica(Path(".")), ReplicationStrategy)
 
 
-def test_litestream_live_binary_execution_skipped() -> None:
-    """Litestream 실제 바이너리를 사용한 복제/복원은 환경 미설치로 수행 불가함을 명시.
+def test_litestream_without_its_binary_fails_loudly_instead_of_pretending(
+    tmp_path: Path,
+) -> None:
+    """바이너리가 없을 때 **조용히 성공한 척하지 않는다.**
 
-    로컬 및 CI 환경에 litestream 바이너리(shutil.which('litestream') is None)가
-    설치되어 있지 않아 실제 바이너리 구동 검사는 수행할 수 없으나,
-    동일한 Protocol을 따르는 FilesystemReplica로 전략 무결성을 대체 실증함.
+    이것은 바이너리 없이도 판정할 수 있다. 그리고 판정해야 한다 — 복제가
+    실패했는데 예외가 나지 않으면 앱은 복제된 줄 알고 진행하고, 디스크가
+    날아가는 순간 그것이 유실이 된다. NFR-504 가 막으려는 바로 그 경로다.
+
+    설치 여부에 의존하지 않도록 **없는 것이 확실한 이름**을 바이너리로 준다.
     """
-    if shutil.which("litestream") is None:
-        pytest.skip(
-            "litestream 바이너리가 로컬/CI 환경에 설치되어 있지 않아 "
-            "실제 바이너리 실행 검출을 건너땁니다."
-        )
+    absent = LitestreamReplica(
+        "s3://bucket/db", binary_path="litestream-binary-that-does-not-exist"
+    )
+    db_path = tmp_path / "db.sqlite3"
+    db_path.write_bytes(b"")
+
+    with pytest.raises(FileNotFoundError):
+        absent.push(db_path)
+    with pytest.raises(FileNotFoundError):
+        absent.pull(tmp_path / "restored.sqlite3")
+
+    # `exists()` 만은 예외를 삼키고 False 를 낸다 — 「첫 시작」으로 취급하기
+    # 위해서다. 그 자리는 삼켜도 되는 자리이므로 함께 못박아 둔다.
+    assert absent.exists() is False
+
+
+@pytest.mark.skipif(
+    shutil.which("litestream") is None,
+    reason=(
+        "litestream 바이너리가 없어 **실제 복제·복원 왕복은 판정할 수 없다**. "
+        "통과가 아니라 미판정이다 — FilesystemReplica 가 같은 Protocol 로 "
+        "전략 무결성을 대신 보이지만, 그것이 바이너리 경로를 증명하지는 않는다"
+    ),
+)
+def test_litestream_live_binary_round_trip_recovers_the_database(
+    tmp_path: Path,
+) -> None:
+    """바이너리가 있는 환경에서 **실제로** push → 소실 → pull 을 돈다.
+
+    오라클: 4 순위(항등식) — 복원한 DB 에서 읽은 행이 복제 전에 쓴 행과 같다.
+    """
+    db_path = tmp_path / "live.sqlite3"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE probe (id INTEGER PRIMARY KEY, tag TEXT)")
+        conn.execute("INSERT INTO probe (id, tag) VALUES (1, 'before-loss')")
+
+    replica = LitestreamReplica(f"file://{tmp_path / 'replica'}")
+    replica.push(db_path)
+    assert replica.exists() is True
+
+    db_path.unlink()  # 디스크 비영속 — 컨테이너가 날아갔다
+    assert not db_path.exists()
+
+    replica.pull(db_path)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute("SELECT id, tag FROM probe").fetchall()
+    assert rows == [(1, "before-loss")]
 
 
 # ── NFR-504-AC1 — 디스크 비영속 시뮬레이션, 데이터 유실 0 ──────────────
