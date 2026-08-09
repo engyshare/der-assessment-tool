@@ -80,9 +80,9 @@
 |  |  | 1 | `FR-106-AC7` | CommonAsset이 없는 모델(단독주택 등)도 정상 동작한다 (기본값 없음) | 자동 | test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py |
 | `FR-201` | Must-have | 1 | `FR-201-AC1` | GUI에서 자원 추가/삭제/복제로 구성 가능하며, 구성 변경 시 엔진 코드 변경이 발생하지 않는다 | 자동 | test_model.py |
 |  |  | 1 | `FR-201-AC2` | 모델 정의 전체가 단일 JSON 문서로 export/import 된다 | 자동 | test_model.py |
-| `FR-202` | Must-have | 2 | `FR-202-AC1` | 하나의 AssumptionSet을 참조하는 여러 모델을 일괄 실행한다 | **미매핑** | — |
-|  |  | 2 | `FR-202-AC2` | 비교표에 모델별 NPV·IRR·회수기간·필요 지원율을 나란히 표시한다 | **미매핑** | — |
-|  |  | 2 | `FR-202-AC3` | 전제가 동일함이 시스템적으로 보장되며(동일 AssumptionSet ID 표시), 모델별로 다른 값이 사용된 항목은 별도 강조된다 | **미매핑** | — |
+| `FR-202` | Must-have | 1 | `FR-202-AC1` | 하나의 AssumptionSet을 참조하는 여러 모델을 일괄 실행한다 | **미매핑** | — |
+|  |  | 1 | `FR-202-AC2` | 비교표에 모델별 NPV·IRR·회수기간·필요 지원율을 나란히 표시한다 | **미매핑** | — |
+|  |  | 1 | `FR-202-AC3` | 전제가 동일함이 시스템적으로 보장되며(동일 AssumptionSet ID 표시), 모델별로 다른 값이 사용된 항목은 별도 강조된다 | **미매핑** | — |
 |  |  | 2 | `FR-202-AC4` | 모델 간 구성 차이(자원 유무·용량)를 diff 뷰로 제시한다 | **미매핑** | — |
 | `FR-203` | Should-have | - | `FR-203-AC1` | Site(가구/건물) N개를 Community(단지)로 묶을 수 있다 | **미매핑** | — |
 |  |  | - | `FR-203-AC2` | 가구 단위 경제성과 단지 통합 경제성을 모두 산출한다 | **미매핑** | — |
