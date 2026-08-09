@@ -89,6 +89,7 @@ def test_dashboard_charts() -> None:
     assert "tornado" in charts
 
 
+@pytest.mark.manual
 @pytest.mark.req("FR-1001-AC5")
 def test_manual_check_mc1_stub() -> None:
     """13.8: 수동 검증 MC-1 명세 스텁 (FR-1001-AC5)

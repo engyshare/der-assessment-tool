@@ -149,7 +149,6 @@ def test_dod7_golden_scenario_metadata_indicates_source() -> None:
 
 # ── 판정할 수 없는 것: 무료 호스팅 외부 접속 ─────────────────────────────
 
-@pytest.mark.req("FR-1103-AC1")
 def test_dod7_free_hosting_external_access_cannot_be_judged() -> None:
     """DoD 7 — 무료 호스팅 외부 접속 검증은 배포 환경 없이 판정할 수 없다.
 

@@ -12,8 +12,8 @@
 | 요구사항 | 105 |
 | 그중 Must-have | 79 |
 | 수용기준 총계 | 307 |
-| 자동 검증 매핑 | 278 |
-| 수동 검증 매핑 | 3 |
+| 자동 검증 매핑 | 277 |
+| 수동 검증 매핑 | 4 |
 | **Must-have 미매핑** | **8** |
 | 우선순위 미지정 요구사항 | 0 |
 | **Phase 미지정 요구사항** | **9** |
@@ -275,7 +275,7 @@
 |  |  | 1 | `FR-1001-AC2` | (나) 산식 확인 — 임의 지표·프로포마 항목에서 그것을 만든 산식과 대입값을 그 자리에서 펼쳐볼 수 있다. 이동 횟수를 제약하지 않으며, "펼치면 보인다"가 … | 자동 | test_report.py |
 |  |  | 1 | `FR-1001-AC3` | (다) 3중 표기 — 각 산식은 자연어 설명 + 수식 + 대입값으로 표기한다 | 자동 | test_phase1_dod.py, test_report.py |
 |  |  | 1 | `FR-1001-AC4` | (라) 출처 동반 — 산식에 등장하는 모든 입력값에 출처·기준연도·신뢰도가 함께 표시된다 | 자동 | test_report.py |
-|  |  | 1 | `FR-1001-AC5` | (마) 판정 기준 — 비개발자 검토자가 리포트만 보고 "이 회수기간이 왜 이 값인지"와 "어떤 가정이 바뀌면 결론이 달라지는지"를 설명할 수 있다. 측정: 심의… | 자동 | test_report.py |
+|  |  | 1 | `FR-1001-AC5` | (마) 판정 기준 — 비개발자 검토자가 리포트만 보고 "이 회수기간이 왜 이 값인지"와 "어떤 가정이 바뀌면 결론이 달라지는지"를 설명할 수 있다. 측정: 심의… | 수동 | test_report.py (스텁) + MC-1 (미수행) |
 | `FR-1002` | Must-have | 1 | `FR-1002-AC1` | 영향도 순 정렬이 1순위: 리포트 첫 화면은 주 지표(할인 회수기간)에 대한 인자별 영향도 순위로 시작한다. 입력 순·분류 순 나열은 부록으로 보낸다 | 자동 | test_phase1_dod.py, test_report.py, test_sensitivity_real.py |
 |  |  | 1 | `FR-1002-AC2` | 영향도 산출 방식: 각 인자를 합리적 변동 범위(전제의 신뢰구간, 없으면 기본 ±20%)에서 변동시켜 주 지표가 움직인 폭으로 측정한다. 케이스 그리드를 실행하… | 자동 | test_report.py, test_sensitivity_real.py |
 |  |  | 1 | `FR-1002-AC3` | 각 인자마다 함께 표시: 사용값 / 단위 / 기준연도 / 출처 / 신뢰도 / 최종확인일 / 지표 변동폭 / 결론이 뒤집히는 임계값 존재 여부 | 자동 | test_report.py |
@@ -293,7 +293,7 @@
 |  |  | 1 | `FR-1101-AC4` | CI는 공개 저장소만으로 통과해야 한다. 비공개 수치에 의존하는 골든 회귀는 별도 잡으로 분리하고, 공개 CI에는 합성 전제 기반 회귀를 둔다 | 자동 | test_seed_fallback.py |
 |  |  | 1 | `FR-1101-AC5` | 비공개 데이터가 공개 저장소에 유입되지 않도록 커밋 전 스캔을 pre-commit·CI에 둔다 (SC-7) | 자동 | test_ci_gates.py, test_ci_gates.py, test_ci_gates.py |
 | `FR-1102` | Should-have | - | `FR-1102-AC1` | 카탈로그 값에 "정정 제안" 버튼 → 근거 URL·새 값 입력 → GitHub Issue 자동 생성 | **미매핑** | — |
-| `FR-1103` | Must-have | 1 | `FR-1103-AC1` | GitHub Actions에서 pytest, ruff, 골든 시나리오 3종 수치 회귀 통과 시에만 머지 | 자동 | test_17_7_dod7.py, test_17_7_dod7.py, test_17_7_dod7.py, test_17_7_dod7.py, test_17_7_dod7.py, test_17_7_dod7.py, test_17_7_dod7.py, test_phase1_measurements.py |
+| `FR-1103` | Must-have | 1 | `FR-1103-AC1` | GitHub Actions에서 pytest, ruff, 골든 시나리오 3종 수치 회귀 통과 시에만 머지 | 자동 | test_17_7_dod7.py, test_17_7_dod7.py, test_17_7_dod7.py, test_17_7_dod7.py, test_17_7_dod7.py, test_17_7_dod7.py, test_phase1_measurements.py |
 | `NFR-001` | Must-have | 1 | `NFR-001-M1` | 무료 티어(1 vCPU / 512MB) 벤치마크 10회 평균 | 자동 | test_casegrid.py, test_casegrid.py |
 | `NFR-002` | Must-have | 1 | `NFR-002-M1` | 27 / 100 / 500 케이스 3개 지점 종단 측정 | 자동 | test_casegrid.py, test_casegrid.py |
 | `NFR-003` | Should-have | 2 | `NFR-003-M1` | 초과 시 비동기 큐 전환 + 진행률 표시 | **미매핑** | — |
@@ -310,7 +310,7 @@
 |  |  | 1 | `NFR-107-AC3` | 수동 검증 항목은 수행 일자·수행자·결과를 docs/manual-checks.yaml에 기록한다. 기록이 없는 항목은 미수행으로 간주한다 | 자동 | test_traceability_gate.py |
 |  |  | 1 | `NFR-107-AC4` | 매핑표(docs/traceability.md)는 CI가 자동 생성하며 자동/수동을 구분 표시한다 | 자동 | test_traceability_gate.py |
 |  |  | 1 | `NFR-107-AC5` | 수동 검증 분류의 정본은 docs/manual-checks.yaml이다. spec은 어느 수용기준이 수동인지 열거하지 않는다. 대장의 전건에 대해 ⓐ crite… | 자동 | test_traceability_gate.py |
-|  |  | 1 | `NFR-107-M1` | CI가 spec 수용기준 목록과 마커·YAML을 대조하여 미매핑 0건 확인. 구현: scripts/gen_traceability.py (Wave 0 산출물 0.… | 자동 | test_17_9_dod9.py, test_17_9_dod9.py, test_traceability_gate.py |
+|  |  | 1 | `NFR-107-M1` | CI가 spec 수용기준 목록과 마커·YAML을 대조하여 미매핑 0건 확인. 구현: scripts/gen_traceability.py (Wave 0 산출물 0.… | 자동 | test_17_9_dod9.py, test_traceability_gate.py |
 | `NFR-201` | Must-have | 1 | `NFR-201-M1` | 신규 자원 추가 PR에서 core/engine/, core/cba/ diff 0줄 | 자동 | test_phase1_measurements.py |
 | `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | 자동 | test_ci_gates.py, test_assumption_provider.py, test_assumption_provider.py, test_der_contract.py, test_der_contract.py, test_tariff.py |
 | `NFR-203` | Should-have | 1 | `NFR-203-M1` | pytest-cov CI 게이트 | 자동 | test_ci_gates.py |

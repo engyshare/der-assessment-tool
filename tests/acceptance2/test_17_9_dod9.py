@@ -57,7 +57,6 @@ def _phase_1_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     return [row for row in rows if row["phase"] == "1"]
 
 
-@pytest.mark.req("NFR-107-M1")
 def test_dod9_traceability_status_report(capsys: pytest.CaptureFixture[str]) -> None:
     """Print the current Must-have unmapped status and its list."""
     rows = _read_musthave_unmapped_rows()
