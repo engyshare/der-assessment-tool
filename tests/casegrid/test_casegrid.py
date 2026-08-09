@@ -195,3 +195,23 @@ def test_feasible_region_filters_and_tornado_ranking_use_case_results() -> None:
     assert [result.case_index for result in missed] == [0, 2]
     assert ranking[0].variable_name == "tariff"
     assert compare_metric(50, 50, ">=") is True
+
+
+@pytest.mark.req("NFR-001-M1")
+def test_parallel_execution_determinism_across_10_runs() -> None:
+    """12.6 oracle: 10 repeated runs of parallel case execution yield identical ordered results."""
+    cases = tuple(Case(index=i, values={"x": i}) for i in range(27))
+
+    first_run_indexes = None
+    for _ in range(10):
+        results = run_cases(
+            cases,
+            lambda c: {"npv": float(c.index)},
+            parallel=True,
+            executor_factory=ThreadPoolExecutor,
+        )
+        ordered_indexes = tuple(r.case_index for r in results)
+        if first_run_indexes is None:
+            first_run_indexes = ordered_indexes
+        assert ordered_indexes == first_run_indexes
+        assert ordered_indexes == tuple(range(27))

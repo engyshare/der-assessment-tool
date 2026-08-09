@@ -47,6 +47,17 @@ class Case:
             raise ValueError("case index must be non-negative")
         object.__setattr__(self, "values", MappingProxyType(dict(self.values)))
 
+    def __getstate__(self) -> dict[str, object]:
+        return {"index": self.index, "values": dict(self.values)}
+
+    def __setstate__(self, state: dict[str, object]) -> None:
+        object.__setattr__(self, "index", state["index"])
+        val = state["values"]
+        if isinstance(val, Mapping):
+            object.__setattr__(self, "values", MappingProxyType(dict(val)))
+        else:
+            object.__setattr__(self, "values", MappingProxyType({}))
+
 
 @dataclass(frozen=True)
 class CaseResult:
@@ -57,6 +68,26 @@ class CaseResult:
     def __post_init__(self) -> None:
         object.__setattr__(self, "values", MappingProxyType(dict(self.values)))
         object.__setattr__(self, "metrics", MappingProxyType(dict(self.metrics)))
+
+    def __getstate__(self) -> dict[str, object]:
+        return {
+            "case_index": self.case_index,
+            "values": dict(self.values),
+            "metrics": dict(self.metrics),
+        }
+
+    def __setstate__(self, state: dict[str, object]) -> None:
+        object.__setattr__(self, "case_index", state["case_index"])
+        val = state["values"]
+        if isinstance(val, Mapping):
+            object.__setattr__(self, "values", MappingProxyType(dict(val)))
+        else:
+            object.__setattr__(self, "values", MappingProxyType({}))
+        met = state["metrics"]
+        if isinstance(met, Mapping):
+            object.__setattr__(self, "metrics", MappingProxyType(dict(met)))
+        else:
+            object.__setattr__(self, "metrics", MappingProxyType({}))
 
 
 @dataclass(frozen=True)

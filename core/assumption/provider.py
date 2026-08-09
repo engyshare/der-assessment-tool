@@ -85,6 +85,7 @@ class AssumptionSet(AssumptionProvider):
             source=item.source or "",
             verified_at=item.verified_at,
             confidence=item.confidence.value,
+            usage_terms=item.usage_terms,
             set_name=self._name,
             set_version=self._version,
         )

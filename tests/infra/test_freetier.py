@@ -25,6 +25,8 @@ ReplicationStrategy Protocol 을 만족하므로, **전략(데이터 무결성)*
 """
 from __future__ import annotations
 
+import ast
+import inspect
 import shutil
 from pathlib import Path
 
@@ -51,14 +53,17 @@ from infra.orm import (
 
 
 def test_tu2_decision_documented_in_freetier_module() -> None:
-    """TU-2 판정(Litestream vs Turso) 의 근거가 코드 주석에 남아 있다.
+    """TU-2 판정(Litestream vs Turso) 의 근거가 코드 독스트링에 남아 있다.
 
-    브리프 지시: "결정 근거를 코드 주석이나 테스트 독스트링에 남긴다."
-    결정만 있고 근거가 없으면 다음 사람이 같은 조사를 반복한다.
+    AST 파싱을 이용해 주석/코드의 영향을 받지 않고 모듈 독스트링 본문만
+    정확히 검사한다.
     """
     import infra.freetier as ft
 
-    docstring = ft.__doc__ or ""
+    source = inspect.getsource(ft)
+    tree = ast.parse(source)
+    docstring = ast.get_docstring(tree) or ""
+
     # 결정이 적혀 있는지 — Litestream 채택, Turso 아님.
     assert "Litestream" in docstring
     assert "Turso" in docstring
@@ -72,6 +77,20 @@ def test_litestream_replica_class_exists_as_production_strategy() -> None:
     # Protocol 만족 여부 — runtime_checkable 이므로 isinstance 가 작동한다.
     instance = LitestreamReplica("s3://bucket/db")
     assert isinstance(instance, ReplicationStrategy)
+
+
+def test_litestream_live_binary_execution_skipped() -> None:
+    """Litestream 실제 바이너리를 사용한 복제/복원은 환경 미설치로 수행 불가함을 명시.
+
+    로컬 및 CI 환경에 litestream 바이너리(shutil.which('litestream') is None)가
+    설치되어 있지 않아 실제 바이너리 구동 검사는 수행할 수 없으나,
+    동일한 Protocol을 따르는 FilesystemReplica로 전략 무결성을 대체 실증함.
+    """
+    if shutil.which("litestream") is None:
+        pytest.skip(
+            "litestream 바이너리가 로컬/CI 환경에 설치되어 있지 않아 "
+            "실제 바이너리 실행 검출을 건너땁니다."
+        )
 
 
 # ── NFR-504-AC1 — 디스크 비영속 시뮬레이션, 데이터 유실 0 ──────────────

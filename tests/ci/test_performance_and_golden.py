@@ -110,18 +110,48 @@ def _golden_regression_status(
 
 
 @pytest.mark.req("NFR-104-M1")
-def test_empty_golden_oracles_are_reported_as_skipped_not_passed() -> None:
-    """Fixture oracle: current golden files have null baselines and must not pass silently."""
-    paths = sorted(GOLDEN_DIR.glob("scenario_*.yaml"))
-    checked, skipped = _golden_regression_status(paths, actual_by_scenario={})
+def test_empty_golden_oracles_are_reported_as_skipped_not_passed(
+    tmp_path: Path,
+) -> None:
+    """기준값이 비면 **건너뛴다고 말한다** — 조용히 통과하지 않는다.
 
-    assert len(paths) == 3
+    오라클: 손으로 만든 픽스처. 값이 `null` 인 파일 하나를 두고 그것이
+    `skipped` 목록에 «이유와 함께» 나타나는지 본다.
+
+    **저장소의 실제 골든 파일을 쓰지 않는다.** 초판은 `fixtures/golden/` 의
+    세 파일이 «전부 null» 인 상태를 그대로 단언했고, 기준값이 채워지자
+    깨졌다 — 검사가 조항이 아니라 **저장소의 한때 상태**를 고정하고 있었던
+    것이다. 그 상태는 정상적으로 변한다. 조항이 요구하는 것은 «비면 건너뛴다»
+    이지 «지금 비어 있다» 가 아니다.
+    """
+    empty = tmp_path / "scenario_empty.yaml"
+    empty.write_text(
+        "\n".join(["scenario: empty", "expected_values:", "  npv_won: null", ""]),
+        encoding="utf-8")
+
+    checked, skipped = _golden_regression_status([empty], actual_by_scenario={})
+
     assert checked == []
-    assert skipped == [
-        "scenario_subsidy_20.yaml: expected_values are all null",
-        "scenario_subsidy_80.yaml: expected_values are all null",
-        "scenario_unsubsidized.yaml: expected_values are all null",
-    ]
+    assert len(skipped) == 1
+    # **건너뛴 이유가 남아야 한다.** 이유 없는 skip 은 「검사가 통과했다」와
+    # 「검사가 돌지 않았다」를 구별해 주지 못한다 (§13.0.1 ④).
+    assert "scenario_empty.yaml" in skipped[0]
+    assert skipped[0] != "scenario_empty.yaml"
+
+
+@pytest.mark.req("NFR-104-M1")
+def test_repo_golden_files_are_all_readable_and_declare_provenance() -> None:
+    """저장소의 골든 3종이 **읽히고 출처를 밝히는가.**
+
+    기준값이 있든 없든 이것은 성립해야 한다. 값 자체를 단언하지 않는 이유는
+    위와 같다 — 값은 대장 판이 바뀌면 재산출되며, 그때 이 검사가 깨지면
+    **재산출을 막는 압력**이 된다.
+    """
+    paths = sorted(GOLDEN_DIR.glob("scenario_*.yaml"))
+    assert len(paths) == 3, f"골든 시나리오는 3종이다: {[p.name for p in paths]}"
+    for p in paths:
+        text = p.read_text(encoding="utf-8")
+        assert "expected_values" in text, f"{p.name}: 기준값 자리가 없습니다"
 
 
 @pytest.mark.req("NFR-104-M1")
