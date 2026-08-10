@@ -94,7 +94,10 @@ def build_report(
         line = BenefitLine(
             tag=type(s).tag,
             name=s.name,
-            payer=s.payer,
+            # **`s.payer` 가 아니다** (R16). 계약구조에 따라 주체가 갈리는
+            # 편익은 클래스 기본값이 아니라 구조에 선언된 주체로 계상돼야
+            # 하고, 관점별 귀속(FR-704)이 이 값을 그대로 쓴다
+            payer=s.effective_payer,
             annual_value=s.annual_value(dispatch, year=year),
             state="계상됨",
         )

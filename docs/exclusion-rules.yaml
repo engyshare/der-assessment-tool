@@ -1,0 +1,44 @@
+# 편익 배타 규칙 — spec FR-402-AC2.A~.D · FR-402-AC4
+#
+# **이 파일이 정본이다.** 코드에 같은 표를 다시 두지 않는다 — FR-402-AC4 가
+# 요구하는 «선언적 규칙 테이블» 이 그것이고, `if benefit_a == "REC" and ...`
+# 로 짜면 제도 개정이 코드 배포를 요구한다.
+#
+# R15 가 요금표(`FR-501-AC4`)에서 같은 판단을 했다. 그때의 검증 방식이
+# 여기에도 그대로 적용된다 — **로더가 있는지가 아니라, 같은 코드에 이 파일만
+# 바꿔 결과가 달라지는지**를 고정한다.
+#
+# 유형 (spec FR-402-AC2):
+#   A  동일 물리량 이중 판매        차단 100% (음성 검증)
+#   B  인과 하류가 상류에 이미 포함  오탐 0 (양성 검증)
+#   C  동일 효과의 이중 화폐화       오탐 0
+#   D  제도적 배타                   오탐 0
+#
+# `applies_to_profile` 을 비우면 «모든 규제 프로파일에 적용» 이다. 제도 한정
+# 규칙만 프로파일 이름을 둔다 (FR-504).
+
+version: 1
+
+rules:
+  - benefit_a: SelfConsumption
+    benefit_b: SurplusSale
+    type: A
+    rationale: 같은 1 kWh 를 자가소비 절감과 잉여판매로 동시 계상할 수 없다
+
+  - benefit_a: SurplusSale
+    benefit_b: DirectTrade
+    type: A
+    rationale: 같은 잉여량을 상계거래와 직접거래로 동시 정산할 수 없다
+
+  - benefit_a: DistributedBenefit
+    benefit_b: SelfConsumption
+    type: B
+    rationale: >-
+      송배전 회피·손실 감소는 현행 망이용요금에 반영 — 미래 증설 회피 증분만
+      계상 (원칙 2-1)
+
+  - benefit_a: REC
+    benefit_b: SurplusSale
+    type: D
+    rationale: 상계거래 참여 설비의 REC 발급 제한 (제도 한정)
+    applies_to_profile: net_metering

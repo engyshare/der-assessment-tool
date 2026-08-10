@@ -12,11 +12,38 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
+from dataclasses import dataclass
 from enum import StrEnum
-from typing import ClassVar
+from types import MappingProxyType
+from typing import Any, ClassVar, Final
 
 from core.contracts.der import DispatchResult
 from core.contracts.units import Money
+from core.contracts.validation import ValidationError
+
+#: spec `FR-205-AC1` 이 나열한 계약·거래 구조 일곱. **저자가 적은 리터럴이며
+#: 여기서 파생하거나 줄이지 않는다.**
+#:
+#: 이 목록을 계약에 두는 이유는 `payer_by_structure` 의 키를 **기동 시점에**
+#: 대조하기 위해서다. 오타 난 구조 이름은 영영 매치되지 않고, 그러면 그 편익은
+#: 조용히 기본 `payer` 로 떨어진다 — 지불 주체가 틀린 채 계산이 끝나고 결과는
+#: 그럴듯하다. 레지스트리가 `tag` 중복을 기동 시점에 터뜨리는 것과 같은 근거다.
+#:
+#: > **어긋난 것이 하나 있다.** 코드에서 실제로 쓰이는 유일한 구조 리터럴은
+#: > `tests/model/test_financial_isolation.py:43` 의 **`"개별 직접계약"`** 인데,
+#: > spec 은 **`"개별 세대 직접계약"`** 이라고 적는다. 이 라운드에서 고치지
+#: > 않는다 — `FR-205` 정산 조립기가 구조 어휘를 확정할 때 함께 정할 일이고,
+#: > 지금 한쪽으로 맞추면 그 판단을 코드가 먼저 해 버린다.
+CONTRACT_STRUCTURES: Final[tuple[str, ...]] = (
+    "개별 세대 직접계약",
+    "단일계약+관리주체 경유",
+    "분산특구 직접거래",
+    "상계거래",
+    "잉여 직거래",
+    "집합 PPA",
+    "VPP 경유",
+)
 
 
 class Payer(StrEnum):
@@ -50,27 +77,110 @@ class ExclusionType(StrEnum):
     D = "D"  # 제도적 배타 — 오탐 0
 
 
+@dataclass(frozen=True)
+class ExclusionRule:
+    """배타 규칙 1건 — FR-402-AC4.
+
+    **계약에 두는 이유** (R16): 규칙표의 **정본은 데이터 파일**이 됐고
+    (`docs/exclusion-rules.yaml`), 그것을 읽는 로더와 그것을 쓰는 판정이 서로
+    다른 모듈이다. 타입이 어느 한쪽에 있으면 다른 쪽이 그 모듈을 import 하게
+    되어 순환이 생긴다 — `discover()` 를 `core.contracts` 에 둔 것과 같은
+    근거다.
+
+    양방향으로 적용한다 — ``(A, B, ...)`` 는 ``(B, A, ...)`` 와 같은 관계다.
+    """
+
+    benefit_a: str
+    benefit_b: str
+    exclusion_type: ExclusionType
+    rationale: str
+    #: ``None`` 은 «모든 프로파일에 적용». 제도 한정 규칙은 프로파일 이름을 둔다
+    applies_to_profile: str | None = None
+
+
 class ValueStream(ABC):
     """편익 흐름 공통 계약 (FR-401-AC1)."""
 
     #: spec FR-401-AC2.<tag> 의 키와 같은 리터럴. 슬러그화·대소문자 변환 금지
     tag: ClassVar[str]
 
-    #: 이 편익을 누가 지불하는가. 미특정이면 활성화가 거부된다
+    #: 이 편익을 누가 지불하는가 — **계약구조와 무관한 경우의 답**.
+    #: 미특정이면 활성화가 거부된다 (DV-13)
     payer: ClassVar[Payer] = Payer.UNSPECIFIED
+
+    #: **계약구조에 따라 지불 주체가 갈리는 편익만** 채운다 (도메인 원칙 2-3).
+    #:
+    #: v0.1~R15 동안 `payer` 는 `ClassVar` 하나뿐이었고, 그래서 *「계약구조에
+    #: 따름」* 을 **표현할 방법이 아예 없었다** — 같은 잉여 판매라도 상계거래
+    #: 에서는 주민 지갑이고 집합 PPA 에서는 사업자 지갑인데, 클래스에 하나로
+    #: 고정돼 있으니 둘 중 하나는 반드시 틀린 값이었다.
+    #:
+    #: **`if structure == ...` 로 짜지 않는다.** 선언표로 두면 여덟 번째
+    #: 구조가 생겨도 이 계약과 엔진은 바뀌지 않고 그 편익의 표에 한 줄이
+    #: 늘 뿐이다 — `FR-402-AC4`(배타 규칙)가 이미 같은 이유로 표다.
+    payer_by_structure: ClassVar[Mapping[str, Payer]] = MappingProxyType({})
 
     name: str
     enabled: bool
+    #: 이 인스턴스가 놓인 계약·거래 구조. `None` 이면 구조 무관으로 본다
+    structure: str | None
 
-    def __init__(self, *, name: str, enabled: bool = True) -> None:
-        if enabled and self.payer is Payer.UNSPECIFIED:
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        """선언표의 키가 spec 의 구조 이름인지 **기동 시점에** 본다.
+
+        오타는 영영 매치되지 않으므로 그 편익이 조용히 기본 `payer` 로
+        떨어진다. 지불 주체가 틀린 채 계산이 끝나고 결과는 그럴듯하다 —
+        `discover()` 가 `tag` 중복을 늦게 발견하면 안 되는 것과 같은 이유다.
+        """
+        super().__init_subclass__(**kwargs)
+        unknown = sorted(set(cls.payer_by_structure) - set(CONTRACT_STRUCTURES))
+        if unknown:
             raise ValueError(
-                f"{name}: 지불 주체가 특정되지 않은 편익은 활성화할 수 없습니다 "
-                "(FR-402-AC5 · DV-13). 주체가 없으면 같은 화폐 흐름이 두 관점에서 "
-                "각각 계상되어 이중 계상이 됩니다"
+                f"{cls.__qualname__}.payer_by_structure 에 spec FR-205-AC1 이 "
+                f"열거하지 않은 구조가 있습니다: {', '.join(unknown)}\n"
+                f"허용: {', '.join(CONTRACT_STRUCTURES)}\n"
+                "오타는 영영 매치되지 않고 기본 payer 로 조용히 떨어집니다"
             )
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        enabled: bool = True,
+        structure: str | None = None,
+    ) -> None:
         self.name = name
         self.enabled = enabled
+        self.structure = structure
+        if enabled and self.effective_payer is Payer.UNSPECIFIED:
+            raise ValidationError(
+                field=f"valuestream.{type(self).tag}.payer",
+                reason=(
+                    f"{name}: 지불 주체가 특정되지 않았습니다"
+                    + (f" (계약구조 «{structure}»)" if structure else "")
+                ),
+                action=(
+                    "편익 클래스에 `payer` 를 선언하거나, 구조에 따라 갈리면 "
+                    "`payer_by_structure` 에 해당 구조의 주체를 넣으십시오. "
+                    "주체가 없으면 같은 화폐 흐름이 두 관점에서 각각 계상되어 "
+                    "이중 계상이 됩니다"
+                ),
+                rule="DV-13",
+            )
+
+    @property
+    def effective_payer(self) -> Payer:
+        """이 인스턴스에 실제로 적용되는 지불 주체.
+
+        **`payer` 를 직접 읽는 코드가 남으면 구조별 선언이 무시된다.** 그래서
+        판정·리포트가 전부 이 통로를 지난다 — R16 에 `payer_gate.assess()` 와
+        `report.py` 를 여기로 옮겼다.
+        """
+        if self.structure is not None:
+            by_structure = self.payer_by_structure.get(self.structure)
+            if by_structure is not None:
+                return by_structure
+        return self.payer
 
     @abstractmethod
     def annual_value(self, dispatch: DispatchResult, *, year: int) -> Money:

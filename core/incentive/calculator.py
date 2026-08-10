@@ -76,7 +76,18 @@ def build_capex_cashflows(
     viewpoint: Literal["OWNER", "PARTICIPANT", "GOV", "SOCIAL"],
     is_baseline: bool = False,
 ) -> list[CashFlowRow]:
-    """FR-611-AC1~AC6, FR-607-AC1~AC3: 초기 투자 및 지원 현금흐름 산출."""
+    """FR-611-AC1~AC6, FR-607-AC1~AC3: 초기 투자 및 지원 현금흐름 산출.
+
+    > **`is_baseline` 은 호출자가 손으로 넘기는 깃발이다** — 안 넘기면
+    > 기준선은 그냥 없고, 빠졌을 때 나는 증상이 없다. FR-607-AC1 의
+    > *「모든 실행에서 자동 포함」* 이 여기서는 성립하지 않는다.
+    >
+    > R16 이 그 자리에 `core.contracts.casevariant.CaseVariant` 와
+    > `core.casegrid.variants.run_order()` 를 세웠다 — 등록된 변형 목록이
+    > 곧 실행 목록이고, 기준선이 정확히 하나이며 맨 위라는 것이 기계로
+    > 보증된다. **파이프라인을 그 목록으로 돌리는 것은 R17 이다**(§16.2 —
+    > 계약 변경과 구현을 한 PR 에 섞지 않는다). 그때 이 인자는 사라진다.
+    """
     capex_won = to_won(capex)
     if capex_won == Decimal(0):
         return []

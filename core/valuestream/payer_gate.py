@@ -47,12 +47,16 @@ class FourQuestionVerdict:
 def assess(stream: ValueStream) -> FourQuestionVerdict:
     """편익 1건에 대한 4문항 판정.
 
-    Q1 은 ``stream.payer`` 로 바로 판정. ``Payer.UNSPECIFIED`` 면 거부.
+    Q1 은 ``stream.effective_payer`` 로 바로 판정. ``Payer.UNSPECIFIED`` 면 거부.
     Q2~Q4 는 **외부(호출부)에서 채운다** — 이 함수는 «자동으로 답을 내지
     않는다». 답을 내면 «판정됨» 이라는 거짓 표식이 붙고, 검증되지 않은
     편익이 통과한다.
+
+    **``stream.payer`` 를 직접 읽지 않는다** (R16). 계약구조에 따라 주체가
+    갈리는 편익은 클래스 기본값이 ``UNSPECIFIED`` 일 수 있고, 그것을 그대로
+    읽으면 «구조를 지정해 정상 활성화된 편익» 이 Q1 실패로 잡힌다.
     """
-    payer_ok = stream.payer is not Payer.UNSPECIFIED
+    payer_ok = stream.effective_payer is not Payer.UNSPECIFIED
     return FourQuestionVerdict(
         stream_tag=type(stream).tag,
         q1_payer_specified=payer_ok,

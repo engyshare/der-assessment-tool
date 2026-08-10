@@ -7,7 +7,7 @@ import pytest
 from core.contracts.assumptions import AssumptionProvider, AssumptionValue
 from core.model.model import Model
 from core.model.schemas import DERConfig, ModelConfig
-from core.report.charts import generate_charts
+from core.report.charts import render_charts
 from core.report.excel import generate_excel
 from core.report.manifest import create_manifest
 from core.report.pdf import generate_pdf
@@ -255,11 +255,30 @@ def test_manifest_reproducibility() -> None:
 
 @pytest.mark.req("FR-1004-AC1")
 def test_dashboard_charts() -> None:
-    """13.7: 시각화 차트 생성 (FR-1004-AC1)"""
-    charts = generate_charts()
-    assert "cashflow_line" in charts
-    assert "cost_benefit_pie" in charts
-    assert "tornado" in charts
+    """13.7: 시각화 차트 생성 (FR-1004-AC1)
+
+    **이 테스트는 R16 이전에 아무것도 검증하지 않았다.** `generate_charts()`
+    가 돌려주는 dict 에 키 세 개가 있는지만 보았고, 그 값은 영어 문자열
+    상수였다 — `"Cumulative Cash Flow Chart with BEP"`. 키 검사는 그 문자열이
+    그림인지 설명인지 구분하지 못한다.
+
+    이제 **실제 렌더 바이트**를 본다. 값이 다시 문자열로 돌아가면 여기서
+    빨간불이 난다.
+    """
+    charts = render_charts(
+        {
+            "cashflows": [-2_000_000.0, 400_000.0, 500_000.0, 600_000.0, 700_000.0],
+            "items": {"설비비": 1_500_000.0, "시공비": 400_000.0, "운영비": 100_000.0},
+            "influences": [
+                {"name": "설비단가", "delta": 800_000.0, "flips_conclusion": True},
+                {"name": "할인율", "delta": 250_000.0, "flips_conclusion": False},
+            ],
+        }
+    )
+    assert {"cashflow_line", "cost_benefit_pie", "tornado"} <= set(charts)
+    for tag, artifact in charts.items():
+        assert artifact.mime == "image/png"
+        assert artifact.payload.startswith(b"\x89PNG\r\n\x1a\n"), f"{tag}: PNG 가 아니다"
 
 
 @pytest.mark.manual
