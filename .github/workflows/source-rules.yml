@@ -304,3 +304,51 @@ jobs:
       - run: pip install pyyaml
       - name: 정본 대조 도구 감지 능력 확인 (음성 테스트)
         run: python scripts/negtest_source_rules.py
+
+  # 작업 목록 인용 검사 — **R15 에 처음 CI 로 들어왔다.**
+  #
+  # `scripts/` 의 검사기 열 중 **이것만 어느 워크플로도 부르지 않았다.** 그래서
+  # `rc=1` 이 로컬에서만 보이고 커밋은 초록불로 지나갔다. 그 사이 spec v0.13 이
+  # `FR-202` 를 수용기준 단위로 쪼개고 v0.14 가 `FR-301-AC4` 를 신설했는데
+  # **작업 목록이 따라오지 않아 미인용 Must-have 가 0 → 4건이 됐고**, 08-09 의
+  # `status.md` 는 계속 「미인용 0건」이라 적고 있었다.
+  #
+  # **검사 자신은 경고다** (`continue-on-error`). 남은 3건(`FR-202-AC1`~`AC3`)이
+  # **Phase↔Wave 정합 판단**이라 사용자 결정 전에는 닫을 수 없고, 차단으로 켜면
+  # CI 가 영구히 빨간불이 되어 곧 무시된다 — 이 저장소가 가장 경계하는 상태다.
+  # **감지 능력 확인(음성)은 차단이다.** 감지 못 하는 게이트의 초록불은 아무
+  # 뜻이 없고, 그것은 사용자 결정과 무관하게 지금 판정할 수 있다.
+  task-mapping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 작업 목록 인용 검사 (경고)
+        id: cite
+        continue-on-error: true
+        run: |
+          set +e
+          python scripts/check_task_mapping.py > cite.txt 2>&1
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          cat cite.txt
+      - name: 결과 요약
+        if: always()
+        run: |
+          {
+            echo "## 작업 목록 인용 검사"
+            echo
+            if [ "${{ steps.cite.outputs.exit_code }}" = "0" ]; then
+              echo "정합합니다."
+            else
+              echo "**미인용·유령·범위 초과 인용이 있습니다.** spec 개정이"
+              echo "수용기준을 늘렸는데 작업 목록이 따라오지 않은 경우가 대표적입니다."
+            fi
+            echo
+            echo '```'
+            cat cite.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: 도구 감지 능력 확인 (음성 테스트 — 차단)
+        run: python scripts/negtest_task_mapping.py

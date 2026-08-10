@@ -167,7 +167,7 @@ def test_error_messages_include_field_reason_and_action() -> None:
     assert all("조치:" in message.text for message in messages)
 
 
-@pytest.mark.req("FR-504-AC2")
+@pytest.mark.req("FR-504-AC4")
 def test_regulation_management_shows_profile_version_and_diff() -> None:
     section = next(
         element for element in parse(render_dashboard()).elements

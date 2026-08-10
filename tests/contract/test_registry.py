@@ -218,9 +218,15 @@ def test_the_central_registry_check_actually_detects_one(tmp_path: Path) -> None
 
 
 @pytest.mark.contract
-@pytest.mark.req("NFR-207-M1")
+@pytest.mark.req("NFR-208-AC3")
 def test_registry_module_does_not_import_any_partition() -> None:
     """발견기가 구획을 import하지 않는다 (NFR-208-AC3).
+
+    **마커를 `NFR-207-M1` 에서 옮겼다 (R15).** `NFR-207-M1` 은 *「신규 자원
+    추가 PR 의 diff 에 §16.4 공유 파일 목록의 변경 0줄」* 이고 이 테스트와
+    아무 관계가 없다. 이 검사가 보는 것은 `NFR-208-AC3` 문면 그대로다 —
+    *「`core/contracts/` 는 어떤 구획도 import 하지 않는 순수 인터페이스·
+    타입·단위 정의만 포함한다」*. **독스트링이 처음부터 그렇게 적고 있었다.**
 
     import-linter가 CI에서 같은 것을 보지만, 여기서 걸리면 **어느 줄이** 원인
     인지 즉시 드러난다. 발견기가 `core.der` 를 알면 계약이 구획을 참조하게 되어

@@ -82,7 +82,7 @@ def test_type_a_symmetric_lookup_works_both_directions() -> None:
 # ── 유형 B~D — 오탐 0 (양성). 정당한 동시 편익이 지워지지 않는다 ─────────
 # FR-402-AC1: 동시 발생 효과는 중복이 아니다 — 정상 계상한다.
 
-@pytest.mark.req("FR-402-AC1", "FR-402-AC2.B", "FR-402-AC2.C", "FR-402-AC2.D")
+@pytest.mark.req("FR-402-AC1", "FR-402-AC2.C")
 def test_simultaneous_distinct_payer_benefits_are_not_excluded() -> None:
     """**핵심 케이스** — 자가소비(RESIDENT) + REC(OPERATOR) + 피크저감(RESIDENT) +
     열비용절감(RESIDENT) 동시 계상은 정상이다.
@@ -112,6 +112,7 @@ def test_simultaneous_distinct_payer_benefits_are_not_excluded() -> None:
     )
 
 
+@pytest.mark.req("FR-402-AC2.B")
 def test_type_b_distributed_benefit_vs_self_consumption_is_caught() -> None:
     """유형 B — 분산편익(망회피) ↔ 자가소비(요금절감). 둘 다 활성이면 잡힌다.
 
@@ -127,6 +128,7 @@ def test_type_b_distributed_benefit_vs_self_consumption_is_caught() -> None:
     )
 
 
+@pytest.mark.req("FR-402-AC2.D")
 def test_profile_scoped_rule_d_applies_only_with_profile() -> None:
     """유형 D — 제도 한정 규칙(REC↔SurplusSale, profile=net_metering).
 

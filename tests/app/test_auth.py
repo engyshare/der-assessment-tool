@@ -19,7 +19,7 @@ from app.security.auth import (
 )
 
 
-@pytest.mark.req("FR-901-AC1")
+@pytest.mark.req("SC-1")
 def test_session_cookie_has_all_three_security_attributes() -> None:
     """SC-1 — HttpOnly + Secure + SameSite=Lax. 셋 다 필수."""
     policy = SessionPolicy()

@@ -97,7 +97,7 @@ def test_common_asset_declares_required_methods() -> None:
         "긴 쪽을 쓰면 짧은 쪽 교체 시점이 분석기간 밖으로 밀려 교체비가 사라집니다")
 
 
-@pytest.mark.req("FR-106-AC1")
+@pytest.mark.req("NFR-103-M1")
 def test_money_methods_return_whole_won() -> None:
     """금액은 전부 `Money`(정수 원)다 (NFR-103 재무 계층)."""
     asset = make_cems()
@@ -458,7 +458,7 @@ def test_allocate_assets_allocates_each_asset() -> None:
     assert won_sum(results["가구 HEMS"].per_household) == Money(3_050_000)
 
 
-@pytest.mark.req("FR-106-AC7")
+@pytest.mark.req("FR-106-AC3")
 def test_annual_cost_includes_replacement_year() -> None:
     """연차 총액 = CAPEX + 고정 O&M + 해당 연도 교체비. 6년차: 교체 30,000,000 +
     O&M 100,000×1.02^5(=110,408) = 30,110,408원."""
@@ -489,7 +489,7 @@ def test_constructor_rejects_invalid_values() -> None:
         make_cems(name="")
 
 
-@pytest.mark.req("FR-106-AC3")
+@pytest.mark.req("FR-106-AC1")
 def test_year_is_one_based() -> None:
     """분석 연도는 1부터 센다 — 0-base 인덱스를 그대로 넘기면 오류다."""
     asset = make_cems()

@@ -271,9 +271,14 @@ def test_20_year_cashflow_sums_match_to_the_won() -> None:
 
 
 @pytest.mark.contract
-@pytest.mark.req("FR-101-AC4")
+@pytest.mark.req("FR-104-AC1")
 def test_degradation_reduces_output_year_over_year() -> None:
     """열화가 실제로 걸린다 — 연도를 건네는 계약이 쓸모 있음을 확인한다.
+
+    **마커를 `FR-101-AC4` 에서 옮겼다 (R15).** `FR-101-AC4` 는 *「매체 플래그에
+    따라 엔진이 전기·열·냉 수지를 자동으로 분리 집계한다」* 이고 이 테스트는
+    매체를 나누지 않는다. 검사하는 것은 `FR-104-AC1` — *「PV: 연
+    degradation_rate(%/년) 발전량 감소」* 그 자체다.
 
     `dispatch(ctx)` 가 연도를 받지 않는 계약이었다면 열화를 표현할 수 없고,
     20년 발전량이 1년차 값으로 고정된다. 그 오류는 편익을 과대 계상한다.

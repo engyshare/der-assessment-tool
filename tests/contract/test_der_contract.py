@@ -158,12 +158,18 @@ class DERContractTests:
         assert not missing, f"FR-101-AC2 메서드 누락: {missing}"
 
     @pytest.mark.contract
-    @pytest.mark.req("FR-101-AC2")
+    @pytest.mark.req("NFR-103-M1")
     def test_money_methods_return_whole_won(self) -> None:
         """금액을 돌려주는 메서드는 **정수 원**을 준다 (NFR-103).
 
         float를 허용하면 20년 프로포마 합계와 항목별 합계가 어긋난다.
         그 어긋남은 화면상 정상으로 보이므로 사후 발견이 어렵다.
+
+        **마커를 `FR-101-AC2` 에서 옮겼다 (R15).** `AC2` 는 **메서드 목록**이고
+        그것은 **바로 위 `test_required_methods_exist` 가 검사한다** — 같은
+        조항에 둘이 붙어 있으면서 한쪽은 조항이 말하지 않는 것(반환 자료형)을
+        보고 있었다. `NFR-103` 본문이 *「재무 계산은 Decimal 또는 정수 원
+        단위로 처리해야 한다」* 이고, 이 단언들이 이미 그것을 인용하고 있다.
         """
         der = self.make()
         for name in MONEY_METHODS:
@@ -432,8 +438,17 @@ def test_der_declares_all_spec_methods_as_abstract() -> None:
 
 
 @pytest.mark.contract
-@pytest.mark.req("FR-101-AC3")
+@pytest.mark.req("FR-101-AC2")
 def test_der_cannot_be_instantiated_directly() -> None:
+    """추상 메서드가 실제로 강제되는지 — `AC2` 의 메서드 목록이 선언에 그치지
+    않는다는 확인이다.
+
+    **마커를 `FR-101-AC3` 에서 옮겼다 (R15).** `AC3` 은 *「신규 자원 클래스가
+    위 인터페이스만 구현하면 코어 엔진 수정 없이 동작」* — **확장성**이고,
+    그것을 검사하는 것은 실제로 새 자원을 넣어 엔진을 돌려 보는 테스트다.
+    이 테스트가 보는 것은 `DER()` 직접 생성이 막히는가, 즉 **`AC2` 가 요구한
+    메서드들이 추상으로 걸려 있는가**다.
+    """
     with pytest.raises(TypeError):
         DER()  # type: ignore[abstract]
 

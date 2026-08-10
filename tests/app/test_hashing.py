@@ -17,7 +17,7 @@ from app.security.hashing import (
 )
 
 
-@pytest.mark.req("SC-1")
+@pytest.mark.req("NFR-401-AC1")
 def test_hash_is_argon2id() -> None:
     """해시가 Argon2id 알고리즘을 썼는지 — ``$argon2id$`` 프리픽스로 판정.
 

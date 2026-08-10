@@ -224,7 +224,6 @@ def test_bill_breakdown_contains_vat_power_fund_and_traceable_lines() -> None:
     assert bill.line("power_industry_fund").assumption_key == POWER_FUND_RATE_KEY
 
 
-@pytest.mark.req("FR-501-AC4")
 @pytest.mark.req("FR-501-AC5")
 def test_tariff_catalog_selects_table_by_inclusive_valid_period() -> None:
     """Oracle rank 1: same 10 kWh load under two effective data tables.
