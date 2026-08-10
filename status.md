@@ -309,7 +309,7 @@ tests/ci/test_traceability_gate.py       매핑 게이트 자기검사
 > ```
 > .orch/dispatch.py           지시 전송 + 착수 확인 (입력창이 비워졌는가)
 > .orch/watchdog.py           레인 감시 — 완료 보고·죽음·무출력·스크롤백 축소
-> .orch/negtest_watchdog.py   감시기 음성·양성 46종 (R14 에 31 → 46)
+> .orch/negtest_watchdog.py   감시기 음성·양성 **56종** (R14 31→50 · R15 50→56)
 > .orch/negtest_dispatch.py   **지시 전송 음성 17종 (R14 신설)** — 실전 진입점
 >                             (`main()`)이 완료패턴을 넘기는가를 붙든다
 > .orch/watch.tsv             감시 대상 — 이름·핸들·완료패턴 (+ 겪은 함정 전부)
@@ -365,7 +365,7 @@ mypy strict      core 75파일 전건 통과                                    
                  partition_assignment 2 · source_rules 25
                  **task_mapping 20 (R15 신설)**                          → 전건 rc=0
 음성·양성 (.orch/, CI 밖)
-                 watchdog **50** (R14 에 31 → 50) · dispatch **17**       → 전건 rc=0
+                 watchdog **56** (R14 31→50 · R15 50→56) · dispatch **17** → 전건 rc=0
 ```
 
 > ### ⚠ `check_task_mapping.py` — **R15 에 CI 로 들어왔고 4 → 3건이 됐다**
