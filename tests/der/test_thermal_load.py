@@ -163,7 +163,7 @@ def test_unmet_heat_is_reported_not_silently_absorbed() -> None:
     assert tl.is_heat_balanced(ctx, supplied_kwh=[partial]) is False
 
 
-@pytest.mark.req("FR-301-AC2")
+@pytest.mark.req("FR-301-AC3")
 def test_heat_balance_rejects_row_count_mismatch() -> None:
     """공급 시계열 행수가 다르면 명확한 오류 (FR-301-AC3)."""
     tl = make_thermal_load()
@@ -355,7 +355,7 @@ def test_rc_all_c5_salvage_value_is_prorated_and_zero_at_eol() -> None:
 
 # ── NFR-206 파일 규모 ────────────────────────────────────────────────
 
-@pytest.mark.req("FR-102-AC1.ThermalLoad")
+@pytest.mark.req("NFR-206-M1")
 def test_module_stays_within_size_budget() -> None:
     import inspect
 
@@ -365,7 +365,7 @@ def test_module_stays_within_size_budget() -> None:
     assert len(lines) <= 500, f"thermal_load.py 가 {len(lines)}줄입니다 (NFR-206: 500)"
 
 
-@pytest.mark.req("FR-102-AC1.ThermalLoad")
+@pytest.mark.req("NFR-208-AC2")
 def test_does_not_import_sibling_resources() -> None:
     """자원끼리 import 하지 않는다 (NFR-208-AC1 · §16.1 W-5).
 

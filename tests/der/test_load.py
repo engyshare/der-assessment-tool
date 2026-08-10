@@ -393,7 +393,7 @@ def test_salvage_counts_subcomponents_on_their_own_clock() -> None:
 
 # ── NFR-206 파일 규모 ────────────────────────────────────────────────
 
-@pytest.mark.req("FR-102-AC1.Load")
+@pytest.mark.req("NFR-206-M1")
 def test_module_stays_within_size_budget() -> None:
     """자원 파일 1개는 500줄 이내 (NFR-206)."""
     import inspect

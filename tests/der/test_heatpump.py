@@ -96,7 +96,7 @@ def test_tag_is_spec_literal() -> None:
     assert HeatPump.tag == "HeatPump"
 
 
-@pytest.mark.req("FR-101-AC4")
+@pytest.mark.req("FR-101-AC1")
 def test_carries_both_electric_and_heat() -> None:
     """전기·열 **둘 다 참**이다 — 전기를 받아들이고 열을 내보내는 자원이다."""
     hp = make_hp()
@@ -280,7 +280,7 @@ def test_rc_hp_x1_unmet_heat_reaches_the_engine_through_dispatch() -> None:
     assert result.unmet("electric") == [0.0] * HOURS_PER_YEAR
 
 
-@pytest.mark.req("FR-101-AC4")
+@pytest.mark.req("FR-105-AC1")
 def test_unmet_is_measured_against_the_plan_not_the_hourly_load() -> None:
     """부하 이동 운전에서 미충족은 **계획 대비**로 잰다.
 
@@ -568,7 +568,7 @@ def test_rejects_bool_heat_load() -> None:
         make_hp(heat_load_kwh=False)
 
 
-@pytest.mark.req("FR-104-AC1")
+@pytest.mark.req("FR-101-AC2")
 def test_annual_operation_enforces_one_based_year() -> None:
     """`annual_operation()` 의 연도는 **1-base 규약을 통과한다** (`Year`).
 

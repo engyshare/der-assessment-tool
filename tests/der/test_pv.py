@@ -198,7 +198,7 @@ def test_rc_pv_b3_rec_weight_scales_linearly() -> None:
 
 # ── 공통 비용 5종 (RC-ALL-C1~C5) — §13.2.2 예시 열 ──────────────────
 
-@pytest.mark.req("FR-104-AC1")
+@pytest.mark.req("FR-101-AC2")
 def test_rc_all_c1_capex() -> None:
     """`RC-ALL-C1` 오라클(§13.2.2): `단가 × 용량 + 부대비` → 1,500,000 × 3 =
     **4,500,000원**. 부가세는 별도 항목으로 분리한다. 초기 투자는 1년차에만
@@ -209,7 +209,7 @@ def test_rc_all_c1_capex() -> None:
     assert pv.capex(year=2) == Money(0)
 
 
-@pytest.mark.req("FR-104-AC1")
+@pytest.mark.req("FR-101-AC2")
 def test_rc_all_c1_vat_is_a_separate_line() -> None:
     """부가세는 CAPEX 본체에 섞지 않는다 (§13.2.2 C-1) — 섞으면 프로포마에서
     세액을 분리 표시할 수 없고, 환급·면세 시나리오에서 본체 단가를 역산해야 한다.
@@ -220,14 +220,14 @@ def test_rc_all_c1_vat_is_a_separate_line() -> None:
     assert pv.capex_vat(year=2) == Money(0)
 
 
-@pytest.mark.req("FR-104-AC1")
+@pytest.mark.req("FR-101-AC2")
 def test_rc_all_c1_includes_balance_of_system_cost() -> None:
     """부대비는 CAPEX 본체에 더한다 (§13.2.2 C-1 산식의 `+ 부대비`)."""
     pv = make_pv_3kw(bos_capex_won=500_000)
     assert pv.capex(year=1) == Money(5_000_000)
 
 
-@pytest.mark.req("FR-104-AC2")
+@pytest.mark.req("FR-101-AC2")
 def test_rc_all_c2_fixed_om_20_year_cumulative() -> None:
     """`RC-ALL-C2` 오라클(§13.2.2, 등비수열 합): `A × ((1+i)^n − 1) / i`.
 
@@ -237,7 +237,7 @@ def test_rc_all_c2_fixed_om_20_year_cumulative() -> None:
     assert pv.fixed_om_cumulative(horizon=HORIZON) == Money(2_429_737)
 
 
-@pytest.mark.req("FR-104-AC2")
+@pytest.mark.req("FR-101-AC2")
 def test_rc_all_c2_year_by_year_sum_matches_closed_form() -> None:
     """연도별 합계 = 폐형식 누계, **원 단위 완전 일치** (NFR-103-M1). 프로포마는
     행별 값을 사람이 더해 보는 문서라, 어긋나면 화면상 정상으로 보이면서 근거가
@@ -250,7 +250,7 @@ def test_rc_all_c2_year_by_year_sum_matches_closed_form() -> None:
     assert pv.fixed_om(year=2) == Money(102_000)
 
 
-@pytest.mark.req("FR-104-AC3")
+@pytest.mark.req("FR-101-AC2")
 def test_rc_all_c3_variable_om() -> None:
     """`RC-ALL-C3` 오라클(§13.2.2): 발전 1,314 kWh × 5원 = **6,570원/년**.
 
@@ -262,7 +262,7 @@ def test_rc_all_c3_variable_om() -> None:
     assert pv.variable_om(year=1) == Money(6_570)
 
 
-@pytest.mark.req("FR-104-AC3")
+@pytest.mark.req("FR-101-AC2")
 def test_rc_all_c3_follows_degradation() -> None:
     """변동 O&M은 열화된 발전량을 따라간다 (FR-104-AC1과 정합). 1년차 발전량으로
     20년을 고정하면 발전량과 변동비가 서로 다른 물리를 말한다. 물가 효과를 꺼서
@@ -273,7 +273,7 @@ def test_rc_all_c3_follows_degradation() -> None:
     assert pv.variable_om(year=2) < pv.variable_om(year=1)
 
 
-@pytest.mark.req("FR-104-AC3")
+@pytest.mark.req("FR-101-AC2")
 def test_rc_all_c3_applies_inflation_to_nominal_price() -> None:
     """변동 O&M 단가에도 물가가 걸린다 — 오라클 `1,314 × 0.995 × 5원 × 1.02`.
 
@@ -396,7 +396,7 @@ def test_grid_limit_violation_is_an_error_outside_curtailment_mode() -> None:
         pv.dispatch(ctx)
 
 
-@pytest.mark.req("FR-105-AC1", "FR-105-AC3")
+@pytest.mark.req("FR-105-AC3")
 def test_same_type_instances_can_hold_different_modes() -> None:
     """같은 유형의 두 인스턴스가 서로 다른 운전 방법을 갖는다 (FR-105-AC3)."""
     a = make_pv_1kw(name="옥상PV", operating_mode=OperatingMode.SELF_CONSUMPTION_FIRST)

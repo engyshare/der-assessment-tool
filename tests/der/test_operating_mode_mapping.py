@@ -14,7 +14,7 @@ from tests.der.test_ev_v2g import make_ev
 from tests.der.test_pv import make_pv_1kw
 
 
-@pytest.mark.req("FR-105-AC4")
+@pytest.mark.req("FR-105-AC1")
 def test_selected_mode_changes_reportable_value_streams() -> None:
     """Spec logic: unidirectional EV has no V2G benefit; bidirectional can report DemandResponse."""
     one_way = make_ev(

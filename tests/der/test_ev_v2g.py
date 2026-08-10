@@ -300,7 +300,7 @@ def test_rc_ev_b1_discharge_benefit_when_enabled() -> None:
 
 # ── 비용 (RC-EV-C6) ──────────────────────────────────────────────────
 
-@pytest.mark.req("FR-104-AC2")
+@pytest.mark.req("FR-701-AC1")
 @pytest.mark.req("FR-102-AC1.EV_V2G")
 def test_rc_ev_c6_degradation_compensation_is_a_cost_not_a_benefit_offset() -> None:
     """`RC-EV-C6` 열화 보상 비용.
@@ -332,7 +332,7 @@ def test_rc_ev_c6_degradation_compensation_is_a_cost_not_a_benefit_offset() -> N
     assert ev.v2g_discharge_benefit(year=1) == Money(906_660)
 
 
-@pytest.mark.req("FR-104-AC2")
+@pytest.mark.req("FR-102-AC1.EV_V2G")
 def test_degradation_compensation_zero_when_rate_zero() -> None:
     """Q-8b도 `track: default0` 이다 — 단가 0이면 보상비도 0이다."""
     ev = make_ev()
@@ -518,7 +518,7 @@ def test_degradation_reduces_discharge_over_years() -> None:
     )
 
 
-@pytest.mark.req("FR-101-AC2")
+@pytest.mark.req("NFR-103-M1")
 def test_money_methods_are_whole_won() -> None:
     """금액 반환 전건이 정수 원 `Money` 다 (NFR-103).
 
@@ -544,7 +544,7 @@ def test_money_methods_are_whole_won() -> None:
         assert v == v.to_integral_value()
 
 
-@pytest.mark.req("FR-301-AC3")
+@pytest.mark.req("FR-301-AC1")
 def test_grid_limit_series_is_respected() -> None:
     """계통 연계 상한이 주어지면 스텝당 인도량이 그 값을 넘지 않는다.
 
