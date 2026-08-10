@@ -187,7 +187,7 @@ def test_rc_ess_p3_calendar_degradation_dominates() -> None:
 
 
 @pytest.mark.req("FR-104-AC2")
-@pytest.mark.req("FR-102-AC1.ESS")
+@pytest.mark.req("FR-101-AC1")
 def test_rc_ess_p3_degradation_rate_is_the_conservative_annual_equivalent() -> None:
     """`degradation_rate`(FR-101-AC1) 도 보수적 쪽을 따른다.
 
@@ -525,7 +525,7 @@ def test_operating_modes_declared_match_spec_list() -> None:
     }
 
 
-@pytest.mark.req("FR-105-AC1")
+@pytest.mark.req("FR-105-AC3")
 def test_two_instances_may_take_different_modes() -> None:
     """FR-105-AC3 — 같은 유형 두 인스턴스가 서로 다른 운전 방법을 갖는다."""
     household = _p1_ess(name="가구용ESS", operating_mode=ESSOperatingMode.SELF_CONSUMPTION)
@@ -570,7 +570,7 @@ def test_hybrid_mode_requires_weights_that_sum_to_one() -> None:
 
 
 # ── 해상도·계통 제약 ────────────────────────────────────────────────
-@pytest.mark.req("FR-301-AC2")
+@pytest.mark.req("FR-301-AC1")
 def test_dispatch_totals_are_resolution_independent() -> None:
     """15분(35,040 스텝) 해상도에서도 연 합계가 같다 (§7.5 · FR-301).
 
@@ -594,7 +594,7 @@ def test_dispatch_rejects_plan_that_exceeds_grid_limit() -> None:
         _p1_ess().dispatch(ctx)
 
 
-@pytest.mark.req("FR-301-AC2")
+@pytest.mark.req("FR-102-AC1.ESS")
 def test_dispatch_rejects_plan_that_exceeds_rated_power() -> None:
     """정격출력을 넘는 운전 계획도 거부한다 — 없는 출력으로 편익이 나면 안 된다."""
     ess = _p1_ess(capacity_kwh=200.0, power_kw=1.0, cycle_life=20000)
