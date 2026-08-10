@@ -30,6 +30,14 @@
 
 3. 본문에 **검증 행위가 하나도 없다** — 아래 중 어느 것도 없을 때입니다.
    - `assert` 문
+   - `raise AssertionError(...)` · `pytest.fail(...)`
+     — **`assert`보다 약한 것이 아니라 강한 것입니다.** `assert`는
+     `python -O`에서 통째로 사라지지만 이 둘은 남습니다. 인정하지 않으면
+     `ruff`의 `B011`(`assert False` 금지)과 이 게이트가 **정면으로
+     부딪히고**, 사람은 게이트를 통과시키려고 사라지는 `assert False`로
+     되돌아갑니다. 실제로 R8에서 그 충돌이 났습니다 — `B011` 9건을
+     `raise AssertionError`로 고치자 이 게이트가 멀쩡한 테스트 4건을
+     위반으로 잡았습니다
    - `pytest.raises`·`pytest.warns`·`pytest.deprecated_call`의 `with` 사용
    - `.assert_...()` 형태의 Mock 단언 (`assert_called_once` 등)
    - **같은 모듈 안에 정의된 다른 함수를 호출하는데 그 함수가 위 셋 중
@@ -108,6 +116,17 @@ def _has_verification(body: list[ast.stmt],
     def check_node(node: ast.AST) -> bool:
         if isinstance(node, ast.Assert):
             return True
+        if isinstance(node, ast.Raise):
+            # `raise AssertionError(...)` — **`assert`보다 약한 것이 아니라 강한
+            # 것입니다.** `assert`는 `python -O`에서 통째로 사라지지만 이것은
+            # 남습니다. 인정하지 않으면 `ruff`의 `B011`(`assert False` 금지)과
+            # 이 게이트가 정면으로 부딪히고, 사람은 게이트를 통과시키려고
+            # **사라지는 `assert False`로 되돌아갑니다.**
+            exc = node.exc
+            if isinstance(exc, ast.Call):
+                exc = exc.func
+            if _attr_path(exc) in ("AssertionError", "pytest.fail"):
+                return True
         if isinstance(node, ast.With):
             # with pytest.raises(...), with pytest.warns(...), with pytest.deprecated_call(...)
             for item in node.items:
@@ -119,6 +138,10 @@ def _has_verification(body: list[ast.stmt],
         if isinstance(node, ast.Call):
             # mock.assert_...() 형태 (예: assert_called_once, assert_called_with)
             name = _attr_path(node.func)
+            if name == "pytest.fail":
+                # 조건 분기 아래의 `pytest.fail(...)`도 판정 행위다. 위
+                # `raise AssertionError`와 같은 이유로 인정한다.
+                return True
             if name and ".assert_" in name and "pytest" not in name:
                 # 표준 Mock 단언 메서드들 (예: session.add.assert_called_once)
                 return True
