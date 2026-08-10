@@ -2050,13 +2050,28 @@ der-evaluator/
 | **WP-6** 엔진 | `core/engine/` | FR-301, FR-302 (P2: FR-303) | 2 | |
 | **WP-7** CBA | `core/cba/` | FR-701, FR-703~705 | 2 | 잔존가치·기준선 증분 포함 |
 | **WP-8** 지원 | `core/incentive/` | FR-604~608, FR-610 | 3 | WP-7 계약 위에서 역산 |
-| **WP-9** 그리드 | `core/casegrid/` | FR-801~803, FR-805 | 3 | 부록 C.2 A-2 채택분 |
+| **WP-9** 그리드 | `core/casegrid/` | **FR-202**(`AC1`~`AC3`), FR-801~803, FR-805 | 3 | 부록 C.2 A-2 채택분. *(v0.13 배정 누락 보정 — 아래 주석)* |
 | **WP-10** 리포트 | `core/report/` | FR-1001~1005 | 3 | 영향도 순위·XLSX |
 | **WP-11** API | `app/` | FR-901, FR-902, NFR-004 (P2: FR-1102) | 3 | 서비스 + 라우터. *(v0.5: FR-201·204는 WP-16으로 이관 — §10.1 주석 참조)* |
 | **WP-12** UI | `web/` | UI-1~7, NFR-301~304 | 4 | |
 | **WP-13** 영속성 | `infra/` | §10.3, NFR-502, NFR-504 | 1 | **Alembic 단독 소유** |
 | **WP-14** 검증자산 | `fixtures/golden/` | FR-1103, NFR-104, §13.3 | 1 | 외부 근거 정박 |
 | **WP-15** CI·배포 | `.github/`, `Dockerfile`, `pyproject.toml` | FR-1101, FR-1103, NFR-105, NFR-503 | 1 | 게이트 3종 구현 |
+
+> **FR-202 배정 누락 보정 (v0.13 후속).** v0.13이 `FR-202`의 `AC1`~`AC3`을
+> Phase 2에서 Phase 1로 당기면서 §12·부록 A·§16.1 등은 함께 고쳤으나
+> **이 §16.3 배정표만 고치지 않았다.** 그래서 `FR-202`는 Phase 1
+> Must-have가 되었는데 **소유 구획이 없는 상태**로 하루 남아 있었고,
+> `scripts/check_partition_assignment.py`가 그것을 「미배정」으로 잡아
+> **CI `source-rules / partition-assignment` 잡이 08-09부터 빨간불**이었다.
+>
+> **WP-9로 배정하는 근거는 소유 경로다** — 비교 실행기와 비교표가
+> `core/casegrid/comparison.py`에 있고 그 검증은 `tests/casegrid/`에 있다.
+> `AC4`(구성 diff 뷰)는 Phase 2이므로 이 배정에 포함되지 않는다.
+>
+> **면제 목록에 넣지 않았다.** `check_partition_assignment.py`의
+> `known_missing`에 `FR-202`를 더하면 검사는 조용해지지만 **배정은 여전히
+> 없다** — 작성 원칙이 금지하는 «면제를 넓혀 검사를 죽이는» 형태다.
 
 **WP-1 세분 — 자원별 독립 작업 단위**
 
