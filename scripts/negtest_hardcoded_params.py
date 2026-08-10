@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import types
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -34,7 +35,7 @@ PLANTED_NON_MONEY = 3_600        # load.household.annual (kWh) — 경고 대역
 PLANTED_BELOW_FLOOR = 15         # capex.modular_house.premium (%) — 판정 안 함
 
 
-def _module():
+def _module() -> types.ModuleType:
     spec = importlib.util.spec_from_file_location("_check_hardcoded", CHECKER)
     assert spec and spec.loader
     mod = importlib.util.module_from_spec(spec)
@@ -124,6 +125,11 @@ CASES: list[tuple[str, str, bool, str]] = [
         f"# 민감도 상한 1_920_000 도 서술이다\nVALUE = 1\n",
         False, "",
     ),
+    (
+        "경고1 비금액 대장값은 차단이 아니라 경고로 나온다",
+        f"LOAD_ANNUAL = {PLANTED_NON_MONEY}\n",
+        False, "load.household.annual",
+    ),
 ]
 
 
@@ -186,9 +192,41 @@ def main() -> int:
     failures += not ok
     print(f"  {'통과' if ok else '**실패**':6s} 경계4 UBIQUITOUS 면제가 넓어지지 않았다")
 
+    # 문턱 아래 값(`|값| < JUDGE_FLOOR`)이 어떻게 처리되는지 **동작으로**
+    # 고정한다. 경계3은 그 상수의 *값*이 바뀌지 않았는지만 보지 *동작*은
+    # 보지 않는다 — 문턱이 무력해져도 경계3은 통과한다.
+    #
+    # **「출력에 아예 없다」가 아니다.** 검사는 이 대역을 「판정하지 않은
+    # 대장 수치」로 **이름을 붙여 내놓고**, 그 절에 *"검사가 보지 않은
+    # 범위이며, 깨끗하다는 뜻이 아닙니다"* 라고 적는다. 그래서 옳은 판정은
+    # 둘이다 — **차단·경고 절에는 없고, 미판정 절에는 있다.**
+    # 뒤쪽이 더 값나간다: 그 값을 **보고서 건너뛴 것**임을 고정하기 때문에,
+    # 검사가 아예 읽지 못하게 되는 후퇴도 함께 잡는다.
+    #
+    # (초판은 `f"{PLANTED_BELOW_FLOOR} ←"` 즉 **출력 서식**으로 없음을
+    # 확인했다. 그러면 검사가 아니라 서식을 고정하게 되고, 서식이 바뀌는
+    # 날 아무것도 검사하지 않으면서 조용히 통과한다.)
+    LEDGER_KEY = "capex.modular_house.premium"
+    SKIPPED_HEADING = "판정하지 않은 대장 수치"
+    root = _fixture(f"VALUE = {PLANTED_BELOW_FLOOR}\n")
+    try:
+        code, out = _run(root)
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+    judged, _, skipped = out.partition(SKIPPED_HEADING)
+    ok = (code == 0
+          and SKIPPED_HEADING in out          # 절 자체가 사라지지 않았다
+          and LEDGER_KEY not in judged        # 차단·경고로는 잡히지 않는다
+          and LEDGER_KEY in skipped)          # 그러나 보고서 건너뛴 것이다
+    failures += not ok
+    print(
+        f"  {'통과' if ok else '**실패**':6s} "
+        f"경계5 문턱 아래 값은 차단·경고가 아니라 미판정으로 내놓는다  (종료 {code})"
+    )
+
     print("─" * 74)
-    total = len(CASES) + 5
-    print(f"음성 7 + 양성 4 + 경계 5 — 통과 {total - failures} / 실패 {failures}")
+    total = len(CASES) + 6
+    print(f"음성 7 + 경고 1 + 양성 4 + 경계 6 — 통과 {total - failures} / 실패 {failures}")
     if failures:
         print("\n**검사가 기대대로 동작하지 않습니다.** 문턱·제외 범위를 넓히면")
         print("진짜 복제가 경고로 내려가고, 경고는 종료 코드 0 입니다.")
