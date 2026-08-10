@@ -17,6 +17,7 @@
 | **Must-have 미매핑** | **8** |
 | 우선순위 미지정 요구사항 | 0 |
 | **Phase 미지정 요구사항** | **9** |
+| **차단 미수행 (판정불가)** | **1** |
 
 > **Phase 미지정 9건 — §4.0 R-1 위반입니다.**
 >
@@ -32,6 +33,17 @@
 > **둘의 긴급도는 다릅니다.** Must-have가 여기 있으면 미매핑 게이트가 그 수용기준을
 > 감시하면서도 *언제까지* 지켜야 하는지는 말하지 못하는 상태입니다. Should-have만
 > 남았다면 R-1 정비 사항이며 게이트 판정에는 영향이 없습니다.
+
+> **차단 미수행(판정불가) 1건.**
+> `blocking_dod: true` 인 수동 검사가 아직 수행되지 않았습니다. Phase DoD
+> 판정에서 이 항목들은 **"충족"이 아니라 "판정불가"** 로 셉니다.
+>
+> CI는 이 때문에 실패하지 않습니다 — 실패시키면 사람이 수행할 때까지 CI가
+> 영구히 빨간불이 되며, 그것은 `manual-checks.yaml` 머리말이 스스로 막으려는
+> 두 상황 중 하나입니다. 대신 Phase 완료 판정을 사람이 이 목록을 보고
+> 내려야 합니다.
+>
+> · `FR-1001-AC5` — MC-1 (미수행)
 
 > **미매핑 8건.** NFR-107은 미매핑 0건을 요구합니다.
 >
@@ -63,7 +75,7 @@
 |  |  | 1 | `FR-103-AC3` | 두 인스턴스의 현금흐름이 프로포마에서 분리된 행으로 표시된다 | 자동 | test_financial_isolation.py |
 | `FR-104` | Must-have | 1 | `FR-104-AC1` | PV: 연 degradation_rate(%/년) 발전량 감소 | 자동 | test_ev_v2g.py, test_heatpump.py, test_pv.py, test_pv.py |
 |  |  | 1 | `FR-104-AC2` | ESS: 사이클 누적 + 달력 열화 중 보수적 값 적용, EOL(기본 80%) 도달 시 교체비 계상 | 자동 | test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py |
-|  |  | 1 | `FR-104-AC3` | 수명 도달 자원은 replace / retire 선택 가능 | 자동 | test_der_contract.py, test_der_contract.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py |
+|  |  | 1 | `FR-104-AC3` | 수명 도달 자원은 replace / retire 선택 가능. 선택의 결과는 아래 「retire 의 의미」 다섯으로 정한다 (v0.14 명확화 — 조항이 선택지만… | 자동 | test_der_contract.py, test_der_contract.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ess.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_load.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py, test_thermal_load.py |
 |  |  | 1 | `FR-104-AC4` | 인버터 등 부속설비의 독립 수명(10~12년)을 본체와 분리 관리 | 자동 | test_smoke_wave0.py, test_ess.py, test_ev_v2g.py, test_heatpump.py, test_heatpump.py, test_load.py, test_pv.py, test_pv.py, test_pv.py, test_thermal_load.py |
 |  |  | 1 | `FR-104-AC5` | 분석기간 종료 시 잔존 수명 비례 잔존가치를 최종연도에 계상 | 자동 | test_der_contract.py, test_ess.py, test_ess.py, test_ev_v2g.py, test_heatpump.py, test_heatpump.py, test_load.py, test_load.py, test_pv.py, test_pv.py, test_pv.py, test_thermal_load.py |
 | `FR-105` | Must-have | 1 | `FR-105-AC1` | 자원 클래스는 자신이 지원하는 운전 방법 목록을 선언한다. 예: | 자동 | test_der_contract.py, test_ess.py, test_ess.py, test_ess.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_operating_mode_mapping.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py |
@@ -274,17 +286,17 @@
 |  |  | 1 | `FR-905-AC8` | 출처 메타데이터: 데이터셋도 (출처, 계측기간, 해상도, 신뢰도, 최종확인일) 을 보유하고 리포트에 표기한다 | 자동 | test_timeseries.py |
 | `FR-1001` | Must-have | 1 | `FR-1001-AC1` | (가) 영향 인자 우선 제시 — 각 결과 지표 옆에 그 값을 좌우한 상위 인자를 영향도 순으로 제시한다. 순위는 감이 아니라 민감도 계산 결과로 정한다 (FR-… | 자동 | test_phase1_dod.py, test_report.py |
 |  |  | 1 | `FR-1001-AC2` | (나) 산식 확인 — 임의 지표·프로포마 항목에서 그것을 만든 산식과 대입값을 그 자리에서 펼쳐볼 수 있다. 이동 횟수를 제약하지 않으며, "펼치면 보인다"가 … | 자동 | test_report.py |
-|  |  | 1 | `FR-1001-AC3` | (다) 3중 표기 — 각 산식은 자연어 설명 + 수식 + 대입값으로 표기한다 | 자동 | test_phase1_dod.py, test_report.py |
+|  |  | 1 | `FR-1001-AC3` | (다) 3중 표기 — 각 산식은 자연어 설명 + 수식 + 대입값으로 표기한다 | 자동 | test_phase1_dod.py, test_report.py, test_report.py, test_report.py |
 |  |  | 1 | `FR-1001-AC4` | (라) 출처 동반 — 산식에 등장하는 모든 입력값에 출처·기준연도·신뢰도가 함께 표시된다 | 자동 | test_report.py |
 |  |  | 1 | `FR-1001-AC5` | (마) 판정 기준 — 비개발자 검토자가 리포트만 보고 "이 회수기간이 왜 이 값인지"와 "어떤 가정이 바뀌면 결론이 달라지는지"를 설명할 수 있다. 측정: 심의… | 수동 | test_report.py (스텁) + MC-1 (미수행) |
 | `FR-1002` | Must-have | 1 | `FR-1002-AC1` | 영향도 순 정렬이 1순위: 리포트 첫 화면은 주 지표(할인 회수기간)에 대한 인자별 영향도 순위로 시작한다. 입력 순·분류 순 나열은 부록으로 보낸다 | 자동 | test_phase1_dod.py, test_report.py, test_sensitivity_real.py |
 |  |  | 1 | `FR-1002-AC2` | 영향도 산출 방식: 각 인자를 합리적 변동 범위(전제의 신뢰구간, 없으면 기본 ±20%)에서 변동시켜 주 지표가 움직인 폭으로 측정한다. 케이스 그리드를 실행하… | 자동 | test_report.py, test_sensitivity_real.py |
 |  |  | 1 | `FR-1002-AC3` | 각 인자마다 함께 표시: 사용값 / 단위 / 기준연도 / 출처 / 신뢰도 / 최종확인일 / 지표 변동폭 / 결론이 뒤집히는 임계값 존재 여부 | 자동 | test_report.py |
 |  |  | 1 | `FR-1002-AC4` | 결론 전환 강조: 합리적 변동 범위 안에서 목표 달성 여부가 뒤바뀌는 인자는 최상단에 별도 강조한다. 이것이 정책 판단에서 가장 중요한 정보다 | 자동 | test_report.py, test_sensitivity_real.py, test_sensitivity_real.py |
-|  |  | 1 | `FR-1002-AC5` | 가정 값 결합 표시 (v0.5 어휘 정정): 신뢰도 가정 인자는 영향도와 함께 표시하여, "영향도 낮은 가정"과 "영향도 높은 가정"을 구분할 수 있게 한다. … | 자동 | test_report.py |
-|  |  | 1 | `FR-1002-AC6` | 전체 가정 목록: 영향도 순위와 별개로 전 가정 목록을 부록 시트로 제공한다 (재현·검증용) | 자동 | test_report.py |
-| `FR-1003` | Must-have | 1 | `FR-1003-AC1` | XLSX: 엑셀에서 검산 가능한 형태 — 입력·프로포마·시계열·결과 시트를 분리하고, 주요 계산은 값이 아닌 셀 수식으로 출력하여 기존 엑셀 검토 방식과 병행 … | 자동 | test_report.py |
-|  |  | 1 | `FR-1003-AC2` | PDF: 심의자료용 요약 (표지·가정·결과·조합탐색·결론 5부) | 자동 | test_report.py |
+|  |  | 1 | `FR-1002-AC5` | 가정 값 결합 표시 (v0.5 어휘 정정): 신뢰도 가정 인자는 영향도와 함께 표시하여, "영향도 낮은 가정"과 "영향도 높은 가정"을 구분할 수 있게 한다. … | 자동 | test_report.py, test_report.py |
+|  |  | 1 | `FR-1002-AC6` | 전체 가정 목록: 영향도 순위와 별개로 전 가정 목록을 부록 시트로 제공한다 (재현·검증용) | 자동 | test_report.py, test_report.py |
+| `FR-1003` | Must-have | 1 | `FR-1003-AC1` | XLSX: 엑셀에서 검산 가능한 형태 — 입력·프로포마·시계열·결과 시트를 분리하고, 주요 계산은 값이 아닌 셀 수식으로 출력하여 기존 엑셀 검토 방식과 병행 … | 자동 | test_report.py, test_report.py, test_report.py |
+|  |  | 1 | `FR-1003-AC2` | PDF: 심의자료용 요약 (표지·가정·결과·조합탐색·결론 5부) | 자동 | test_report.py, test_report.py |
 |  |  | 1 | `FR-1003-AC3` | JSON: 시나리오+전제 정의 전체 (재현용) | 자동 | test_report.py |
 | `FR-1004` | Must-have | 1 | `FR-1004-AC1` | 일간 대표일 디스패치 스택, 월별 에너지 수지, 누적 현금흐름 곡선, 토네이도, 케이스 히트맵, 모델 비교 바 차트 | 자동 | test_report.py |
 | `FR-1005` | Must-have | 1 | `FR-1005-AC1` | 실행마다 {실행ID, 시각, 코드 커밋 해시, 전제집합 버전, 시나리오 해시, 데이터셋 해시, 엔진 종류, 결과 요약} 기록. 동일 매니페스트 재실행 시 비트 … | 자동 | test_report.py |
@@ -308,10 +320,10 @@
 | `NFR-107` | Must-have | 1 | `NFR-107-AC1.auto` | 자동 검증 — 매핑 형식은 @pytest.mark.req("FR-104-AC3"). CI는 테스트를 실행하고 통과를 확인한다 | 자동 | test_traceability_gate.py |
 |  |  | 1 | `NFR-107-AC1.manual` | 수동 검증 — 매핑 형식은 @pytest.mark.req(...) + @pytest.mark.manual 로 skip 처리된 명세 스텁, 또는 docs/manu… | 자동 | test_traceability_gate.py |
 |  |  | 1 | `NFR-107-AC2` | 미매핑 0건을 CI가 확인한다. 단 "매핑됨"에는 수동 검증 항목이 포함된다 | 자동 | test_traceability_gate.py |
-|  |  | 1 | `NFR-107-AC3` | 수동 검증 항목은 수행 일자·수행자·결과를 docs/manual-checks.yaml에 기록한다. 기록이 없는 항목은 미수행으로 간주한다 | 자동 | test_traceability_gate.py |
+|  |  | 1 | `NFR-107-AC3` | 수동 검증 항목은 수행 일자·수행자·결과를 docs/manual-checks.yaml에 기록한다. 기록이 없는 항목은 미수행으로 간주한다 | 자동 | test_traceability_gate.py, test_traceability_gate.py, test_traceability_gate.py |
 |  |  | 1 | `NFR-107-AC4` | 매핑표(docs/traceability.md)는 CI가 자동 생성하며 자동/수동을 구분 표시한다 | 자동 | test_traceability_gate.py |
 |  |  | 1 | `NFR-107-AC5` | 수동 검증 분류의 정본은 docs/manual-checks.yaml이다. spec은 어느 수용기준이 수동인지 열거하지 않는다. 대장의 전건에 대해 ⓐ crite… | 자동 | test_traceability_gate.py |
-|  |  | 1 | `NFR-107-M1` | CI가 spec 수용기준 목록과 마커·YAML을 대조하여 미매핑 0건 확인. 구현: scripts/gen_traceability.py (Wave 0 산출물 0.… | 자동 | test_17_9_dod9.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_traceability_gate.py |
+|  |  | 1 | `NFR-107-M1` | CI가 spec 수용기준 목록과 마커·YAML을 대조하여 미매핑 0건 확인. 구현: scripts/gen_traceability.py (Wave 0 산출물 0.… | 자동 | test_17_9_dod9.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_marker_substance.py, test_traceability_gate.py, test_traceability_gate.py, test_traceability_gate.py, test_traceability_gate.py |
 | `NFR-201` | Must-have | 1 | `NFR-201-M1` | 신규 자원 추가 PR에서 core/engine/, core/cba/ diff 0줄 | 자동 | test_phase1_measurements.py |
 | `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | 자동 | test_ci_gates.py, test_assumption_provider.py, test_assumption_provider.py, test_der_contract.py, test_der_contract.py, test_tariff.py |
 | `NFR-203` | Should-have | 1 | `NFR-203-M1` | pytest-cov CI 게이트 | 자동 | test_ci_gates.py |
@@ -394,3 +406,8 @@ Phase DoD 판정 시 미수행 건수를 확인합니다.
 
 수동 등재는 예외이지 도피처가 아닙니다. 등재 기준과 제외 사유는
 `manual-checks.yaml` 머리말에 있습니다.
+
+각 항목은 `blocking_dod` 칸을 갖습니다 — 미수행이면 Phase 완료를 막아야
+하는가를 사람이 미리 표시한 값입니다. `true` 이고 아직 수행되지 않았으면
+위 요약과 "차단 미수행" 절에 **판정불가**로 표기됩니다. "충족"과 혼동되지
+않도록 별도 상태로 셉니다 — CI는 이 상태로 실패하지 않습니다.

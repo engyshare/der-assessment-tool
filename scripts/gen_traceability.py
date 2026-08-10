@@ -177,31 +177,54 @@ def collect_test_markers(tests_dir: Path) -> tuple[dict[str, list[tuple[str, boo
     return mapping, defects
 
 
-def collect_manual(path: Path) -> tuple[dict[str, dict], list[str]]:
-    """수용기준 ID → 수동 검증 항목. 그리고 대상이 없는 항목 목록.
+RECORD_FIELDS = ("performed_at", "performed_by", "result_note")
+
+
+def collect_manual(path: Path) -> tuple[dict[str, dict], list[str], list[str], list[str]]:
+    """수용기준 ID → 수동 검증 항목. 그리고 세 종류의 결함 목록.
 
     요구사항 단위가 아니라 **수용기준 단위**로 건다. 요구사항 단위로 걸면
     자동화 가능한 수용기준까지 "수동으로 검증됨"으로 표시되어 커버리지를
     과대 계상한다 — 실제로 FR-1001의 자동 검증 대상 4건이 그렇게 잡혔다.
+
+    반환: (criterion_id → 항목, 대상 없는 항목, blocking_dod 칸 누락,
+    수행 기록 불완전).
+
+    뒤의 둘은 **대장 전건**에 건다 — `blocking_dod` 를 읽는 코드가 하나도
+    없으면 사람이 적은 "이건 차단이다"가 기계에는 주석과 같다(WP-24C).
     """
     if not path.is_file():
-        return {}, []
+        return {}, [], [], []
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     out: dict[str, dict] = {}
     orphan: list[str] = []
+    missing_blocking: list[str] = []
+    incomplete: list[str] = []
     for chk in data.get("checks") or []:
+        chk_id = chk["id"]
+        if "blocking_dod" not in chk:
+            missing_blocking.append(
+                f'{chk_id} — blocking_dod 칸이 없음 (requirement: '
+                f'{chk.get("requirement", "?")})')
+        if chk.get("status") == "수행":
+            missing_fields = [f for f in RECORD_FIELDS if not chk.get(f)]
+            for f in missing_fields:
+                incomplete.append(f'{chk_id} — status=수행인데 {f} 기록 없음')
+
         cid = chk.get("criterion_id")
         if not cid:
-            orphan.append(f'{chk["id"]} — criterion_id 없음 (requirement: '
+            orphan.append(f'{chk_id} — criterion_id 없음 (requirement: '
                           f'{chk.get("requirement", "?")})')
             continue
         out[cid] = chk
-    return out, orphan
+    return out, orphan, missing_blocking, incomplete
 
 
 def render(reqs: list[Requirement], tests: dict[str, list[str]],
            manual: dict[str, dict], orphan: list[str],
-           spec_name: str) -> tuple[str, list[str]]:
+           spec_name: str, *,
+           blocking_unperformed: list[tuple[str, dict]] = ()
+           ) -> tuple[str, list[str]]:
     unmapped: list[str] = []
     rows: list[str] = []
 
@@ -286,6 +309,7 @@ def render(reqs: list[Requirement], tests: dict[str, list[str]],
 | **Must-have 미매핑** | **{n_unmapped}** |
 | 우선순위 미지정 요구사항 | {len(unprioritized)} |
 | **Phase 미지정 요구사항** | **{len(unphased)}** |
+| **차단 미수행 (판정불가)** | **{len(blocking_unperformed)}** |
 
 """
 
@@ -319,6 +343,23 @@ def render(reqs: list[Requirement], tests: dict[str, list[str]],
 > **둘의 긴급도는 다릅니다.** Must-have가 여기 있으면 미매핑 게이트가 그 수용기준을
 > 감시하면서도 *언제까지* 지켜야 하는지는 말하지 못하는 상태입니다. Should-have만
 > 남았다면 R-1 정비 사항이며 게이트 판정에는 영향이 없습니다.
+
+"""
+
+    if blocking_unperformed:
+        rows_bd = "\n".join(
+            f"> · `{cid}` — {chk['id']} ({chk.get('status', '미수행')})"
+            for cid, chk in blocking_unperformed)
+        header += f"""> **차단 미수행(판정불가) {len(blocking_unperformed)}건.**
+> `blocking_dod: true` 인 수동 검사가 아직 수행되지 않았습니다. Phase DoD
+> 판정에서 이 항목들은 **"충족"이 아니라 "판정불가"** 로 셉니다.
+>
+> CI는 이 때문에 실패하지 않습니다 — 실패시키면 사람이 수행할 때까지 CI가
+> 영구히 빨간불이 되며, 그것은 `manual-checks.yaml` 머리말이 스스로 막으려는
+> 두 상황 중 하나입니다. 대신 Phase 완료 판정을 사람이 이 목록을 보고
+> 내려야 합니다.
+>
+{rows_bd}
 
 """
 
@@ -399,6 +440,11 @@ Phase DoD 판정 시 미수행 건수를 확인합니다.
 
 수동 등재는 예외이지 도피처가 아닙니다. 등재 기준과 제외 사유는
 `manual-checks.yaml` 머리말에 있습니다.
+
+각 항목은 `blocking_dod` 칸을 갖습니다 — 미수행이면 Phase 완료를 막아야
+하는가를 사람이 미리 표시한 값입니다. `true` 이고 아직 수행되지 않았으면
+위 요약과 "차단 미수행" 절에 **판정불가**로 표기됩니다. "충족"과 혼동되지
+않도록 별도 상태로 셉니다 — CI는 이 상태로 실패하지 않습니다.
 """
 
     return header + body + tail, unmapped, stub_without_record
@@ -458,7 +504,35 @@ def main() -> int:
             print(f"  · {d}", file=sys.stderr)
         return 2
 
-    manual, orphan = collect_manual(args.manual)
+    manual, orphan, missing_blocking, incomplete_records = collect_manual(args.manual)
+
+    # ── blocking_dod 칸 필수화 (WP-24C) ──────────────────────────────
+    #
+    # `blocking_dod` 를 읽는 코드가 없으면 사람이 적어 둔 "이건 차단이다"가
+    # 기계에는 주석과 같다. 칸이 없으면 다음 사람이 깃발을 지우거나 false로
+    # 바꿔도 아무 일도 일어나지 않으므로, 대장 전건에 이 칸을 강제한다.
+    if missing_blocking:
+        print(f"ERROR: blocking_dod 칸 누락 {len(missing_blocking)}건", file=sys.stderr)
+        for m in missing_blocking:
+            print(f"  · {m}", file=sys.stderr)
+        print("\n모든 수동 검사 항목은 blocking_dod(참/거짓)를 명시해야 합니다 — "
+              "없으면 Phase DoD 판정이 이 항목의 존재조차 모르게 됩니다.",
+              file=sys.stderr)
+        return 2
+
+    # ── 수행 기록 완전성 (NFR-107-AC3) ───────────────────────────────
+    #
+    # status: 수행 인데 수행 일자·수행자·결과 중 하나라도 비어 있으면 「수행했다고
+    # 적기만 하는」 우회가 된다. 대장 머리말이 "기록 없는 항목은 미수행으로
+    # 본다"고 이미 적고 있는데 지금까지 아무도 확인하지 않았다.
+    if incomplete_records:
+        print(f"ERROR: 수행 기록 불완전 {len(incomplete_records)}건", file=sys.stderr)
+        for m in incomplete_records:
+            print(f"  · {m}", file=sys.stderr)
+        print("\nstatus: 수행 인 항목은 performed_at·performed_by·result_note를 "
+              "모두 기록해야 합니다 (NFR-107-AC3). 기록이 없으면 미수행으로 "
+              "간주합니다.", file=sys.stderr)
+        return 2
 
     # ── 게이트 자기참조 금지 (NFR-107-AC5 ⓒ) ────────────────────────
     #
@@ -495,7 +569,16 @@ def main() -> int:
         orphan.append(f'테스트 마커 {cid} — 해당 수용기준이 spec에 없음 '
                       f'({", ".join(Path(p).name for p, _ in tests[cid])})')
 
-    content, unmapped, stub_only = render(reqs, tests, manual, orphan, spec_path.name)
+    # 미수행 차단 수동검사 — 「충족」이 아니라 「판정불가」로 센다 (WP-24C).
+    # 게이트는 실패시키지 않는다: MC-1처럼 코드로 닫을 수 없는 검사가 있고,
+    # 실패시키면 사람이 수행할 때까지 CI가 영구히 빨간불이 된다.
+    blocking_unperformed = sorted(
+        (cid, chk) for cid, chk in manual.items()
+        if chk.get("blocking_dod") and chk.get("status") != "수행")
+
+    content, unmapped, stub_only = render(
+        reqs, tests, manual, orphan, spec_path.name,
+        blocking_unperformed=blocking_unperformed)
 
     if not args.check:
         args.out.parent.mkdir(parents=True, exist_ok=True)
@@ -515,6 +598,11 @@ def main() -> int:
     print(f"요구사항 {len(reqs)}건 / 수용기준 {n_crit}건 / "
           f"자동 {len(tests) - n_stub}건 / 수동 {len(manual)}건 / "
           f"수동 스텁 {n_stub}건 / Phase 미지정 {n_unphased}건")
+
+    print(f"차단 미수행(판정불가) {len(blocking_unperformed)}건")
+    for cid, chk in blocking_unperformed:
+        print(f"  · {chk['id']} ({cid}) — {chk.get('status', '미수행')}, "
+              f"blocking_dod=true → Phase DoD 판정불가")
 
     if conflicts:
         print(f"Phase 표기 충돌 {len(conflicts)}건 — 본문과 부록 A.1이 다릅니다")

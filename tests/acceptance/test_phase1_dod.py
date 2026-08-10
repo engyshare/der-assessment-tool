@@ -2,6 +2,7 @@
 
 import time
 from datetime import date
+from decimal import Decimal
 
 import pytest
 
@@ -269,10 +270,13 @@ def test_dod5_influence_ranking_and_formula_representation() -> None:
     )
 
     # 산식 3중 표기 검증 (FR-1001-AC3)
-    pdf_content = generate_pdf()
+    # 손계산: 편익 1,200원 - 비용 750원 = NPV 450원. 이전에는 generate_pdf()가
+    # 인자와 무관하게 항상 "200 = 1000 - 800"을 반환했으므로, 실제 값을
+    # 넘겨 그 값이 그대로 나오는지까지 확인해야 동어반복이 아니다.
+    pdf_content = generate_pdf(benefit_won=Decimal("1200"), cost_won=Decimal("750"))
     assert "자연어" in pdf_content["formulas"]
     assert "수식" in pdf_content["formulas"]
-    assert "대입값" in pdf_content["formulas"]
+    assert "대입값: 450 = 1200 - 750" in pdf_content["formulas"]
 
 
 def _create_valuestream_for_tag(tag: str, assumptions: AssumptionSet) -> ValueStream:

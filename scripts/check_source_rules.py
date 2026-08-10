@@ -190,6 +190,53 @@ def extract_body(spec_text: str) -> str:
 PROCESS_MARKERS = ("spec 작성 시 원칙",)
 
 
+#: spec 머리말이 판본을 **다시 소유**하는 것을 잡는다 (§16.1 W-4 · 원칙 3-C).
+#:
+#: 판본(`mtime`·`sha256`)의 단일 소유자는 `docs/source-rules.lock` 이다. 그런데
+#: v0.13까지 spec 머리말의 `domain_rules:` · `evidence_standard:` 가 **같은 값을
+#: 한 번 더** 적고 있었고, 이 스크립트는 **머리말을 대조 대상으로 삼지 않았다.**
+#:
+#: 그래서 실제로 이런 일이 났다 — 정본 「근거 표기 기준」이 개정되어 lock 과
+#: 저장소 사본은 `14daa428…` 로 갱신됐는데 **머리말만 `b5500118…` 에 남았다.**
+#: 대조는 lock 을 보므로 **rc=0 이었다.** spec 을 읽는 사람은 없는 판본에
+#: 고정된 것으로 읽는다.
+#:
+#: **고친 방식은 값을 맞추는 것이 아니라 이중 소유를 없애는 것이다.** 값을
+#: 맞추면 다음 개정에 또 어긋난다 — 어긋날 수 있는 자리를 남기기 때문이다.
+#: 저장소에 같은 선례가 있다(spec v0.6 검토: *「lock YAML 예시가 실제 파일과
+#: 어긋난 것 → 예시를 삭제하고 실제 파일로 위임」*).
+FRONTMATTER_VERSION = re.compile(r"^(domain_rules|evidence_standard)\s*:.*?"
+                                 r"(sha256:\s*[0-9a-f]{16,}|@\s*\d{4}-\d{2}-\d{2}T)",
+                                 re.MULTILINE)
+
+
+def check_frontmatter_ownership(spec_text: str, report: Report) -> None:
+    """spec 머리말이 정본 판본을 재소유하면 표류로 잡는다.
+
+    **값이 맞는지 보지 않는다. 값이 *있는지*를 본다.** 맞는지 보는 검사는
+    「지금은 맞다」만 말하고, 이 자리가 다시 어긋날 수 있다는 사실은 그대로
+    남긴다. 소유를 하나로 두면 어긋날 자리 자체가 없어진다.
+    """
+    head, sep, _ = spec_text.partition("\n---\n")
+    if not sep or not head.lstrip().startswith("---"):
+        report.add("ERROR", "spec", "머리말(YAML frontmatter)을 찾지 못했습니다")
+        return
+
+    hits = FRONTMATTER_VERSION.findall(head)
+    if hits:
+        fields = ", ".join(sorted({f for f, _ in hits}))
+        report.add(
+            "DRIFT", "spec ↔ lock",
+            f"머리말이 정본 판본을 재소유합니다 ({fields})",
+            "판본(mtime·sha256)의 단일 소유자는 docs/source-rules.lock 입니다 "
+            "(§16.1 W-4). 머리말에서 지우고 lock 을 가리키십시오 — 값을 맞추는 "
+            "것으로는 닫히지 않습니다. 다음 정본 개정에 같은 자리가 다시 "
+            "어긋납니다.")
+    else:
+        report.add("INFO", "spec ↔ lock",
+                   "머리말이 판본을 재소유하지 않음 (lock 단독 소유)")
+
+
 def cited_principles(body: str) -> tuple[set[str], list[tuple[int, str]]]:
     """도메인 정본을 가리키는 원칙 인용과, 출처가 모호한 인용을 함께 돌려준다."""
     domain: set[str] = set()
@@ -498,11 +545,15 @@ def main() -> int:
                       or lock.get("vault_root", ""))
     report = Report()
 
+    spec_text = spec_path.read_text(encoding="utf-8")
     try:
-        body = extract_body(spec_path.read_text(encoding="utf-8"))
+        body = extract_body(spec_text)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
+
+    # 머리말은 `extract_body` 가 걷어낸다 — 그래서 원문으로 따로 본다.
+    check_frontmatter_ownership(spec_text, report)
 
     pending: dict[str, dict] = {}
     origins: list[str] = []

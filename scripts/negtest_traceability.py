@@ -37,11 +37,12 @@ def workspace() -> Iterator[Path]:
             shutil.rmtree(path, ignore_errors=True)
 
 
-def run(tests_dir: Path, manual: Path = MANUAL, out: Path | None = None):
+def run(tests_dir: Path, manual: Path = MANUAL, out: Path | None = None,
+        spec: Path = SPEC):
     with workspace() as td:
         target = out or (td / "out.md")
         p = subprocess.run(
-            [sys.executable, str(GEN), "--spec", str(SPEC),
+            [sys.executable, str(GEN), "--spec", str(spec),
              "--manual", str(manual), "--tests", str(tests_dir),
              "--out", str(target)],
             capture_output=True, text=True, encoding="utf-8",
@@ -178,8 +179,12 @@ def c_self_ref(d: Path):
         "    requirement: 'NFR-107'\n"
         "    criterion_id: 'NFR-107-AC1.manual'\n"
         "    why_manual: '게이트 자신을 수동으로 처리'\n"
+        "    blocking_dod: false\n"
         "    status: '수행'\n"
         "    verdict: '통과'\n"
+        "    performed_at: '2026-08-10'\n"
+        "    performed_by: 'x'\n"
+        "    result_note: 'x'\n"
     ))
     return run(t, manual=m)
 case("게이트 자신을 수동 대장에 등재", c_self_ref, "게이트 자신을 수동 대장에")
@@ -197,6 +202,116 @@ def c_dangling(d: Path):
     ))
     return run(t)
 case("폐기된 조항을 가리키는 마커", c_dangling, "해당 수용기준이 spec에 없음")
+
+
+# ── blocking_dod (WP-24C) ────────────────────────────────────────────
+#
+# `blocking_dod` 를 읽는 코드가 하나도 없었다. 사람이 적어 둔 "이건 차단이다"가
+# 기계에는 주석과 같았다는 뜻이다. 아래 넷은 그 구멍을 닫는 검사가 실제로
+# 감지하는지 확인한다.
+
+# 9 — blocking_dod 칸을 지운다
+def c_missing_blocking_dod(d: Path):
+    t = d / "t9"
+    t.mkdir()
+    m = write(d, "missing-blocking.yaml", (
+        "version: 1\n"
+        "checks:\n"
+        "  - id: MC-Z1\n"
+        "    requirement: FR-101\n"
+        "    criterion_id: FR-101-AC1\n"
+        "    why_manual: x\n"
+        "    status: '미수행'\n"
+    ))
+    assert "blocking_dod" not in m.read_text(encoding="utf-8")
+    return run(t, manual=m)
+case("blocking_dod 칸이 없는 항목", c_missing_blocking_dod, "blocking_dod 칸 누락")
+
+
+# 10 — status: 수행인데 performed_at 이 비어 있다
+def c_incomplete_record(d: Path):
+    t = d / "t10"
+    t.mkdir()
+    m = write(d, "incomplete-record.yaml", (
+        "version: 1\n"
+        "checks:\n"
+        "  - id: MC-Z2\n"
+        "    requirement: FR-101\n"
+        "    criterion_id: FR-101-AC2\n"
+        "    why_manual: x\n"
+        "    blocking_dod: false\n"
+        "    status: '수행'\n"
+        "    performed_at: null\n"
+        "    performed_by: '홍길동'\n"
+        "    result_note: '통과'\n"
+    ))
+    body = m.read_text(encoding="utf-8")
+    assert "status: '수행'" in body and "performed_at: null" in body
+    return run(t, manual=m)
+case("수행인데 performed_at 기록 없음", c_incomplete_record, "수행 기록 불완전")
+
+
+# 11 — 실제 대장의 차단 미수행(MC-1)이 「판정불가」로 표기되는가 (양성)
+#
+#     이 저장소의 실제 docs/manual-checks.yaml에는 이미 MC-1
+#     (blocking_dod: true, status: 미수행)이 있다. 이것을 fixture로 새로
+#     심을 필요가 없다 — 이미 심겨 있다. 여기서는 그 상태를 gen_traceability.py가
+#     조용히 지나치지 않고 실제로 표기하는지를 확인한다. 표기 로직이
+#     빠지면(회귀) 이 케이스가 MISS로 드러난다.
+def c_blocking_marked_positive(d: Path):
+    rc, out = baseline(d)
+    # rc는 0이 아닐 수 있다 — 빈 tests/ 디렉터리라 대부분의 조항이
+    # 미매핑(rc=1)이기 때문이며, blocking_dod 기능과는 무관하다. 여기서
+    # 확인하는 것은 결함(rc=2)이 아니면서 판정불가 표기가 실제로 나오는가다.
+    ok = rc != 2 and "판정불가" in out and "MC-1" in out
+    return (0 if ok else 9), out
+case("실제 대장의 차단 미수행(MC-1)이 판정불가로 표기됨 (양성)",
+     c_blocking_marked_positive, "")
+
+
+# 12 — 차단 미수행이 하나도 없는 대장은 rc=0 (오탐 없음을 고정)
+#
+#     1~3만 있으면 판정 로직이 "항상 참"을 내도 초록불이다. 실제 spec은
+#     항상 어딘가 미매핑이 남아 있어(다른 레인이 동시에 채우는 중) rc를
+#     그것으로 오염시키므로, 여기만 **자족적인 미니 spec**을 심어 rc=0을
+#     literal하게 고정한다.
+MINI_SPEC = (
+    "## 1. 요구사항\n\n"
+    "- **FR-1** 샘플 요구사항\n"
+    "  - Priority: **Must-have** / Phase 1\n"
+    "  - Acceptance Criteria:\n"
+    "    - **AC1** 샘플 수용기준\n\n"
+    "## 9. 보안\n\n"
+    "| ID | 항목 | 우선순위 | Phase | 요구사항 |\n"
+    "|---|---|---|---|---|\n"
+    "| **SC-1** | 샘플 | Should-have | 2 | 설명 |\n"
+)
+
+
+def c_no_blocking_unperformed(d: Path):
+    t = d / "t12"
+    t.mkdir()
+    write(t, "test_auto.py", (
+        "import pytest\n\n"
+        "@pytest.mark.req('FR-1-AC1')\n"
+        "def test_real():\n"
+        "    assert True\n"
+    ))
+    spec = write(d, "mini-spec.md", MINI_SPEC)
+    m = write(d, "no-blocking.yaml", (
+        "version: 1\n"
+        "checks:\n"
+        "  - id: MC-Z3\n"
+        "    requirement: FR-1\n"
+        "    criterion_id: FR-1-AC1\n"
+        "    why_manual: x\n"
+        "    blocking_dod: false\n"
+        "    status: '미수행'\n"
+    ))
+    rc, out = run(t, manual=m, spec=spec)
+    ok = rc == 0 and "차단 미수행(판정불가) 0건" in out
+    return (0 if ok else 9), out
+case("차단 미수행이 하나도 없으면 rc=0 (오탐 없음을 고정)", c_no_blocking_unperformed, "")
 
 
 def main() -> int:
