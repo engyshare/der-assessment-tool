@@ -196,6 +196,71 @@ def test_build_capex_cashflows_viewpoints() -> None:
     assert cf_owner[0].amounts[1] != cf_gov[0].amounts[1]
 
 
+@pytest.mark.req("FR-611-AC3.SOCIAL")
+def test_build_capex_cashflows_social_viewpoint_differs_from_owner_and_gov_when_prefunded() -> None:
+    """FR-611-AC3.SOCIAL: 기지원 설비 — 사회 관점은 **전액**을 비용으로 본다.
+
+    조항 원문: *"사회 — 전액 비용. 근거: 재원이 어디서 왔든 자원은 소모됨"*
+    (분산자원 경제성 평가 원칙 2-3 관점 분리).
+
+    손계산 오라클(취득가 1,000원, 기지원 확정):
+    - SOCIAL = **-1,000원** (AC2 「전액 계상」과 같은 금액 — 관점이 취득가
+      자체를 바꾸지 않는다)
+    - OWNER = 0원 (자기부담 없음) → SOCIAL 과 **다르다**
+    - GOV = -1,000원(「타 사업 국비」 메모 행) — 이 경우 금액은 SOCIAL 과
+      같지만(둘 다 취득가 전액을 가리키므로), **의미가 다른 별개 행**이다
+      (GOV 는 본 사업 재정부담에서 제외된 타 사업 지출의 메모이고, SOCIAL 은
+      사회 전체가 실제로 소모한 자원의 총비용이다). `tag` 로 구분한다.
+    """
+    scheme_pre = _scheme(
+        subsidy_rate=1.0,
+        is_prefunded=True,
+        funding_program="대여사업",
+        prefunded_status="확정 지원",
+    )
+
+    cf_social = build_capex_cashflows(scheme_pre, 1000, "SOCIAL")
+    cf_owner = build_capex_cashflows(scheme_pre, 1000, "OWNER")
+    cf_gov = build_capex_cashflows(scheme_pre, 1000, "GOV")
+
+    assert cf_social[0].amounts[1] == Money(-1000)
+    assert cf_owner[0].amounts[1] == Money(0)
+    assert cf_social[0].amounts[1] != cf_owner[0].amounts[1]
+
+    assert cf_social[0].tag != cf_gov[0].tag, (
+        "SOCIAL과 GOV의 금액이 같더라도(둘 다 취득가 전액) 서로 다른 관점의 "
+        "행이므로 태그가 같으면 리포트에서 두 관점이 뒤섞인다"
+    )
+
+
+@pytest.mark.req("FR-611-AC3.SOCIAL")
+def test_build_capex_cashflows_social_viewpoint_books_full_cost_even_without_prefunding() -> None:
+    """FR-611-AC3.SOCIAL: **비**기지원 설비에서도 사회 관점은 재원 구성과 무관하게
+    취득가 전액을 비용으로 본다.
+
+    손계산 오라클(취득가 1,000원, 보조율 30%, 융자 0%):
+    - 자금조달 항등식(FR-604-AC7): 보조금 300원 + 융자 0원 + 자부담 700원 = 1,000원
+    - SOCIAL = **-1,000원** — 재원이 보조금·자부담 어느 쪽이든 자원 자체가
+      소모된 값은 변하지 않는다 (원칙 2-3)
+    - OWNER = -700원 (자부담만) → SOCIAL 과 **다르다**
+    - GOV = -300원 (본 사업 보조금만) → SOCIAL 과 **다르다**
+
+    기지원 케이스만 보면 「SOCIAL=전액」이 우연히 다른 계상과 일치하는 특수
+    사례로 보일 수 있다 — 재원 구성이 섞인 이 케이스가 그것이 아님을 보인다.
+    """
+    scheme_new = _scheme(subsidy_rate=0.3)
+
+    cf_social = build_capex_cashflows(scheme_new, 1000, "SOCIAL")
+    cf_owner = build_capex_cashflows(scheme_new, 1000, "OWNER")
+    cf_gov = build_capex_cashflows(scheme_new, 1000, "GOV")
+
+    assert cf_social[0].amounts[1] == Money(-1000)
+    assert cf_owner[0].amounts[1] == Money(-700)
+    assert cf_gov[0].amounts[1] == Money(-300)
+    assert cf_social[0].amounts[1] != cf_owner[0].amounts[1]
+    assert cf_social[0].amounts[1] != cf_gov[0].amounts[1]
+
+
 @pytest.mark.req("FR-611-AC4")
 def test_build_prefunding_risk_cases_add_support_failure_variant_for_planned_support() -> None:
     """FR-611-AC4: `지원 예정`은 미확정 리스크이므로 **병기 케이스**를 함께 만든다.

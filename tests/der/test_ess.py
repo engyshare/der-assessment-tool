@@ -248,7 +248,7 @@ def test_rc_ess_p4_second_life_with_unreachable_eol_is_rejected() -> None:
 
 
 # ── RC-ESS-B1 TOU 차익거래 / B2 피크 저감 ───────────────────────────
-@pytest.mark.req("FR-401-AC2.PeakShaving")
+@pytest.mark.req("FR-302-AC2")
 def test_rc_ess_b1_tou_arbitrage_benefit() -> None:
     """`RC-ESS-B1` 산식 원문 (§13.2.3 ESS 표):
 
@@ -290,7 +290,6 @@ def test_rc_ess_b2_peak_shaving_benefit() -> None:
 @pytest.mark.req("FR-611-AC1")
 @pytest.mark.req("FR-611-AC2")
 @pytest.mark.req("FR-611-AC3.OWNER")
-@pytest.mark.req("FR-611-AC3.SOCIAL")
 @pytest.mark.req("FR-611-AC3.GOV")
 @pytest.mark.req("FR-611-AC5")
 @pytest.mark.req("FR-611-AC6")
@@ -583,7 +582,7 @@ def test_dispatch_totals_are_resolution_independent() -> None:
     assert -sum(v for v in series if v < 0) == pytest.approx(2920.0 / 0.9, rel=1e-9)
 
 
-@pytest.mark.req("FR-301-AC2")
+@pytest.mark.req("FR-301-AC4")
 def test_dispatch_rejects_plan_that_exceeds_grid_limit() -> None:
     """계통 연계 한도를 넘는 계획은 **거부하고 원인을 보고**한다 (FR-403 취지).
 

@@ -11,8 +11,8 @@
 |---|---|
 | 요구사항 | 105 |
 | 그중 Must-have | 79 |
-| 수용기준 총계 | 307 |
-| 자동 검증 매핑 | 277 |
+| 수용기준 총계 | 308 |
+| 자동 검증 매핑 | 278 |
 | 수동 검증 매핑 | 4 |
 | **Must-have 미매핑** | **8** |
 | 우선순위 미지정 요구사항 | 0 |
@@ -92,10 +92,11 @@
 |  |  | 1 | `FR-204-AC3` | 템플릿 로드 시 모든 파라미터에 기본값과 출처가 채워진다 | 자동 | test_phase1_dod.py, test_templates.py |
 | `FR-205` | Must-have | 1 | `FR-205-AC1` | 다음이 정산 로직에 반영된다 — 개별 세대 직접계약 / 단일계약+관리주체 경유 / 분산특구 직접거래 / 상계거래 / 잉여 직거래 / 집합 PPA / VPP 경유 | 자동 | test_settlement.py |
 | `FR-301` | Must-have | 1 | `FR-301-AC1` | 매 스텝 자원별 충·방전·발전·소비량과 계통 수·송전량을 산출 | 자동 | test_der_contract.py, test_der_contract.py, test_ess.py, test_ev_v2g.py, test_rule_based.py |
-|  |  | 1 | `FR-301-AC2` | 전력·열 수지 균형식이 모든 스텝에서 오차 < 1e-6 kWh | 자동 | test_ess.py, test_ess.py, test_thermal_load.py, test_thermal_load.py, test_rule_based.py |
+|  |  | 1 | `FR-301-AC2` | 전력·열 수지 균형식이 모든 스텝에서 오차 < 1e-6 kWh | 자동 | test_ess.py, test_thermal_load.py, test_thermal_load.py, test_rule_based.py |
 |  |  | 1 | `FR-301-AC3` | 시계열 행수 불일치 시 명확한 오류로 중단 | 자동 | test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_der_contract.py, test_heatpump.py, test_thermal_load.py, test_rule_based.py, test_rule_based.py |
+|  |  | 1 | `FR-301-AC4` | (v0.14 신설) 계통 연계 용량 상한을 초과하는 운전 계획은 명확한 | 자동 | test_ess.py |
 | `FR-302` | Must-have | 1 | `FR-302-AC1` | 다음 우선순위를 설정 가능한 순서로 적용 | 자동 | test_rule_based.py |
-|  |  | 1 | `FR-302-AC2` | TOU 하 경부하 충전 / 최대부하 방전 차익거래 규칙을 옵션 활성화 | 자동 | test_rule_based.py |
+|  |  | 1 | `FR-302-AC2` | TOU 하 경부하 충전 / 최대부하 방전 차익거래 규칙을 옵션 활성화 | 자동 | test_ess.py, test_rule_based.py |
 |  |  | 1 | `FR-302-AC3` | 규칙 순서·활성화를 UI에서 변경 가능하며 효과가 결과에 반영된다 | 자동 | test_rule_based.py |
 | `FR-303` | Should-have | - | `FR-303-AC1` | 목적함수: 분석기간 총비용 최소화. 자원·SOC·계통 제약을 선형 제약으로 표현 | **미매핑** | — |
 |  |  | - | `FR-303-AC2` | 최적화 창: 월 또는 연 단위 선택 | **미매핑** | — |
@@ -108,7 +109,7 @@
 |  |  | 1 | `FR-401-AC2.SurplusSale` | SurplusSale 잉여전력 판매 — 잉여량 × 판매단가(직거래/상계/SMP) | 자동 | test_pv.py, test_pv.py, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.REC` | REC REC 수익 — 발전량 × 가중치 × REC 단가 | 자동 | test_pv.py, test_pv.py, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.DirectTrade` | DirectTrade 분산특구 직접거래 차익 — (약관요금 − 직접거래단가) × 거래량 − 거래지원수수료 | 자동 | test_formulas.py |
-|  |  | 1 | `FR-401-AC2.PeakShaving` | PeakShaving 기본요금(피크) 절감 — 월 최대수요 저감분 × 기본요금 단가 | 자동 | test_ess.py, test_ess.py, test_formulas.py |
+|  |  | 1 | `FR-401-AC2.PeakShaving` | PeakShaving 기본요금(피크) 절감 — 월 최대수요 저감분 × 기본요금 단가 | 자동 | test_ess.py, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.HeatCostSaving` | HeatCostSaving 열 비용 절감 (히트펌프) — (기존 열원 연료비 − 히트펌프 전력비) | 자동 | test_heatpump.py, test_heatpump.py, test_formulas.py |
 |  |  | 2 | `FR-401-AC2.DemandResponse` | DemandResponse 수요반응 정산금 — 감축량 × 정산단가 (중복·배타 규칙 반영) | **미매핑** | — |
 |  |  | 2 | `FR-401-AC2.VPPMarket` | VPPMarket VPP 시장참여 수익 — 시장정산 − 운영수수료 | **미매핑** | — |
@@ -205,7 +206,7 @@
 | `FR-611` | Must-have | 1 | `FR-611-AC1` | IncentiveScheme에 funding_program(재원 사업명)과 is_prefunded(타 사업 기지원 여부), prefunded_status(확정 … | 자동 | test_ess.py, test_incentive.py |
 |  |  | 1 | `FR-611-AC2` | is_prefunded=True인 설비의 취득원가는 금액을 0으로 만들지 않고 전액 계상한다. 관점별 처리는 AC3. 각 조항이 정한다 (v0.9: v0.8까지… | 자동 | test_ess.py, test_incentive.py |
 |  |  | 1 | `FR-611-AC3.OWNER` | 사업자·주민 — 자기부담 0 (현금흐름 미발생). 근거: 실제 지출이 없음 | 자동 | test_ess.py, test_incentive.py |
-|  |  | 1 | `FR-611-AC3.SOCIAL` | 사회 — 전액 비용. 근거: 재원이 어디서 왔든 자원은 소모됨 (분산자원 경제성 평가 원칙 원칙 2-3 관점 분리) | 자동 | test_ess.py, test_incentive.py |
+|  |  | 1 | `FR-611-AC3.SOCIAL` | 사회 — 전액 비용. 근거: 재원이 어디서 왔든 자원은 소모됨 (분산자원 경제성 평가 원칙 원칙 2-3 관점 분리) | 자동 | test_incentive.py, test_incentive.py, test_incentive.py |
 |  |  | 1 | `FR-611-AC3.GOV` | 정부 — 본 사업 재정부담에서 제외하되 타 사업 국비 행으로 분리 표시. 근거: 본 사업의 필요 지원액과 섞이면 안 됨 | 자동 | test_ess.py, test_incentive.py |
 |  |  | 1 | `FR-611-AC4` | 지원 예정 상태는 미확정 리스크로 취급한다. 해당 설비를 제외한 케이스를 함께 산출하여 "지원 무산 시 회수기간"을 병기한다 | 자동 | test_incentive.py |
 |  |  | 1 | `FR-611-AC5` | 프로포마에 기지원 설비가 별도 행으로 표시되고, 재원 사업명이 함께 출력된다 | 자동 | test_ess.py |

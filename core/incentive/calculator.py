@@ -73,7 +73,7 @@ def calculate_loan_schedule(
 def build_capex_cashflows(
     scheme: IncentiveScheme | None,
     capex: float | Decimal,
-    viewpoint: Literal["OWNER", "PARTICIPANT", "GOV"],
+    viewpoint: Literal["OWNER", "PARTICIPANT", "GOV", "SOCIAL"],
     is_baseline: bool = False,
 ) -> list[CashFlowRow]:
     """FR-611-AC1~AC6, FR-607-AC1~AC3: 초기 투자 및 지원 현금흐름 산출."""
@@ -146,6 +146,18 @@ def build_capex_cashflows(
             # 신규 설비의 전체 설치 비용 (사회 전체 관점에서 자원 소모를 보려면
             # 정부 관점에서도 전체 투자비 대비 편익을 볼 때 사용될 수 있으나
             # 일단 정부지출 관점의 보조금만 명시)
+    elif viewpoint == "SOCIAL":
+        # FR-611-AC3.SOCIAL: 재원이 어디서 왔든(보조금·융자·자부담·타 사업
+        # 기지원) 자원 자체는 전액 소모된다 — 사회 관점은 그 소모분 전체를
+        # 비용으로 본다. `financing`(스킴별 자금조달 분해)이나 `is_prefunded`
+        # 여부와 무관하게 `capex_won` 그대로다.
+        rows.append(
+            CashFlowRow(
+                label="취득원가(사회 전체 비용)",
+                tag="capex.social_cost",
+                amounts={1: -capex_won},
+            )
+        )
 
     return rows
 
