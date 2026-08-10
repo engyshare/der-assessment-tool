@@ -2041,7 +2041,7 @@ der-evaluator/
 | 구획 | 소유 경로 | 대응 FR/NFR | 통합 Wave | 비고 |
 |---|---|---|---|---|
 | **WP-0** 계약 | `core/contracts/`, `tests/contract/`, import-linter 설정 | FR-101, NFR-103, NFR-208, §7.5 | **0** | **단독 수행. 병렬 불가.** 전 구획의 선행조건 |
-| **WP-1** 자원·설비 | `core/der/<tag>.py`, `core/asset/` + `tests/der/`, `tests/asset/` | FR-101~106, NFR-106, NFR-201 | 1 | **1종 = 독립 작업 단위** (아래 세분). *(v0.6: `CommonAsset`을 `core/asset/`으로 분리 — FR-106이 "DER이 아니다"라고 규정했는데 v0.5는 `core/der/`에 두어 정의와 디렉터리가 어긋났다. 구획은 하나로 유지한다 — 둘 다 capex·O&M·수명을 갖는 같은 성격의 작업이다)* |
+| **WP-1** 자원·설비 | `core/der/<tag>.py`, `core/asset/` + `tests/der/`, `tests/asset/` | FR-102~106, NFR-106, NFR-201 | 1 | **1종 = 독립 작업 단위** (아래 세분). *(v0.6: `CommonAsset`을 `core/asset/`으로 분리 — FR-106이 "DER이 아니다"라고 규정했는데 v0.5는 `core/der/`에 두어 정의와 디렉터리가 어긋났다. 구획은 하나로 유지한다 — 둘 다 capex·O&M·수명을 갖는 같은 성격의 작업이다)* |
 | **WP-16** 모델 ★ | `core/model/` | **FR-201, FR-204, FR-205** (P2: FR-203) | 2 | **v0.5 신설.** 구성 정의·계약구조 7종 정산·템플릿·JSON 직렬화 |
 | **WP-2** 전제 | `core/assumption/` | FR-601~603, FR-905 | 1 | **부기 7종** 메타데이터·버전·diff·시계열 바인딩 |
 | **WP-3** 제도 | `core/regulation/` | FR-501~504 | 1 | 요금 엔진 + 규제 프로파일 |
@@ -2049,13 +2049,13 @@ der-evaluator/
 | **WP-5** 제약 | `core/constraint/` | FR-403 | 2 | 부록 C.2 A-1 채택분 |
 | **WP-6** 엔진 | `core/engine/` | FR-301, FR-302 (P2: FR-303) | 2 | |
 | **WP-7** CBA | `core/cba/` | FR-701, FR-703~705 | 2 | 잔존가치·기준선 증분 포함 |
-| **WP-8** 지원 | `core/incentive/` | FR-604~608, FR-610 | 3 | WP-7 계약 위에서 역산 |
+| **WP-8** 지원 | `core/incentive/` | FR-604~608, FR-610, **FR-611** | 3 | WP-7 계약 위에서 역산 |
 | **WP-9** 그리드 | `core/casegrid/` | **FR-202**(`AC1`~`AC3`), FR-801~803, FR-805 | 3 | 부록 C.2 A-2 채택분. *(v0.13 배정 누락 보정 — 아래 주석)* |
 | **WP-10** 리포트 | `core/report/` | FR-1001~1005 | 3 | 영향도 순위·XLSX |
 | **WP-11** API | `app/` | FR-901, FR-902, NFR-004 (P2: FR-1102) | 3 | 서비스 + 라우터. *(v0.5: FR-201·204는 WP-16으로 이관 — §10.1 주석 참조)* |
 | **WP-12** UI | `web/` | UI-1~7, NFR-301~304 | 4 | |
 | **WP-13** 영속성 | `infra/` | §10.3, NFR-502, NFR-504 | 1 | **Alembic 단독 소유** |
-| **WP-14** 검증자산 | `fixtures/golden/` | FR-1103, NFR-104, §13.3 | 1 | 외부 근거 정박 |
+| **WP-14** 검증자산 | `fixtures/golden/` | NFR-104, §13.3 | 1 | 외부 근거 정박 |
 | **WP-15** CI·배포 | `.github/`, `Dockerfile`, `pyproject.toml` | FR-1101, FR-1103, NFR-105, NFR-503 | 1 | 게이트 3종 구현 |
 
 > **FR-202 배정 누락 보정 (v0.13 후속).** v0.13이 `FR-202`의 `AC1`~`AC3`을
@@ -2072,6 +2072,29 @@ der-evaluator/
 > **면제 목록에 넣지 않았다.** `check_partition_assignment.py`의
 > `known_missing`에 `FR-202`를 더하면 검사는 조용해지지만 **배정은 여전히
 > 없다** — 작성 원칙이 금지하는 «면제를 넓혀 검사를 죽이는» 형태다.
+
+> **면제 셋 해소 (R9/WP-20C 후속).** `check_partition_assignment.py`가
+> `known_missing`·`known_dups`로 비켜 두던 결함 3건을 각각 근거를 확인하고
+> 배정을 고쳐 해소했다. 판정 근거 전체는 `.orch/R9-WP20C-대장.md`에 있다.
+>
+> - **`FR-611` 미배정 → `WP-8`.** 관점별 계상(`is_prefunded`·
+>   `funding_program`·`prefunded_status`)의 구현이 전부
+>   `core/incentive/calculator.py`에 있다. `WP-8` 행에 소유 경로
+>   (`core/incentive/`)는 이미 맞았고 대응 FR 목록에서 `FR-611`만
+>   빠져 있었다 — `FR-202`와 같은 형태의 배정표 누락이었다.
+> - **`FR-101` 중복(`WP-0`/`WP-1`) → `WP-0` 단독.** `FR-101`은 "모든
+>   분산자원을 공통 추상 인터페이스 `DER`을 구현하는 클래스로 표현해야
+>   한다"이며, 그 인터페이스 자체는 Wave 0.1이 `core/contracts/`에 고정한다
+>   (§16.2 0.1). `WP-1`이 하는 일은 그 인터페이스를 **구현**하는 것
+>   (`FR-102~106`)이지 인터페이스를 **정의**하는 것이 아니다. `WP-1` 행의
+>   범위 표기를 `FR-101~106`에서 `FR-102~106`으로 좁혔다 — `FR-102~106`은
+>   그대로 남아 `WP-1`은 미배정이 되지 않는다.
+> - **`FR-1103` 중복(`WP-14`/`WP-15`) → `WP-15` 단독.** 조항 본문은 "CI
+>   파이프라인은 PR마다 테스트·린트·회귀 시나리오를 **자동 실행**해야
+>   한다"이다. 실행하는 쪽은 `.github/workflows/tests.yml`(`WP-15`)이고,
+>   `fixtures/golden/`(`WP-14`)은 그 실행이 읽는 데이터일 뿐 스스로
+>   실행하지 않는다. `WP-14` 행에서 `FR-1103`을 지웠다 — 남은 `NFR-104`,
+>   `§13.3`으로 `WP-14`는 여전히 비어 있지 않다.
 
 **WP-1 세분 — 자원별 독립 작업 단위**
 

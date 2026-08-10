@@ -66,8 +66,11 @@ def main():
 
     errors = 0
     # Spec defects that WP-15 cannot fix (rslt/ is read-only)
-    known_missing = {"FR-611"}
-    known_dups = {"FR-101", "FR-1103"}
+    # R9/WP-20C: FR-611/FR-101/FR-1103 배정을 §16.3에서 고쳐 해소했다 — 셋 다
+    # 근거가 있어 지웠다 (판정 근거: .orch/R9-WP20C-대장.md). 목록이 빈 것과
+    # 「검사를 안 하는 것」을 구별하려고 빈 집합을 그대로 남긴다.
+    known_missing: set[str] = set()
+    known_dups: set[str] = set()
 
     for fr in sorted(must_phase1_frs):
         if fr not in assigned_to:
