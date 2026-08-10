@@ -19,7 +19,7 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import ClassVar
 
-from core.contracts.der import DER, DispatchContext, DispatchResult
+from core.contracts.der import DER, EOL_REPLACE, DispatchContext, DispatchResult
 from core.contracts.units import (
     ENERGY_TOLERANCE_KWH,
     SECONDS_PER_HOUR,
@@ -116,6 +116,7 @@ class ESS(DER):
         replacement_unit_won_per_kwh: float | None = None,
         pcs_lifetime: int | None = None,
         pcs_cost_won: float = 0.0,
+        end_of_life_action: str = EOL_REPLACE,
     ) -> None:
         for label, value in (("정격용량(kWh)", capacity_kwh), ("정격출력(kW)", power_kw),
                              ("연간 사이클 수", cycles_per_year)):
@@ -186,6 +187,7 @@ class ESS(DER):
             carries_electric=True,
             operating_mode=operating_mode,
             escalation_rate=escalation_rate,
+            end_of_life_action=end_of_life_action,
         )
 
     # ── 운전 방법 (FR-105) ──────────────────────────────────────────
@@ -444,10 +446,27 @@ class ESS(DER):
             year += self.lifetime
         return acquired
 
+    def _first_eol_year(self) -> int:
+        """본체·PCS 중 **먼저** 수명이 끝나는 해 (`retire` 의 의미 ⑤).
+
+        `retire` 는 「이 설비 계통을 더는 갱신하지 않는다」이므로, PCS 없는
+        배터리(또는 배터리 없는 PCS)를 계통에 실을 수 없다 — 둘 중 짧은 쪽이
+        전체 출력을 멈추는 기준이다.
+        """
+        if self._pcs_lifetime is None:
+            return self.lifetime
+        return min(self.lifetime, self._pcs_lifetime)
+
     def replacement_schedule(self, *, horizon: int) -> dict[int, Money]:
         """`RC-ALL-C4` — 수명 도달 **다음 연도 초**에 계상. 배터리와 PCS 수명은
         **독립**이다 (FR-104-AC4) — 본체 수명만 보면 PCS 교체비가 통째로 빠진다.
-        같은 해에 겹치면 합산한다."""
+        같은 해에 겹치면 합산한다.
+
+        **`retire` 면 아무것도 사지 않는다** (FR-104-AC3) — 본체도 PCS도.
+        """
+        if self.retires_at_end_of_life():
+            return {}
+
         # 1년차 최초 취득은 CAPEX 이지 교체비가 아니므로 제외한다
         schedule: dict[int, Money] = {
             y: cost for y, cost in self._acquisitions(horizon=horizon).items() if y != 1
@@ -499,8 +518,19 @@ class ESS(DER):
         **부분 창은 연초부터의 연속 구간이다.** 하루치 에너지를 시각별로 펼치고
         창 길이만큼 잘라 내므로, 24스텝은 48스텝의 앞 24스텝과 정확히 같다 —
         하루 에너지를 창 길이에 재배분하면 그 성질이 깨진다.
+
+        **`retire` 면 첫 수명종료 다음 해부터 출력이 0이다** (FR-104-AC3).
+        교체비를 끊고 편익은 그대로 두면 회수기간이 실제보다 좋아지므로, 두
+        쪽을 함께 끊는다 — 배터리에는 «채우지 못한 수요»가 없으므로
+        `unmet_*` 는 건드리지 않는다(기본값 0이 그대로 남는다).
         """
         self.check_context(ctx)
+        if self.retires_at_end_of_life() and int(ctx.year) > self._first_eol_year():
+            zeros = [0.0] * ctx.steps
+            return DispatchResult(
+                electric=zeros, heat=zeros, cool=list(zeros), fuel=list(zeros)
+            )
+
         steps_per_hour = SECONDS_PER_HOUR // ctx.dt
         hours_per_step = ctx.dt / SECONDS_PER_HOUR
 

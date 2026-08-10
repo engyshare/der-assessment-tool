@@ -27,7 +27,7 @@ import math
 from collections.abc import Sequence
 from typing import ClassVar, Final
 
-from core.contracts.der import DER, DispatchContext, DispatchResult
+from core.contracts.der import DER, EOL_REPLACE, DispatchContext, DispatchResult
 from core.contracts.units import (
     ENERGY_TOLERANCE_KWH,
     SECONDS_PER_HOUR,
@@ -219,6 +219,7 @@ class ThermalLoad(DER):
         variable_om_won_per_kwh: float = 0.0,
         escalation_rate: float = 0.0,
         subcomponents: Sequence[Subcomponent] = (),
+        end_of_life_action: str = EOL_REPLACE,
     ) -> None:
         # 열부하도 열화하지 않는다 — 단열 성능 저하는 부하 *증가*이므로
         # `degradation_rate`(감소)로 표현할 수 없다. 증가율로 따로 둔다.
@@ -229,6 +230,7 @@ class ThermalLoad(DER):
             degradation_rate=0.0,
             carries_heat=True,
             escalation_rate=escalation_rate,
+            end_of_life_action=end_of_life_action,
         )
         self._steps = steps_per_year(dt)
         self._base_series, self._base_monthly = _resolve_series(
@@ -377,9 +379,17 @@ class ThermalLoad(DER):
         )
 
     def replacement_schedule(self, *, horizon: int) -> dict[int, Money]:
-        """C-4: 수명 도달 **다음 연도 초**. 부속설비는 독립 스케줄 (FR-104-AC4)."""
+        """C-4: 수명 도달 **다음 연도 초**. 부속설비는 독립 스케줄 (FR-104-AC4).
+
+        **FR-104-AC3**: `retire` 선택 시 빈 스케줄을 돌려준다.
+        """
         if horizon < 1:
             raise ValueError(f"분석기간은 1년 이상입니다: {horizon}")
+
+        # retire 선택 시 본체도 부속설비도 아무것도 교체하지 않는다
+        if self.retires_at_end_of_life():
+            return {}
+
         schedule: dict[int, Money] = {}
         for _label, life, cost in self._components():
             if cost <= 0.0:

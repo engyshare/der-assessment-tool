@@ -15,7 +15,7 @@ import math
 
 import pytest
 
-from core.contracts.der import DER, DispatchContext
+from core.contracts.der import DER, EOL_REPLACE, EOL_RETIRE, DispatchContext
 from core.contracts.units import HOURS_PER_YEAR, Money, to_won, won_sum
 from core.der.load import Load
 from tests.contract.test_der_contract import DERContractTests
@@ -402,3 +402,137 @@ def test_module_stays_within_size_budget() -> None:
 
     lines = inspect.getsource(module).splitlines()
     assert len(lines) <= 500, f"core/der/load.py 가 {len(lines)}줄입니다 (NFR-206: 500)"
+
+
+# ── FR-104-AC3 retire 기능 (WP-24) ────────────────────────────────────
+
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_default_is_replace_behavior_unchanged() -> None:
+    """기본값은 replace - 아무것도 안 넘기면 지금까지와 결과가 똑같다.
+
+    Load(기본 생성)은 end_of_life_action이 "replace"이므로 기존과 동일하게 작동한다.
+    """
+    load = make_load(
+        lifetime=20,
+        capacity_kw=3.0,
+        unit_cost_won_per_kw=1_500_000.0,
+        subcomponents=[("계량기", 12, 300_000.0)],
+    )
+    assert load.end_of_life_action == EOL_REPLACE
+    assert load.retires_at_end_of_life() is False
+
+    # 기존과 동일한 교체 스케줄: 12년 수명 계량기 → 13년차 교체
+    schedule = load.replacement_schedule(horizon=20)
+    assert schedule == {13: Money(300_000)}
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_retire_returns_empty_replacement_schedule() -> None:
+    """retire면 본체도 부속설비도 아무것도 교체하지 않는다.
+
+    수명 20년 + 계량기 12년이어도, retire 선택 시 빈 스케줄을 돌려준다.
+    """
+    load = make_load(
+        end_of_life_action=EOL_RETIRE,
+        lifetime=20,
+        capacity_kw=3.0,
+        unit_cost_won_per_kw=1_500_000.0,
+        subcomponents=[("계량기", 12, 300_000.0)],
+    )
+    assert load.end_of_life_action == EOL_RETIRE
+    assert load.retires_at_end_of_life() is True
+
+    # retire 선택 시 교체비가 전혀 없다
+    schedule = load.replacement_schedule(horizon=20)
+    assert schedule == {}
+
+    longer = load.replacement_schedule(horizon=30)
+    assert longer == {}
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_retire_keeps_load_unchanged_dispatch() -> None:
+    """retire 여도 부하는 그대로다 - 수요는 계속 발생한다.
+
+    Load/ThermalLoad는 순수 부하 자원으로서, retire해도 가구는 계속 살고
+    수요는 계속 발생한다. dispatch()는 수정하지 않는다.
+    """
+    load_replace = make_load(lifetime=20, annual_growth_rate=0.0)
+    load_retire = make_load(lifetime=20, end_of_life_action=EOL_RETIRE, annual_growth_rate=0.0)
+
+    ctx_early = DispatchContext(steps=HOURS_PER_YEAR, dt=load_replace.dt, year=1)
+    result_replace_early = load_replace.dispatch(ctx_early)
+    result_retire_early = load_retire.dispatch(ctx_early)
+
+    # 수명 도달 전(1년차): 둘 다 동일한 부하를 소비
+    assert result_replace_early.electric == result_retire_early.electric
+    assert math.fsum(result_replace_early.electric) == pytest.approx(-ANNUAL_KWH, abs=1e-9)
+
+    # 수명 도달 후(25년차): 둘 다 여전히 동일한 부하를 소비 (부하 자원 특성)
+    ctx_late = DispatchContext(steps=HOURS_PER_YEAR, dt=load_replace.dt, year=25)
+    result_replace_late = load_replace.dispatch(ctx_late)
+    result_retire_late = load_retire.dispatch(ctx_late)
+
+    assert result_replace_late.electric == result_retire_late.electric
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_retire_keeps_load_unchanged_annual_energy() -> None:
+    """retire 선택 시 연간 에너지 소비량이 replace와 같다.
+
+    수명 20년 기준:
+    - 1~20년차: replace와 retire 동일
+    - 21년차 이후: 둘 다 여전히 성장률 적용하여 계산 (부하 자원 특성)
+    """
+    g = 0.02
+    load_replace = make_load(lifetime=20, annual_growth_rate=g)
+    load_retire = make_load(lifetime=20, end_of_life_action=EOL_RETIRE, annual_growth_rate=g)
+
+    for year in [1, 10, 20, 25]:
+        expected = ANNUAL_KWH * (1.0 + g) ** (year - 1)
+        assert load_replace.annual_energy_kwh(year=year) == pytest.approx(expected, rel=1e-12)
+        assert load_retire.annual_energy_kwh(year=year) == pytest.approx(expected, rel=1e-12)
+        assert load_replace.annual_energy_kwh(year=year) == load_retire.annual_energy_kwh(year=year)
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_retire_does_not_affect_other_cost_methods() -> None:
+    """retire가 capex, O&M, 잔존가치에 영향을 주지 않는다.
+
+    교체비(schedule)만 다르고, 다른 비용 메서드는 수명에 따라 동일하게 작동한다.
+    """
+    load_replace = make_load(
+        lifetime=20,
+        capacity_kw=3.0,
+        unit_cost_won_per_kw=1_500_000.0,
+        fixed_om_won_per_year=OM_A,
+        variable_om_won_per_kwh=5.0,
+        escalation_rate=OM_I,
+    )
+    load_retire = make_load(
+        lifetime=20,
+        end_of_life_action=EOL_RETIRE,
+        capacity_kw=3.0,
+        unit_cost_won_per_kw=1_500_000.0,
+        fixed_om_won_per_year=OM_A,
+        variable_om_won_per_kwh=5.0,
+        escalation_rate=OM_I,
+    )
+
+    # capex: 둘 다 1년차에만 발생
+    assert load_replace.capex(year=1) == load_retire.capex(year=1)
+    assert load_replace.capex(year=2) == load_retire.capex(year=2) == Money(0)
+
+    # fixed_om: 물가상승 동일
+    for year in [1, 5, 20]:
+        assert load_replace.fixed_om(year=year) == load_retire.fixed_om(year=year)
+
+    # variable_om: 소비량 동일
+    for year in [1, 5, 20]:
+        assert load_replace.variable_om(year=year) == load_retire.variable_om(year=year)
+
+    # salvage_value: 수명에 따른 잔존가치 동일
+    for year in [10, 20]:
+        assert load_replace.salvage_value(year=year) == load_retire.salvage_value(year=year)

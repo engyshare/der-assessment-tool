@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.contracts.der import DER, DispatchContext
+from core.contracts.der import DER, EOL_RETIRE, DispatchContext
 from core.contracts.units import HOURS_PER_YEAR, Money, to_won, won_sum
 from core.der.pv import PV, OperatingMode
 from tests.contract.test_der_contract import DERContractTests
@@ -343,6 +343,89 @@ def test_rc_all_c5_zero_when_lifetime_exhausted() -> None:
     pv = make_pv_3kw(lifetime=25)
     assert pv.salvage_value(year=25) == Money(0)
     assert pv.salvage_value(year=30) == Money(0)
+
+
+# ── 수명 도달 선택 — `retire` (FR-104-AC3) ────────────────────────────
+
+@pytest.mark.req("FR-104-AC3")
+def test_retire_default_is_replace_and_leaves_existing_behavior_unchanged() -> None:
+    """단언 1 — 기본값은 `replace`. 아무것도 넘기지 않으면 지금까지와 결과가
+    **똑같다**.
+
+    `RC-ALL-C4` 오라클(§13.2.2)과 동일 — 인버터 12년 수명 → 13년차에 교체비가
+    계상된다. 이 값이 여전히 나와야 `retire` 도입이 기존 동작을 건드리지
+    않았다는 뜻이다.
+    """
+    pv = make_pv_3kw(inverter_lifetime=12, lifetime=25)
+    assert pv.end_of_life_action == "replace"
+    assert pv.retires_at_end_of_life() is False
+    schedule = pv.replacement_schedule(horizon=HORIZON)
+    assert set(schedule) == {13}
+    assert schedule[13] > Money(0)
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_retire_leaves_replacement_schedule_empty() -> None:
+    """단언 2 — `retire` 면 `replacement_schedule()` 이 **빈다**.
+
+    본체도 부속설비(인버터)도 사지 않는다 (`core/contracts/der.py` 「retire의
+    의미」②). `RC-ALL-C4` 오라클이라면 13년차에 인버터 교체비가 계상돼야
+    하지만(바로 위 테스트), `retire` 는 그 항목 자체가 없어야 한다.
+    """
+    pv = make_pv_3kw(inverter_lifetime=12, lifetime=25, end_of_life_action=EOL_RETIRE)
+    assert pv.replacement_schedule(horizon=HORIZON) == {}
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_retire_output_is_zero_after_first_end_of_life_year() -> None:
+    """단언 3 — `retire` 면 **첫 수명 종료 다음 해부터 출력 0**.
+
+    본체 25년 · 인버터 12년 → 먼저 끝나는 쪽은 인버터(12년) — 계약
+    「retire의 의미」⑤: "출력은 `min(본체 수명, 부속설비 수명)` 이후 0".
+    13년차부터(그리고 그 뒤로 계속) 발전이 전부 0이어야 한다 — 인버터
+    없는 PV 는 계통에 못 싣는다.
+    """
+    pv = make_pv_1kw(inverter_lifetime=12, lifetime=25, end_of_life_action=EOL_RETIRE)
+    for year in (13, 20):
+        result = pv.dispatch(DispatchContext(steps=24, dt=pv.dt, year=year))
+        assert all(v == 0.0 for v in result.electric), f"{year}년차 발전이 0이 아닙니다"
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_retire_output_matches_replace_up_to_the_end_of_life_year() -> None:
+    """단언 4 — `retire` 면 **수명 해까지는 출력이 `replace` 와 같다** — 너무
+    일찍 끊지 않는다.
+
+    12년차(첫 수명 종료 해 — 인버터 12년 수명의 마지막 정상 해)의 발전량은
+    `retire` 와 `replace` 가 같아야 한다. 오라클: `1kW × 24h × 이용률 0.15 ×
+    열화계수(0.995¹¹)` = **3.6 × 0.995¹¹ kWh** (`derate(year=12) =
+    (1−0.005)^(12−1)`, §4 `FR-104-AC1`).
+    """
+    expected_kwh = 1.0 * 0.15 * (0.995**11) * 24
+    retire_pv = make_pv_1kw(inverter_lifetime=12, lifetime=25, end_of_life_action=EOL_RETIRE)
+    replace_pv = make_pv_1kw(inverter_lifetime=12, lifetime=25)
+
+    retire_result = retire_pv.dispatch(DispatchContext(steps=24, dt=retire_pv.dt, year=12))
+    replace_result = replace_pv.dispatch(DispatchContext(steps=24, dt=replace_pv.dt, year=12))
+
+    assert sum(retire_result.electric) == pytest.approx(expected_kwh, rel=1e-9)
+    assert sum(retire_result.electric) == pytest.approx(
+        sum(replace_result.electric), rel=1e-9
+    )
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_retire_salvage_value_unchanged_before_end_of_life() -> None:
+    """`retire` 는 **미래의 선택**이므로 EOL 전 잔존가치는 `replace` 와 같다
+    (`core/contracts/der.py` 「retire의 의미」③ — 이 구획은 잔존가치를
+    건드리지 않는다). 분석기간(20년)이 EOL(본체 25년) 前에 끝나므로 두
+    선택의 잔존가치가 같아야 한다 — 오라클 `RC-ALL-C5`: 4,500,000 × 5/25 =
+    900,000원.
+    """
+    retire_pv = make_pv_3kw(lifetime=25, end_of_life_action=EOL_RETIRE)
+    replace_pv = make_pv_3kw(lifetime=25)
+    assert retire_pv.salvage_value(year=HORIZON) == Money(900_000)
+    assert retire_pv.salvage_value(year=HORIZON) == replace_pv.salvage_value(year=HORIZON)
 
 
 # ── 운전 방법 (FR-105) ───────────────────────────────────────────────

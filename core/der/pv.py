@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from enum import StrEnum
 from typing import ClassVar
 
-from core.contracts.der import DER, DispatchContext, DispatchResult
+from core.contracts.der import DER, EOL_REPLACE, DispatchContext, DispatchResult
 from core.contracts.units import (
     HOURS_PER_YEAR,
     SECONDS_PER_HOUR,
@@ -92,6 +92,7 @@ class PV(DER):
         escalation_rate: float = 0.0,
         self_consumption_ratio: float = 1.0,
         operating_mode: OperatingMode | str = OperatingMode.SELF_CONSUMPTION_FIRST,
+        end_of_life_action: str = EOL_REPLACE,
         dt: int = SECONDS_PER_HOUR,
     ) -> None:
         # 이름·수명·열화율·매체 플래그·운전 방법·물가상승률 검증은 계약이 이미
@@ -108,6 +109,7 @@ class PV(DER):
             consumes_fuel=False,
             operating_mode=self._coerce_mode(mode=operating_mode, name=name),
             escalation_rate=escalation_rate,
+            end_of_life_action=end_of_life_action,
         )
 
         self.capacity_kw = _positive(capacity_kw, label="용량(kW)", name=name)
@@ -207,6 +209,11 @@ class PV(DER):
         """
         return (1.0 - self.degradation_rate) ** (int(year) - 1)
 
+    def _first_end_of_life_year(self) -> int:
+        """본체·인버터 중 **먼저** 수명이 끝나는 해 — `retire` 출력 중단 기준
+        (`FR-104-AC3`, `core/contracts/der.py` 「retire의 의미」⑤)."""
+        return min(self.lifetime, self.inverter_lifetime)
+
     def annual_generation_kwh(self, *, year: int) -> float:
         """`year` 년차 연간 발전량 (kWh).
 
@@ -297,8 +304,19 @@ class PV(DER):
 
         `ctx.steps` 가 한 해보다 짧으면 **연초부터 그만큼**이다 (부분 창 규약) —
         시계열을 앞에서 자르는 것이 그 이행이다.
+
+        **`retire` 면 첫 수명 종료(본체·인버터 중 먼저 끝나는 쪽) 다음 해부터
+        전량 0이다** (`FR-104-AC3`). 인버터를 다시 사지 않으면서 발전은 계속
+        나온다면 교체비만 사라지고 편익은 남아 필요 지원액이 과소 산정된다 —
+        인버터 없는 PV 는 계통에 못 싣는다.
         """
         self.check_context(ctx)   # 해상도 불일치를 계약이 거부한다
+        if self.retires_at_end_of_life() and int(ctx.year) > self._first_end_of_life_year():
+            zeros = [0.0] * ctx.steps
+            return DispatchResult(
+                electric=list(zeros), heat=list(zeros), cool=list(zeros), fuel=list(zeros)
+            )
+
         hours_per_step = ctx.hours_per_step
         derate = self.derate(year=int(ctx.year))
 
@@ -446,9 +464,14 @@ class PV(DER):
         수명만 보면 20년 분석에서 인버터 교체비가 통째로 빠지고, 회수기간이
         짧게 나와 필요 지원액이 과소 산정된다. 12년차가 아닌 이유는 12년차가
         **아직 쓰고 있는 해**이고, 한 해 차이가 할인 때문에 회수기간을 바꾸기 때문.
+
+        **`retire` 면 빈다** (`FR-104-AC3`) — 본체도 부속설비도 다시 사지
+        않는다는 선택이므로 이후 교체비 자체가 없다.
         """
         if horizon <= 0:
             raise ValueError(f"{self.name}: 분석기간은 1년 이상입니다: {horizon}")
+        if self.retires_at_end_of_life():
+            return {}
 
         schedule: dict[int, Money] = {}
         for life, unit_cost in (

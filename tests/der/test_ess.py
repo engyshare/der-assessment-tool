@@ -470,6 +470,120 @@ def test_rc_all_c4_replacement_schedule_separates_battery_and_pcs() -> None:
     assert overlap.replacement_schedule(horizon=5)[4] == 6_000_000
 
 
+# ── FR-104-AC3 수명 도달 시 처리(`replace`/`retire`) ────────────────
+@pytest.mark.req("FR-104-AC3")
+def test_default_end_of_life_action_is_replace_and_unchanged() -> None:
+    """1번 단언 — 기본값은 `replace`. 아무것도 안 넘기면 `RC-ESS-P4`(위
+    `test_rc_all_c4_replacement_schedule_separates_battery_and_pcs`)의 기존
+    오라클과 **똑같은 결과**여야 한다. 여기서 값이 달라지면 기본값 경로를
+    건드린 것이다.
+    """
+    ess = _p1_ess(cycle_life=1000, calendar_life=20, replacement_unit_won_per_kwh=400_000.0)
+    assert ess.end_of_life_action == "replace"
+    assert ess.retires_at_end_of_life() is False
+    assert sorted(ess.replacement_schedule(horizon=20)) == [4, 7, 10, 13, 16, 19]
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_retire_empties_replacement_schedule() -> None:
+    """2번 단언 — `retire` 면 본체도 부속설비(PCS)도 사지 않는다.
+
+    사이클 1,000회·달력 20년 → 본체 수명 3년(`RC-ESS-P4` 오라클과 동일 제원).
+    PCS 수명 10년을 함께 주어도 **아무 해도 계상되지 않아야** 한다 — PCS만
+    비우고 본체만 남기거나 그 반대이면 「비용만 끊고 편익은 남기는」 결함이
+    부분적으로 되살아난다.
+    """
+    ess = _p1_ess(
+        cycle_life=1000, calendar_life=20, replacement_unit_won_per_kwh=400_000.0,
+        pcs_lifetime=10, pcs_cost_won=2_000_000.0, end_of_life_action="retire",
+    )
+    assert ess.retires_at_end_of_life() is True
+    assert ess.replacement_schedule(horizon=20) == {}
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_retire_output_matches_replace_through_eol_year_then_zeroes() -> None:
+    """3·4번 단언 — 수명 해(3년차)까지는 `replace` 와 **똑같이** 운전하고,
+    그 다음 해(4년차)부터 출력이 **0** 이다.
+
+    사이클 1,000회·달력 20년 → `eol_year()`=`lifetime`=3년(`RC-ESS-P4` 오라클,
+    부속설비 없음이므로 첫 수명종료=본체 수명=3년). 하루(24스텝)만 보아도
+    충분한 이유: 이 자원의 하루 프로파일은 그 해의 `usable_capacity_kwh`
+    하나에만 좌우되고 날짜와 무관하게 반복된다.
+    """
+    kwargs = {
+        "cycle_life": 1000, "calendar_life": 20,
+        "replacement_unit_won_per_kwh": 400_000.0,
+    }
+    replace_ess = _p1_ess(**kwargs, end_of_life_action="replace")
+    retire_ess = _p1_ess(**kwargs, end_of_life_action="retire")
+    assert retire_ess.lifetime == 3
+
+    ctx_at_eol = DispatchContext(steps=24, dt=3600, year=3)
+    ctx_after_eol = DispatchContext(steps=24, dt=3600, year=4)
+
+    # 4번 — 수명 해(3년차)까지는 replace 와 동일
+    assert (
+        retire_ess.dispatch(ctx_at_eol).electric
+        == replace_ess.dispatch(ctx_at_eol).electric
+    )
+
+    # 3번 — 수명 해 다음(4년차)부터 retire 는 전 매체 출력 0
+    retired_result = retire_ess.dispatch(ctx_after_eol)
+    assert all(v == 0.0 for v in retired_result.electric)
+    assert all(
+        v == 0.0
+        for v in retired_result.heat + retired_result.cool + retired_result.fuel
+    )
+    # replace 는 (열화된 채로) 여전히 운전을 계속한다 — 대조군
+    assert any(v != 0.0 for v in replace_ess.dispatch(ctx_after_eol).electric)
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_retire_zeroes_output_at_the_earlier_of_body_or_pcs_lifetime() -> None:
+    """계약(`core/contracts/der.py`) 「retire 의 의미」 ⑤ — 출력은 **본체·
+    부속설비 중 먼저 수명이 끝나는 쪽**에서 멈춘다.
+
+    사이클 1,000회·달력 20년 → 본체 수명(`eol_year()`) 3년. `pcs_lifetime=2`
+    (본체보다 짧음)를 주면 **첫 수명종료는 2년차**다. 본체만 보고 3년차까지
+    정상으로 두면 「PCS 없는 ESS」가 3년차에도 운전하는 것과 같은 결함이 되어,
+    이것이 이 구획의 핵심이다(브리프 ★ 항목).
+    """
+    ess = _p1_ess(
+        cycle_life=1000, calendar_life=20, replacement_unit_won_per_kwh=400_000.0,
+        pcs_lifetime=2, pcs_cost_won=2_000_000.0, end_of_life_action="retire",
+    )
+    assert ess.lifetime == 3  # 본체 EOL 자체는 그대로 3년
+
+    ctx_at_pcs_eol = DispatchContext(steps=24, dt=3600, year=2)
+    ctx_body_still_alive_but_pcs_gone = DispatchContext(steps=24, dt=3600, year=3)
+
+    # PCS 수명 해(2년차)까지는 정상 운전
+    assert any(v != 0.0 for v in ess.dispatch(ctx_at_pcs_eol).electric)
+    # 본체 수명(3년) 안이지만 PCS 는 이미 끝났다 — 출력 0
+    assert all(v == 0.0 for v in ess.dispatch(ctx_body_still_alive_but_pcs_gone).electric)
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_retire_salvage_value_unchanged_before_eol() -> None:
+    """계약 「retire 의 의미」 ③ — EOL 전에는 `replace` 와 잔존가치가 같다.
+
+    `retire` 는 미래의 선택이고 EOL 전에는 자산이 정상 가동 중이므로, 분석
+    기간이 EOL 前(1·2년차)에 끝나면 두 선택의 잔존가치가 달라질 이유가 없다.
+    이 구획은 `salvage_value()` 를 고치지 않았다는 것을 이 테스트로 고정한다.
+    """
+    kwargs = {
+        "cycle_life": 1000, "calendar_life": 20,
+        "capex_unit_won_per_kwh": 500_000.0, "capex_extra_won": 1_000_000.0,
+        "replacement_unit_won_per_kwh": 400_000.0,
+    }
+    replace_ess = _p1_ess(**kwargs, end_of_life_action="replace")
+    retire_ess = _p1_ess(**kwargs, end_of_life_action="retire")
+
+    for year in (1, 2):
+        assert retire_ess.salvage_value(year=year) == replace_ess.salvage_value(year=year)
+
+
 # ── RC-ALL-C5 잔존가치 ──────────────────────────────────────────────
 @pytest.mark.req("FR-104-AC5")
 def test_rc_all_c5_salvage_value_is_prorated_by_remaining_life() -> None:

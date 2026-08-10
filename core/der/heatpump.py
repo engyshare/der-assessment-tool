@@ -24,7 +24,7 @@ from decimal import Decimal
 from itertools import pairwise
 from typing import ClassVar
 
-from core.contracts.der import DER, DispatchContext, DispatchResult
+from core.contracts.der import DER, EOL_REPLACE, DispatchContext, DispatchResult
 from core.contracts.units import (
     ENERGY_TOLERANCE_KWH,
     SECONDS_PER_HOUR,
@@ -209,6 +209,7 @@ class HeatPump(DER):
         replacement_cost_won: float | None = None,
         pump_lifetime: int | None = None, pump_replacement_cost_won: float = 0.0,
         dt: int = SECONDS_PER_HOUR, lifetime: int = 15, degradation_rate: float = 0.0,
+        end_of_life_action: str = EOL_REPLACE,
     ) -> None:
         # 전기·열 **둘 다** 참이다. 하나만 켜면 나머지 매체의 값이 어느 수지에도
         # 잡히지 않고 사라진다 (FR-101-AC4).
@@ -216,7 +217,8 @@ class HeatPump(DER):
                          degradation_rate=degradation_rate,
                          carries_electric=True, carries_heat=True,
                          operating_mode=operating_mode,
-                         escalation_rate=escalation_rate)
+                         escalation_rate=escalation_rate,
+                         end_of_life_action=end_of_life_action)
 
         if rated_heat_kw <= 0.0:
             raise ValueError(f"{name}: 정격 열출력은 0보다 커야 합니다: {rated_heat_kw}")
@@ -328,6 +330,35 @@ class HeatPump(DER):
         해상도를 채택했다.
         """
         self.check_context(ctx)
+
+        first_eol = min(
+            self.lifetime,
+            self.pump_lifetime if self.pump_lifetime is not None else self.lifetime,
+        )
+        if self.retires_at_end_of_life() and ctx.year > first_eol:
+            zeros = [0.0] * ctx.steps
+            load = self._load_series(ctx)
+            demand = sum(load)
+            eol_notes: tuple[str, ...] = ()
+            if demand > ENERGY_TOLERANCE_KWH:
+                eol_notes = (
+                    f"{self.name}: 수명 종료(retire)로 인하여 열부하 {demand:.3f} kWh 전량 미충족.",
+                )
+            return HeatPumpOperation(
+                result=DispatchResult(
+                    electric=zeros,
+                    heat=zeros,
+                    cool=zeros,
+                    fuel=list(zeros),
+                    unmet_heat=load,
+                    notes=eol_notes,
+                ),
+                heat_demand_kwh=demand,
+                hp_heat_kwh=0.0,
+                aux_heat_kwh=0.0,
+                electricity_kwh=0.0,
+                unmet_heat_kwh=demand,
+            )
 
         hours = ctx.hours_per_step
         cap_hp = self.rated_heat_kw * hours
@@ -526,9 +557,13 @@ class HeatPump(DER):
         """C-4 교체비 — 수명 도달 **다음 연도 초**에 계상. 순환펌프 등 부속설비는
         본체와 **독립 수명**을 갖는다 (FR-104-AC4) — 본체 수명만 보면 15년
         히트펌프의 10년짜리 부속 교체비가 통째로 빠진다.
+
+        `retire` 면 교체하지 않으므로 빈 dict 를 돌려준다 (FR-104-AC3).
         """
         if horizon < 1:
             raise ValueError(f"분석기간은 1년 이상입니다: {horizon}")
+        if self.retires_at_end_of_life():
+            return {}
 
         schedule: dict[int, Decimal] = {}
         for life, cost in ((self.lifetime, self.replacement_cost_won),

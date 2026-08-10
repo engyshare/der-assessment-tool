@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.contracts.der import DER, DispatchContext
+from core.contracts.der import DER, EOL_REPLACE, EOL_RETIRE, DispatchContext
 from core.contracts.units import HOURS_PER_YEAR, Money, to_won, won_sum
 from core.der.ev_v2g import EV_V2G
 from tests.contract.test_der_contract import DERContractTests
@@ -479,6 +479,91 @@ def test_rc_all_c4_replacement_at_year_after_lifetime() -> None:
 
     # 분석기간 안에 수명이 도달하지 않으면 교체는 없다
     assert make_ev(lifetime=25).replacement_schedule(horizon=20) == {}
+
+    # `retire` 선택 시 — 지난 라운드가 「좁음」으로 판정한 자리(R10-WP21D).
+    # AC3 "retire 선택 가능"의 결과: 아무것도 다시 사지 않으므로 스케줄이 빈다.
+    retiring = make_ev(escalation_rate=0.02, lifetime=10, end_of_life_action=EOL_RETIRE)
+    assert retiring.replacement_schedule(horizon=20) == {}
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_default_end_of_life_action_is_replace() -> None:
+    """기본값은 `replace` 다 — 지금까지의 유일한 동작과 **완전히 같아야** 한다.
+
+    기본값을 다르게 두면 인자를 안 넘긴 기존 시나리오 전부가 조용히
+    `retire`로 돌아 교체비가 사라지고 회수기간이 좋아 보인다. 계약 테스트가
+    6종의 기본값이 같은지 보므로, 이 테스트는 EV_V2G 쪽에서 그 값이 실제로
+    지금까지의 동작(무한 교체)과 같은 결과를 내는지를 고정한다.
+    """
+    default = make_ev(escalation_rate=0.02, lifetime=10)
+    explicit_replace = make_ev(
+        escalation_rate=0.02, lifetime=10, end_of_life_action=EOL_REPLACE
+    )
+
+    assert default.end_of_life_action == EOL_REPLACE
+    assert default.retires_at_end_of_life() is False
+    assert default.replacement_schedule(horizon=20) == explicit_replace.replacement_schedule(
+        horizon=20
+    )
+
+    ctx11 = DispatchContext(steps=HOURS_PER_YEAR, dt=default.dt, year=11)
+    assert default.dispatch(ctx11).electric == explicit_replace.dispatch(ctx11).electric
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_end_of_life_action_is_forwarded_and_validated() -> None:
+    """생성자 인자가 계약(`DER.__init__`)까지 실제로 전달되는지 확인한다.
+
+    전달되지 않으면 항상 기본값(`replace`)으로 조용히 돌아, 오타나 잘못된
+    값을 넘겨도 아무도 잡지 못한다 — `retire`를 선택했다고 믿는데 실제로는
+    `replace`로 도는 상태가 그렇게 생긴다.
+    """
+    retiring = make_ev(end_of_life_action=EOL_RETIRE)
+    assert retiring.end_of_life_action == EOL_RETIRE
+    assert retiring.retires_at_end_of_life() is True
+
+    with pytest.raises(ValueError, match="FR-104-AC3"):
+        make_ev(end_of_life_action="Retire")
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_retire_zeroes_dispatch_output_after_first_eol() -> None:
+    """`retire` 선택 시 수명(충전기 10년) **다음 해부터 출력이 0**이다.
+
+    EV_V2G 는 부속설비가 없다 — 사업 자산은 충전기 하나이므로 「본체·부속설비
+    중 먼저 끝나는 쪽」이 곧 `lifetime` 그 자체다 (계약 주석 ⑤). 10년차까지는
+    `replace` 와 출력이 같아야 하고(경계를 너무 일찍 끊지 않았는지 확인),
+    11년차부터는 전 매체가 0이어야 한다.
+
+    비용만 끊고 출력을 두면 교체비 없이 편익이 나와 회수기간이 실제보다 좋게
+    나온다(계약 주석 ②) — 그래서 ②(교체비)와 ③(출력)이 함께 검증돼야 한다.
+    """
+    retiring = make_ev(lifetime=10, end_of_life_action=EOL_RETIRE)
+    replacing = make_ev(lifetime=10, end_of_life_action=EOL_REPLACE)
+
+    ctx_at_lifetime = DispatchContext(steps=HOURS_PER_YEAR, dt=retiring.dt, year=10)
+    ctx_after_lifetime = DispatchContext(steps=HOURS_PER_YEAR, dt=retiring.dt, year=11)
+
+    # 수명 해(10년차)까지는 정상 — retire 와 replace 의 출력이 같다
+    assert (
+        retiring.dispatch(ctx_at_lifetime).electric
+        == replacing.dispatch(ctx_at_lifetime).electric
+    )
+
+    # 수명 다음 해(11년차)부터 — retire 는 멈춘다
+    retired_result = retiring.dispatch(ctx_after_lifetime)
+    assert all(v == 0.0 for v in retired_result.electric)
+    assert all(
+        v == 0.0
+        for v in retired_result.heat + retired_result.cool + retired_result.fuel
+    )
+
+    # 대조: replace 는 같은 해에도 계속 방전·재충전한다 — retire 만 0이어야 한다
+    still_running = replacing.dispatch(ctx_after_lifetime).electric
+    assert any(v != 0.0 for v in still_running), (
+        "대조 실패 — replace 쪽 출력이 이미 0이면 위 단언이 retire 의 효과를 "
+        "증명하지 못한다"
+    )
 
 
 @pytest.mark.req("FR-104-AC5")

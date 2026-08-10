@@ -31,7 +31,7 @@ import math
 from collections.abc import Sequence
 from typing import ClassVar, Final
 
-from core.contracts.der import DER, DispatchContext, DispatchResult
+from core.contracts.der import DER, EOL_REPLACE, DispatchContext, DispatchResult
 from core.contracts.units import (
     SECONDS_PER_HOUR,
     Money,
@@ -209,6 +209,7 @@ class Load(DER):
         variable_om_won_per_kwh: float = 0.0,
         escalation_rate: float = 0.0,
         subcomponents: Sequence[Subcomponent] = (),
+        end_of_life_action: str = EOL_REPLACE,
     ) -> None:
         # 부하는 열화하지 않는다 — `degradation_rate` 는 감소를 뜻하므로 성장을
         # 실을 수 없다. 생성자 인자로도 열어 두지 않는다(열면 반드시 쓰인다).
@@ -219,6 +220,7 @@ class Load(DER):
             degradation_rate=0.0,
             carries_electric=True,
             escalation_rate=escalation_rate,
+            end_of_life_action=end_of_life_action,
         )
         self._steps = steps_per_year(dt)
         self._base_series, self._base_monthly = _resolve_series(
@@ -342,13 +344,20 @@ class Load(DER):
         )
 
     def replacement_schedule(self, *, horizon: int) -> dict[int, Money]:
-        """C-4: 수명 도달 **다음 연도 초**에 계상. 부속설비는 독립 스케줄.
+        """C-4: 수명 도달 **다음 연도 초**. 부속설비는 독립 스케줄.
 
         한 해 밀리면 할인 계수가 한 해분 달라진다 — 교체비 300만원이면 4.5%
         할인율에서 13만원가량이 조용히 이동한다 (도메인 원칙 4-3).
+
+        **FR-104-AC3**: `retire` 선택 시 빈 스케줄을 돌려준다.
         """
         if horizon < 1:
             raise ValueError(f"분석기간은 1년 이상입니다: {horizon}")
+
+        # retire 선택 시 본체도 부속설비도 아무것도 교체하지 않는다
+        if self.retires_at_end_of_life():
+            return {}
+
         schedule: dict[int, Money] = {}
         for _label, life, cost in self._components():
             if cost <= 0.0:

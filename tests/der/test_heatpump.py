@@ -96,6 +96,78 @@ def test_tag_is_spec_literal() -> None:
     assert HeatPump.tag == "HeatPump"
 
 
+# ── FR-104-AC3 수명 종료 (retire) 테스트 ──────────────────────────────
+
+@pytest.mark.req("FR-104-AC3")
+def test_heatpump_default_end_of_life_action_is_replace() -> None:
+    """1. 기본값은 replace — 아무것도 안 넘기면 결과가 기존과 동일함."""
+    hp = make_hp()
+    assert hp.end_of_life_action == "replace"
+    assert hp.retires_at_end_of_life() is False
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_heatpump_retire_clears_replacement_schedule() -> None:
+    """2. retire 면 replacement_schedule() 이 빈다."""
+    # lifetime 15년, pump_lifetime 10년설정
+    hp = make_hp(
+        end_of_life_action="retire",
+        pump_lifetime=10,
+        pump_replacement_cost_won=1_000_000.0,
+    )
+    assert hp.retires_at_end_of_life() is True
+    sched = hp.replacement_schedule(horizon=40)
+    assert sched == {}
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_heatpump_retire_output_zero_after_first_eol() -> None:
+    """3. retire 면 첫 수명 종료(min(본체, 부속) = min(15, 10) = 10년) 다음 해(11년차)부터 출력 0.
+
+    손 계산:
+    - 1~10년차: 정상 출력 (열부하 3000 kWh 공급)
+    - 11년차부터: min(본체15, 펌프10)=10년 수명 만료 후 교체 없이 폐기되므로 열·전기 출력 0 kWh.
+    """
+    hp = make_hp(
+        end_of_life_action="retire",
+        pump_lifetime=10,
+        pump_replacement_cost_won=1_000_000.0,
+    )
+    ctx10 = annual_ctx(year=10)
+    res10 = hp.dispatch(ctx10)
+    assert sum(res10.heat) == pytest.approx(3000.0)
+
+    ctx11 = annual_ctx(year=11)
+    res11 = hp.dispatch(ctx11)
+    assert sum(res11.heat) == 0.0
+    assert sum(res11.electric) == 0.0
+    # 미충족 수요는 3000.0 kWh 그대로 남아있어야 함
+    assert sum(res11.unmet_heat) == pytest.approx(3000.0)
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_heatpump_retire_output_same_as_replace_until_eol() -> None:
+    """4. retire 면 수명 해(10년차)까지는 출력이 replace 와 동일함."""
+    hp_replace = make_hp(
+        end_of_life_action="replace",
+        pump_lifetime=10,
+        pump_replacement_cost_won=1_000_000.0,
+    )
+    hp_retire = make_hp(
+        end_of_life_action="retire",
+        pump_lifetime=10,
+        pump_replacement_cost_won=1_000_000.0,
+    )
+
+    ctx10 = annual_ctx(year=10)
+    res_rep = hp_replace.dispatch(ctx10)
+    res_ret = hp_retire.dispatch(ctx10)
+
+    assert res_ret.heat == res_rep.heat
+    assert res_ret.electric == res_rep.electric
+    assert res_ret.unmet_heat == res_rep.unmet_heat
+
+
 @pytest.mark.req("FR-101-AC1")
 def test_carries_both_electric_and_heat() -> None:
     """전기·열 **둘 다 참**이다 — 전기를 받아들이고 열을 내보내는 자원이다."""

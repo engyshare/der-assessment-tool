@@ -67,6 +67,40 @@ class DERContractTests:
     def make(self) -> DER:
         raise NotImplementedError("구현체 테스트가 make() 를 정의해야 합니다")
 
+    # ── 수명 도달 처리 (FR-104-AC3) ──────────────────────────────────
+    @pytest.mark.contract
+    @pytest.mark.req("FR-104-AC3")
+    def test_retire_clears_replacement_schedule(self) -> None:
+        """**`retire` 를 고르면 교체비가 사라진다.**
+
+        상속으로 두는 이유는 이 파일이 이미 아는 것과 같다 — **자원마다 각자
+        분기를 쓰므로, 한 자원이 빠뜨려도 그 자원의 테스트만 보면 드러나지
+        않는다.** 그 자원에는 애초에 retire 케이스가 없기 때문이다.
+        여기 두면 **자원을 추가하는 순간 자동으로 걸린다.**
+
+        `replace` 쪽도 함께 본다. `retire` 만 검사하면 **교체비를 아예
+        계상하지 않는 구현**도 통과하고, 그러면 이 검사는 아무것도 검사하지
+        않는다.
+        """
+        from core.contracts.der import EOL_RETIRE
+
+        horizon = 40           # 어떤 자원이든 수명을 넘기도록 넉넉히 잡는다
+        keeps = self.make()
+        booked = keeps.replacement_schedule(horizon=horizon)
+        assert booked, (
+            f"{type(keeps).__name__}: `replace` 인데 {horizon}년 안에 교체비가 "
+            "하나도 없습니다 — 이 상태에서는 아래 검사가 아무것도 검사하지 "
+            "못합니다"
+        )
+
+        retires = self.make()
+        retires.end_of_life_action = EOL_RETIRE
+        assert not retires.replacement_schedule(horizon=horizon), (
+            f"{type(retires).__name__}: `retire` 인데 교체비가 남아 있습니다 — "
+            "사지 않기로 한 설비의 교체비를 계상하면 필요 지원액이 과대 "
+            "산정됩니다 (FR-104-AC3)"
+        )
+
     # ── 속성 (FR-101-AC1) ────────────────────────────────────────────
     @pytest.mark.contract
     @pytest.mark.req("FR-101-AC1")
@@ -595,6 +629,48 @@ def test_all_implementations_share_the_same_vat_default() -> None:
         "기본값으로 들면 ⓐ 세율 개정이 자원 코드 수정이 되고(NFR-202) ⓑ 같은 "
         "프로포마에서 자원에 따라 세액이 잡히거나 사라지는데 어느 쪽도 오류로 "
         "보이지 않습니다. 정본은 docs/assumptions.yaml 의 tax.vat_rate 입니다"
+    )
+
+
+# ── FR-104-AC3 수명 도달 처리 (replace / retire) ──────────────────────
+
+@pytest.mark.contract
+@pytest.mark.req("FR-104-AC3")
+def test_all_implementations_default_to_replace_at_end_of_life() -> None:
+    """자원 전건이 `end_of_life_action` 을 받고 **기본값이 `replace`** 다.
+
+    **기본값이 갈리면 프로포마에서 자원마다 교체비가 잡히거나 사라진다.**
+    `vat_rate` 가 여덟 중 일곱은 `0.0`, 히트펌프만 `0.1` 이었던 것과 같은
+    유형이고, 그때도 자원별 테스트는 각자 자기 기본값으로 오라클을 맞춰 두어
+    **전부 초록불**이었다.
+
+    **`replace` 가 기본값인 이유**: `retire` 가 기본이면 교체비가 조용히 빠져
+    회수기간이 실제보다 좋아지고 필요 지원액이 과소 산정된다. **틀렸을 때
+    결과가 낙관 쪽으로 기우는 값을 기본값으로 두지 않는다.**
+
+    손 목록 대신 레지스트리를 순회한다 — 손으로 적으면 자원을 추가할 때
+    반드시 빠지고, 빠진 자원은 검사받지 않은 채 초록불로 남는다.
+    """
+    import core.der
+    from core.contracts.der import EOL_REPLACE
+    from core.contracts.registry import discover
+
+    registry = discover(core.der, DER)
+    assert registry, "레지스트리가 비었습니다 — 순회 검사가 성립하지 않습니다"
+
+    defaults: dict[str, object] = {}
+    for tag, cls in registry.items():
+        params = inspect.signature(cls.__init__).parameters
+        assert "end_of_life_action" in params, (
+            f"{tag} 이 `end_of_life_action` 을 받지 않습니다 — FR-104-AC3 은 "
+            "수명 도달 처리의 선택을 자원을 가리지 않고 요구합니다"
+        )
+        defaults[tag] = params["end_of_life_action"].default
+
+    assert set(defaults.values()) == {EOL_REPLACE}, (
+        f"`end_of_life_action` 기본값이 자원마다 다릅니다: {defaults}. "
+        "같은 프로포마에서 자원에 따라 교체비가 잡히거나 사라지는데 "
+        "어느 쪽도 오류로 보이지 않습니다"
     )
 
 

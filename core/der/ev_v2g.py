@@ -22,7 +22,7 @@ import warnings
 from collections.abc import Callable
 from typing import ClassVar
 
-from core.contracts.der import DER, DispatchContext, DispatchResult
+from core.contracts.der import DER, EOL_REPLACE, DispatchContext, DispatchResult
 from core.contracts.units import (
     ENERGY_TOLERANCE_KWH,
     SECONDS_PER_HOUR,
@@ -90,11 +90,13 @@ class EV_V2G(DER):
         discharge_benefit_enabled: bool = False,
         avoided_price_won_per_kwh: float = 0.0,
         dt: int = SECONDS_PER_HOUR,
+        end_of_life_action: str = EOL_REPLACE,
     ) -> None:
         super().__init__(name=name, dt=dt, lifetime=lifetime,
                          degradation_rate=degradation_rate, carries_electric=True,
                          operating_mode=operating_mode,
-                         escalation_rate=escalation_rate)
+                         escalation_rate=escalation_rate,
+                         end_of_life_action=end_of_life_action)
         self.vehicle_count = int(vehicle_count)
         self.battery_kwh = float(battery_kwh)
         self.max_charge_kw = float(max_charge_kw)
@@ -255,9 +257,15 @@ class EV_V2G(DER):
         **부분 창은 연초부터의 연속 구간이다.** 사이클 오프셋은 하루 안의 인덱스
         이므로 온전한 하루의 값은 창 길이와 무관하다. 창이 하루 중간에서 끝나면
         남은 스텝은 **관측되지 않은 것**이며, 창 안으로 압축하지 않는다.
+
+        **`retire` 면 수명(충전기) 다음 해부터 전 매체가 0이다** (`FR-104-AC3`).
+        충전기 없는 V2G는 계통에 못 싣는다 — 비용(교체비)만 끊고 편익(방전)은
+        남기면 회수기간이 실제보다 좋게 나온다.
         """
         self.check_context(ctx)
         year, steps = int(ctx.year), ctx.steps
+        if self.retires_at_end_of_life() and year > self.lifetime:
+            return DispatchResult.zeros(steps)
         elec = [0.0] * steps
         grid_dis = self._daily_grid_discharge_kwh(year)
         grid_chg = self._daily_grid_charge_kwh(year)
@@ -407,10 +415,14 @@ class EV_V2G(DER):
 
     def replacement_schedule(self, *, horizon: int) -> dict[int, Money]:
         """교체 스케줄 — 수명 도달 **다음 연도 초**에 계상 (§13.2.2 C-4).
-        충전기는 차량과 별개의 수명을 갖는 부속설비다 (FR-104-AC4)."""
+        충전기는 차량과 별개의 수명을 갖는 부속설비다 (FR-104-AC4).
+
+        **`retire` 면 빈다** (`FR-104-AC3`) — 아무것도 다시 사지 않는다."""
         if horizon < 1:
             raise ValueError(f"분석기간은 1년 이상입니다: {horizon}")
         schedule: dict[int, Money] = {}
+        if self.retires_at_end_of_life():
+            return schedule
         year = self.lifetime + 1
         while year <= horizon:
             schedule[year] = to_won(

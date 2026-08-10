@@ -14,7 +14,7 @@ from decimal import Decimal
 
 import pytest
 
-from core.contracts.der import DER, DispatchContext
+from core.contracts.der import DER, EOL_REPLACE, EOL_RETIRE, DispatchContext
 from core.contracts.units import ENERGY_TOLERANCE_KWH, HOURS_PER_YEAR, Money, to_won, won_sum
 from core.der.thermal_load import ThermalLoad
 from tests.contract.test_der_contract import DERContractTests
@@ -380,3 +380,140 @@ def test_does_not_import_sibling_resources() -> None:
     source = inspect.getsource(module)
     for forbidden in ("core.der.heat_pump", "core.der.load", "core.der.boiler"):
         assert forbidden not in source, f"형제 자원 {forbidden} 을 참조합니다"
+
+
+# ── FR-104-AC3 retire 기능 (WP-24) ────────────────────────────────────
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_default_is_replace_behavior_unchanged() -> None:
+    """기본값은 replace - 아무것도 안 넘기면 지금까지와 결과가 똑같다.
+
+    ThermalLoad(기본 생성)은 end_of_life_action이 "replace"이므로 기존과 동일하게 작동한다.
+    """
+    tl = make_thermal_load(
+        lifetime=25,
+        capacity_kw=5.0,
+        unit_cost_won_per_kw=1_000_000.0,
+        subcomponents=[("순환펌프", 12, 400_000.0)],
+    )
+    assert tl.end_of_life_action == EOL_REPLACE
+    assert tl.retires_at_end_of_life() is False
+
+    # 기존과 동일한 교체 스케줄: 12년 수명 순환펌프 → 13년차 교체
+    schedule = tl.replacement_schedule(horizon=20)
+    assert schedule == {13: Money(400_000)}
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_retire_returns_empty_replacement_schedule() -> None:
+    """retire면 본체도 부속설비도 아무것도 교체하지 않는다.
+
+    수명 25년 + 순환펌프 12년이어도, retire 선택 시 빈 스케줄을 돌려준다.
+    """
+    tl = make_thermal_load(
+        end_of_life_action=EOL_RETIRE,
+        lifetime=25,
+        capacity_kw=5.0,
+        unit_cost_won_per_kw=1_000_000.0,
+        subcomponents=[("순환펌프", 12, 400_000.0)],
+    )
+    assert tl.end_of_life_action == EOL_RETIRE
+    assert tl.retires_at_end_of_life() is True
+
+    # retire 선택 시 교체비가 전혀 없다
+    schedule = tl.replacement_schedule(horizon=20)
+    assert schedule == {}
+
+    longer = tl.replacement_schedule(horizon=30)
+    assert longer == {}
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_retire_keeps_thermal_load_unchanged_dispatch() -> None:
+    """retire 여도 열부하는 그대로다 - 수요는 계속 발생한다.
+
+    Load/ThermalLoad는 순수 부하 자원으로서, retire해도 가구는 계속 살고
+    수요는 계속 발생한다. dispatch()는 수정하지 않는다.
+    """
+    tl_replace = make_thermal_load(lifetime=25, annual_growth_rate=0.0)
+    tl_retire = make_thermal_load(
+        lifetime=25, end_of_life_action=EOL_RETIRE, annual_growth_rate=0.0
+    )
+
+    ctx_early = DispatchContext(steps=HOURS_PER_YEAR, dt=tl_replace.dt, year=1)
+    result_replace_early = tl_replace.dispatch(ctx_early)
+    result_retire_early = tl_retire.dispatch(ctx_early)
+
+    # 수명 도달 전(1년차): 둘 다 동일한 열부하를 소비
+    assert result_replace_early.heat == result_retire_early.heat
+    assert math.fsum(result_replace_early.heat) == pytest.approx(-ANNUAL_HEAT_KWH, abs=1e-9)
+
+    # 수명 도달 후(30년차): 둘 다 여전히 동일한 열부하를 소비 (부하 자원 특성)
+    ctx_late = DispatchContext(steps=HOURS_PER_YEAR, dt=tl_replace.dt, year=30)
+    result_replace_late = tl_replace.dispatch(ctx_late)
+    result_retire_late = tl_retire.dispatch(ctx_late)
+
+    assert result_replace_late.heat == result_retire_late.heat
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_retire_keeps_thermal_load_unchanged_annual_energy() -> None:
+    """retire 선택 시 연간 열부하가 replace와 같다.
+
+    수명 25년 기준:
+    - 1~25년차: replace와 retire 동일
+    - 26년차 이후: 둘 다 여전히 성장률 적용하여 계산 (부하 자원 특성)
+    """
+    g = 0.015
+    tl_replace = make_thermal_load(lifetime=25, annual_growth_rate=g)
+    tl_retire = make_thermal_load(
+        lifetime=25, end_of_life_action=EOL_RETIRE, annual_growth_rate=g
+    )
+
+    for year in [1, 10, 25, 30]:
+        expected = ANNUAL_HEAT_KWH * (1.0 + g) ** (year - 1)
+        assert tl_replace.annual_energy_kwh(year=year) == pytest.approx(expected, rel=1e-12)
+        assert tl_retire.annual_energy_kwh(year=year) == pytest.approx(expected, rel=1e-12)
+        assert tl_replace.annual_energy_kwh(year=year) == tl_retire.annual_energy_kwh(year=year)
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_retire_does_not_affect_other_cost_methods() -> None:
+    """retire가 capex, O&M, 잔존가치에 영향을 주지 않는다.
+
+    교체비(schedule)만 다르고, 다른 비용 메서드는 수명에 따라 동일하게 작동한다.
+    """
+    tl_replace = make_thermal_load(
+        lifetime=25,
+        capacity_kw=5.0,
+        unit_cost_won_per_kw=1_000_000.0,
+        fixed_om_won_per_year=OM_A,
+        variable_om_won_per_kwh=3.0,
+        escalation_rate=OM_I,
+    )
+    tl_retire = make_thermal_load(
+        lifetime=25,
+        end_of_life_action=EOL_RETIRE,
+        capacity_kw=5.0,
+        unit_cost_won_per_kw=1_000_000.0,
+        fixed_om_won_per_year=OM_A,
+        variable_om_won_per_kwh=3.0,
+        escalation_rate=OM_I,
+    )
+
+    # capex: 둘 다 1년차에만 발생
+    assert tl_replace.capex(year=1) == tl_retire.capex(year=1)
+    assert tl_replace.capex(year=2) == tl_retire.capex(year=2) == Money(0)
+
+    # fixed_om: 물가상승 동일
+    for year in [1, 10, 25]:
+        assert tl_replace.fixed_om(year=year) == tl_retire.fixed_om(year=year)
+
+    # variable_om: 소비량 동일
+    for year in [1, 10, 25]:
+        assert tl_replace.variable_om(year=year) == tl_retire.variable_om(year=year)
+
+    # salvage_value: 수명에 따른 잔존가치 동일
+    for year in [10, 25]:
+        assert tl_replace.salvage_value(year=year) == tl_retire.salvage_value(year=year)

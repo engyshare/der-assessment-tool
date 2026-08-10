@@ -51,6 +51,51 @@ from core.contracts.units import (
     steps_per_year,
 )
 
+#: `FR-104-AC3` 수명 도달 시 처리 — **리터럴을 여기서만 정의한다.**
+#: 자원 6종이 각자 `"retire"` 를 적으면 그중 하나의 오타를 아무도 잡지 못한다.
+EOL_REPLACE = "replace"
+EOL_RETIRE = "retire"
+EOL_ACTIONS: frozenset[str] = frozenset({EOL_REPLACE, EOL_RETIRE})
+
+# ── `retire` 의 의미 — 구현 전에 정한 것 (R12, 사용자 결정) ──────────────
+#
+# 조항(`FR-104-AC3`)은 *「수명 도달 자원은 `replace` / `retire` 선택 가능」*
+# 이라고만 적고 **선택의 결과를 정의하지 않는다.** 그 공백을 아래로 메운다.
+# 셋 다 판단이므로 **바뀔 수 있고, 바뀌면 이 문단부터 고친다.**
+#
+# **① `replace`(기본값) = 수명 도달 다음 해 초에 교체비를 계상하고 계속 쓴다.**
+#    지금까지의 유일한 동작이며 기본값으로 남긴다 — *「설비는 수명이 다하면
+#    교체 비용이 발생하므로 이를 비용에 고려해야 한다」*(사용자)가 이 사업의
+#    전제다. 기본값을 `retire` 로 두면 교체비가 조용히 빠져 **회수기간이
+#    실제보다 좋게** 나온다. 되돌릴 수 없는 쪽을 기본값으로 두지 않는다.
+#
+# **② `retire` = 수명 도달로 그 설비가 끝난다.** 그래서 둘이 함께 일어난다.
+#    - 교체비를 계상하지 않는다 (`replacement_schedule()` 이 EOL 이후로 비운다)
+#    - **EOL 이후 출력이 0 이다** (`dispatch()`)
+#
+#    > **비용만 끊고 출력을 두면 안 된다.** 교체비는 안 드는데 편익은 그대로
+#    > 나오므로 회수기간이 좋아지고 **필요 지원액이 과소 산정된다.**
+#    > 그 상태는 `retire` 를 구현하지 않은 것보다 나쁘다 — 틀린 값이
+#    > 「지원되는 기능」의 얼굴로 나오기 때문이다.
+#
+# **③ 잔존가치(`AC5`)는 EOL 전에는 `replace` 와 같다.** `retire` 는 **미래의
+#    선택**이고 EOL 전에는 자산이 정상 가동 중이다. 분석기간이 EOL 前에
+#    끝나면 두 선택의 잔존가치가 다를 이유가 없다.
+#
+# **⑤ `retire` 는 「이 설비 계통을 더는 갱신하지 않는다」다 — 그래서 출력은
+#    본체·부속설비 중 **먼저 수명이 끝나는 쪽**에서 멈춘다.**
+#    PV 본체 25년 · 인버터 12년에 retire 를 걸었다고 하자. 13년차에 인버터를
+#    사지 않으면서 발전은 20년차까지 계속 나온다면, **비용만 끊고 편익은
+#    남기는** ②의 그 형태가 부속설비 쪽으로 되살아난다. 인버터 없는 PV 는
+#    계통에 못 싣는다.
+#    → `retire` 면 **아무것도 교체하지 않고**, 출력은 `min(본체 수명,
+#      부속설비 수명)` 이후 0 이다.
+#
+# **④ 순수 부하 자원(`Load`·`ThermalLoad`)은 부속설비에만 적용한다.**
+#    가구는 계속 살고 수요는 계속 발생한다 — 부하 본체가 0 이 될 이유가 없다.
+#    그 자원들의 교체 대상은 실제로 **계량기 등 부속설비**(`AC4`)다.
+#    → 이 자원들은 `retire` 여도 `dispatch()` 가 바뀌지 않는다.
+
 #: 매체 4종의 계열 이름과 그것을 켜는 플래그. **이 짝을 여기서만 정의한다** —
 #: 계약·계약테스트·엔진이 각자 짝지으면 한 곳이 바뀔 때 나머지가 조용히 남는다.
 MEDIA: tuple[tuple[str, str], ...] = (
@@ -353,6 +398,9 @@ class DER(ABC):
     operating_mode: str
     #: 비용 물가상승률 — **소수(0~1)** 다 (§7.5). `%` 로 받는 인자를 두지 않는다
     escalation_rate: float
+    #: 수명 도달 시 처리 — `"replace"`(교체) 또는 `"retire"`(폐기). `FR-104-AC3`.
+    #: **기본값이 `"replace"` 인 이유는 §「retire 의 의미」 참조.**
+    end_of_life_action: str
 
     def __init__(
         self,
@@ -367,6 +415,7 @@ class DER(ABC):
         consumes_fuel: bool = False,
         operating_mode: str | None = None,
         escalation_rate: float = 0.0,
+        end_of_life_action: str = EOL_REPLACE,
     ) -> None:
         if not name:
             raise ValueError("자원 인스턴스는 이름을 갖습니다 — 리포트에서 "
@@ -398,6 +447,30 @@ class DER(ABC):
         self.consumes_fuel = consumes_fuel
         self.operating_mode = self._check_operating_mode(operating_mode)
         self.escalation_rate = self._check_escalation_rate(escalation_rate)
+        self.end_of_life_action = self._check_end_of_life_action(end_of_life_action)
+
+    @staticmethod
+    def _check_end_of_life_action(action: str) -> str:
+        """`FR-104-AC3` — 값을 **닫힌 집합으로** 받는다.
+
+        오타(`"Retire"` · `"retired"`)를 조용히 통과시키면 `replace` 로 돌면서
+        사용자는 `retire` 를 골랐다고 믿는다. 그 차이는 교체비 한 건과 EOL
+        이후 편익 전부이므로 **조용히 틀리면 안 되는 자리**다.
+        """
+        if action not in EOL_ACTIONS:
+            raise ValueError(
+                f"end_of_life_action 은 {' 또는 '.join(sorted(EOL_ACTIONS))} "
+                f"입니다: {action!r} (FR-104-AC3)"
+            )
+        return action
+
+    def retires_at_end_of_life(self) -> bool:
+        """`retire` 를 선택했는가. **문자열 비교를 구현체마다 반복하지 않는다.**
+
+        자원 6종이 각자 `== "retire"` 를 적으면 그중 하나가 오타여도 게이트가
+        잡지 못한다 — 이 저장소가 반복해서 세는 「손으로 유지되는 판정」이다.
+        """
+        return self.end_of_life_action == EOL_RETIRE
 
     def _check_operating_mode(self, mode: str | None) -> str:
         """운전 방법이 선언 목록 안에 있는지 검사한다 (FR-105-AC1).

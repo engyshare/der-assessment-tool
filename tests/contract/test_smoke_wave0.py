@@ -25,7 +25,12 @@ from decimal import Decimal
 
 import pytest
 
-from core.contracts.der import DER, DispatchContext, DispatchResult
+from core.contracts.der import (
+    DER,
+    EOL_REPLACE,
+    DispatchContext,
+    DispatchResult,
+)
 from core.contracts.units import SECONDS_PER_HOUR, Money, to_won, won_sum
 from tests.contract.test_der_contract import DERContractTests
 
@@ -56,6 +61,7 @@ class ReferencePV(DER):
         operating_mode: str = "잉여 판매",
         escalation_rate: float = 0.02,
         vat_rate: float = 0.1,
+        end_of_life_action: str = EOL_REPLACE,
     ) -> None:
         super().__init__(
             name=name,
@@ -68,6 +74,7 @@ class ReferencePV(DER):
             consumes_fuel=False,
             operating_mode=operating_mode,
             escalation_rate=escalation_rate,
+            end_of_life_action=end_of_life_action,
         )
         self.capacity_kw = capacity_kw
         self.unit_capex = unit_capex_won_per_kw
@@ -117,6 +124,12 @@ class ReferencePV(DER):
         # 12년 동안 쓴 설비의 교체비가 그 설비가 아직 살아 있는 해에
         # 잡히고, 20년 분석의 마지막 교체가 분석기간 안으로 잘못 들어올 수
         # 있다. **계약 쪽 참조 구현이 틀리면 자원 6종이 그것을 베낀다.**
+        #
+        # 같은 이유로 `retire`(FR-104-AC3)도 참조 구현이 먼저 보여야 한다 —
+        # **사지 않기로 한 설비는 아무것도 교체하지 않는다.**
+        if self.retires_at_end_of_life():
+            return {}
+
         out: dict[int, Money] = {}
         year = self.inverter_lifetime + 1
         while year <= horizon:
