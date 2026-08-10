@@ -12,9 +12,9 @@
 | 요구사항 | 105 |
 | 그중 Must-have | 79 |
 | 수용기준 총계 | 307 |
-| 자동 검증 매핑 | 276 |
+| 자동 검증 매핑 | 277 |
 | 수동 검증 매핑 | 4 |
-| **Must-have 미매핑** | **9** |
+| **Must-have 미매핑** | **8** |
 | 우선순위 미지정 요구사항 | 0 |
 | **Phase 미지정 요구사항** | **9** |
 
@@ -33,7 +33,7 @@
 > 감시하면서도 *언제까지* 지켜야 하는지는 말하지 못하는 상태입니다. Should-have만
 > 남았다면 R-1 정비 사항이며 게이트 판정에는 영향이 없습니다.
 
-> **미매핑 9건.** NFR-107은 미매핑 0건을 요구합니다.
+> **미매핑 8건.** NFR-107은 미매핑 0건을 요구합니다.
 >
 > 현재 저장소에 테스트가 없으므로 전건 미매핑인 것이 정상입니다. 이 표는
 > **Wave 0 시점의 작업 목록**으로 읽으십시오 — 각 행이 곧 작성해야 할 테스트
@@ -69,7 +69,7 @@
 | `FR-105` | Must-have | 1 | `FR-105-AC1` | 자원 클래스는 자신이 지원하는 운전 방법 목록을 선언한다. 예: | 자동 | test_der_contract.py, test_ess.py, test_ess.py, test_ess.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_ev_v2g.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_heatpump.py, test_operating_mode_mapping.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py, test_pv.py |
 |  |  | 1 | `FR-105-AC2` | 운전 방법은 자원 클래스에 함께 정의되며, 신규 운전 방법 추가 시 코어 엔진 수정이 발생하지 않는다 (NFR-201과 동일 기준) | 자동 | test_17_11_sg5.py, test_pv.py |
 |  |  | 1 | `FR-105-AC3` | 동일 시나리오 내에서 같은 유형의 두 인스턴스가 서로 다른 운전 방법을 가질 수 있다 (예: 가구용 ESS는 자가소비 우선, 공용부 ESS는 피크 저감) | 자동 | test_ess.py, test_pv.py |
-|  |  | 1 | `FR-105-AC4` | 선택한 운전 방법이 FR-302 디스패치 우선순위와 어떻게 결합되는지 리포트에 표기한다 | **미매핑** | — |
+|  |  | 1 | `FR-105-AC4` | 선택한 운전 방법이 FR-302 디스패치 우선순위와 어떻게 결합되는지 리포트에 표기한다 | 자동 | test_dispatch_notes.py, test_dispatch_notes.py, test_dispatch_notes.py, test_dispatch_notes.py, test_dispatch_notes.py |
 |  |  | 1 | `FR-105-AC5` | 운전 방법을 케이스 그리드의 탐색 변수로 지정할 수 있다 (FR-801) | 자동 | test_operating_mode_mapping.py |
 | `FR-106` | Must-have | 1 | `FR-106-AC1` | CommonAsset은 capex() / fixed_om() / lifetime / replacement_schedule() / salvage_value() 를… | 자동 | test_common_asset.py, test_common_asset.py, test_common_asset.py, test_common_asset.py |
 |  |  | 1 | `FR-106-AC2` | 기본 제공 유형: CEMS(단지 통합 제어·모니터링), HEMS(가구 단위), 공용 계량·통신 설비 | 자동 | test_common_asset.py, test_common_asset.py, test_common_asset.py |

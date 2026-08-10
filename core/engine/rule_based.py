@@ -241,6 +241,17 @@ def _needs_price_signal(resource: DER) -> bool:
     return any(token.casefold() in mode for token in _PRICE_MODE_TOKENS)
 
 
+def rule_for(resource: DER) -> DispatchRule:
+    """`_rule_for` 의 공개 접근자. 동작은 그대로다 — 형제 구획(`core.report`
+    등)이 사설 함수에 묶이면 엔진 내부 구현을 못 바꾼다."""
+    return _rule_for(resource)
+
+
+def needs_price_signal(resource: DER) -> bool:
+    """`_needs_price_signal` 의 공개 접근자. 동작은 그대로다."""
+    return _needs_price_signal(resource)
+
+
 def _has_energy(series: Sequence[float]) -> bool:
     return any(abs(value) >= ENERGY_TOLERANCE_KWH for value in series)
 
