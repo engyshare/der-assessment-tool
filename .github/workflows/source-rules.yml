@@ -288,3 +288,19 @@ jobs:
         run: python scripts/check_partition_assignment.py
       - name: 도구 감지 능력 확인 (음성 테스트)
         run: python scripts/negtest_partition_assignment.py
+
+  # 정본 대조는 위 `collate` 잡이 `continue-on-error: true` 로 돈다 —
+  # 표류는 경고 상태다(§16.5.3 절차 2). **그러나 「검사기가 표류를 잡는가」는
+  # 경고가 아니라 차단이다.** 감지 못 하는 게이트는 초록불이 아무 뜻도 없고,
+  # 그것이 이 저장소가 가장 경계하는 상태다. 그래서 별도 잡으로 두고
+  # `continue-on-error` 를 걸지 않는다.
+  source-rules-negtest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pyyaml
+      - name: 정본 대조 도구 감지 능력 확인 (음성 테스트)
+        run: python scripts/negtest_source_rules.py
