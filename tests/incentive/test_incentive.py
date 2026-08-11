@@ -5,6 +5,7 @@ import pytest
 
 from core.contracts.units import Money
 from core.incentive.calculator import (
+    build_baseline_capex_cashflows,
     build_capex_cashflows,
     build_prefunding_risk_cases,
     calculate_loan_schedule,
@@ -296,19 +297,22 @@ def test_build_capex_cashflows_baseline() -> None:
     - 신규 설비: 본 사업 지원 0 → 사업자 CAPEX **-1,000원**
     - 확정 기지원: 기준선 포함된 소여 → 사업자 현금흐름 **0원**
     - 지원 예정: 기준선 제외 → **행 없음**
+
+    `is_baseline` 깃발은 사라졌다 — 기준선 판정은 `build_baseline_
+    capex_cashflows()` 라는 별개 함수의 책임이다 (R21 WP-31B).
     """
     scheme_new = _scheme(subsidy_rate=0.4)
-    cf_base_new = build_capex_cashflows(scheme_new, 1000, "OWNER", is_baseline=True)
+    cf_base_new = build_baseline_capex_cashflows(scheme_new, 1000, "OWNER")
     assert cf_base_new[0].amounts[1] == Money(-1000)
 
     # 확정 지원은 기준선에 포함된다 (FR-607). 기준선이라고 해서 사업자가
     # 내지 않은 돈을 낸 것으로 되돌리지는 않으므로 자기부담은 여전히 0이다.
     scheme_pre = _scheme(subsidy_rate=1.0, is_prefunded=True, prefunded_status="확정 지원")
-    cf_base_pre = build_capex_cashflows(scheme_pre, 1000, "OWNER", is_baseline=True)
+    cf_base_pre = build_baseline_capex_cashflows(scheme_pre, 1000, "OWNER")
     assert cf_base_pre[0].amounts[1] == Money(0)
 
     scheme_planned = _scheme(subsidy_rate=1.0, is_prefunded=True, prefunded_status="지원 예정")
-    cf_base_planned = build_capex_cashflows(scheme_planned, 1000, "OWNER", is_baseline=True)
+    cf_base_planned = build_baseline_capex_cashflows(scheme_planned, 1000, "OWNER")
     assert cf_base_planned == []
 
 

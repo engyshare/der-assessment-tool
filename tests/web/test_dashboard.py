@@ -80,11 +80,100 @@ def numeric_inputs_without_units(html: str) -> list[str]:
 
 @pytest.mark.req("UI-1-AC1")
 def test_wizard_and_advanced_mode_are_both_reachable() -> None:
+    """UI-1-AC1: 마법사 방식으로 초심자를 안내하되,
+    숙련자용 전체 파라미터 단일 화면(고급 모드) 병행"""
     parser = parse(render_dashboard())
     ids = element_ids(parser)
 
+    # 조각 ③: 병행 — 둘 다 도달 가능
     assert "wizard" in ids
     assert "advanced" in ids
+
+
+@pytest.mark.req("UI-1-AC1")
+def test_wizard_has_multiple_ordered_steps() -> None:
+    """UI-1-AC1 조각 ①: 마법사가 안내한다 — 단계가 여럿이고 순서가 있는가"""
+    html = render_dashboard()
+
+    # wizard 섹션 안의 <ol class="steps"> 요소 찾기
+    wizard_start = html.find('<section id="wizard"')
+    wizard_end = html.find('</section>', wizard_start)
+    wizard_html = html[wizard_start:wizard_end]
+
+    # <ol class="steps"> 안의 <li> 요소들 추출
+    import re
+    li_pattern = r'<li>(.*?)</li>'
+    li_matches = re.findall(li_pattern, wizard_html, re.DOTALL)
+
+    # 단계가 여럿이어야 함 (최소 2개)
+    assert len(li_matches) >= 2, f"마법사 단계가 {len(li_matches)}개뿐입니다 — 안내가 아닙니다"
+
+    # 단계 텍스트 추출 및 정리
+    step_texts = [match.strip() for match in li_matches]
+    assert step_texts, "마법사 단계 텍스트가 없습니다"
+
+    # 현재 템플릿에 4단계가 있음: 시나리오 선택, 전제 확인, 실행, 내보내기
+    expected_steps = ["시나리오 선택", "전제 확인", "실행", "내보내기"]
+    assert len(step_texts) == len(expected_steps), (
+        f"예상 단계 {len(expected_steps)}개 vs 실제 {len(step_texts)}개"
+    )
+    for i, expected in enumerate(expected_steps):
+        assert expected in step_texts[i], f"단계 {i+1}: '{expected}'가 '{step_texts[i]}'에 없습니다"
+
+
+@pytest.mark.req("UI-1-AC1")
+def test_advanced_mode_shows_all_parameters() -> None:
+    """UI-1-AC1 조각 ②: 고급 모드가 '전체' 파라미터다 — 입력 목록 전부를 담는가"""
+    parser = parse(render_dashboard())
+
+    # 고급 모드 안의 모든 input 요소 찾기
+    advanced_inputs = [
+        element for element in parser.elements
+        if element.tag == "input" and element.attrs.get("type") == "number"
+    ]
+
+    # demo_context()에 있는 모든 입력의 id를 확인
+    from web.render import demo_context
+    context = demo_context()
+    input_ids = {item["id"] for item in context["inputs"]}
+
+    # 고급 모드에 있는 input들의 id를 추출
+    advanced_input_ids = {inp.attrs.get("id") for inp in advanced_inputs if inp.attrs.get("id")}
+
+    # 고급 모드가 모든 입력을 포함하는지 확인
+    assert input_ids == advanced_input_ids, (
+        f"고급 모드가 모든 파라미터를 담지 않습니다. "
+        f"컨텍스트: {input_ids}, 고급 모드: {advanced_input_ids}, "
+        f"누락: {input_ids - advanced_input_ids}, 초과: {advanced_input_ids - input_ids}"
+    )
+
+    # 각 입력에 필수 필드(label, unit, help, source)가 있는지 확인
+    for inp in advanced_inputs:
+        inp_id = inp.attrs.get("id")
+        if not inp_id:
+            continue
+
+        # aria-describedby를 통해 label과 unit을 연결
+        described_by = inp.attrs.get("aria-describedby", "").split()
+        assert described_by, f"입력 {inp_id}에 aria-describedby가 없습니다"
+
+        # label 연결 확인
+        label_id = f"{inp_id}"
+        label_elements = [
+            el for el in parser.elements
+            if el.tag == "label" and el.attrs.get("for") == label_id
+        ]
+        assert label_elements, f"입력 {inp_id}에 연결된 label이 없습니다"
+        assert label_elements[0].text.strip(), f"입력 {inp_id}의 label이 비어있습니다"
+
+        # unit 연결 확인
+        unit_id = f"{inp_id}-unit"
+        unit_elements = [
+            el for el in parser.elements
+            if el.attrs.get("id") == unit_id and "unit" in el.attrs.get("class", "")
+        ]
+        assert unit_elements, f"입력 {inp_id}에 연결된 unit이 없습니다"
+        assert unit_elements[0].text.strip(), f"입력 {inp_id}의 unit이 비어있습니다"
 
 
 @pytest.mark.req("UI-2-AC1", "NFR-302-M1")
@@ -184,3 +273,58 @@ def test_regulation_management_shows_profile_version_and_diff() -> None:
 
     assert "버전" in section.text
     assert "diff:" in section.text
+
+
+@pytest.mark.req("FR-502-AC4")
+def test_compliance_warning_appears_when_triggered() -> None:
+    """FR-502-AC4 조각 ①: 미달 여부 — 미달일 때 경고가 나타나고, 충족일 때 나타나지 않는가"""
+    # 기본 demo_context는 triggered=True 상태
+    html = render_dashboard()
+
+    # 경고 섹션이 존재하는지 확인
+    assert "compliance-warning" in html
+    assert "공급의무 미달 경고" in html
+    assert "부족전력량:" in html
+    assert "추가 비용:" in html
+
+
+@pytest.mark.req("FR-502-AC4")
+def test_compliance_warning_does_not_appear_when_compliant() -> None:
+    """FR-502-AC4 조각 ①: 충족일 때 경고가 나타나지 않는가"""
+    from decimal import Decimal
+
+    from core.contracts.units import Money
+    from web.render import demo_context, render_dashboard
+
+    # 충족 상태의 컨텍스트 생성 (triggered=False)
+    context = demo_context()
+    context["compliance_alert"] = {
+        "triggered": False,
+        "shortfall_kwh": 0.0,
+        "additional_cost": Money(Decimal("0")),
+    }
+
+    html = render_dashboard(context)
+
+    # 경고 섹션이 존재하지 않아야 함
+    assert "compliance-warning" not in html
+    assert "공급의무 미달 경고" not in html
+
+
+@pytest.mark.req("FR-502-AC4")
+def test_compliance_warning_shows_additional_cost_with_text() -> None:
+    """FR-502-AC4 조각 ②: 경고에 금액이 함께 표시되는가 — 색상만으로 알리지 마세요"""
+    html = render_dashboard()
+
+    # 경고 섹션이 있고 금액 텍스트가 포함되어 있는지 확인
+    assert "compliance-warning" in html
+    assert "추가 비용:" in html
+
+    # 금액 형식 (숫자 + "원")이 있는지 확인
+    import re
+    cost_pattern = r"추가 비용:.*?[\d,]+원"
+    assert re.search(cost_pattern, html), "추가 비용 금액이 텍스트로 표시되지 않았습니다"
+
+    # UI-6-AC1 접근성: 색상 단독 정보전달 금지 — 글자가 있는지 확인
+    # 경고에는 "공급의무 미달", "부족전력량", "추가 비용" 등의 텍스트가 있어야 함
+    assert "공급의무 미달" in html or "부족전력량" in html, "경고에 텍스트 라벨이 없습니다"

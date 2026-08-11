@@ -66,6 +66,17 @@
     <section id="results" class="band results" aria-labelledby="results-title">
       <h2 id="results-title">결과 대시보드</h2>
 
+      {% if compliance_alert and compliance_alert.triggered %}
+      <section class="compliance-warning" role="alert" aria-labelledby="compliance-warning-title">
+        <h3 id="compliance-warning-title">⚠️ 공급의무 미달 경고</h3>
+        <p>
+          <strong>부족전력량:</strong> {{ "{:,.0f}".format(compliance_alert.shortfall_kwh) }} kWh
+          <br>
+          <strong>추가 비용:</strong> {{ "{:,}".format(compliance_alert.additional_cost) }}원
+        </p>
+      </section>
+      {% endif %}
+
       <section id="impact-ranking" aria-labelledby="impact-title">
         <h3 id="impact-title">영향도 순위</h3>
         <ol class="impact-list">

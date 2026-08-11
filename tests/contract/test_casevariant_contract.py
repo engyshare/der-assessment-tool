@@ -5,6 +5,11 @@
 R15 까지 기준선은 `build_capex_cashflows(..., is_baseline=True)` 라는
 **호출자가 손으로 넘기는 깃발**이었다. 안 넘기면 기준선은 그냥 없고,
 빠졌을 때 나는 증상이 없다 — 기준선 없는 결과도 완전한 결과처럼 보인다.
+
+**R21 에 그 인자가 실제로 사라졌다.** 이 파일은 계약(변형 선언) 쪽을 보고,
+파이프라인이 그 목록으로 도는 것은
+`tests/casegrid/test_incentive_cases.py` 가 본다 — 합성이 위층
+(`core.casegrid`)에 있기 때문이다 (`NFR-208-AC1`).
 """
 
 from __future__ import annotations

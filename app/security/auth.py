@@ -1,12 +1,18 @@
-"""인증·세션 — 작업 14.2 / SC-1 · FR-901-AC1.
+"""인증·세션 — 작업 14.2 / SC-1 · FR-901-AC1 · SC-5.
 
 세션 쿠키: **HttpOnly, Secure, SameSite=Lax**. 기본 만료 24시간.
 
 해싱은 ``app.security.hashing`` (Argon2id). 비밀번호 평문은 저장하지 않는다 —
 SC-1 의 핵심이 그것이다.
+
+세션 서명 키(SC-5)는 ``resolve_session_secret()`` 이 환경변수에서 읽는다 —
+``app.deps.resolve_db_url()`` 과 같은 모양이다.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -17,6 +23,9 @@ COOKIE_HTTPONLY = True
 COOKIE_SECURE = True
 COOKIE_SAMESITE = "lax"
 SESSION_TTL_SECONDS = 24 * 3600  # FR-901-AC1 기본 24시간
+
+#: SC-5 — 세션 서명 키의 환경변수 이름. ``app.deps.DB_URL_ENV`` 와 같은 계열.
+SESSION_SECRET_ENV = "DER_SESSION_SECRET"
 
 
 @dataclass(frozen=True)
@@ -79,3 +88,48 @@ def authenticate(
     사용자 열거(user enumeration) 공격에 쓰인다.
     """
     return verify_password(password, stored_hash)
+
+
+def resolve_session_secret() -> str:
+    """SC-5 — 세션 서명 키는 환경변수에서 온다. 고정 기본값을 두지 않는다.
+
+    ``resolve_db_url()`` 과 달리 **기본값이 없다.** DB 경로는 없어도 앱이
+    동작해야 하지만, 서명 키는 없으면 «모두가 같은 키를 쓰는» 상태가 되고
+    그것은 SC-5 가 막으려는 바로 그 상태다. 그래서 없으면 예외를 낸다 —
+    세션 발급을 거부하는 쪽이, 조용히 고정 키를 쓰는 쪽보다 안전하다.
+
+    ``resolve_db_url()`` 처럼 순수 함수로 둔다 — 값을 캐시하지 않고 호출마다
+    다시 읽는다. 그래야 «읽어서 버리는» 구현은 서명 검증이 실제로 어긋나는
+    테스트(다른 키로 서명·검증)로 드러난다.
+    """
+    secret = os.environ.get(SESSION_SECRET_ENV)
+    if not secret:
+        raise RuntimeError(
+            f"{SESSION_SECRET_ENV} 환경변수가 없다 — 세션 서명 키는 고정 기본값을 "
+            "둘 수 없다 (SC-5). 배포 환경에 이 변수를 설정하라"
+        )
+    return secret
+
+
+def sign_session_value(email: str, secret: str) -> str:
+    """세션 쿠키에 담을 서명된 값 — ``이메일.서명`` 형태.
+
+    평문 이메일을 그대로 쿠키에 넣지 않는다 — 서명이 없으면 클라이언트가
+    임의 이메일 값으로 쿠키를 위조할 수 있다.
+    """
+    digest = hmac.new(secret.encode(), email.encode(), hashlib.sha256).hexdigest()
+    return f"{email}.{digest}"
+
+
+def verify_session_value(token: str, secret: str) -> str | None:
+    """서명된 세션 값 검증 — 성공하면 이메일, 실패하면 ``None``.
+
+    잘못된 키로 서명됐거나 값이 변조됐으면 서명이 어긋나 ``None`` 이 된다.
+    """
+    email, _, digest = token.rpartition(".")
+    if not email:
+        return None
+    expected = hmac.new(secret.encode(), email.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(digest, expected):
+        return None
+    return email

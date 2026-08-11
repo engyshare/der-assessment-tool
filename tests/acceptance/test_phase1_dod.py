@@ -12,13 +12,14 @@ from core.casegrid import (
     quick_preset_grid,
     run_cases,
 )
+from core.casegrid.incentive_cases import build_capex_cashflows_for_all_cases
 from core.contracts.assumptions import AssumptionProvider, AssumptionValue
 from core.contracts.der import DispatchResult
 from core.contracts.units import Money, to_won
 from core.contracts.validation import ValidationError
 from core.contracts.valuestream import ExclusionType, ValueStream
 from core.der.pv import PV
-from core.incentive.calculator import build_capex_cashflows
+from core.incentive.calculator import build_baseline_capex_cashflows
 from core.incentive.schemas import IncentiveScheme
 from core.incentive.solver import solve_min_subsidy_rate
 from core.model.templates import create_energy_independent_house
@@ -136,7 +137,8 @@ def test_dod3_baseline_payback_and_goal_seek_subsidy() -> None:
     """17.3 DoD 3: 무지원 회수기간 + 목표 달성 최소 보조율 자동 산출 (G-3).
 
     손계산 기대값 및 조항 검증:
-    1. 무지원(is_baseline=True) 현금흐름:
+    1. 무지원 기준선 현금흐름 (`build_baseline_capex_cashflows()` — R21 부터
+       `is_baseline` 깃발이 아니라 전용 함수다):
        - capex.pv.rooftop = 1,600,000 원/kW (docs/assumptions.yaml)
        - 3 kW PV 자원 본체 CAPEX = 1,600,000 × 3 = 4,800,000 원 (net capex)
        - tax.vat_rate = 0.10 (docs/assumptions.yaml)
@@ -173,10 +175,22 @@ def test_dod3_baseline_payback_and_goal_seek_subsidy() -> None:
 
     capacity_kw = 3.0
     net_capex = unit_capex_won * capacity_kw
-    cf_baseline = build_capex_cashflows(scheme, net_capex, "OWNER", is_baseline=True)
+    cf_baseline = build_baseline_capex_cashflows(scheme, net_capex, "OWNER")
 
     assert len(cf_baseline) == 1
     assert cf_baseline[0].amounts[1] == Money(-to_won(net_capex))
+
+    # ★ R21 — 조항의 본문은 「**모든 실행에서** 자동 포함되어 **상단에** 표시」다.
+    # 위 단언은 「기준선을 **달라고 하면** 옳게 나온다」까지만 본다. 그것은
+    # `is_baseline=True` 깃발도 통과시켰던 형태이므로, 조항의 두 층
+    # (자동 포함 · 상단 표시)을 여기서 함께 붙든다 — 호출자는 「기준선」이라는
+    # 말을 한 번도 쓰지 않는다.
+    cases = build_capex_cashflows_for_all_cases(scheme, net_capex, "OWNER")
+    assert cases[0].tag == "unsupported", "기준선이 결과 상단이 아니다"
+    assert cases[0].rows[0].amounts[1] == Money(-to_won(net_capex)), (
+        "맨 앞이 기준선 태그를 달고 있어도 값이 무지원이 아니면 이름만 지킨 것이다"
+    )
+    assert len(cases) > 1, "지원안 케이스가 함께 나오지 않으면 비교할 대상이 없다"
 
     # 2. spec §13.2.2 C-1 CAPEX 본체 및 부가세 분리 계상 + 다년도(20년) 검증
     pv = PV(

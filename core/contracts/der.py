@@ -50,6 +50,7 @@ from core.contracts.units import (
     Year,
     steps_per_year,
 )
+from core.contracts.validation import ValidationError
 
 #: `FR-104-AC3` 수명 도달 시 처리 — **리터럴을 여기서만 정의한다.**
 #: 자원 6종이 각자 `"retire"` 를 적으면 그중 하나의 오타를 아무도 잡지 못한다.
@@ -489,24 +490,52 @@ class DER(ABC):
         표기된다 (FR-105-AC4). 무엇을 선택했는지는 계산 결과를 가르는 입력이므로
         추측 대상이 아니다.
         """
+        # **인스턴스 이름을 `field` 에 넣지 않는다.** 이름은 사용자가 지은 자유
+        # 문자열이므로 넣으면 필드 키가 열거 불가능해지고, 표시 층이 「어느
+        # 칸인가」를 키로 찾을 수 없다. 저장소의 관례도 그것이다 —
+        # `valuestream.{tag}.payer` · `chart.{tag}`. 인스턴스는 `reason` 이 적는다.
+        # `tag` 는 ClassVar 선언만 있고 기본값이 없어, 잊은 구현에서
+        # `AttributeError` 가 나면 **검증 오류가 그것에 가려진다.**
+        tag = getattr(type(self), "tag", None) or type(self).__name__
+        field_path = f"der.{tag}.operating_mode"
         if not self.OPERATING_MODES:
             if mode:
-                raise ValueError(
-                    f"{self.name}: 운전 방법 {mode!r} 를 받았으나 "
-                    f"{type(self).__name__} 은 `OPERATING_MODES` 를 선언하지 "
-                    "않았습니다. 지원 목록을 클래스에 선언하십시오 (FR-105-AC1)"
+                raise ValidationError(
+                    field=field_path,
+                    reason=(
+                        f"{self.name}: 운전 방법 {mode!r} 를 받았으나 "
+                        f"{type(self).__name__} 의 선언 목록이 비어 있습니다"
+                    ),
+                    action=(
+                        "이 자원 유형이 운전 방법을 갖지 않는다면 "
+                        "`operating_mode` 인자를 빼십시오. 갖는다면 "
+                        f"{type(self).__name__} 에 `OPERATING_MODES` 를 "
+                        "선언하십시오 (FR-105-AC1)"
+                    ),
+                    rule="DV-14",
                 )
             return ""
         if mode is None:
-            raise ValueError(
-                f"{self.name}: 운전 방법을 지정해야 합니다 — "
-                f"{type(self).__name__} 의 지원 목록: "
-                f"{', '.join(self.OPERATING_MODES)} (FR-105-AC1)"
+            raise ValidationError(
+                field=field_path,
+                reason=f"{self.name}: 운전 방법이 지정되지 않았습니다",
+                action=(
+                    f"{type(self).__name__} 의 지원 목록에서 하나를 고르십시오: "
+                    f"{', '.join(self.OPERATING_MODES)} (FR-105-AC1). "
+                    "기본값을 골라 주지 않는 이유는 무엇을 선택했는지가 "
+                    "계산 결과를 가르는 입력이기 때문입니다"
+                ),
+                rule="DV-14",
             )
         if mode not in self.OPERATING_MODES:
-            raise ValueError(
-                f"{self.name}: 알 수 없는 운전 방법 {mode!r}. 지원 목록: "
-                f"{', '.join(self.OPERATING_MODES)} (FR-105-AC1)"
+            raise ValidationError(
+                field=field_path,
+                reason=f"{self.name}: 알 수 없는 운전 방법 {mode!r} 입니다",
+                action=(
+                    "지원 목록 안의 값으로 고치십시오: "
+                    f"{', '.join(self.OPERATING_MODES)} (FR-105-AC1)"
+                ),
+                rule="DV-14",
             )
         return mode
 

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+
+from core.contracts.units import Money
 
 _ROOT = Path(__file__).resolve().parent
 _ENV = Environment(
@@ -110,6 +113,12 @@ def demo_context() -> dict[str, Any]:
         "regulation_versions": (
             {"name": "재생에너지 우선공급", "version": "v2026.1", "diff": "의무공급 기준 갱신"},
         ),
+        # FR-502-AC4: 공급의무 미달 여부와 추가 비용을 대시보드에 경고로 강조
+        "compliance_alert": {
+            "triggered": True,  # 미달 여부
+            "shortfall_kwh": 1250.0,  # 부족전력량 (kWh)
+            "additional_cost": Money(Decimal("187500")),  # 추가 비용 (원)
+        },
     }
 
 

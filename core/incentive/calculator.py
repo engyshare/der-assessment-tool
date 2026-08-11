@@ -74,36 +74,25 @@ def build_capex_cashflows(
     scheme: IncentiveScheme | None,
     capex: float | Decimal,
     viewpoint: Literal["OWNER", "PARTICIPANT", "GOV", "SOCIAL"],
-    is_baseline: bool = False,
 ) -> list[CashFlowRow]:
-    """FR-611-AC1~AC6, FR-607-AC1~AC3: 초기 투자 및 지원 현금흐름 산출.
+    """FR-611-AC1~AC6: 초기 투자 및 지원 현금흐름 산출 — 입력 스킴 그대로.
 
-    > **`is_baseline` 은 호출자가 손으로 넘기는 깃발이다** — 안 넘기면
-    > 기준선은 그냥 없고, 빠졌을 때 나는 증상이 없다. FR-607-AC1 의
-    > *「모든 실행에서 자동 포함」* 이 여기서는 성립하지 않는다.
-    >
-    > R16 이 그 자리에 `core.contracts.casevariant.CaseVariant` 와
-    > `core.casegrid.variants.run_order()` 를 세웠다 — 등록된 변형 목록이
-    > 곧 실행 목록이고, 기준선이 정확히 하나이며 맨 위라는 것이 기계로
-    > 보증된다. **파이프라인을 그 목록으로 돌리는 것은 R17 이다**(§16.2 —
-    > 계약 변경과 구현을 한 PR 에 섞지 않는다). 그때 이 인자는 사라진다.
+    기준선(무지원) 케이스는 이 함수의 인자가 아니라
+    `build_baseline_capex_cashflows()` 라는 별개의 함수다. 예전에는
+    `is_baseline: bool` 이 호출자가 손으로 넘기는 깃발이었고, 안 넘기면
+    기준선은 그냥 없었다 — FR-607-AC1 의 「모든 실행에서 자동 포함」이
+    성립하지 않았다. 등록된 목록을 그대로 따라 돌며 기준선 여부를 판정하는
+    것은 **위층**인 `core.casegrid.incentive_cases`
+    `build_capex_cashflows_for_all_cases()` 다 — 그 목록
+    (`core.casegrid.variants.run_order()`)이 이 구획보다 상위 계층이라
+    여기서 부를 수 없다 (`NFR-208-AC1`). 이 함수는 「이 스킴대로 계산」만
+    책임진다.
     """
     capex_won = to_won(capex)
     if capex_won == Decimal(0):
         return []
 
     if scheme is None:
-        scheme = IncentiveScheme.create_baseline()
-
-    # FR-607/FR-611-AC4: `지원 예정`은 기준선에서 제외된 병기 케이스다.
-    # 설비를 아예 빼는 것이므로 CAPEX 행도 없다. 0원 행을 남기면 "설비는 있는데
-    # 비용만 0"인 모델이 되어 AC4의 「해당 설비를 제외한 케이스」가 아니다.
-    if is_baseline and _is_planned_prefunding(scheme):
-        return []
-
-    # 무지원 기준선(Baseline)일 경우, 지원을 0으로 둔 가상 스킴 적용.
-    # 단 기지원 **확정** 설비는 기준선에 포함된 소여이므로 기존 스킴 유지.
-    if is_baseline and not scheme.is_prefunded:
         scheme = IncentiveScheme.create_baseline()
 
     # FR-611-AC2: 기지원 설비는 본 사업의 지원액 0원 처리
@@ -171,6 +160,31 @@ def build_capex_cashflows(
         )
 
     return rows
+
+
+def build_baseline_capex_cashflows(
+    scheme: IncentiveScheme | None,
+    capex: float | Decimal,
+    viewpoint: Literal["OWNER", "PARTICIPANT", "GOV", "SOCIAL"],
+) -> list[CashFlowRow]:
+    """FR-607-AC1, FR-607-AC3: 무지원 기준선 케이스의 CAPEX 현금흐름.
+
+    FR-607-AC3 이 정한 기준선의 정의를 그대로 옮긴다 — 타 사업으로
+    **확정** 지원된 설비는 기준선에 **포함**하고, **지원 예정**(미확정)은
+    **제외**한다. 이 판정은 예전에 `is_baseline` 깃발이 하던 일이었다.
+    """
+    # FR-607/FR-611-AC4: `지원 예정`은 기준선에서 제외된 병기 케이스다.
+    # 설비를 아예 빼는 것이므로 CAPEX 행도 없다. 0원 행을 남기면 "설비는 있는데
+    # 비용만 0"인 모델이 되어 AC4의 「해당 설비를 제외한 케이스」가 아니다.
+    if scheme is not None and _is_planned_prefunding(scheme):
+        return []
+
+    # 무지원 기준선일 경우, 지원을 0으로 둔 가상 스킴 적용.
+    # 단 기지원 **확정** 설비는 기준선에 포함된 소여이므로 기존 스킴 유지.
+    if scheme is None or not scheme.is_prefunded:
+        scheme = IncentiveScheme.create_baseline()
+
+    return build_capex_cashflows(scheme, capex, viewpoint)
 
 
 def build_prefunding_risk_cases(

@@ -26,6 +26,7 @@ from core.contracts.units import (
     steps_per_year,
     to_won,
 )
+from core.contracts.validation import ValidationError
 
 #: 인버터 교체비 기본값 — 초기 설비비 대비 비율. 통상 10~20% 구간의 중앙을 쓴다.
 #: **기본값이지 오라클이 아니다** — 견적이 있으면 `inverter_unit_capex_won_per_kw` 로 준다.
@@ -112,34 +113,58 @@ class PV(DER):
             end_of_life_action=end_of_life_action,
         )
 
-        self.capacity_kw = _positive(capacity_kw, label="용량(kW)", name=name)
+        self.capacity_kw = _positive(
+            capacity_kw, field="pv.capacity_kw", label="용량(kW)", name=name
+        )
         self.capacity_factor, self.generation_profile_kwh = self._resolve_generation(
             capacity_factor=capacity_factor, profile=generation_profile_kwh, name=name
         )
-        self.azimuth_deg = _in_range(azimuth_deg, 0.0, 360.0, label="방위각(도)", name=name)
-        self.tilt_deg = _in_range(tilt_deg, 0.0, 90.0, label="경사각(도)", name=name)
-        self.inverter_lifetime = int(_positive(inverter_lifetime, label="인버터 수명", name=name))
-        self.unit_capex_won_per_kw = _non_negative(
-            unit_capex_won_per_kw, label="설비 단가(원/kW)", name=name
+        self.azimuth_deg = _in_range(
+            azimuth_deg, 0.0, 360.0, field="pv.azimuth_deg", label="방위각(도)", name=name
         )
-        self.bos_capex_won = _non_negative(bos_capex_won, label="부가세 제외 부대비(원)",
-                                          name=name)
-        self.vat_rate = _in_range(vat_rate, 0.0, 1.0, label="부가세율", name=name)
+        self.tilt_deg = _in_range(
+            tilt_deg, 0.0, 90.0, field="pv.tilt_deg", label="경사각(도)", name=name
+        )
+        self.inverter_lifetime = int(
+            _positive(
+                inverter_lifetime, field="pv.inverter_lifetime", label="인버터 수명", name=name
+            )
+        )
+        self.unit_capex_won_per_kw = _non_negative(
+            unit_capex_won_per_kw,
+            field="pv.unit_capex_won_per_kw",
+            label="설비 단가(원/kW)",
+            name=name,
+        )
+        self.bos_capex_won = _non_negative(
+            bos_capex_won, field="pv.bos_capex_won", label="부가세 제외 부대비(원)", name=name
+        )
+        self.vat_rate = _in_range(
+            vat_rate, 0.0, 1.0, field="pv.vat_rate", label="부가세율", name=name
+        )
         self.inverter_unit_capex_won_per_kw = _non_negative(
             self.unit_capex_won_per_kw * DEFAULT_INVERTER_CAPEX_RATIO
             if inverter_unit_capex_won_per_kw is None
             else inverter_unit_capex_won_per_kw,
+            field="pv.inverter_unit_capex_won_per_kw",
             label="인버터 단가(원/kW)",
             name=name,
         )
         self.fixed_om_won_per_year = _non_negative(
-            fixed_om_won_per_year, label="고정 O&M(원/년)", name=name
+            fixed_om_won_per_year,
+            field="pv.fixed_om_won_per_year",
+            label="고정 O&M(원/년)",
+            name=name,
         )
         self.variable_om_won_per_kwh = _non_negative(
-            variable_om_won_per_kwh, label="변동 O&M 단가(원/kWh)", name=name
+            variable_om_won_per_kwh,
+            field="pv.variable_om_won_per_kwh",
+            label="변동 O&M 단가(원/kWh)",
+            name=name,
         )
         self.self_consumption_ratio = _in_range(
-            self_consumption_ratio, 0.0, 1.0, label="자가소비율", name=name
+            self_consumption_ratio, 0.0, 1.0, field="pv.self_consumption_ratio",
+            label="자가소비율", name=name
         )
 
     # ── 입력 해석 ───────────────────────────────────────────────────
@@ -157,9 +182,11 @@ class PV(DER):
             return OperatingMode(mode)
         except ValueError as e:
             allowed = ", ".join(m.value for m in cls.OPERATING_MODES)
-            raise ValueError(
-                f"{name}: 선언되지 않은 운전 방법입니다: {mode!r}. "
-                f"PV가 지원하는 운전 방법은 [{allowed}] 뿐입니다 (FR-105-AC1 · DV-14)"
+            raise ValidationError(
+                field="pv.operating_mode",
+                reason=f"{name}: 선언되지 않은 운전 방법입니다: {mode!r}",
+                action=f"PV가 지원하는 운전 방법 중 하나를 지정하십시오 — [{allowed}]",
+                rule="DV-14",
             ) from e
 
     def _resolve_generation(
@@ -171,30 +198,52 @@ class PV(DER):
         발전량 0인 PV가 조용히 만들어지고, 비용만 있는 사업이 된다.
         """
         if (capacity_factor is None) == (profile is None):
-            raise ValueError(
-                f"{name}: 이용률(capacity_factor)과 8760 발전 시계열 중 "
-                "정확히 하나만 지정합니다 (FR-102-AC1.PV). "
-                f"받은 값 — 이용률 {capacity_factor!r}, 시계열 "
-                f"{'없음' if profile is None else f'{len(profile)}행'}"
+            both = "둘 다 주었습니다" if capacity_factor is not None else "둘 다 주지 않았습니다"
+            raise ValidationError(
+                field="pv.capacity_factor",
+                reason=(
+                    f"{name}: 이용률(capacity_factor)과 8760 발전 시계열을 {both}"
+                    f" (받은 값 — 이용률 {capacity_factor!r}, 시계열 "
+                    f"{'없음' if profile is None else f'{len(profile)}행'})"
+                ),
+                action=(
+                    "이용률(capacity_factor) 또는 발전 시계열(generation_profile_kwh) "
+                    "중 정확히 하나만 지정하십시오"
+                ),
             )
 
         if capacity_factor is not None:
-            return _in_range(capacity_factor, 0.0, 1.0, label="이용률", name=name), None
+            return (
+                _in_range(
+                    capacity_factor, 0.0, 1.0, field="pv.capacity_factor", label="이용률", name=name
+                ),
+                None,
+            )
 
         assert profile is not None  # 위 분기가 보장한다 (타입 좁히기)
         expected = steps_per_year(self.dt)
         if len(profile) != expected:
-            raise ValueError(
-                f"{name}: 발전 시계열 행수가 맞지 않습니다: {len(profile)}행, "
-                f"기대 {expected}행. 조용히 자르거나 채우면 어느 시각이 "
-                "어긋났는지 영영 알 수 없습니다 (FR-301-AC3)"
+            raise ValidationError(
+                field="pv.generation_profile_kwh",
+                reason=(
+                    f"{name}: 발전 시계열 행수가 맞지 않습니다: {len(profile)}행, "
+                    f"기대 {expected}행"
+                ),
+                action=(
+                    f"발전 시계열을 정확히 {expected}행으로 맞춰 지정하십시오 "
+                    f"(dt={self.dt}초 기준)"
+                ),
+                rule="DV-4",
             )
         for i, v in enumerate(profile):
             if v < 0.0:
-                raise ValueError(
-                    f"{name}: 발전 시계열 {i}번째 스텝이 음수입니다: {v}. "
-                    "부호 규약상 음수는 «계통에서 받아들임(소비)»이며, "
-                    "발전 자원의 시계열에 들어가면 수지가 조용히 상쇄됩니다"
+                raise ValidationError(
+                    field="pv.generation_profile_kwh",
+                    reason=f"{name}: 발전 시계열 {i}번째 스텝이 음수입니다: {v}",
+                    action=(
+                        "발전 시계열의 모든 값을 0 이상으로 지정하십시오 — 부호 규약상 음수는 "
+                        "«계통에서 받아들임(소비)»을 의미합니다"
+                    ),
                 )
         return None, tuple(float(v) for v in profile)
 
@@ -276,11 +325,19 @@ class PV(DER):
         allocated = self_consumption_kwh + surplus_kwh
         # NFR-102 에너지 수지 허용 오차(1e-6 kWh)만큼은 float 누산 오차로 본다
         if allocated - total > 1e-6:
-            raise ValueError(
-                f"{self.name}: 동일 발전량의 이중 계상입니다 — "
-                f"{year}년차 발전 {total:.6f} kWh 에 대해 자가소비 "
-                f"{self_consumption_kwh:.6f} + 잉여 {surplus_kwh:.6f} = "
-                f"{allocated:.6f} kWh 를 배분했습니다 (FR-402-AC2.A)"
+            raise ValidationError(
+                field="pv.allocation",
+                reason=(
+                    f"{self.name}: 동일 발전량의 이중 계상입니다 — "
+                    f"{year}년차 발전 {total:.6f} kWh 에 대해 자가소비 "
+                    f"{self_consumption_kwh:.6f} + 잉여 {surplus_kwh:.6f} = "
+                    f"{allocated:.6f} kWh 를 배분했습니다"
+                ),
+                action=(
+                    "자가소비 배분량과 잉여판매 배분량의 합이 해당 연도 총발전량을 "
+                    "넘지 않도록 편익 활성화 조합을 조정하십시오"
+                ),
+                rule="DV-12",
             )
 
     def value_streams(self) -> tuple[str, ...]:
@@ -360,11 +417,16 @@ class PV(DER):
 
         for step, (gen, lim) in enumerate(zip(electric, limits, strict=True)):
             if gen - lim > 1e-9:
-                raise ValueError(
-                    f"{self.name}: {step}번째 스텝 발전 {gen:.6f} kWh 가 계통 "
-                    f"연계 용량 상한 {lim:.6f} kWh 를 넘습니다. 출력제어를 "
-                    f"수용하려면 운전 방법을 «{OperatingMode.CURTAILMENT.value}» 로 "
-                    "지정하십시오 (FR-105-AC1)"
+                raise ValidationError(
+                    field="pv.operating_mode",
+                    reason=(
+                        f"{self.name}: {step}번째 스텝 발전 {gen:.6f} kWh 가 계통 "
+                        f"연계 용량 상한 {lim:.6f} kWh 를 넘습니다"
+                    ),
+                    action=(
+                        f"운전 방법을 «{OperatingMode.CURTAILMENT.value}» 로 지정해 출력제어를 "
+                        "수용하거나, 용량(capacity_kw)을 계통 한도 이하로 낮추십시오"
+                    ),
                 )
         return electric
 
@@ -390,10 +452,20 @@ class PV(DER):
         프로파일(FR-504)에서 온다. 자원이 들고 있으면 제도 개정 때 자원
         코드를 고치게 된다.
         """
-        if rec_weight < 0.0 or rec_price_won_per_mwh < 0.0:
-            raise ValueError(
-                f"{self.name}: REC 가중치·단가는 음수가 될 수 없습니다 "
-                f"(가중치 {rec_weight}, 단가 {rec_price_won_per_mwh})"
+        if rec_weight < 0.0:
+            raise ValidationError(
+                field="pv.rec_weight",
+                reason=f"{self.name}: REC 가중치는 음수가 될 수 없습니다 (받은 값 {rec_weight})",
+                action="REC 가중치를 0 이상의 값으로 지정하십시오",
+            )
+        if rec_price_won_per_mwh < 0.0:
+            raise ValidationError(
+                field="pv.rec_price_won_per_mwh",
+                reason=(
+                    f"{self.name}: REC 단가는 음수가 될 수 없습니다 "
+                    f"(받은 값 {rec_price_won_per_mwh})"
+                ),
+                action="REC 단가(원/MWh)를 0 이상의 값으로 지정하십시오",
             )
         mwh = self.annual_generation_kwh(year=year) / KWH_PER_MWH
         return to_won(mwh * rec_weight * rec_price_won_per_mwh)
@@ -435,7 +507,11 @@ class PV(DER):
         화면상 정상으로 보인다. 테스트가 두 경로를 대조한다.
         """
         if horizon <= 0:
-            raise ValueError(f"{self.name}: 분석기간은 1년 이상입니다: {horizon}")
+            raise ValidationError(
+                field="pv.horizon",
+                reason=f"{self.name}: 분석기간은 1년 이상입니다: {horizon}",
+                action="분석기간(horizon)에 1 이상의 정수를 지정하십시오",
+            )
         i = self.escalation_rate
         if i == 0.0:
             total = self.fixed_om_won_per_year * horizon
@@ -469,7 +545,11 @@ class PV(DER):
         않는다는 선택이므로 이후 교체비 자체가 없다.
         """
         if horizon <= 0:
-            raise ValueError(f"{self.name}: 분석기간은 1년 이상입니다: {horizon}")
+            raise ValidationError(
+                field="pv.horizon",
+                reason=f"{self.name}: 분석기간은 1년 이상입니다: {horizon}",
+                action="분석기간(horizon)에 1 이상의 정수를 지정하십시오",
+            )
         if self.retires_at_end_of_life():
             return {}
 
@@ -505,7 +585,11 @@ class PV(DER):
     def discounted_salvage_value(self, *, year: int, discount_rate: float) -> Money:
         """최종연도 잔존가치의 현재가치 — 오라클 `900,000 / 1.045^20` = 373,179원."""
         if discount_rate <= -1.0:
-            raise ValueError(f"{self.name}: 할인율이 -100% 이하입니다: {discount_rate}")
+            raise ValidationError(
+                field="pv.discount_rate",
+                reason=f"{self.name}: 할인율이 -100% 이하입니다: {discount_rate}",
+                action="할인율을 -1(-100%)보다 큰 값으로 지정하십시오",
+            )
         nominal = float(self.salvage_value(year=year))
         return to_won(nominal / (1.0 + discount_rate) ** int(year))
 
@@ -515,22 +599,34 @@ class PV(DER):
 # 시나리오에서 «값이 범위 밖»만 나오면 어느 자원인지 찾지 못한다.
 
 
-def _in_range(value: float, low: float, high: float, *, label: str, name: str) -> float:
+def _in_range(value: float, low: float, high: float, *, field: str, label: str, name: str) -> float:
     if not low <= value <= high:
-        raise ValueError(
-            f"{name}: {label} 은(는) {low}~{high} 범위입니다 (받은 값 {value}). "
-            "비율은 코드 내부에서 0~1 소수로 정규화합니다 (§7.5)"
+        raise ValidationError(
+            field=field,
+            reason=f"{name}: {label} 은(는) {low}~{high} 범위입니다 (받은 값 {value})",
+            action=(
+                f"{label}을(를) {low}~{high} 범위의 값으로 지정하십시오 "
+                "(비율은 코드 내부에서 0~1 소수로 정규화합니다, §7.5)"
+            ),
         )
     return float(value)
 
 
-def _positive(value: float, *, label: str, name: str) -> float:
+def _positive(value: float, *, field: str, label: str, name: str) -> float:
     if not value > 0:
-        raise ValueError(f"{name}: {label} 은(는) 0보다 커야 합니다 (받은 값 {value})")
+        raise ValidationError(
+            field=field,
+            reason=f"{name}: {label} 은(는) 0보다 커야 합니다 (받은 값 {value})",
+            action=f"{label}에 0보다 큰 값을 지정하십시오",
+        )
     return float(value)
 
 
-def _non_negative(value: float, *, label: str, name: str) -> float:
+def _non_negative(value: float, *, field: str, label: str, name: str) -> float:
     if value < 0:
-        raise ValueError(f"{name}: {label} 은(는) 음수가 될 수 없습니다 (받은 값 {value})")
+        raise ValidationError(
+            field=field,
+            reason=f"{name}: {label} 은(는) 음수가 될 수 없습니다 (받은 값 {value})",
+            action=f"{label}에 0 이상의 값을 지정하십시오",
+        )
     return float(value)
