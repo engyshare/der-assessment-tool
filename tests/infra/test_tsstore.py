@@ -19,9 +19,11 @@ from pathlib import Path
 import pyarrow as pa  # type: ignore[import-untyped]
 import pytest
 
+from core.contracts.validation import ValidationError
 from infra.tsstore import (
     ALLOWED_ROW_COUNTS,
     CURRENT_FORMAT_VERSION,
+    TS_KINDS,
     TimeSeriesIntegrityError,
     TimeSeriesShapeError,
     compute_checksum,
@@ -143,11 +145,64 @@ def test_write_rejects_wrong_row_count(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.req("NFR-303-M1")
+def test_write_rejects_wrong_row_count_carries_field_reason_action(
+    tmp_path: Path,
+) -> None:
+    """NFR-303 — DV-4 위반은 필드·사유·조치 3요소를 구조로 갖고 rule="DV-4" 다.
+
+    `TimeSeriesShapeError` 는 그대로 유지된다 — `ValidationError` 를 상속하게
+    바꿨을 뿐이다. 기존 `except TimeSeriesShapeError` 호출부가 계속 잡는지는
+    `test_write_rejects_wrong_row_count` 가 이미 고정하고 있고, 여기서는
+    그 예외가 **동시에** `ValidationError` 이며 3요소를 갖는지를 본다.
+    """
+    path = tmp_path / "bad2.parquet"
+    bad = pa.table({"x": pa.array([1.0] * 100)})  # 100행 — 허용 아님
+
+    with pytest.raises(ValidationError) as exc_info:
+        write_series(path, bad, kind="load", year=2024)
+
+    err = exc_info.value
+    assert isinstance(err, TimeSeriesShapeError), (
+        "기존 except TimeSeriesShapeError 호출부가 더는 못 잡습니다."
+    )
+    assert err.field == "timeseries.rows"
+    assert "100" in err.reason, "사유에 실제 행 수(100)가 없습니다"
+    assert "8760" in err.action and "35040" in err.action, (
+        "조치에 허용 행 수(8760, 35040)가 없습니다 — 「값을 고치십시오」류의 "
+        "공허한 문장이면 안 됩니다"
+    )
+    assert err.rule == "DV-4"
+
+
 def test_write_rejects_unknown_kind(tmp_path: Path) -> None:
     """kind CHECK 제약과 동일 — DB 를 거치지 않고도 시계열 저장이 종류를 강제."""
     path = tmp_path / "x.parquet"
     with pytest.raises(ValueError, match="지원하지 않는 시계열 종류"):
         write_series(path, _synthetic_load(), kind="unknown_kind", year=2024)
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_write_rejects_unknown_kind_carries_field_reason_action(
+    tmp_path: Path,
+) -> None:
+    """NFR-303 — kind 위반은 필드·사유·조치 3요소를 구조로 갖는다.
+
+    「예외가 났다」만 보면 셋이 실제로 이 위반에 맞는 내용인지 알 수 없다.
+    각 칸을 따로 단언한다 — action 은 허용값 목록을 담아야 한다(공허한
+    "값을 고치십시오" 이면 안 됨). 이 규칙은 §7.3 대장(DV-N) 밖의 일반
+    입력 검증이므로 rule 은 비운다.
+    """
+    path = tmp_path / "x.parquet"
+    with pytest.raises(ValidationError) as exc_info:
+        write_series(path, _synthetic_load(), kind="unknown_kind", year=2024)
+
+    err = exc_info.value
+    assert err.field == "timeseries.kind"
+    assert "unknown_kind" in err.reason, "사유에 실제로 위반한 값이 없습니다"
+    for allowed in sorted(TS_KINDS):
+        assert allowed in err.action, f"조치에 허용값 {allowed!r} 이 없습니다"
+    assert err.rule is None, "kind 검증은 §7.3 대장 밖이므로 rule 이 비어야 합니다"
 
 
 @pytest.mark.parametrize("allowed", sorted(ALLOWED_ROW_COUNTS))

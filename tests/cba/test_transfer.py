@@ -65,6 +65,19 @@ def test_required_participant_operator_government_perspectives_exist() -> None:
     assert government_result.npv_value >= ZERO or government_result.npv_value < ZERO
 
 
+# ⚠ 이 마커는 **조항을 다 붙들지 못한다. 그래도 유지한다** (R20 판정).
+# `AC4` 는 *「세 관점이 **하나의 리포트에 병렬 표시**된다」* 인데, 아래 검사는
+# `compute_perspective_npv` **단일 호출** 결과의 필드 보존만 본다 — 병렬 표시는
+# 보지 않는다.
+#
+# **그런데 지우면 안 된다.** 이 마커가 `FR-704-AC4`(Must-have·Phase 1)의
+# **유일한 매핑**이고, 세 관점을 한 리포트에 나란히 놓는 기능이 저장소에
+# 아직 없다. 지우면 조항이 미매핑이 되어 `test_17_9_dod9` 가 빨간불이 되는데,
+# 그것은 「검증이 약하다」가 아니라 「구현이 없다」를 뜻하게 되어 **원인이
+# 바뀐 채로 보고된다.** 대체 검증을 만들 수도 없다 — 검증할 구현이 없다.
+#
+# **닫는 조건**: 병렬 표시 리포트를 구현하고, 그것을 보는 테스트에 이 마커를
+# 옮긴 뒤 여기서 지운다.
 @pytest.mark.req("FR-704-AC4")
 def test_perspective_result_keeps_benefits_and_costs_separate() -> None:
     benefit = benefit_row(tag="benefit", schedule={1: 500_000})

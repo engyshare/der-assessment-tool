@@ -36,6 +36,7 @@ import pyarrow as pa  # type: ignore[import-untyped]
 import pyarrow.parquet as pq  # type: ignore[import-untyped]
 
 from core.contracts.units import HOURS_PER_YEAR, STEPS_15MIN_PER_YEAR
+from core.contracts.validation import ValidationError
 
 #: 검증하는 시계열 종류 — TimeSeriesDataset.kind CHECK 제약과 동일.
 TS_KINDS: Final[frozenset[str]] = frozenset({"load", "pv", "smp", "temp"})
@@ -58,8 +59,13 @@ class TimeSeriesIntegrityError(RuntimeError):
     """Parquet 파일의 체크섬이 저장 시점과 다르다 — 파일이 손상되었거나 변조됨."""
 
 
-class TimeSeriesShapeError(ValueError):
-    """행 수가 8760 또는 35040 이 아니다 (DV-4 위반)."""
+class TimeSeriesShapeError(ValidationError):
+    """행 수가 8760 또는 35040 이 아니다 (DV-4 위반).
+
+    `ValidationError` 를 상속해 NFR-303 3요소(필드·사유·조치)를 강제한다.
+    기존 `except TimeSeriesShapeError` 호출부는 그대로 받는다 —
+    `ValidationError` 도 `ValueError` 이므로 이 클래스는 여전히 `ValueError` 다.
+    """
 
 
 def compute_checksum(path: Path) -> str:
@@ -94,13 +100,23 @@ def write_series(
     허용하면 잘린 데이터가 "그런 해상도인가 보다" 로 통과한다.
     """
     if kind not in TS_KINDS:
-        raise ValueError(
-            f"지원하지 않는 시계열 종류: {kind!r}. {sorted(TS_KINDS)} 중 하나."
+        raise ValidationError(
+            field="timeseries.kind",
+            reason=f"지원하지 않는 시계열 종류입니다: {kind!r}",
+            action=f"허용값 중 하나를 쓰십시오: {', '.join(sorted(TS_KINDS))}",
         )
     if table.num_rows not in ALLOWED_ROW_COUNTS:
         raise TimeSeriesShapeError(
-            f"행 수가 {table.num_rows} 입니다 — 8760(1시간) 또는 35040(15분)만 "
-            "받습니다 (DV-4). 잘리거나 중복된 시계열이 조용히 통과하는 것을 막는다."
+            field="timeseries.rows",
+            reason=(
+                f"행 수가 {table.num_rows} 입니다 — 8760(1시간) 또는 35040(15분)만 "
+                "받습니다. 잘리거나 중복된 시계열이 조용히 통과하는 것을 막는다."
+            ),
+            action=(
+                "시계열을 8760행(1시간 해상도) 또는 35040행(15분 해상도)으로 "
+                "맞춰 다시 저장하십시오"
+            ),
+            rule="DV-4",
         )
 
     Path(path).parent.mkdir(parents=True, exist_ok=True)

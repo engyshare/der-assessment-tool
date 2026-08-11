@@ -68,6 +68,41 @@ class BillBreakdown:
 
 
 @dataclass(frozen=True)
+class BillLineSaving:
+    key: str
+    label: str
+    baseline_amount: Money
+    reduced_amount: Money
+
+    @property
+    def saved(self) -> Money:
+        return Money(Decimal(self.baseline_amount) - Decimal(self.reduced_amount))
+
+
+def trace_benefit_by_line(
+    baseline: BillBreakdown, reduced: BillBreakdown
+) -> tuple[BillLineSaving, ...]:
+    """FR-501-AC8 「편익 → 항목 추적」: 편익 적용 전후 청구서를 항목별로 비교한다.
+
+    항목 자체는 이미 6종으로 분해되어 있다(basic·energy·climate_environment·
+    fuel_adjustment·vat·power_industry_fund). 남는 것은 편익 산식이 그
+    항목들 중 어디를 얼마나 줄였는지 짝짓는 것뿐이다.
+    """
+    labels: dict[str, str] = {}
+    for line in (*baseline.lines, *reduced.lines):
+        labels.setdefault(line.key, line.label)
+    return tuple(
+        BillLineSaving(
+            key=key,
+            label=labels[key],
+            baseline_amount=baseline.amount(key),
+            reduced_amount=reduced.amount(key),
+        )
+        for key in sorted(labels)
+    )
+
+
+@dataclass(frozen=True)
 class ScenarioMeterBill:
     meter_id: str
     bill: BillBreakdown

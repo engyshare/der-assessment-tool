@@ -1,6 +1,9 @@
+from datetime import date
 from typing import Any
 
 from pydantic import BaseModel
+
+from core.assumption.item import ConfidenceLevel
 
 
 def validate_csv_upload(content: bytes, size_bytes: int, mime_type: str, line_count: int) -> bool:
@@ -21,6 +24,39 @@ class TimeSeriesDataset(BaseModel):
     id: str
     name: str
     data: list[float]
+
+    #: 대체 입력(FR-905-AC4)으로 만들어졌는지. 실측이 아니라는 표시이며,
+    #: ``TimeSeriesBinding.swap()`` 으로 실측 시계열로 교체될 때까지
+    #: 리포트가 "추정값" 임을 밝혀야 한다.
+    is_estimated: bool = False
+
+    # ── 출처 메타데이터 5종 (FR-905-AC8) ────────────────────────────────
+    #: 출처
+    source: str | None = None
+    #: 계측기간
+    measurement_period: str | None = None
+    #: 해상도 (예: "1시간", "15분")
+    resolution: str | None = None
+    #: 신뢰도 — item.py 의 3단계 enum 을 그대로 쓴다. 시계열도 전제
+    #: 대장의 다른 항목과 같은 신뢰도 축을 공유해야 리포트가 한 배지
+    #: 체계로 표시할 수 있다.
+    confidence: ConfidenceLevel | None = None
+    #: 최종확인일
+    verified_at: date | None = None
+
+    def source_metadata(self) -> dict[str, str]:
+        """리포트에 표기할 출처 메타데이터 5종 (FR-905-AC8 후단).
+
+        값이 없는 항목은 빈칸이 아니라 **미보유**로 명시한다 — 빈 문자열은
+        "확인했는데 없다"와 "확인하지 않았다"를 구별하지 못한다.
+        """
+        return {
+            "출처": self.source if self.source else "미보유",
+            "계측기간": self.measurement_period if self.measurement_period else "미보유",
+            "해상도": self.resolution if self.resolution else "미보유",
+            "신뢰도": self.confidence.value if self.confidence else "미보유",
+            "최종확인일": self.verified_at.isoformat() if self.verified_at else "미보유",
+        }
 
 
 class TimeSeriesBinding:

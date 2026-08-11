@@ -688,7 +688,6 @@ def test_year_fraction_is_the_only_proration_coefficient() -> None:
 
 
 @pytest.mark.contract
-@pytest.mark.req("FR-101-AC2")
 def test_year_is_one_based() -> None:
     """분석 연도는 1부터 센다.
 

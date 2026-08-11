@@ -170,6 +170,74 @@ def test_dockerfile_defines_one_container_run_path() -> None:
     assert any(line.startswith("CMD ") for line in instructions)
     assert not (REPO_ROOT / "docker-compose.yml").exists()
 
+    # NFR-503-AC1: CMD는 실제로 앱을 실행해야 한다 (pytest가 아님)
+    cmd_lines = [line for line in instructions if line.startswith("CMD ")]
+    assert len(cmd_lines) == 1, "CMD는 정확히 하나여야 합니다"
+
+    cmd_content = cmd_lines[0]
+    # CMD가 uvicorn으로 앱을 실행하는지 확인
+    assert '"app.main:app"' in cmd_content, (
+        f"CMD가 uvicorn app.main:app를 실행해야 합니다: {cmd_content}"
+    )
+    # CMD가 테스트 러너를 실행하지 않는지 확인
+    assert "pytest" not in cmd_content.lower(), f"CMD는 pytest를 실행하면 안 됩니다: {cmd_content}"
+
+
+@pytest.mark.req("SC-5")
+def test_resolve_db_url_returns_the_env_value_not_the_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SC-5 층① — 환경변수를 **읽어서 돌려주는가.**
+
+    소스에 `DER_DB_URL` 이라는 글자가 있는지가 아니라 **무엇을 돌려주는지**를
+    본다. 초판 검사가 소스 문자열만 보았고, `resolve_db_url()` 의 결과를
+    버리도록 고쳐도 통과했다 — 통과가 아무 뜻도 없는 상태였다.
+    """
+    from app.deps import DEFAULT_DB_URL, resolve_db_url
+
+    monkeypatch.setenv("DER_DB_URL", "sqlite:///from-env.db")
+    assert resolve_db_url() == "sqlite:///from-env.db"
+
+    monkeypatch.delenv("DER_DB_URL", raising=False)
+    assert resolve_db_url() == DEFAULT_DB_URL
+
+    # 빈 문자열은 «설정하지 않음» 이다. 그대로 넘기면 엔진 생성이 알 수 없는
+    # 자리에서 깨진다.
+    monkeypatch.setenv("DER_DB_URL", "")
+    assert resolve_db_url() == DEFAULT_DB_URL
+
+
+@pytest.mark.req("SC-5")
+def test_app_engine_is_actually_built_from_the_env_value(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """SC-5 층② — 돌려받은 값으로 **엔진이 실제로 만들어지는가.**
+
+    층①만 있으면 «읽기는 읽는데 쓰지는 않는다» 가 통과한다. 그것이 바로
+    초판이 놓친 자리다. 모듈을 다시 불러 엔진 URL 을 직접 본다.
+
+    `tmp_path` 를 쓰는 이유: 저장소 안에 DB 파일을 남기지 않기 위해서다.
+    남기면 다음 실행이 그 파일을 보고, 검사가 «지금 만든 것» 이 아니라
+    «전에 남은 것» 을 통과시킨다.
+    """
+    import importlib
+
+    db_path = tmp_path / "runtime.db"
+    monkeypatch.setenv("DER_DB_URL", f"sqlite:///{db_path.as_posix()}")
+
+    import app.deps
+
+    reloaded = importlib.reload(app.deps)
+    try:
+        assert db_path.as_posix() in str(reloaded._engine.url), (
+            f"엔진이 환경변수 URL 로 만들어지지 않았습니다: {reloaded._engine.url}"
+        )
+        assert db_path.is_file(), "환경변수가 가리킨 자리에 DB 가 만들어지지 않았습니다"
+    finally:
+        # 다른 테스트가 인메모리 기본값을 전제하므로 반드시 되돌린다.
+        monkeypatch.delenv("DER_DB_URL", raising=False)
+        importlib.reload(app.deps)
+
 
 @pytest.mark.req("NFR-402-AC1")
 def test_tls_context_requires_tls12_or_higher() -> None:

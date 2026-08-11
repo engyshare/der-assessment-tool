@@ -137,7 +137,6 @@ def test_provider_returns_value_with_all_seven_annotations() -> None:
 
 
 @pytest.mark.contract
-@pytest.mark.req("NFR-202-M1")
 def test_missing_assumption_stops_instead_of_defaulting() -> None:
     """대장에 없으면 **멈춘다.** 기본값으로 메우지 않는다.
 
@@ -152,7 +151,6 @@ def test_missing_assumption_stops_instead_of_defaulting() -> None:
 
 
 @pytest.mark.contract
-@pytest.mark.req("NFR-202-M1")
 def test_require_is_on_the_contract_not_on_each_implementation() -> None:
     """「없을 때 무엇을 하는가」는 **계약이 정한다.**
 
@@ -184,7 +182,6 @@ def test_reference_typed_item_refuses_to_be_read_as_a_number() -> None:
 
 
 @pytest.mark.contract
-@pytest.mark.req("FR-601-AC4")
 def test_ref_carries_provenance_across_the_boundary() -> None:
     """경계를 넘는 것은 **부기 본문이 아니라 참조**다.
 

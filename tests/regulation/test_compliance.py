@@ -10,6 +10,7 @@ from core.regulation.compliance import (
     SelfSufficiencyInput,
     assess_self_sufficiency,
     assess_supply_duty,
+    supply_duty_alert,
 )
 from core.regulation.profile import DataRegulationProfile
 
@@ -92,6 +93,13 @@ def test_supply_duty_separates_allowed_and_excess_external_energy() -> None:
     assert result.charge.amount("allowed_external_energy") == Money(30_000)
     assert result.charge.amount("excess_external_energy") == Money(15_000)
 
+    # FR-502-AC4: 미달 여부와 추가 비용을 대시보드 경고로 강조.
+    # 추가 비용은 위에서 이미 손계산한 excess_external_energy 15,000원과 같다.
+    alert = supply_duty_alert(result)
+    assert alert.triggered is True
+    assert alert.shortfall_kwh == pytest.approx(50.0)
+    assert alert.additional_cost == Money(15_000)
+
 
 @pytest.mark.req("FR-502-AC3")
 def test_supply_duty_exemption_period_is_profile_data() -> None:
@@ -107,6 +115,10 @@ def test_supply_duty_exemption_period_is_profile_data() -> None:
     assert result.exempt is True
     assert result.warning is False
     assert result.charge.total == Money(0)
+
+    alert = supply_duty_alert(result)
+    assert alert.triggered is False
+    assert alert.additional_cost == Money(0)
 
 
 @pytest.mark.req("FR-503-AC1")
@@ -148,7 +160,6 @@ def test_self_sufficiency_supports_both_formula_bases_and_warns_on_shortfall() -
     assert missed.formula == "1 - grid_import_kwh / total_consumption_kwh"
 
 
-@pytest.mark.req("FR-502-AC1")
 @pytest.mark.parametrize("bad_ratio", [-0.01, 1.01])
 def test_supply_duty_rejects_profile_ratio_outside_fraction_range(
     bad_ratio: float,
@@ -168,7 +179,6 @@ def test_supply_duty_rejects_profile_ratio_outside_fraction_range(
         )
 
 
-@pytest.mark.req("FR-503-AC1")
 @pytest.mark.parametrize("bad_ratio", [-0.01, 1.01])
 def test_self_sufficiency_rejects_profile_ratio_outside_fraction_range(
     bad_ratio: float,

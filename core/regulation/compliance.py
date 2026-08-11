@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Literal
 
 from core.contracts.regulation import RegulationProfile
-from core.contracts.units import to_won
+from core.contracts.units import Money, to_won
 from core.regulation.tariff import BillBreakdown, BillLine
 
 SUPPLY_DUTY_REQUIRED_RATIO = "supply_duty.required_ratio"
@@ -116,6 +116,23 @@ def assess_supply_duty(
         exempt=exempt,
         warning=warning,
         charge=charge,
+    )
+
+
+@dataclass(frozen=True)
+class ComplianceAlert:
+    """FR-502-AC4: 공급의무 미달 여부와 추가 비용을 대시보드 경고로 강조."""
+
+    triggered: bool
+    shortfall_kwh: float
+    additional_cost: Money
+
+
+def supply_duty_alert(result: SupplyDutyResult) -> ComplianceAlert:
+    return ComplianceAlert(
+        triggered=result.warning,
+        shortfall_kwh=result.shortfall_kwh,
+        additional_cost=result.charge.amount("excess_external_energy"),
     )
 
 

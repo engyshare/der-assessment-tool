@@ -58,7 +58,7 @@
 | 요구사항 | 우선순위 | Phase | 수용기준 | 내용 | 검증 | 위치 |
 |---|---|---|---|---|---|---|
 | `FR-101` | Must-have | 1 | `FR-101-AC1` | 속성: name, tag, dt, carries_electric, carries_heat, carries_cool, consumes_fuel, lifetime,… | 자동 | test_der_contract.py 6건, test_ess.py, test_heatpump.py |
-|  |  | 1 | `FR-101-AC2` | 메서드: capex(), fixed_om(), variable_om(), replacement_schedule(), salvage_value(), dispatc… | 자동 | test_der_contract.py 6건, test_ess.py 5건, test_ev_v2g.py 3건, test_heatpump.py 5건, test_load.py 4건, test_pv.py 8건, test_thermal_load.py 3건 |
+|  |  | 1 | `FR-101-AC2` | 메서드: capex(), fixed_om(), variable_om(), replacement_schedule(), salvage_value(), dispatc… | 자동 | test_der_contract.py 5건, test_ess.py 5건, test_ev_v2g.py 3건, test_heatpump.py 5건, test_load.py 4건, test_pv.py 8건, test_thermal_load.py 3건 |
 |  |  | 1 | `FR-101-AC3` | 신규 자원 클래스가 위 인터페이스만 구현하면 코어 엔진 수정 없이 동작 (단위 테스트로 실증) | 자동 | test_der_contract.py, test_smoke_wave0.py |
 |  |  | 1 | `FR-101-AC4` | 매체 플래그에 따라 엔진이 전기·열·냉 수지를 자동으로 분리 집계한다 | 자동 | test_der_contract.py 3건, test_heatpump.py 3건, test_pv.py 2건, test_rule_based.py |
 | `FR-102` | Must-have | 1 | `FR-102-AC1.PV` | PV 태양광 (옥상/벽면 BIPV 구분) — 용량(kW), 이용률(%) 또는 8760 발전 시계열, 방위·경사, 연간 열화율, 인버터 수명 | 자동 | test_pv.py 9건 |
@@ -152,11 +152,11 @@
 |  |  | 1 | `FR-501-AC6` | 한 시나리오 내에서 가구부(누진) / 공용부(고압 TOU) / 거래분(직접거래)에 서로 다른 체계 동시 적용 | 자동 | test_tariff.py |
 |  |  | 1 | `FR-501-AC7` | 부가가치세(10%)와 전력산업기반기금(3.7%)을 별도 항목으로 계산하고 청구액에 합산한다 (v0.3 추가). 두 항목의 요율은 요금표 데이터에 포함되어 개정 … | 자동 | test_tariff.py |
 |  |  | 1 | `FR-501-AC8` | 요금 명세를 항목별로 분해 표시한다: 기본요금 / 전력량요금 / 기후환경요금 / 연료비조정 / 부가세 / 기반기금. 편익 산식이 어느 항목을 절감했는지 추적 가… | 자동 | test_tariff.py |
-| `FR-502` | Must-have | 1 | `FR-502-AC1` | 연간 충족률 = (특구 내 조달 전력량) / (총 사용량) | 자동 | test_compliance.py 2건 |
+| `FR-502` | Must-have | 1 | `FR-502-AC1` | 연간 충족률 = (특구 내 조달 전력량) / (총 사용량) | 자동 | test_compliance.py |
 |  |  | 1 | `FR-502-AC2` | 70% 미달 시 부족전력량에 이중구조 요금(70% 도달분 / 초과분 분리) 적용 | 자동 | test_compliance.py |
 |  |  | 1 | `FR-502-AC3` | 면제기간(현행 3년, 개정안 5~7년)을 파라미터화 | 자동 | test_compliance.py |
 |  |  | 1 | `FR-502-AC4` | 미달 여부와 추가 비용을 대시보드에 경고로 강조 | 자동 | test_compliance.py |
-| `FR-503` | Should-have | - | `FR-503-AC1` | 산정식·결과 표시, 미달 시 경고. 산정 기준(자급량 기준 / 계통부담 기준) 선택 가능 | 자동 | test_compliance.py 2건 |
+| `FR-503` | Should-have | - | `FR-503-AC1` | 산정식·결과 표시, 미달 시 경고. 산정 기준(자급량 기준 / 계통부담 기준) 선택 가능 | 자동 | test_compliance.py |
 | `FR-504` | Must-have | 1 | `FR-504-AC1` | 기본 구성: RegulationProfile = {70% 의무 비율, 면제기간, 최소계약기간, 초과발전량 우선공급, 망이용요금 예외, 거래지원수수료, 자급률 기… | 자동 | test_profile.py |
 |  |  | 1 | `FR-504-AC2` | 항목 추가 확장성: 제도가 신설 항목을 요구할 때 스키마 변경·코드 배포 없이 항목을 추가할 수 있어야 한다. 프로파일은 고정 컬럼이 아닌 (항목키, 값, 단위… | 자동 | test_profile.py |
 |  |  | 1 | `FR-504-AC3` | 웹에서 편집: admin 권한 사용자가 웹 UI에서 프로파일을 생성·복제·수정할 수 있다. 파일 수정이나 재배포를 요구하지 않는다 | 자동 | test_profile.py |
@@ -164,7 +164,7 @@
 |  |  | 1 | `FR-504-AC5` | 유효기간: 각 항목에 유효기간(from~to)을 부여하여 분석연도에 맞는 값이 자동 선택된다. 분석기간 중 제도가 바뀌는 경우(예: 면제기간 3년 → 5년 개정… | 자동 | test_profile.py |
 |  |  | 1 | `FR-504-AC6` | 근거 추적: 각 항목에 근거 고시·조문 링크와 최종확인일 필드를 보유한다 | 자동 | test_profile.py |
 |  |  | 1 | `FR-504-AC7` | 프로파일 교체 영향: 시나리오의 프로파일 참조를 바꾸면 재실행 없이 어떤 항목이 달라지는지 미리보기를 제공하고, 재실행 시 결과 차이를 강조 표시한다 | 자동 | test_profile.py |
-|  |  | 1 | `FR-504-AC8` | 비교 실행: "현행 / 개정안 / 메가특구 준용" 등 복수 프로파일을 케이스 그리드의 탐색 변수로 지정하여 한 번의 실행으로 제도 시나리오를 비교할 수 있다 (… | 자동 | test_profile.py |
+|  |  | 1 | `FR-504-AC8` | 비교 실행: "현행 / 개정안 / 메가특구 준용" 등 복수 프로파일을 케이스 그리드의 탐색 변수로 지정하여 한 번의 실행으로 제도 시나리오를 비교할 수 있다 (… | 자동 | test_regulation_axis.py 3건, test_profile.py |
 | `FR-601` | Must-have | 1 | `FR-601-AC1` | 소유 범위 (v0.3 확정 — 이중 소유 금지): AC2.*가 열거하는 분류의 항목은 AssumptionSet이 단독 소유하며, Scenario는 이를 직접 보… | 자동 | test_scenario_ownership.py 3건 |
 |  |  | 1 | `FR-601-AC2.cost` | 비용 — 설비 단가, 설치·시공비, O&M 비율, 교체비 | 자동 | test_scenario_ownership.py 2건 |
 |  |  | 1 | `FR-601-AC2.performance` | 성능·수명 — 이용률, COP, RTE, 수명, 열화율 | 자동 | test_scenario_ownership.py 2건 |
@@ -173,7 +173,7 @@
 |  |  | 1 | `FR-601-AC2.escalation` | 상승률 — 일반 물가상승률 / 전기요금 인상률 / 연료비 상승률 / 인건비 상승률을 각각 별도 항목으로 보유 | 자동 | test_scenario_ownership.py 2건 |
 |  |  | 1 | `FR-601-AC2.reference` | 참조 — 요금표 참조, 규제 프로파일 참조 | 자동 | test_scenario_ownership.py 3건 |
 |  |  | 1 | `FR-601-AC3` | 전기요금 인상률 분리 (v0.3 추가): 물가상승률과 별개 항목으로 관리한다. 자가소비·열비용 절감 편익의 20년 누계를 좌우하는 최대 민감 인자이며, 일반 물… | 자동 | test_loader.py |
-|  |  | 1 | `FR-601-AC4` | 항목 메타데이터 (v0.5 정정 — 6종 → 7종): 모든 항목이 근거 표기 기준 5절이 정한 경제성 입력값 필수 부기 항목 7종을 보유한다. 이 목록은 정본이… | 자동 | test_items.py, test_loader.py, test_assumption_provider.py 2건 |
+|  |  | 1 | `FR-601-AC4` | 항목 메타데이터 (v0.5 정정 — 6종 → 7종): 모든 항목이 근거 표기 기준 5절이 정한 경제성 입력값 필수 부기 항목 7종을 보유한다. 이 목록은 정본이… | 자동 | test_items.py, test_loader.py, test_assumption_provider.py |
 |  |  | 1 | `FR-601-AC5.value_unit` | 값·단위 — 스키마는 value_json + unit 두 컬럼이므로 이 조항과 1:1 대응이 아니다. 두 컬럼이 모두 채워져야 충족한다 | 자동 | test_items.py |
 |  |  | 1 | `FR-601-AC5.base_year` | 기준일·기준연도·버전 — 언제 시점의 값인지. 항목명은 3요소이나 스키마 컬럼은 base_year 하나뿐이다. 이는 스키마 쪽 결손이며 같은 이름을 씀으로써 결… | 자동 | test_items.py |
 |  |  | 1 | `FR-601-AC5.applicable_scope` | 적용 범위·조건 — 대상·구간·통계 집계 범위 (v0.5 추가) | 자동 | test_items.py |
@@ -280,8 +280,8 @@
 |  |  | 1 | `FR-905-AC2` | 교체 용이성: 인스턴스의 데이터셋 참조를 드롭다운 선택 한 번으로 교체할 수 있으며, 모델 구성이나 다른 인스턴스에 영향을 주지 않는다 | 자동 | test_timeseries.py |
 |  |  | 1 | `FR-905-AC3` | 교체 영향 미리보기: 교체 시 재실행 전에 연간 총량·피크·부하율 등 요약 통계 비교를 제시하여 어떤 변화가 예상되는지 알 수 있다 | 자동 | test_timeseries.py |
 |  |  | 1 | `FR-905-AC4` | 대체 입력 허용: 8760 시계열이 없는 경우 월사용량 + 표준 프로파일, 이용률, 난방도일 기반 추정 으로 대체 입력할 수 있고, 나중에 실측 시계열로 교체해… | 자동 | test_timeseries.py |
-|  |  | 1 | `FR-905-AC5` | 탐색 변수화: 데이터셋 자체를 케이스 그리드의 탐색 변수로 지정하여 여러 연도·지역 시계열을 한 번에 비교할 수 있다 (FR-801) | 자동 | test_timeseries.py |
-|  |  | 1 | `FR-905-AC6` | 검증: CSV 업로드 시 스키마·행수·결측·이상치 검증 후 요약 통계 표시. 결측 처리 방식(선형보간/전월 평균/오류) 선택 가능 | 자동 | test_timeseries.py |
+|  |  | 1 | `FR-905-AC5` | 탐색 변수화: 데이터셋 자체를 케이스 그리드의 탐색 변수로 지정하여 여러 연도·지역 시계열을 한 번에 비교할 수 있다 (FR-801) | 자동 | test_timeseries.py, test_dataset_axis.py 3건 |
+|  |  | 1 | `FR-905-AC6` | 검증: CSV 업로드 시 스키마·행수·결측·이상치 검증 후 요약 통계 표시. 결측 처리 방식(선형보간/전월 평균/오류) 선택 가능 | 자동 | test_timeseries.py 3건 |
 |  |  | 1 | `FR-905-AC7` | 공유·중복 방지: 동일 데이터셋을 여러 시나리오·인스턴스가 참조하며 중복 저장하지 않는다. 데이터셋 삭제 시 참조 중인 시나리오를 먼저 안내한다 | 자동 | test_timeseries.py |
 |  |  | 1 | `FR-905-AC8` | 출처 메타데이터: 데이터셋도 (출처, 계측기간, 해상도, 신뢰도, 최종확인일) 을 보유하고 리포트에 표기한다 | 자동 | test_timeseries.py |
 | `FR-1001` | Must-have | 1 | `FR-1001-AC1` | (가) 영향 인자 우선 제시 — 각 결과 지표 옆에 그 값을 좌우한 상위 인자를 영향도 순으로 제시한다. 순위는 감이 아니라 민감도 계산 결과로 정한다 (FR-… | 자동 | test_phase1_dod.py, test_report.py |
@@ -313,7 +313,7 @@
 | `NFR-004` | Should-have | 1 | `NFR-004-M1` | 동시 사용자 20명 부하 테스트 | 자동 | test_performance_and_golden.py |
 | `NFR-101` | Must-have | 1 | `NFR-101-M1` | 동일 시나리오 10회 실행 결과 해시 일치 | 자동 | test_rule_based.py, test_report.py |
 | `NFR-102` | Must-have | 1 | `NFR-102-M1` | 시뮬레이션 종료 시 자동 assertion, 위반 시 실행 실패 | 자동 | test_rule_based.py |
-| `NFR-103` | Must-have | 1 | `NFR-103-M1` | 20년 프로포마 합계와 항목별 합계 일치 검증 | 자동 | test_common_asset.py, test_der_contract.py, test_money_boundary.py 11건, test_smoke_wave0.py, test_ev_v2g.py |
+| `NFR-103` | Must-have | 1 | `NFR-103-M1` | 20년 프로포마 합계와 항목별 합계 일치 검증 | 자동 | test_common_asset.py, test_der_contract.py, test_money_boundary.py 7건, test_smoke_wave0.py, test_ev_v2g.py |
 | `NFR-104` | Must-have | 1 | `NFR-104-M1` | CI 회귀 테스트 | 자동 | test_17_7_dod7.py 3건, test_performance_and_golden.py 3건, test_regression_scenarios.py |
 | `NFR-105` | Must-have | 1 | `NFR-105-AC1` | 모든 계산 코드는 테스트 우선(TDD) 으로 작성되어야 한다. 구현보다 그 구현을 규정하는 실패 테스트가 먼저 존재해야 한다 | 자동 | test_ci_gates.py 21건 |
 | `NFR-106` | Must-have | 1 | `NFR-106-M1` | CI가 자원 레지스트리를 순회하여 각 자원에 대해 비용측 5종·편익측 전건 케이스의 존재와 통과를 확인한다. 케이스가 누락된 자원이 1건이라도 있으면 실패 | 자동 | test_17_8_dod8.py 7건, test_phase1_measurements.py |
@@ -325,7 +325,7 @@
 |  |  | 1 | `NFR-107-AC5` | 수동 검증 분류의 정본은 docs/manual-checks.yaml이다. spec은 어느 수용기준이 수동인지 열거하지 않는다. 대장의 전건에 대해 ⓐ crite… | 자동 | test_traceability_gate.py |
 |  |  | 1 | `NFR-107-M1` | CI가 spec 수용기준 목록과 마커·YAML을 대조하여 미매핑 0건 확인. 구현: scripts/gen_traceability.py (Wave 0 산출물 0.… | 자동 | test_17_9_dod9.py, test_marker_substance.py 11건, test_traceability_gate.py 4건 |
 | `NFR-201` | Must-have | 1 | `NFR-201-M1` | 신규 자원 추가 PR에서 core/engine/, core/cba/ diff 0줄 | 자동 | test_phase1_measurements.py |
-| `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | 자동 | test_ci_gates.py, test_assumption_provider.py 2건, test_der_contract.py 2건, test_tariff.py |
+| `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | 자동 | test_ci_gates.py, test_der_contract.py 2건, test_tariff.py |
 | `NFR-203` | Should-have | 1 | `NFR-203-M1` | pytest-cov CI 게이트 | 자동 | test_ci_gates.py |
 | `NFR-204` | Should-have | 1 | `NFR-204-M1` | mypy strict 통과 | 자동 | test_ci_gates.py |
 | `NFR-205` | Must-have | 1 | `NFR-205-M1` | 코드 리뷰 + lint 규칙. 근거: DER-VET Params.py의 클래스 변수 전역 상태는 동시 실행·테스트 격리를 불가능하게 만든다 (부록 C.5) | 자동 | test_ci_gates.py 2건, test_ess.py |
@@ -339,7 +339,7 @@
 |  |  | 1 | `NFR-208-M1` | import-linter 계약(layers + independence)을 CI에서 강제. 위반 0건 | 자동 | test_17_10_dod10.py, test_import_boundaries.py 2건 |
 | `NFR-301` | Should-have | 1 | `NFR-301-M1` | 사용자 5명 태스크 수행 테스트 | 수동 | test_manual_stubs.py (스텁) + MC-2 (미수행) |
 | `NFR-302` | Should-have | 1 | `NFR-302-M1` | UI 검수 체크리스트 | 자동 | test_dashboard.py 2건 |
-| `NFR-303` | Should-have | 1 | `NFR-303-M1` | 오류 메시지 리뷰 체크리스트 | 자동 | test_chart_contract.py, test_validation_contract.py 5건, test_charts_feasible_region.py, test_charts_wp28a.py 3건, test_dashboard.py |
+| `NFR-303` | Should-have | 1 | `NFR-303-M1` | 오류 메시지 리뷰 체크리스트 | 자동 | test_chart_contract.py, test_validation_contract.py 5건, test_tsstore.py 2건, test_charts_feasible_region.py, test_charts_wp28a.py 3건, test_dashboard.py |
 | `NFR-304` | Nice-to-have | 1 | `NFR-304-AC1` | 주요 화면은 1366×768 이상에서 가로 스크롤 없이 표시되어야 한다 | 수동 | test_manual_stubs.py (스텁) + MC-5 (미수행) |
 | `NFR-401` | Must-have | 1 | `NFR-401-AC1` | 비밀번호는 Argon2id 또는 bcrypt(cost≥12)로 해싱 저장 | 자동 | test_hashing.py 2건 |
 | `NFR-402` | Must-have | 1 | `NFR-402-AC1` | 모든 통신은 TLS 1.2 이상 | 자동 | test_phase1_measurements.py |
@@ -351,7 +351,7 @@
 | `NFR-503` | Must-have | 1 | `NFR-503-AC1` | 단일 컨테이너로 로컬 실행 가능 (docker run 1회) | 자동 | test_phase1_measurements.py |
 | `NFR-504` | Must-have | 1 | `NFR-504-AC1` | 무료 티어 제약(메모리 512MB, 콜드스타트, 디스크 비영속) 하에서 데이터 유실 없이 운영 | 자동 | test_freetier.py 4건 |
 | `UI-1` | Should-have | 1 | `UI-1-AC1` | 마법사 방식으로 초심자를 안내하되, 숙련자용 전체 파라미터 단일 화면(고급 모드) 병행 | 자동 | test_dashboard.py |
-| `UI-2` | Must-have | 1 | `UI-2-AC1` | 모든 수치 입력 옆에 단위 상시 표시 (kW, kWh, 원/kWh, %, 년) | 자동 | test_dashboard.py 2건 |
+| `UI-2` | Must-have | 1 | `UI-2-AC1` | 모든 수치 입력 옆에 단위 상시 표시 (kW, kWh, 원/kWh, %, 년) | 자동 | test_dashboard.py |
 | `UI-3` | Must-have | 1 | `UI-3-AC1` | 신뢰도 가정 항목은 노란 배지로 표시하고, 결과에서 해당 값의 영향도와 함께 명시 (FR-1002) (v0.5: 배지 라벨 미확인 → 가정. DB enum도 동… | 자동 | test_dashboard.py |
 | `UI-4` | Must-have | 1 | `UI-4-AC1` | 결과 지표 카드는 항상 무지원 기준선 대비 증분을 함께 표시 | 자동 | test_dashboard.py |
 | `UI-5` | Should-have | 1 | `UI-5-AC1` | 한국어 우선. 영어 병기는 지표명(NPV, IRR, LCOE)에 한정 | 수동 | test_manual_stubs.py (스텁) + MC-7 (미수행) |
@@ -361,7 +361,7 @@
 | `SC-2` | Must-have | 1 | `SC-2` | 시나리오 접근은 소유자 또는 유효 공유 토큰 보유자로 제한 | 자동 | test_authorization.py 2건 |
 | `SC-3` | Must-have | 1 | `SC-3` | 수집을 이메일·이름으로 최소화. 실증 참여 가구의 개별 식별정보 미저장 (부하 데이터는 익명 집계본만) | 자동 | test_sc3.py 2건, test_ci_gates.py, test_privacy_procedure.py |
 | `SC-4` | Must-have | 1 | `SC-4` | 로그인, 시나리오·전제 생성·수정·삭제, 관리자 카탈로그 변경 기록 | 자동 | test_audit.py |
-| `SC-5` | Must-have | 1 | `SC-5` | DB 경로·시크릿 키는 환경변수. 저장소 커밋 금지, gitleaks CI 스캔 | 자동 | test_ci_gates.py 2건 |
+| `SC-5` | Must-have | 1 | `SC-5` | DB 경로·시크릿 키는 환경변수. 저장소 커밋 금지, gitleaks CI 스캔 | 자동 | test_ci_gates.py 2건, test_phase1_measurements.py 2건 |
 | `SC-6` | Must-have | 1 | `SC-6` | DER-VET 코드를 사용하지 않으므로 BSD 3-Clause 전파 의무 없음. 설계 참조 사실은 README에 명기 (부록 C) | 자동 | test_license.py |
 | `SC-7` | Must-have | 1 | `SC-7` | 요금표·단가 등 외부 데이터의 출처·이용조건을 메타데이터로 보관 | 자동 | test_items.py 2건, test_assumption_provider.py |
 | `SC-8` | Must-have | 1 | `SC-8` | 전제 데이터는 민감도 등급을 보유한다 — 공개 가능(공시·고시 등 공개 출처) / 비공개(업계 견적, 미공표 제도 검토, 제공자가 비공개를 조건으로 준 값). … | 자동 | test_ci_gates.py |

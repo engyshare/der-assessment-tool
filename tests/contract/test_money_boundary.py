@@ -128,7 +128,6 @@ def test_cashflow_row_rejects_sub_won_amounts() -> None:
     assert row.total() == 1000
 
 
-@pytest.mark.req("NFR-103-M1")
 def test_cashflow_row_rejects_zero_based_year() -> None:
     with pytest.raises(ValueError, match="1부터"):
         CashFlowRow(label="x", amounts={0: Decimal("100")})
@@ -144,13 +143,11 @@ def test_cashflow_total_matches_manual_addition() -> None:
 
 # ── 단위 규약 (§7.5) ─────────────────────────────────────────────────
 
-@pytest.mark.req("NFR-103-M1")
 def test_percent_normalization_round_trip() -> None:
     assert pct_to_fraction(2.5) == 0.025
     assert fraction_to_pct(0.025) == 2.5
 
 
-@pytest.mark.req("NFR-103-M1")
 def test_percent_rejects_already_normalized_value() -> None:
     """이미 정규화된 값을 다시 넘기는 실수를 막는다.
 
@@ -167,7 +164,6 @@ def test_percent_rejects_already_normalized_value() -> None:
         fraction_to_pct(2.5)  # 소수 자리에 %를 넣은 경우
 
 
-@pytest.mark.req("NFR-103-M1")
 def test_year_is_one_based_and_rejects_zero() -> None:
     assert int(Year(1)) == 1
     with pytest.raises(ValueError, match="1부터"):

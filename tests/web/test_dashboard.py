@@ -97,7 +97,6 @@ def test_all_numeric_inputs_have_persistent_units() -> None:
     assert numeric_inputs_without_units(render_dashboard()) == []
 
 
-@pytest.mark.req("UI-2-AC1")
 def test_unit_scanner_catches_a_number_input_without_unit() -> None:
     bad_html = """
     <form>

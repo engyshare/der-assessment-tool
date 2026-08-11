@@ -22,6 +22,7 @@ from core.regulation.tariff import (
     TouPeriod,
     TouTariffTable,
     TouUsage,
+    trace_benefit_by_line,
 )
 
 VAT_RATE_KEY = "tax.vat_rate"
@@ -237,6 +238,27 @@ def test_bill_breakdown_contains_vat_power_fund_and_traceable_lines() -> None:
     assert bill.total == Money(Decimal(17_900) + vat + fund)
     assert bill.line("vat").assumption_key == VAT_RATE_KEY
     assert bill.line("power_industry_fund").assumption_key == POWER_FUND_RATE_KEY
+
+    # FR-501-AC8 「편익 → 항목 추적」: 자가소비 등으로 사용량이 200kWh에서
+    # 150kWh로 줄었을 때, 그 편익이 6항목 중 어디를 얼마나 절감했는지 추적.
+    #
+    # Formula (150 kWh 청구서):
+    # basic 900(구간 불변) + energy 150*100=15,000 + climate 150*10=1,500
+    # + fuel 150*(-5)=-750 + essential discount -4,000 = subtotal 12,650.
+    # 절감액 = 200kWh 청구서 각 항목 - 150kWh 청구서 각 항목.
+    reduced_bill = _engine().bill_residential(150.0, when=date(2026, 6, 30))
+    reduced_vat, reduced_fund = _tax_and_fund(12_650)
+
+    savings = trace_benefit_by_line(bill, reduced_bill)
+    saved_by_key = {saving.key: saving.saved for saving in savings}
+
+    assert saved_by_key["basic"] == Money(0)
+    assert saved_by_key["energy"] == Money(5_000)
+    assert saved_by_key["climate_environment"] == Money(500)
+    assert saved_by_key["fuel_adjustment"] == Money(-250)
+    assert saved_by_key["essential_discount"] == Money(0)
+    assert saved_by_key["vat"] == Money(vat - reduced_vat)
+    assert saved_by_key["power_industry_fund"] == Money(fund - reduced_fund)
 
 
 @pytest.mark.req("FR-501-AC5")
