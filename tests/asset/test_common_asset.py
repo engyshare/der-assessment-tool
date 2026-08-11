@@ -138,6 +138,7 @@ def test_metering_comm_follows_the_same_cost_rules() -> None:
         name="공용 계량기", capex_sw=Money(0), capex_hw=Money(5_000_000),
         fixed_om_annual=Money(200_000), lifetime_sw=5, lifetime_hw=15,
         escalation_rate=INFLATION, allocation=AllocationRule.NO_ALLOCATION)
+    assert type(asset) in COMMON_ASSET_TYPES
     assert asset.display_name == "공용 계량·통신 설비"
     assert asset.capex(year=1) == Money(5_000_000)
     assert asset.replacement_schedule(horizon=HORIZON) == {16: Money(5_000_000)}
@@ -457,6 +458,8 @@ def test_allocate_assets_allocates_each_asset() -> None:
     assert results["단지 CEMS"].per_household == tuple([Money(5_010_000)] * 10)
     assert won_sum(results["가구 HEMS"].per_household) == Money(3_050_000)
 
+    assert allocate_assets([], year=1, horizon=HORIZON, households=10) == {}
+
 
 @pytest.mark.req("FR-106-AC3")
 def test_annual_cost_includes_replacement_year() -> None:
@@ -480,9 +483,13 @@ def test_constructor_rejects_invalid_values() -> None:
     with pytest.raises(ValueError, match="음수"):
         make_cems(capex_sw=Money(-1))
     with pytest.raises(ValueError, match="음수"):
+        make_cems(capex_hw=Money(-1))
+    with pytest.raises(ValueError, match="음수"):
         make_cems(fixed_om_annual=Money(-1))
     with pytest.raises(ValueError, match="lifetime_sw"):
         make_cems(lifetime_sw=0)
+    with pytest.raises(ValueError, match="lifetime_hw"):
+        make_cems(lifetime_hw=0)
     with pytest.raises(ValueError, match="소수"):
         make_cems(escalation_rate=2.0)
     with pytest.raises(ValueError, match="이름"):

@@ -24,9 +24,22 @@ def test_assumption_set_load_yaml() -> None:
     escalation_electricity = aset.get("escalation.electricity_tariff")
     assert escalation_electricity is not None
     assert escalation_electricity.value_unit == "%/년 (명목)"
+    # FR-601-AC4: 부기 7종 전체 보유 검증 - escalation_electricity
+    # verified_at가 없는 경우가 있음 - 대장 값 확인
+    assert escalation_electricity.base_year is not None
+    assert escalation_electricity.applicable_scope is not None
+    assert escalation_electricity.derivation_method is not None
+    assert escalation_electricity.source is not None
+    # verified_at는 대장에서 제공되지 않을 수 있음
 
     # tax.vat_rate (대장 고정값)
     vat = aset.get("tax.vat_rate")
     assert vat is not None
     assert vat.value == 0.10
     assert vat.confidence == "확정"
+    # FR-601-AC4: 부기 7종 전체 보유 검증 - vat
+    assert vat.value_unit is not None
+    assert vat.base_year is not None
+    assert vat.applicable_scope is not None
+    assert vat.derivation_method is not None
+    assert vat.source is not None

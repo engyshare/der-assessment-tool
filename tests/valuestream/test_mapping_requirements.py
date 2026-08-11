@@ -64,16 +64,16 @@ def test_report_lists_all_benefit_accounting_buckets() -> None:
     """Spec buckets: accounted, excluded, increment-only, and enabled-but-zero."""
     accounted = build_report([_FixedBenefit(100)], _dispatch_zeros(), year=1)
 
-    excluded = build_report(
-        [
-            SelfConsumption(baseline_annual_bill_won=300, new_annual_bill_won=120),
-            # A zero sale price makes the SurplusSale value 0, but type A exclusion
-            # takes precedence over the unmonetized-zero bucket.
-            SurplusSale(sale_price_won_per_kwh=0.0),
-        ],
-        _dispatch_zeros(),
-        year=1,
-    )
+    from core.contracts.validation import ValidationError
+    with pytest.raises(ValidationError, match="SelfConsumption ↔ SurplusSale"):
+        build_report(
+            [
+                SelfConsumption(baseline_annual_bill_won=300, new_annual_bill_won=120),
+                SurplusSale(sale_price_won_per_kwh=0.0),
+            ],
+            _dispatch_zeros(),
+            year=1,
+        )
 
     increment = build_report(
         [
@@ -89,7 +89,6 @@ def test_report_lists_all_benefit_accounting_buckets() -> None:
     zero = build_report([DistributedBenefit()], _dispatch_zeros(), year=1)
 
     assert [line.tag for line in accounted.accounted] == ["FixedBenefit"]
-    assert {line.tag for line in excluded.excluded} == {"SelfConsumption", "SurplusSale"}
     assert [line.tag for line in increment.increment_only] == ["DistributedBenefit"]
     assert [line.tag for line in zero.unmonetized_zero] == ["DistributedBenefit"]
 

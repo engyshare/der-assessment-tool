@@ -152,8 +152,10 @@ def test_scenario_router_api_endpoints() -> None:
     data = res_create.json()
     scenario_id = int(data["id"])
     assert data["name"] == "API 시나리오"
+    assert data["description"] == "API 테스트"  # FR-902-AC1: description 확인
     assert data["tags"] == ["pv", "ess"]
     assert data["version"] == 1
+    assert "updated_at" in data  # FR-902-AC1: updated_at 확인
 
     # 2. 목록 및 상세 조회 (AC1)
     res_list = client.get("/scenarios", params={"owner_id": 50})
@@ -164,7 +166,10 @@ def test_scenario_router_api_endpoints() -> None:
         f"/scenarios/{scenario_id}", params={"requesting_user_id": 50}
     )
     assert res_get.status_code == 200
-    assert res_get.json()["id"] == scenario_id
+    data = res_get.json()
+    assert data["id"] == scenario_id
+    assert "description" in data  # FR-902-AC1: description 확인
+    assert "updated_at" in data  # FR-902-AC1: updated_at 확인
 
     # 3. 수정 및 버전 업데이트 (AC2)
     res_update = client.put(

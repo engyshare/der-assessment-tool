@@ -359,6 +359,107 @@ class DERContractTests:
             "같은 물가상승률이 한 해씩 어긋난 비용을 냅니다"
         )
 
+    @pytest.mark.contract
+    @pytest.mark.req("FR-701-AC3")
+    def test_escalation_actually_compounds_over_the_years(self) -> None:
+        """물가 계수가 **해마다 복리로** 쌓인다 — `(1+r)^(year−1)`.
+
+        > **R17: 위 테스트는 1년차만 보았다.** 1년차 계수는 어떤 구현이든
+        > 1.0 이므로, **물가상승률을 아예 쓰지 않는 구현**도 통과한다
+        > (`return 1.0` 이 그렇다). 조항이 요구하는 것은 *「항목별 상이한
+        > 에스컬레이션 **적용 가능**」* 이고, 적용되지 않으면 그 「상이」는
+        > 아무 효과가 없다.
+
+        기대값은 **손계산**이다 — 계수의 정의가 `(1+r)^(year−1)` 이므로
+        `year=3` 이면 `(1+r)²` 이다. 20년차까지 확인하는 이유는 20년 프로포마가
+        이 계수를 그대로 곱하기 때문이다.
+        """
+        der = self.make()
+        rate = der.escalation_rate
+        for year in (1, 2, 3, 20):
+            expected = (1.0 + rate) ** (year - 1)
+            assert der.escalation_factor(year=year) == pytest.approx(expected), (
+                f"{year}년차 물가 계수가 (1+{rate})^{year - 1} 가 아닙니다 — "
+                "물가상승률이 실제로 적용되지 않으면 항목별로 다르게 두어도 "
+                "프로포마는 같은 값을 냅니다 (FR-701-AC3)"
+            )
+        if rate > 0.0:
+            assert der.escalation_factor(year=20) > der.escalation_factor(year=2), (
+                "물가상승률이 양수인데 계수가 늘지 않습니다"
+            )
+
+    @pytest.mark.contract
+    @pytest.mark.req("FR-104-AC5")
+    def test_salvage_value_tracks_remaining_life_and_is_never_negative(self) -> None:
+        """잔존가치가 **잔존 수명을 따라 움직이고 음수가 되지 않는다** (FR-104-AC5).
+
+        조항 문면은 *「분석기간 종료 시 **잔존 수명 비례** 잔존가치를 최종연도에
+        계상」* 이다.
+
+        > **R17: 이 조항의 계약 검사는 시그니처뿐이었다.** 바로 위 테스트가
+        > 「할인율을 인자로 받지 않는다」를 보는데, 그것은 **명목액인지**를
+        > 가리는 검사이고 **잔존 수명을 실제로 반영하는지**는 보지 않는다.
+        > 그래서 연차와 무관한 상수를 돌려주는 구현도 계약을 통과했다. 값의
+        > 실측은 자원별 테스트에만 있어 **자원이 늘면 함께 늘지 않는다** —
+        > 계약 테스트가 있는 이유가 그것이다.
+
+        ### ★ 「비례」를 계약 계층에서 단언하지 않는 이유 — 실측으로 확인했다
+
+        `잔존가치(y)/잔존가치(y') = (L−y)/(L−y')` 를 단언하려 했으나 **자원
+        7종 중 둘이 그 형태가 아니고, 그것이 옳다.**
+
+        | 자원 | 단조감소 | 수명연차 0 | 단일자산 비례 |
+        |---|---|---|---|
+        | PV · ESS · EV_V2G · HeatPump · RefPV | ✓ | ✓ | ✓ |
+        | **Load · ThermalLoad** | **✗** | **✗** | **✗** |
+
+        `Load`·`ThermalLoad` 는 **복합자산**이다 — 본체와 부속설비가 수명이
+        달라 각자 교체주기를 돌고(`(year−1) % life`), 부속이 교체되는 해에
+        잔존가치가 다시 올라간다. 톱니 모양은 결함이 아니라 **교체를 반영한
+        결과**이며, 반영하지 않으면 교체분의 잔존가치가 통째로 사라진다.
+
+        **그러므로 단조감소·수명연차 0 은 조항이 정한 것이 아니라 단일자산의
+        성질이다.** 계약이 그것을 요구하면 복합자산을 금지하는 셈이고, 그것은
+        조항에 없는 규약을 계약으로 만드는 것이다 (`FR-402-AC1` 을 넓은 배타
+        규칙이 지워 버리던 것과 같은 방향의 실수). **비례의 실측은 자원별
+        테스트가 오라클로 한다** — `tests/der/test_pv.py` 의 `900,000원`.
+
+        여기서는 **모든 구현이 지켜야 하는 것만** 본다.
+        """
+        der = self.make()
+        life = int(der.lifetime)
+        assert life >= 2, f"수명이 {life}년이면 잔존가치를 논할 구간이 없습니다"
+
+        # 교체주기를 두 번 돌고 그 다음 해까지 — 주기 경계에서 부호가 뒤집히는
+        # 구현을 잡으려면 `% life` 가 0 이 되는 자리를 반드시 지나야 한다
+        series = [int(der.salvage_value(year=y)) for y in range(1, 2 * life + 2)]
+
+        # ① **음수가 없다.** 음수 잔존가치는 비용이 아니라 **편익**으로 합산되고,
+        #    값이 커지는 방향이므로 「보수적이라 괜찮다」로 넘어가지도 않는다
+        negative = {y: v for y, v in enumerate(series, 1) if v < 0}
+        assert not negative, (
+            f"잔존가치가 음수인 연차가 있습니다: {negative}. 음수 잔존가치는 "
+            "프로포마에서 비용을 줄이는 대신 **편익**으로 들어갑니다"
+        )
+
+        # ② **잔존 수명을 실제로 반영한다** — 취득가가 있으면 연차에 따라 값이
+        #    변해야 한다. 상수(0 포함)를 돌려주는 구현이 여기서 걸린다
+        acquisition = int(der.capex(year=1)) + int(der.capex_vat(year=1))
+        if acquisition > 0:
+            assert len(set(series)) > 1, (
+                f"취득가가 {acquisition:,}원인데 잔존가치가 모든 연차에서 "
+                f"{series[0]:,}원으로 같습니다 — 잔존 수명이 반영되지 않았습니다 "
+                "(FR-104-AC5)"
+            )
+            assert max(series) > 0, (
+                f"취득가가 {acquisition:,}원인데 잔존가치가 어느 연차에서도 "
+                "0 을 넘지 않습니다"
+            )
+        else:
+            assert set(series) == {0}, (
+                f"취득가가 0 인데 잔존가치가 있습니다: {sorted(set(series))}"
+            )
+
     # ── 잔존가치는 명목액 (v1.1 명문화 · §13.2.2 C-5) ───────────────
     @pytest.mark.contract
     @pytest.mark.req("FR-104-AC5")

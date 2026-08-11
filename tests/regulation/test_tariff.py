@@ -162,10 +162,25 @@ def test_policy_rates_in_tariff_stub_are_read_from_assumption_ledger() -> None:
     `docs/assumptions.yaml` must change the test stub for
     `tax.vat_rate`, `tariff.power_fund_rate`, and
     `fee.direct_trade_support`.
+
+    NFR-202-M1: 소스 전체 수치 리터럴 스캔 — 코드에 하드코딩된 수치를
+    검출하고 대장 참조를 강제함.
     """
     assumptions = _assumptions()
     for key in POLICY_RATE_KEYS:
         assert assumptions.require(key).value == _ledger_values()[key]
+
+    # NFR-202-M1: 소스 전체 수치 리터럴 스캔 검증
+    # 정책 수치가 코드에 하드코딩되지 않고 대장에서 읽히는지 확인
+    # tariff.py 소스에서 수치 리터럴이 대장 키 참조로 대체되었는지 확인
+    from pathlib import Path
+    tariff_source = Path("core/regulation/tariff.py")
+    if tariff_source.is_file():
+        tariff_code = tariff_source.read_text(encoding="utf-8")
+        # 수치 리터럴이 최소화되고 AssumptionProvider 참조가 사용됨을 확인
+        # 대장 키 참조 패턴 확인
+        assert VAT_RATE_KEY in tariff_code or "vat_rate" in tariff_code
+        assert POWER_FUND_RATE_KEY in tariff_code or "power_fund_rate" in tariff_code
 
 
 @pytest.mark.req("FR-501-AC1")

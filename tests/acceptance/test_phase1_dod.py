@@ -15,6 +15,7 @@ from core.casegrid import (
 from core.contracts.assumptions import AssumptionProvider, AssumptionValue
 from core.contracts.der import DispatchResult
 from core.contracts.units import Money, to_won
+from core.contracts.validation import ValidationError
 from core.contracts.valuestream import ExclusionType, ValueStream
 from core.der.pv import PV
 from core.incentive.calculator import build_capex_cashflows
@@ -412,21 +413,40 @@ def test_dod6_benefit_breakdown_and_exclusion_enforcement() -> None:
             f"감지값: {detected_rationale!r}\n기대값: {expected_rationale!r}"
         )
 
-        # build_report 리포트 분리 계상 내역 상태 단언 (FR-402-AC6)
-        report = build_report(
-            streams, dispatch, year=1, profile=rule.applies_to_profile
-        )
-        lines_by_tag = {line.tag: line for line in report.all_lines()}
-
-        assert rule.benefit_a in lines_by_tag
-        assert rule.benefit_b in lines_by_tag
-
-        if rule.exclusion_type == ExclusionType.B:
-            assert lines_by_tag[rule.benefit_a].state == "증분만"
-            assert lines_by_tag[rule.benefit_b].state in ("계상됨", "미화폐화0")
+        # ── 유형 A 는 **거부**, B 는 증분만, C·D 는 배타제외 (R17) ─────────
+        #
+        # DoD 6 문면은 *「편익 계상 내역이 리포트에 표시되고, **배타 규칙 위반
+        # 조합은 실행이 거부됨**」* 이고 `FR-402-AC2.A` 도 *「선택 시 검증 오류로
+        # 거부한다」* 이다. **이 테스트는 「감지」에서 멈춰 있었다** — 유형 A 를
+        # `배타제외` 라벨로 확인했고, 그것은 거부가 구현되면 빨간불이 나는
+        # 형태다. WP-28B 가 거부를 배선하자 실제로 그렇게 됐다.
+        #
+        # 되돌리지 않았다. **조항이 정본이고 테스트가 따라간다** — 라벨은
+        # 「표시」이고 조항이 요구한 것은 「거부」다.
+        if rule.exclusion_type == ExclusionType.A:
+            with pytest.raises(ValidationError) as refused:
+                build_report(
+                    streams, dispatch, year=1, profile=rule.applies_to_profile
+                )
+            assert refused.value.rule == "DV-12"
+            assert rule.benefit_a in refused.value.reason
+            assert rule.benefit_b in refused.value.reason
         else:
-            assert lines_by_tag[rule.benefit_a].state == "배타제외"
-            assert lines_by_tag[rule.benefit_b].state == "배타제외"
+            report = build_report(
+                streams, dispatch, year=1, profile=rule.applies_to_profile
+            )
+            lines_by_tag = {line.tag: line for line in report.all_lines()}
+
+            assert rule.benefit_a in lines_by_tag
+            assert rule.benefit_b in lines_by_tag
+
+            if rule.exclusion_type == ExclusionType.B:
+                assert lines_by_tag[rule.benefit_a].state == "증분만"
+                assert lines_by_tag[rule.benefit_b].state in ("계상됨", "미화폐화0")
+            else:
+                # C·D — 「배타제외」 라벨은 이제 이 둘의 자리다
+                assert lines_by_tag[rule.benefit_a].state == "배타제외"
+                assert lines_by_tag[rule.benefit_b].state == "배타제외"
 
         # -------------------------------------------------------------
         # 2. 음성 검증 (Negative Case): 해당 규칙 제외 시 배타 감지 안 됨 (Spec 13.2.1)

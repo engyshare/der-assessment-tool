@@ -127,8 +127,12 @@ def test_finite_sentinel_would_cause_false_conflict() -> None:
 
 # ── FR-403-AC1 — min/max 합성 규칙 ────────────────────────────────────────
 
+@pytest.mark.req("FR-403-AC1")
 def test_multiple_min_constraints_take_max() -> None:
-    """min 제약이 여럿이면 각 시각의 max 가 유효 min — 가장 강한 하한."""
+    """min 제약이 여럿이면 각 시각의 max 가 유효 min — 가장 강한 하한.
+
+    FR-403-AC1(편익별 제약을 단일 시계열로 min/max 합성)의 다중소스 케이스
+    실검증 — 소스 2개(A, B)의 min 을 합성한다 (§17.17 — 마커만 추가)."""
     reg = ConstraintRegistry()
     reg.register(_decl("A", "x", "min", [5.0, 10.0]))
     reg.register(_decl("B", "x", "min", [8.0, 3.0]))
@@ -136,8 +140,12 @@ def test_multiple_min_constraints_take_max() -> None:
     assert composed.bound_min == [8.0, 10.0]  # 각 시각의 max
 
 
+@pytest.mark.req("FR-403-AC1")
 def test_multiple_max_constraints_take_min() -> None:
-    """max 제약이 여럿이면 각 시각의 min 이 유효 max — 가장 강한 상한."""
+    """max 제약이 여럿이면 각 시각의 min 이 유효 max — 가장 강한 상한.
+
+    FR-403-AC1 다중소스 케이스 실검증 — 소스 2개(A, B)의 max 를 합성한다
+    (§17.17 — 마커만 추가)."""
     reg = ConstraintRegistry()
     reg.register(_decl("A", "x", "max", [20.0, 5.0]))
     reg.register(_decl("B", "x", "max", [15.0, 8.0]))

@@ -264,7 +264,16 @@ def test_dashboard_charts() -> None:
 
     이제 **실제 렌더 바이트**를 본다. 값이 다시 문자열로 돌아가면 여기서
     빨간불이 난다.
+
+    > **R17: `tags` 를 명시로 바꿨다.** 태그를 주지 않으면 `render_charts` 는
+    > **등록된 전부**를 그리므로, 차트가 늘 때마다 이 테스트가 요구하는 입력이
+    > 함께 늘어난다 — WP-28A 가 `FR-1004-AC1` 의 잔여 3종을 놓자 그렇게 됐다.
+    > 이 테스트가 보는 것은 *「이 세 차트가 실제 PNG 로 나오는가」* 이므로
+    > 세 개를 **명시**하는 것이 맞다. **「등록된 전부가 그려지는가」는
+    > `tests/contract/test_chart_contract.py` 의 몫이고**, 그쪽 표본은 차트가
+    > 늘면 함께 늘어야 한다 (계약이 일부러 그렇게 실패한다).
     """
+    wanted = ("cashflow_line", "cost_benefit_pie", "tornado")
     charts = render_charts(
         {
             "cashflows": [-2_000_000.0, 400_000.0, 500_000.0, 600_000.0, 700_000.0],
@@ -273,9 +282,10 @@ def test_dashboard_charts() -> None:
                 {"name": "설비단가", "delta": 800_000.0, "flips_conclusion": True},
                 {"name": "할인율", "delta": 250_000.0, "flips_conclusion": False},
             ],
-        }
+        },
+        tags=wanted,
     )
-    assert {"cashflow_line", "cost_benefit_pie", "tornado"} <= set(charts)
+    assert set(wanted) <= set(charts)
     for tag, artifact in charts.items():
         assert artifact.mime == "image/png"
         assert artifact.payload.startswith(b"\x89PNG\r\n\x1a\n"), f"{tag}: PNG 가 아니다"

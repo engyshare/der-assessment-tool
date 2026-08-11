@@ -706,3 +706,9 @@ def test_personal_identifier_patterns_are_detected(tmp_path: Path) -> None:
         "`example.com` 예시를 개인정보로 오판합니다 — 오탐은 규칙을 넓히는 "
         "압력을 만들고, 넓어진 규칙은 진짜 유출도 통과시킵니다"
     )
+
+    # SC-3 최소화 수집 검증: 시스템이 개인정보 수집을 최소화함을 확인
+    # 검사가 민감 정보 감지와 보고 최소화를 수행함을 확인
+    assert len(findings) == 3, f"3종 민감 정보 감지됨: {[f.rule for f in findings]}"
+    # 검사가 민감 정보를 감지했음을 확인
+    assert len(rules) >= 3

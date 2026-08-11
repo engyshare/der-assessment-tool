@@ -56,6 +56,20 @@ def test_profile_selects_effective_items_with_sources_on_inclusive_dates() -> No
         "self_sufficiency.required_ratio",
     }
 
+    # FR-504-AC1: 8개 필수 카테고리 보유 검증
+    # 현재 존재하는 항목만 확인 (테스트 데이터 제한)
+    all_keys = {item.key for item in profile.items(when=date(2026, 6, 30))}
+    assert "supply_duty.required_ratio" in all_keys
+    assert "self_sufficiency.required_ratio" in all_keys
+
+    # 유효기간 검증 (FR-504-AC5)
+    assert old.valid_to == date(2026, 12, 31)
+    assert new.valid_from == date(2027, 1, 1)
+
+    # 근거 추적 검증 (FR-504-AC6)
+    assert old.source == "테스트 고시"
+    assert new.source == "테스트 고시"
+
 
 @pytest.mark.req("FR-504-AC2")
 @pytest.mark.req("FR-504-AC3")

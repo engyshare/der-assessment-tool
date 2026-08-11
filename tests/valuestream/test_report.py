@@ -5,7 +5,10 @@
 """
 from __future__ import annotations
 
+import pytest
+
 from core.contracts.der import DispatchResult
+from core.contracts.validation import ValidationError
 from core.valuestream import (
     REC,
     DistributedBenefit,
@@ -22,28 +25,78 @@ def _dispatch_zeros(steps: int = 4) -> DispatchResult:
     return DispatchResult(electric=list(z), heat=list(z), cool=list(z), fuel=list(z))
 
 
-def test_report_separates_accounted_from_excluded() -> None:
-    """계상된 편익과 배타 제외된 편익이 분리된다.
+def test_type_a_combination_is_refused_not_labelled() -> None:
+    """유형 A 는 **분류되지 않고 거부된다** (FR-402-AC2.A · DV-12).
 
-    오라클: 순위 4 (정합). SelfConsumption + SurplusSale 이 같이 활성화되면
-    유형 A 배타로 한 쌍이 «배타제외» 로 분류된다 (구현 단순화로 양쪽 다 제외).
-    HeatCostSaving 은 배타 규칙이 없으므로 «계상됨».
+    > ### ★ R17: 이 테스트는 **조항의 반대를 고정하고 있었다**
+    >
+    > 원래 이름은 `test_report_separates_accounted_from_excluded` 였고,
+    > 독스트링이 *「SelfConsumption + SurplusSale 이 같이 활성화되면 유형 A
+    > 배타로 한 쌍이 «배타제외» 로 분류된다」* 고 적었다. 그런데 조항은
+    > *「선언적 배타 규칙 테이블로 금지하고, **선택 시 검증 오류로 거부**
+    > 한다」* 이다. **표시와 거부는 다르고, 이 테스트는 표시 쪽을 고정했다** —
+    > 즉 거부가 구현되면 빨간불이 나는 형태였다. WP-28B 가 거부를 배선하자
+    > 실제로 그렇게 됐다.
+    >
+    > 되돌리지 않았다. **조항이 정본이고 테스트가 따라간다.**
     """
     sc = SelfConsumption(baseline_annual_bill_won=300, new_annual_bill_won=120)
     ss = SurplusSale(sale_price_won_per_kwh=100)
     heat = HeatCostSaving(
         baseline_fuel_cost_won_per_year=200, hp_electricity_cost_won_per_year=80
     )
-    report = build_report([sc, ss, heat], _dispatch_zeros(), year=1)
+    with pytest.raises(ValidationError) as caught:
+        build_report([sc, ss, heat], _dispatch_zeros(), year=1)
+    assert caught.value.rule == "DV-12"
+    assert "SelfConsumption" in caught.value.reason
+    assert "SurplusSale" in caught.value.reason
+
+
+def test_report_separates_accounted_from_excluded() -> None:
+    """계상된 편익과 배타 제외된 편익이 분리된다 — **배타제외는 이제 C·D 다.**
+
+    유형 A 가 거부로 바뀌었으므로 «배타제외» 버킷에 도달하는 것은 `C`·`D`
+    뿐이다. 그 버킷이 살아 있는지를 **유형 D**(제도적 배타 — 상계거래 참여
+    설비의 REC 발급 제한)로 확인한다.
+
+    오라클: 순위 4 (검사 정합). `REC ↔ SurplusSale` 은 `applies_to_profile:
+    net_metering` 이므로 **그 프로파일에서만** 발동한다 — 프로파일을 주지
+    않으면 제도 한정 규칙이 빠진다(보수적). HeatCostSaving 은 어느 규칙에도
+    없으므로 «계상됨» 이다.
+    """
+    rec = REC(weight=1.0, rec_price_won_per_unit=50_000)
+    ss = SurplusSale(sale_price_won_per_kwh=100)
+    heat = HeatCostSaving(
+        baseline_fuel_cost_won_per_year=200, hp_electricity_cost_won_per_year=80
+    )
+    report = build_report(
+        [rec, ss, heat], _dispatch_zeros(), year=1, profile="net_metering"
+    )
 
     accounted_tags = {line.tag for line in report.accounted}
     excluded_tags = {line.tag for line in report.excluded}
-    # SelfConsumption + SurplusSale 은 유형 A 로 양쪽 제외
-    assert "SelfConsumption" in excluded_tags
+    # 유형 D — 양쪽 다 «배타제외» (구현 단순화)
+    assert "REC" in excluded_tags
     assert "SurplusSale" in excluded_tags
-    # HeatCostSaving 은 정상 계상
+    # HeatCostSaving 은 정상 계상 — 오탐 0
     assert "HeatCostSaving" in accounted_tags
     assert "HeatCostSaving" not in excluded_tags
+
+
+def test_type_d_rule_does_not_fire_without_its_profile() -> None:
+    """제도 한정 규칙은 **그 프로파일이 아니면 발동하지 않는다** (FR-402-AC2.D).
+
+    같은 세 편익을 프로파일 없이 넘기면 `REC ↔ SurplusSale` 이 빠지므로
+    셋 다 계상된다. **오탐 0 이 이 조항의 수용 수준이다** — 제도 근거가 없는
+    배타를 걸면 정당한 편익이 지워진다.
+    """
+    rec = REC(weight=1.0, rec_price_won_per_unit=50_000)
+    ss = SurplusSale(sale_price_won_per_kwh=100)
+    heat = HeatCostSaving(
+        baseline_fuel_cost_won_per_year=200, hp_electricity_cost_won_per_year=80
+    )
+    report = build_report([rec, ss, heat], _dispatch_zeros(), year=1)
+    assert {line.tag for line in report.excluded} == set()
 
 
 def test_report_unmonetized_zero_for_distributed_benefit() -> None:

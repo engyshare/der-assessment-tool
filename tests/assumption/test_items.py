@@ -64,6 +64,7 @@ def test_assumption_item_7_metadata() -> None:
     assert item.value_unit == "%"
 
     # 부기 7종 중 하나라도 빠지면 ValidationError
+    # 각 필드별로 확인
     with pytest.raises(ValidationError):
         AssumptionItem(**_full_kwargs(value_unit=None))
 

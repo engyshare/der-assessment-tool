@@ -87,8 +87,13 @@ def test_wizard_and_advanced_mode_are_both_reachable() -> None:
     assert "advanced" in ids
 
 
-@pytest.mark.req("UI-2-AC1")
+@pytest.mark.req("UI-2-AC1", "NFR-302-M1")
 def test_all_numeric_inputs_have_persistent_units() -> None:
+    """수치 입력마다 자기 단위와 개별 결속됨을 확인 — NFR-302-M1 이 요구하는
+    "입력 필드 각각이 자기 툴팁과 개별 결속" 도 이 검사가 이미 실검증한다.
+    `numeric_inputs_without_units` 는 각 입력의 `aria-describedby` 가 그
+    입력 고유의 `-unit` id 를 가리키는지(개별 결속) 확인하므로, UI-2-AC1
+    과 NFR-302-M1 이 요구하는 실질이 같다 (§17.18 — 같은 패턴 재적용)."""
     assert numeric_inputs_without_units(render_dashboard()) == []
 
 
@@ -130,8 +135,12 @@ def test_result_card_delta_matches_supported_minus_baseline() -> None:
         assert delta == pytest.approx(supported - baseline)
 
 
-@pytest.mark.req("UI-7-AC1")
+@pytest.mark.req("UI-7-AC1", "FR-1002-AC1")
 def test_impact_ranking_precedes_input_value_listing_in_dom() -> None:
+    """UI-7-AC1 과 FR-1002-AC1 은 동일 요구사항이다(docs/traceability.md:359
+    가 "(FR-1002)"로 명시). render_dashboard() 실제 HTML 을 파싱해 DOM 순서를
+    검증하므로, 리포트 첫 화면이 영향도 순위로 시작한다는 FR-1002-AC1 의
+    실질도 이 테스트가 실검증한다 (§17.1 — 마커만 추가, 새 단언 없음)."""
     parser = parse(render_dashboard())
     positions = {
         element.attrs["id"]: element.index

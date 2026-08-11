@@ -145,7 +145,15 @@ def _compare(path: Path, expected: dict[str, float], actual: dict[str, float]) -
             )
 
 
-@pytest.mark.req("NFR-104-M1")
+# `FR-1103-AC1` 을 함께 붙인 이유 (R17):
+#
+# 조항은 *「GitHub Actions 에서 pytest·ruff·**골든 시나리오 3종 수치 회귀**
+# 통과 시에만 머지」* 다. **그 「수치 회귀」를 실제로 하는 것이 이 테스트다** —
+# 계산값을 `expected_values` 와 대조한다. 그런데 마커가 `NFR-104-M1` 뿐이어서
+# `FR-1103-AC1` 은 `tests/acceptance2/test_17_7_dod7.py` 의 **간접 확인**들로만
+# 매핑돼 있었고, 그중 여럿이 *「파일이 있는지」·「필드가 있는지」* 수준이었다.
+# 즉 **조항이 요구한 실검증은 존재했는데 그 조항이 그것을 가리키지 않았다.**
+@pytest.mark.req("NFR-104-M1", "FR-1103-AC1")
 @pytest.mark.parametrize("path", sorted(GOLDEN_DIR.glob("scenario_*.yaml")))
 def test_golden_scenarios_match_current_regression_snapshot(path: Path) -> None:
     case = _load_case(path)

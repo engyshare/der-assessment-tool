@@ -27,9 +27,9 @@ def test_owner_access_allowed() -> None:
     assert decision.allowed
 
 
-@pytest.mark.req("SC-2")
+@pytest.mark.req("SC-2", "NFR-403-AC1")
 def test_non_owner_without_token_denied() -> None:
-    """음성 — 타인(유효 토큰 없음)은 거부.
+    """음성 — 타인(유효 토큰 없음)은 거부 (NFR-403-AC1).
 
     오라클: 순위 4. resource_owner_id != requesting_user_id, share_token 없음.
     """

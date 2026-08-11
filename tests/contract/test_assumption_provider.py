@@ -12,8 +12,10 @@ v1.1 에서 ESS 하나가 `capex_vat()` 를 아예 만들지 않아 세액이 �
 
 from __future__ import annotations
 
+import ast
 import re
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -22,6 +24,57 @@ from core.contracts.assumptions import (
     AssumptionValue,
     MissingAssumption,
 )
+
+#: 계약이 import 해서는 안 되는 뿌리 패키지 (`NFR-208-AC3`).
+#: `core.*` 는 **구획 이름을 열거하지 않는다** — 열거하면 구획이 늘 때
+#: 검사 밖으로 나가고, 그것이 이 조항에서 가장 조용한 실패다. `core.contracts`
+#: 만 빼고 나머지 `core.<무엇이든>` 을 전부 위반으로 본다.
+_FORBIDDEN_ROOTS: tuple[str, ...] = ("app", "infra")
+
+_CONTRACTS_DIR = Path(__file__).resolve().parents[2] / "core" / "contracts"
+
+
+def _is_partition(module: str) -> bool:
+    """`module` 이 구획인가 — `core.contracts.*` 와 외부 패키지는 아니다."""
+    if module in _FORBIDDEN_ROOTS or module.startswith(
+        tuple(f"{root}." for root in _FORBIDDEN_ROOTS)
+    ):
+        return True
+    if module == "core" or not module.startswith("core."):
+        return False
+    return not (module == "core.contracts" or module.startswith("core.contracts."))
+
+
+def _partition_imports_in_source(source: str, *, where: str) -> list[tuple[str, str]]:
+    """소스 한 편의 import 문에서 구획 참조를 뽑는다 — `(어디, 무엇)`.
+
+    **이름(`dir()`)이 아니라 import 문을 본다.** `from core.der.pv import PV` 는
+    `PV` 라는 이름만 남기므로 이름을 보는 판정으로는 영원히 보이지 않는다.
+    """
+    found: list[tuple[str, str]] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            found += [(where, a.name) for a in node.names if _is_partition(a.name)]
+        elif (
+            isinstance(node, ast.ImportFrom)
+            and node.level == 0
+            and node.module
+            and _is_partition(node.module)
+        ):
+            found.append((where, node.module))
+    return found
+
+
+def _partition_imports_in_contracts() -> list[tuple[str, str]]:
+    """`core/contracts/` **전 파일**의 구획 import — 파일이 늘어도 함께 본다."""
+    files = sorted(_CONTRACTS_DIR.glob("*.py"))
+    assert files, f"계약 파일을 찾지 못했습니다: {_CONTRACTS_DIR}"
+    out: list[tuple[str, str]] = []
+    for path in files:
+        out += _partition_imports_in_source(
+            path.read_text(encoding="utf-8"), where=path.name
+        )
+    return out
 
 
 def _value(key: str, value: float | int | str) -> AssumptionValue:
@@ -158,16 +211,68 @@ def test_provider_contract_does_not_import_any_partition() -> None:
     파일이 늘 때마다 사람이 기억해서 확인하는 구조는 「검사가 있다」가
     아니라 「검사를 기억하면 돈다」이고, 08-08 이전의 CI 가 정확히 그
     상태였다.
-    """
-    import core.contracts.assumptions as mod
 
-    source = (mod.__file__ or "")
-    assert source.endswith("assumptions.py")
-    imported = {
-        name for name in dir(mod)
-        if name.startswith(("core_", "app", "infra"))
-    }
-    assert not imported, f"구획 심볼이 계약에 들어왔습니다: {imported}"
+    > ### ★ R17: 이 검사는 **아무것도 붙들지 않고 있었다**
+    >
+    > 원래 판정은 `dir(mod)` 의 이름 중 `("core_", "app", "infra")` 로
+    > 시작하는 것을 찾았다. **위반의 주된 형태가 그 필터에 걸리지 않는다.**
+    >
+    > | 위반 형태 | `dir()` 에 남는 이름 | 옛 필터가 잡는가 |
+    > |---|---|---|
+    > | `import core.der` | **`core`** | ✗ (`core_` 가 아니다) |
+    > | `from core.der.pv import PV` | **`PV`** | ✗ (심볼 이름은 구획을 안 담는다) |
+    > | `import app.main` | `app` | ✓ (**우연히** 접두어가 맞는 하나) |
+    >
+    > 즉 `core.*` 구획 침입 — `.importlinter` 의 `contracts-are-pure` 가
+    > 막으려는 바로 그것 — 은 **전부 통과하고 있었다.** 이 저장소가 아홉 번
+    > 만난 형태(*「검사는 있었는데 아무것도 붙들지 않았다」*)이며, 마커도
+    > 매핑표도 초록불이었다.
+    >
+    > **그래서 `dir()` 이 아니라 `ast` 로 실제 import 문을 본다.** 그리고
+    > 계약 파일 **전부**를 본다 — 원래는 `assumptions.py` 하나만 보았고,
+    > R16 이 `chart.py`·`validation.py`·`casevariant.py`·`valuestream.py` 를
+    > 새로 놓았으므로 파일이 늘 때마다 검사 밖으로 나가는 구조였다.
+    """
+    offenders = _partition_imports_in_contracts()
+    assert not offenders, (
+        "계약이 구획을 import 했습니다 — "
+        + "; ".join(f"{where}: {what}" for where, what in offenders)
+    )
+
+
+@pytest.mark.contract
+@pytest.mark.req("NFR-208-AC3")
+def test_the_partition_import_scan_actually_catches_a_violation() -> None:
+    """**검사가 위반을 잡는지 검사한다** (`COMMON.md` §2 ③).
+
+    위 테스트는 「위반이 없다」를 말한다. 위반이 없어서 통과한 것인지
+    **검사가 아무것도 못 잡아서** 통과한 것인지는 그 테스트만으로는 구별되지
+    않는다 — 옛 판정이 정확히 그 상태로 통과해 왔다.
+
+    그래서 위반을 **일부러 만들어** 검사에 먹인다. 실제 파일을 고치지 않고
+    소스 문자열로만 하므로 저장소에 흔적이 남지 않는다.
+    """
+    caught = _partition_imports_in_source("import core.der\n", where="가짜")
+    assert caught == [("가짜", "core.der")], (
+        "`import core.der` 를 잡지 못했습니다 — 옛 `dir()` 판정이 놓친 형태입니다"
+    )
+
+    caught = _partition_imports_in_source(
+        "from core.valuestream.rec import REC\n", where="가짜"
+    )
+    assert caught == [("가짜", "core.valuestream.rec")], (
+        "`from core.<구획> import <심볼>` 을 잡지 못했습니다 — 심볼 이름에는 "
+        "구획이 남지 않으므로 이름 접두어로는 볼 수 없는 형태입니다"
+    )
+
+    # 정당한 것은 잡지 않는다 — 오탐이 나면 사람이 검사를 끈다
+    for benign in (
+        "from __future__ import annotations\n",
+        "from core.contracts.units import to_won\n",
+        "from decimal import Decimal\n",
+        "import pytest\n",
+    ):
+        assert _partition_imports_in_source(benign, where="가짜") == [], benign
 
 
 @pytest.mark.contract

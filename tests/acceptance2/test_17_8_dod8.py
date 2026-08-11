@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 
 import pytest
+import yaml
 
 import core.asset
 import core.der
@@ -18,6 +19,7 @@ from core.contracts.registry import discover
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TESTS_DER_DIR = REPO_ROOT / "tests" / "der"
 TESTS_ASSET_DIR = REPO_ROOT / "tests" / "asset"
+WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "tests.yml"
 
 # §13.2.2 공통 비용 5종 — 전 자원 공통
 REQUIRED_COMMON_COST_CASES = ["RC-ALL-C1", "RC-ALL-C2",
@@ -283,6 +285,51 @@ def test_dod8_common_asset_has_all_rc_ca_cases() -> None:
         raise AssertionError(
             f"CommonAsset 테스트를 수집할 수 없습니다:\n{result.stdout}\n{result.stderr}"
         )
+
+
+@pytest.mark.req("NFR-106-M1")
+def test_dod8_resource_case_files_have_no_skip_or_xfail_and_ci_runs_them_unrestricted() -> None:
+    """DoD 8 — 케이스 존재가 곧 «실행·통과」가 아니다.
+
+    :170·:250·:327 은 케이스 ID(문자열) 존재만 본다. 실제로 실행되어
+    통과하는지는 두 조건이 함께 성립해야 한다 — ⓐ 자원·CommonAsset 테스트
+    파일에 skip/xfail 이 없어야 «수집되면 반드시 실행」이 되고, ⓑ CI 의
+    pytest 가 그 디렉터리를 경로 제한 없이 돌려야 실패 시 CI 가 그대로
+    빨간불이 된다. 이 검사는 그 둘을 실제로 확인한다.
+    """
+    missing_case_files: list[str] = []
+    marked_skip_or_xfail: list[str] = []
+
+    for test_file in sorted(TESTS_DER_DIR.glob("test_*.py")) + sorted(
+        TESTS_ASSET_DIR.glob("test_*.py")
+    ):
+        source = test_file.read_text(encoding="utf-8")
+        if "pytest.mark.skip" in source or "pytest.mark.xfail" in source:
+            marked_skip_or_xfail.append(str(test_file.relative_to(REPO_ROOT)))
+
+    assert not marked_skip_or_xfail, (
+        "자원·CommonAsset 케이스 파일에 skip/xfail 이 있습니다 — 수집되어도 "
+        "실행·통과로 이어지지 않습니다: " + ", ".join(marked_skip_or_xfail)
+    )
+
+    if not TESTS_DER_DIR.is_dir() or not any(TESTS_DER_DIR.glob("test_*.py")):
+        missing_case_files.append(str(TESTS_DER_DIR.relative_to(REPO_ROOT)))
+    assert not missing_case_files, "검사 대상 파일이 없습니다: " + ", ".join(missing_case_files)
+
+    workflow = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
+    run_commands = "\n".join(
+        step["run"]
+        for job in workflow["jobs"].values()
+        for step in job.get("steps", [])
+        if isinstance(step.get("run"), str)
+    )
+    assert "pytest --cov=core" in run_commands, (
+        "CI 가 경로 제한 없는 전체 pytest(커버리지 포함) 단계를 돌리지 않습니다"
+    )
+    assert "tests/der" not in run_commands and "tests/asset" not in run_commands, (
+        "CI pytest 가 tests/der·tests/asset 로 경로 제한되어 있습니다 — "
+        "RC-* 케이스가 실행되지 않을 수 있습니다"
+    )
 
 
 # ── 검증 강제 검사: 일부러 위반을 심어서 검사가 작동하는지 확인 ─────

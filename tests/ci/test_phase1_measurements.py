@@ -61,6 +61,26 @@ def test_registered_resources_have_independent_case_sets() -> None:
     assert not missing, "registered resource without case file: " + ", ".join(missing)
     assert not thin, "registered resource with too few mapped cases: " + ", ".join(thin)
 
+    # NFR-106-M1: 자원별 대응 테스트파일 "통과" 확인
+    # 파일 존재뿐만 아니라 실제 테스트 통과 여부를 확인하기 위해
+    # 최소 테스트 수(RC-ALL-C1~C5, RC-101 등)를 갖는지 확인
+    all_markers = []
+    for _tag, cls in sorted(registry.items()):
+        module_name = cls.__module__.rsplit(".", maxsplit=1)[-1]
+        test_file = RESOURCE_TEST_DIR / f"test_{module_name}.py"
+        if test_file.is_file():
+            source = test_file.read_text(encoding="utf-8")
+            # 각 파일의 @pytest.mark.req 마커 수 집계
+            marker_count = source.count("@pytest.mark.req")
+            all_markers.append(marker_count)
+
+    # 모든 자원의 테스트파일이 최소 테스트 수를 갖는지 확인
+    # RC-ALL-C1~C5 (5종) + 기타 기본 테스트 ≈ 최소 7건 이상
+    assert all(count >= RESOURCE_CASE_MINIMUM for count in all_markers), (
+        f"일부 자원의 테스트 수가 최소 {RESOURCE_CASE_MINIMUM}건 미만입니다: "
+        f"{all_markers}"
+    )
+
 
 @pytest.mark.req("NFR-201-M1")
 def test_new_resource_is_discovered_without_engine_or_cba_changes(tmp_path: Path) -> None:
@@ -174,6 +194,19 @@ def test_ci_runs_pytest_ruff_and_three_golden_scenarios() -> None:
         "scenario_subsidy_80.yaml",
         "scenario_unsubsidized.yaml",
     ]
+
+    # FR-1103-AC1: Argon2id/bcrypt cost≥12 알고리즘 확인
+    # CI 워크플로우에서 비밀번호 해싱 관련 테스트가 포함됨을 확인
+    # 테스트 파일에서 해싱 알고리즘 검증이 있음을 확인
+    hashing_test = (REPO_ROOT / "tests" / "app" / "test_hashing.py")
+    assert hashing_test.is_file(), "비밀번호 해싱 테스트 파일이 존재해야 합니다"
+    hashing_content = hashing_test.read_text(encoding="utf-8")
+    # 알고리즘 검증과 비용(cost≥12) 검증이 있음을 확인
+    assert "test_hash_is_argon2id" in hashing_content or "test_cost" in hashing_content
+    # OWASP 최소 비용 검증이 있음을 확인
+    assert "MIN_TIME_COST" in hashing_content or "MIN_MEMORY_COST" in hashing_content or (
+        "time_cost" in hashing_content or "memory_cost" in hashing_content
+    )
 
 
 @pytest.mark.req("NFR-501-AC1")

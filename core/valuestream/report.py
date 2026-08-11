@@ -19,6 +19,7 @@ from core.contracts.units import ZERO, Money
 from core.contracts.valuestream import ExclusionType, Payer, ValueStream
 from core.valuestream.exclusion_table import (
     DEFAULT_EXCLUSION_RULES,
+    assert_no_exclusions,
     collect_exclusions,
     rules_for_profile,
 )
@@ -72,6 +73,9 @@ def build_report(
     빠지고 «모든 프로파일에 적용» 규칙만 돈다 (보소수적).
     """
     rules = rules_for_profile(profile, DEFAULT_EXCLUSION_RULES)
+    # FR-402-AC2.A · DV-12 — 유형 A 위반이면 라벨링 전에 거부한다. 그래서
+    # 아래 "배타제외" 라벨에는 A 가 도달하지 못하고 C·D 만 남는다 (R17).
+    assert_no_exclusions(streams, rules)
     # 배타 쌍 — 둘 다 활성화된 쌍만. 한 쪽이 비활성이면 배타가 발동하지 않는다.
     excluded_pairs = collect_exclusions(streams, rules)
     excluded_tags: set[str] = set()

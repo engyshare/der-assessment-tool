@@ -1,6 +1,7 @@
 """17.7 DoD 7 — 골든 3종 CI 회귀 통과 및 무료 호스팅 외부 접속 검증."""
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,71 @@ GOLDEN_SCENARIO_FILES = (
     "scenario_subsidy_80.yaml",
     "scenario_unsubsidized.yaml",
 )
+
+
+def _load_golden_regression_module():
+    """`tests/golden/test_regression_scenarios.py` 를 읽어서(고치지 않고)
+    그 실제 비교 함수(`_load_case`·`_expected_values`·`_scenario_metrics`·
+    `_compare`)를 재사용한다 — 같은 로직을 이 파일에 다시 베끼면 두 곳이
+    어긋날 수 있다.
+
+    `import core.der.pv` 를 먼저 하는 이유: `core.contracts.units` 가
+    `core.der.pv` 를 순환 임포트한다(R17 확인용 의도적 위반, 별도 구획
+    소관). 이 함수가 세션에서 가장 먼저 `core` 를 건드리면, 파일 경로로
+    직접 모듈을 실행할 때 그 체인이 부분초기화 상태로 걸려 ImportError 가
+    난다 — 정상 임포트 경로를 먼저 밟아 두면 사라진다(실측 확인됨).
+    """
+    import core.der.pv
+
+    assert core.der.pv.PV is not None
+
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "_golden_regression_wp28f",
+        REPO_ROOT / "tests" / "golden" / "test_regression_scenarios.py",
+    )
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@pytest.mark.req("FR-1103-AC1")
+def test_dod7_golden_regression_actually_compares_computed_values() -> None:
+    """DoD 7 — :21·:56·:126 은 파일 존재·필드 존재만 본다. 여기서는 골든
+    3종 각각에 대해 **실제 core 계산값**을 산출해 `expected_values` 와
+    직접 대조한다 — CI 가 어딘가에서 돌린다는 것과 이 구획 스스로가 실제
+    회귀 대조를 실행해 통과를 확인하는 것은 다르다.
+    """
+    mod = _load_golden_regression_module()
+    for name in GOLDEN_SCENARIO_FILES:
+        path = GOLDEN_DIR / name
+        case = mod._load_case(path)
+        expected = mod._expected_values(case)
+        assert expected, f"{name}: expected_values 가 비어 있어 대조가 성립하지 않습니다"
+        actual = mod._scenario_metrics(float(case["subsidy_rate"]))
+        mod._compare(path, expected, actual)
+
+
+@pytest.mark.req("FR-1103-AC1")
+def test_dod7_golden_regression_catches_a_wrong_value() -> None:
+    """DoD 7 검사 감지 능력 확인 — 계산값이 기준값과 **다르면** 실제로 잡히는가.
+
+    실제 파일을 고치지 않는다(다른 구획이 동시에 같은 픽스처를 읽을 수
+    있다). 대신 실제 비교 함수(`_compare`)에 일부러 틀린 실측값을 넣어
+    실패하는지 확인한다.
+    """
+    mod = _load_golden_regression_module()
+    path = GOLDEN_DIR / "scenario_subsidy_20.yaml"
+    case = mod._load_case(path)
+    expected = mod._expected_values(case)
+    wrong_actual = dict(expected)
+    wrong_actual["npv_won"] = expected["npv_won"] + 1_000_000
+
+    with pytest.raises(AssertionError, match="npv_won"):
+        mod._compare(path, expected, wrong_actual)
 
 
 @pytest.mark.req("FR-1103-AC1")
@@ -51,6 +117,31 @@ def test_dod7_ci_workflow_includes_pytest_and_ruff() -> None:
     # 이미 수행됨 (test_ci_runs_both_gates_and_does_not_swallow_their_verdict)
     assert "pytest" in content
     assert "ruff" in content
+
+
+@pytest.mark.req("NFR-104-M1")
+def test_dod7_ci_pytest_and_ruff_run_as_real_blocking_steps() -> None:
+    """DoD 7 — pytest·ruff 가 워크플로에 «텍스트로 존재»가 아니라 실제
+    `run:` 단계로, 차단 방식으로 호출되는지 YAML 을 파싱해 확인한다.
+
+    위 테스트(문자열 포함)는 주석에 적어 둔 pytest·ruff 도 통과시킨다.
+    여기서는 `run:` 값에서만 찾고, 해당 잡이 `continue-on-error` 가 아님을
+    함께 확인해 판정이 경고로 내려가 있지 않은지 본다.
+    """
+    spec = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
+
+    run_commands: list[str] = []
+    for job_name, job in spec["jobs"].items():
+        assert job.get("continue-on-error") is not True, (
+            f"잡 {job_name!r} 이 continue-on-error 입니다 — 판정이 사라집니다"
+        )
+        run_commands.extend(
+            step["run"] for step in job.get("steps", []) if isinstance(step.get("run"), str)
+        )
+
+    joined = "\n".join(run_commands)
+    assert "pytest" in joined, "pytest 가 실제 run: 단계에 없습니다 (주석에만 있을 수 있습니다)"
+    assert "ruff" in joined, "ruff 가 실제 run: 단계에 없습니다 (주석에만 있을 수 있습니다)"
 
 
 @pytest.mark.req("FR-1103-AC1")
@@ -220,20 +311,34 @@ def test_dod7_violation_detection_works_ci_missing_pytest() -> None:
 
 
 @pytest.mark.req("FR-1103-AC1")
-def test_dod7_violation_detection_works_golden_missing_metadata() -> None:
+def test_dod7_violation_detection_works_golden_missing_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """DoD 7 검사가 메타데이터 누락을 감지하는지 확인 (음성 테스트).
 
-    의도적으로 oracle_source 가 없는 상태를 만들고 검사가 실패하는지 확인한다.
+    이전에는 로컬 dict 에서 키를 지운 뒤 그 dict 만 확인했을 뿐, 실제 검사
+    함수(`test_dod7_golden_scenario_metadata_indicates_source`)를 호출하지
+    않았다. 여기서는 골든 3종을 임시 디렉터리에 복제하고 그중 하나에서
+    oracle_source 를 지운 뒤, 이 모듈의 `GOLDEN_DIR` 을 그 임시 디렉터리로
+    돌려(monkeypatch) 실제 검사 함수를 그대로 호출한다. 공유 픽스처
+    (fixtures/golden/)는 건드리지 않는다 — 동시에 다른 구획이 그 파일을
+    읽고 있을 수 있다.
     """
-    file_path = GOLDEN_DIR / "scenario_subsidy_20.yaml"
-    data = yaml.safe_load(file_path.read_text(encoding="utf-8"))
+    fake_dir = tmp_path / "golden"
+    fake_dir.mkdir()
+    for name in GOLDEN_SCENARIO_FILES:
+        content = (GOLDEN_DIR / name).read_text(encoding="utf-8")
+        if name == "scenario_subsidy_20.yaml":
+            content = "\n".join(
+                line for line in content.splitlines() if not line.startswith("oracle_source")
+            ) + "\n"
+            assert "oracle_source" not in content
+        (fake_dir / name).write_text(content, encoding="utf-8")
 
-    # oracle_source 가 있는지 먼저 확인
-    assert "oracle_source" in data
+    monkeypatch.setattr(sys.modules[__name__], "GOLDEN_DIR", fake_dir)
 
-    # oracle_source 제거한 상태를 가정
-    data_without_source = {k: v for k, v in data.items() if k != "oracle_source"}
-
-    # 제거된 상태에서는 필드가 없어야 함
-    assert "oracle_source" not in data_without_source
-    assert "oracle_source" in data  # 원본에는 있음
+    try:
+        test_dod7_golden_scenario_metadata_indicates_source()
+        raise AssertionError("검사가 누락된 oracle_source 를 감지하지 못했습니다")
+    except AssertionError as e:
+        assert "oracle_source" in str(e)
