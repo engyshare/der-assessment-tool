@@ -45,6 +45,21 @@ SAMPLE: dict[str, object] = {
     "export": [4.0, 5.0, 6.0, 5.0],
     "import": [1.0, 0.5, 0.0, 1.5],
     "model_comparison": {"기본안": 1_200_000.0, "무지원": -300_000.0},
+    # ── R19: `FR-803-AC1` 2변수 등고선 + 목표 달성 영역 음영 ──────────────
+    #
+    # 위 문단이 예고한 그대로 이 테스트가 빨간불이 되어 이 항목을 불렀다.
+    # **2×2 가 최소 격자다** — 조항이 2변수이므로 두 축 모두 2수준 이상이어야
+    # 하고, 차트가 그것을 `ValidationError` 로 강제한다. 격자에 빈 칸이 있으면
+    # 등고선이 실행하지 않은 좌표의 값을 지어내므로 그것도 거부된다.
+    "cells": [
+        {"x_value": 0.0, "y_value": 0.03, "metric_value": 50.0, "achieved": True},
+        {"x_value": 0.0, "y_value": 0.05, "metric_value": -50.0, "achieved": False},
+        {"x_value": 0.1, "y_value": 0.03, "metric_value": 150.0, "achieved": True},
+        {"x_value": 0.1, "y_value": 0.05, "metric_value": 50.0, "achieved": True},
+    ],
+    "x_label": "보조율",
+    "y_label": "할인율",
+    "metric_label": "NPV (만원)",
 }
 
 

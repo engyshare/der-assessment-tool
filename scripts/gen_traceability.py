@@ -220,6 +220,30 @@ def collect_manual(path: Path) -> tuple[dict[str, dict], list[str], list[str], l
     return out, orphan, missing_blocking, incomplete
 
 
+def _file_list(paths: list[str]) -> str:
+    """검증 테스트 칸. **같은 파일이 여러 번이면 「N건」으로 접는다.**
+
+    한 파일에 그 조항의 마커가 N개 있으면 N번 반복해 적고 있었다. 조항 하나를
+    파일 하나가 여러 테스트로 검증하는 것은 흔하므로 반복 자체는 정보이지만,
+    나열은 정보를 가린다 — R19 에 `FR-803-AC1` 이 **같은 파일명 13회**가 되어
+    칸 하나가 표의 다른 행 전체보다 길어졌다.
+
+    접으면 **몇 개가 검증하는가가 오히려 드러난다.** 1회는 접지 않는다 —
+    「1건」은 없는 정보를 더하는 것이고, 기존 형식과도 어긋난다.
+
+    곱셈기호(`×`)를 쓰지 않는 이유: `ruff` 의 `RUF001` 이 라틴 `x` 와 혼동될 수
+    있다고 막는다. 괄호도 쓰지 않는다 — 같은 칸에서 `(스텁)`·`(미수행)` 이 이미
+    **다른 뜻**으로 괄호를 쓰고 있어 형식이 겹친다.
+    """
+    counts: dict[str, int] = {}
+    for path in paths:
+        name = Path(path).name
+        counts[name] = counts.get(name, 0) + 1
+    return ", ".join(
+        name if n == 1 else f"{name} {n}건" for name, n in counts.items()
+    )
+
+
 def render(reqs: list[Requirement], tests: dict[str, list[str]],
            manual: dict[str, dict], orphan: list[str],
            spec_name: str, *,
@@ -249,11 +273,11 @@ def render(reqs: list[Requirement], tests: dict[str, list[str]],
                 auto_hits = [p for p, is_manual in entries if not is_manual]
                 if auto_hits:
                     status = "자동"
-                    where = ", ".join(Path(p).name for p in auto_hits)
+                    where = _file_list(auto_hits)
                     n_auto += 1
                 else:
                     status = "수동"
-                    files = ", ".join(Path(p).name for p, _ in entries)
+                    files = _file_list([p for p, _ in entries])
                     n_manual += 1
                     chk = manual.get(crit.cid)
                     if chk:
