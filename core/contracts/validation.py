@@ -21,6 +21,32 @@ NFR-303 은 오류 메시지가 **«어떤 필드가 / 왜 / 어떻게 고쳐야
 있다. 새 기반 예외를 만들면 그 호출부들이 조용히 통과시키게 되고, 그 변화는
 **아무 오류도 나지 않는 형태**로 나타난다 (§13.0.1 ④ — 검사가 통과한 것과
 검사가 무언가를 검사한 것은 다르다).
+
+`field` 경로 관례 — **R21 이 어긋난 것을 보고 R22 를 위해 확정한다**
+------------------------------------------------------------------
+표시 층은 `field` 를 **키로** 써서 「어느 칸이 틀렸는가」를 찾는다. 그러므로
+키는 **열거 가능**해야 하고, 사용자가 지은 자유 문자열(자원 인스턴스 이름 등)이
+섞이면 안 된다.
+
+    자원(DER)      <tag소문자>.<필드>       pv.operating_mode · ess.soc_min
+    편익           valuestream.<tag>.<필드>  valuestream.REC.payer
+    차트           chart.<tag>[.<키>]        chart.cashflow_line.cashflows
+    그 밖           <도메인>.<필드>           timeseries.rows · chart.tags
+
+**자원이 `der.<tag>.…` 가 아니라 `<tag소문자>.…` 인 이유**는 이 파일의
+`ValidationError` 독스트링 예시가 처음부터 `ess.soc_min` 이었기 때문이다 —
+관례는 새로 지은 것이 아니라 **이미 있던 것을 찾은 것**이다.
+
+> **R21 에 같은 `DV-14` 를 두 층이 다른 키로 냈다.** `core/der/pv.py` 는
+> `pv.operating_mode`, `core/contracts/der.py` 는
+> `der.<인스턴스이름>.operating_mode` 였다. **후자가 틀렸다** — 인스턴스 이름은
+> 사용자가 짓는 자유 문자열이므로 키 공간이 무한해지고 표시 층이 찾을 수 없다.
+> 인스턴스가 **어느 것인지는 `reason` 이 적는다.**
+>
+> `tests/contract/test_dv_rule_enforcement.py` 가 **두 층이 같은 키를 내는지**
+> 실물로 대조한다. 남은 raise 지점 109곳(`core/der/` 69 · `core/contracts/` 40)을
+> 전환할 때 이 관례를 따를 것 — 파일마다 다른 모양이 되면 표시 층은 결국
+> 문자열을 파싱하게 된다.
 """
 
 from __future__ import annotations
@@ -97,6 +123,18 @@ class ValidationError(ValueError):
                 f"(NFR-303). 빠진 것: {', '.join(missing)}. "
                 "셋을 갖추지 못하는 오류라면 그것은 검증 오류가 아니라 "
                 "내부 결함이므로 다른 예외를 쓰십시오"
+            )
+        # `field` 는 표시 층이 **키로** 쓰는 경로다 (위 「경로 관례」).
+        # 공백이 있으면 사람이 읽는 문장이 키 자리에 들어온 것이고, 점이
+        # 없으면 어느 도메인의 칸인지 알 수 없다. 둘 다 **생성 시점에** 막는다 —
+        # 검사로 두면 그 검사를 지나지 않는 경로가 생긴다.
+        if any(ch.isspace() for ch in field) or "." not in field:
+            raise ValueError(
+                f"field 는 점으로 이은 경로여야 하고 공백을 담지 않습니다: {field!r}. "
+                "자원은 `<tag소문자>.<필드>`(예 `pv.operating_mode`), 그 밖은 "
+                "`<도메인>.<필드>` 입니다. 어느 인스턴스인지는 field 가 아니라 "
+                "reason 에 적으십시오 — 인스턴스 이름은 사용자가 지은 자유 "
+                "문자열이므로 표시 층이 키로 찾을 수 없습니다"
             )
         if rule is not None:
             if not _RULE_PATTERN.match(rule):

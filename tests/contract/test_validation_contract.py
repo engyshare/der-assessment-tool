@@ -69,7 +69,7 @@ def test_existing_handlers_still_catch_it() -> None:
     변화는 «아무 오류도 나지 않는» 형태로 나타난다 — 가장 찾기 어려운 종류다.
     """
     with pytest.raises(ValueError):
-        raise ValidationError(field="f", reason="r", action="a")
+        raise ValidationError(field="ess.soc_min", reason="r", action="a")
 
 
 @pytest.mark.contract
@@ -81,9 +81,9 @@ def test_rule_id_must_exist_in_the_spec_catalogue() -> None:
     가리키지 않는다. 형식만 맞는 `DV-99` 도 마찬가지로 막는다.
     """
     with pytest.raises(ValueError, match="형식이 아닙니다"):
-        ValidationError(field="f", reason="r", action="a", rule="dv2")
+        ValidationError(field="ess.soc_min", reason="r", action="a", rule="dv2")
     with pytest.raises(ValueError, match="대장에 없는"):
-        ValidationError(field="f", reason="r", action="a", rule="DV-99")
+        ValidationError(field="ess.soc_min", reason="r", action="a", rule="DV-99")
 
     assert "DV-12" in DV_RULES      # 배타 위반 시 실행 거부 — FR-402-AC2.A
     assert "DV-13" in DV_RULES      # 지불 주체 미특정 — FR-402-AC5

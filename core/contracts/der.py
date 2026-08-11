@@ -490,14 +490,17 @@ class DER(ABC):
         표기된다 (FR-105-AC4). 무엇을 선택했는지는 계산 결과를 가르는 입력이므로
         추측 대상이 아니다.
         """
-        # **인스턴스 이름을 `field` 에 넣지 않는다.** 이름은 사용자가 지은 자유
-        # 문자열이므로 넣으면 필드 키가 열거 불가능해지고, 표시 층이 「어느
-        # 칸인가」를 키로 찾을 수 없다. 저장소의 관례도 그것이다 —
-        # `valuestream.{tag}.payer` · `chart.{tag}`. 인스턴스는 `reason` 이 적는다.
-        # `tag` 는 ClassVar 선언만 있고 기본값이 없어, 잊은 구현에서
-        # `AttributeError` 가 나면 **검증 오류가 그것에 가려진다.**
+        # **자원의 `field` 는 `<tag소문자>.<필드>` 다** — `core/contracts/
+        # validation.py` 「경로 관례」. 자원 구현(`core/der/pv.py` 등)이 내는
+        # 키와 **같아야** 한다. R21 에 이 자리가 `der.<인스턴스이름>...` 이어서
+        # 같은 `DV-14` 가 두 층에서 다른 키로 나왔다 — 인스턴스 이름은 사용자가
+        # 지은 자유 문자열이라 표시 층이 키로 찾을 수 없다.
+        # **어느 인스턴스인지는 아래 `reason` 이 적는다.**
+        #
+        # `tag` 는 `ClassVar` 선언만 있고 기본값이 없다. 잊은 구현에서
+        # `AttributeError` 가 나면 **검증 오류가 그것에 가려지므로** 되짚는다.
         tag = getattr(type(self), "tag", None) or type(self).__name__
-        field_path = f"der.{tag}.operating_mode"
+        field_path = f"{tag.lower()}.operating_mode"
         if not self.OPERATING_MODES:
             if mode:
                 raise ValidationError(

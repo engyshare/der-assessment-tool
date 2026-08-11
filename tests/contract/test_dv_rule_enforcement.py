@@ -88,7 +88,7 @@ def test_dv14_is_thrown_by_the_real_constructor() -> None:
         assert parts["rule"] == "DV-14", f"{label}: 규칙 ID 가 붙지 않았다"
         # **필드는 어긋난 입력의 이름을 가리킨다** — 자원 이름만으로는
         # 사용자가 어느 칸을 고쳐야 하는지 알 수 없다
-        assert parts["field"] == "der.PV.operating_mode", label
+        assert parts["field"] == "pv.operating_mode", label
         # 인스턴스 이름은 **필드가 아니라 사유**에 있다 — 필드 키는 열거
         # 가능해야 하고 자원 이름은 사용자가 지은 자유 문자열이다
         assert "옥상PV" in (parts["reason"] or ""), f"{label}: 어느 인스턴스인지 없다"
@@ -117,6 +117,59 @@ def test_dv14_stays_catchable_as_valueerror() -> None:
     """
     with pytest.raises(ValueError, match="운전 방법"):
         ReferencePV(operating_mode="야간 발전")
+
+
+@pytest.mark.contract
+@pytest.mark.req("NFR-303-M1")
+@pytest.mark.req("FR-105-AC1")
+def test_both_layers_emit_the_same_key_for_the_same_rule() -> None:
+    """★★ **같은 규칙을 두 층이 던지면 키가 같아야 한다** — R21 에 달랐다.
+
+    `core/der/pv.py`(자원 구현)와 `core/contracts/der.py`(계약)가 **둘 다**
+    `DV-14` 를 던진다. R21 에 전자는 `pv.operating_mode`, 후자는
+    `der.<인스턴스이름>.operating_mode` 였다 — 표시 층이 `field` 를 키로 쓰면
+    같은 조항이 **두 칸으로 갈린다.**
+
+    **이 검사가 R22 의 109곳 전환을 붙든다.** 파일마다 다른 모양이 되면
+    표시 층은 결국 문자열을 파싱하게 되고, 그때 메시지 형식이 바뀌면 표시가
+    조용히 깨진다 (`as_dict()` 를 둔 이유가 그것이다).
+    """
+    from core.der.pv import PV
+
+    # 자원 구현 쪽 — 실제 생성자를 지난다
+    with pytest.raises(ValidationError) as from_resource:
+        PV(name="옥상PV", capacity_kw=3.0, operating_mode="야간 발전")
+
+    # 계약 쪽 — 같은 규칙, 같은 자원 태그(`PV`)
+    with pytest.raises(ValidationError) as from_contract:
+        ReferencePV(operating_mode="야간 발전")
+
+    r, c = from_resource.value, from_contract.value
+    assert r.rule == c.rule == "DV-14"
+    assert r.field == c.field == "pv.operating_mode", (
+        f"두 층이 다른 키를 냈다 — 자원 {r.field!r} · 계약 {c.field!r}. "
+        "`core/contracts/validation.py` 「경로 관례」를 볼 것"
+    )
+    # 인스턴스 이름은 **키가 아니라 사유**에 있다
+    assert "옥상PV" in r.reason and "옥상PV" not in r.field
+
+
+@pytest.mark.contract
+@pytest.mark.req("NFR-303-M1")
+def test_field_must_be_a_dotted_key_without_free_text() -> None:
+    """`field` 는 **생성 시점에** 경로 모양을 요구한다 — 검사가 아니라 조건이다.
+
+    사람이 읽는 문장이나 인스턴스 이름이 키 자리에 오면 표시 층이 칸을 찾을
+    수 없다. 검사로 두면 그 검사를 지나지 않는 경로가 생긴다.
+    """
+    for wrong in ("자원 이름이 없습니다", "operating_mode", "pv operating_mode"):
+        with pytest.raises(ValueError, match="점으로 이은 경로"):
+            ValidationError(field=wrong, reason="r", action="a")
+
+    # 관례에 맞는 것은 통과한다 — 자원 · 편익 · 차트 · 그 밖
+    for ok in ("pv.operating_mode", "valuestream.REC.payer",
+               "chart.cashflow_line.cashflows", "timeseries.rows"):
+        assert ValidationError(field=ok, reason="r", action="a").field == ok
 
 
 @pytest.mark.contract
