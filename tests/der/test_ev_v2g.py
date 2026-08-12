@@ -18,6 +18,7 @@ import pytest
 
 from core.contracts.der import DER, EOL_REPLACE, EOL_RETIRE, DispatchContext
 from core.contracts.units import HOURS_PER_YEAR, Money, to_won, won_sum
+from core.contracts.validation import ValidationError
 from core.der.ev_v2g import EV_V2G
 from tests.contract.test_der_contract import DERContractTests
 
@@ -645,3 +646,105 @@ def test_grid_limit_series_is_respected() -> None:
     assert max(abs(v) for v in elec) <= 3.0 + 1e-12
     # 상한이 걸려도 하루 방전 총량은 시간대 안에서 여전히 소화된다
     assert sum(v for v in elec if v > 0) == pytest.approx(6044.4, rel=1e-9)
+
+
+# ── 입력 검증 오류의 3요소(field·reason·action) 구조화 — R22/WP-32C, NFR-303-M1 ──
+#
+# `ValidationError` 로 전환한 raise 지점이 실제로 «어떤 필드가 / 왜 / 어떻게» 세 칸을
+# 모두 채우는지 확인한다. **«예외가 났다»만 보는 테스트는 내용을 보지 않으므로**,
+# 각 테스트는 field·reason·action 의 내용을 개별 단언한다.
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_dod_deeper_than_arrival_soc_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as exc:
+        make_ev(available_dod=0.9, arrival_soc=0.8, min_departure_soc=0.0)
+    err = exc.value
+    assert err.field == "ev_v2g.available_dod"
+    assert "0.9" in err.reason
+    assert "0.8" in err.reason
+    assert "available_dod" in err.action
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_negative_guarantee_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as exc:
+        make_ev(min_departure_soc=0.95)
+    err = exc.value
+    assert err.field == "ev_v2g.min_departure_soc"
+    assert "0.95" in err.reason
+    assert "min_departure_soc" in err.action
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_window_limited_full_day_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as exc:
+        make_ev(
+            operating_mode="접속시간대 제한 운전",
+            connect_start_hour=0,
+            connect_end_hour=0,
+        )
+    err = exc.value
+    assert err.field == "ev_v2g.operating_mode"
+    assert "24시간" in err.reason
+    assert "connect_start_hour" in err.action or "operating_mode" in err.action
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_charger_too_small_for_window_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as exc:
+        make_ev(max_charge_kw=0.5, max_discharge_kw=0.5)
+    err = exc.value
+    assert err.field == "ev_v2g.max_discharge_kw"
+    assert "접속 시간대" in err.reason
+    assert "max_charge_kw" in err.action or "max_discharge_kw" in err.action
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_zero_horizon_in_replacement_schedule_carries_field_reason_action() -> None:
+    ev = make_ev()
+    with pytest.raises(ValidationError) as exc:
+        ev.replacement_schedule(horizon=0)
+    err = exc.value
+    assert err.field == "ev_v2g.horizon"
+    assert "0" in err.reason
+    assert "1 이상" in err.action
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_discount_rate_at_minus_one_carries_field_reason_action() -> None:
+    ev = make_ev()
+    with pytest.raises(ValidationError) as exc:
+        ev.discounted_salvage_value(year=20, discount_rate=-1.0)
+    err = exc.value
+    assert err.field == "ev_v2g.discount_rate"
+    assert "-1.0" in err.reason
+    assert "-100" in err.action
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_negative_domain_check_carries_field_reason_action() -> None:
+    """`_check` 공유 헬퍼 경로 — 대표 필드 `battery_kwh`."""
+    with pytest.raises(ValidationError) as exc:
+        make_ev(battery_kwh=-60.0)
+    err = exc.value
+    assert err.field == "ev_v2g.battery_kwh"
+    assert "battery_kwh" in err.reason
+    assert "-60.0" in err.reason
+    assert "battery_kwh" in err.action
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_check_helper_field_wiring_for_remaining_call_sites() -> None:
+    """`_check` 를 공유하는 나머지 호출부의 field 매핑을 확인한다 (로직은 위에서 검증됨)."""
+    cases = [
+        ({"vehicle_count": 0}, "ev_v2g.vehicle_count"),
+        ({"participation": 1.5}, "ev_v2g.participation"),
+        ({"discharge_efficiency": 0.0}, "ev_v2g.discharge_efficiency"),
+        ({"connect_start_hour": 24}, "ev_v2g.connect_start_hour"),
+        ({"charger_unit_cost_won": -1.0}, "ev_v2g.charger_unit_cost_won"),
+    ]
+    for overrides, expected_field in cases:
+        with pytest.raises(ValidationError) as exc:
+            make_ev(**overrides)
+        assert exc.value.field == expected_field, f"{overrides} 의 field 불일치: {exc.value.field}"

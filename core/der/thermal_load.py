@@ -36,6 +36,7 @@ from core.contracts.units import (
     steps_per_year,
     to_won,
 )
+from core.contracts.validation import ValidationError
 
 _DAYS_IN_MONTH: Final[tuple[int, ...]] = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 _MONTHS: Final[int] = 12
@@ -58,31 +59,40 @@ def _month_bounds(total_steps: int) -> list[tuple[int, int]]:
     return bounds
 
 
-def _check_non_negative(values: Sequence[float], *, label: str) -> None:
+def _check_non_negative(values: Sequence[float], *, field: str, label: str) -> None:
     for i, v in enumerate(values):
         if v < 0.0:
-            raise ValueError(
-                f"{label} 에 음수가 있습니다 (index {i}: {v}). 열부하는 소비량이며 "
-                "부호는 `dispatch()` 가 붙입니다 — 입력에 음수를 넣으면 부호가 "
-                "두 번 뒤집혀 열 공급으로 잡힙니다"
+            raise ValidationError(
+                field=field,
+                reason=(
+                    f"{label} 에 음수가 있습니다 (index {i}: {v}). 열부하는 소비량이며 "
+                    "부호는 `dispatch()` 가 붙입니다 — 입력에 음수를 넣으면 부호가 "
+                    "두 번 뒤집혀 열 공급으로 잡힙니다"
+                ),
+                action=f"{label}의 모든 값을 0 이상으로 고치십시오",
             )
 
 
-def _check_amount(value: float, *, label: str) -> float:
+def _check_amount(value: float, *, field: str, label: str) -> float:
     if value < 0.0:
-        raise ValueError(f"{label}는 음수일 수 없습니다: {value}")
+        raise ValidationError(
+            field=field,
+            reason=f"{label}는 음수일 수 없습니다: {value}",
+            action=f"{label}에 0 이상의 값을 지정하십시오",
+        )
     return float(value)
 
 
-def _check_rate(value: float, *, label: str, low: float, high: float) -> float:
-    """비율은 코드 내부에서 0~1 소수다 (§7.5).
-
-    상한을 두는 이유는 %를 정규화하지 않고 넘긴 입력을 잡기 위해서다.
-    """
+def _check_rate(value: float, *, field: str, label: str, low: float, high: float) -> float:
+    """비율은 코드 내부에서 0~1 소수다 (§7.5). 상한은 %를 정규화하지 않고 넘긴 입력을 잡는다."""
     if not low < value <= high:
-        raise ValueError(
-            f"{label}는 {low} 초과 {high} 이하 소수입니다: {value}. "
-            "1.5%는 0.015 입니다 (§7.5 비율 — 코드 내부는 소수로 정규화)"
+        raise ValidationError(
+            field=field,
+            reason=(
+                f"{label}는 {low} 초과 {high} 이하 소수입니다: {value}. "
+                "1.5%는 0.015 입니다 (§7.5 비율 — 코드 내부는 소수로 정규화)"
+            ),
+            action=f"{label}을 {low} 초과 {high} 이하의 소수로 지정하십시오",
         )
     return float(value)
 
@@ -97,41 +107,56 @@ def _normalize_weights(weights: Sequence[float] | None) -> list[float] | None:
         return None
     values = [float(w) for w in weights]
     if len(values) != _MONTHS:
-        raise ValueError(
-            f"월 가중치는 12개월치입니다: {len(values)}개. 일부 달만 주면 "
-            "나머지 달의 난방부하가 0이 되는데, 연 총량은 그대로라 눈에 띄지 않습니다"
+        raise ValidationError(
+            field="thermalload.monthly_weights",
+            reason=(
+                f"월 가중치는 12개월치입니다: {len(values)}개. 일부 달만 주면 "
+                "나머지 달의 난방부하가 0이 되는데, 연 총량은 그대로라 눈에 띄지 않습니다"
+            ),
+            action="월 가중치를 정확히 12개월치 목록으로 지정하십시오",
         )
-    _check_non_negative(values, label="월 가중치")
+    _check_non_negative(values, field="thermalload.monthly_weights", label="월 가중치")
     if math.fsum(values) <= 0.0:
-        raise ValueError(
-            "월 가중치 합이 0 이하입니다. 연간 열부하를 배분할 곳이 없어 "
-            "부하가 통째로 사라집니다"
+        raise ValidationError(
+            field="thermalload.monthly_weights",
+            reason=(
+                "월 가중치 합이 0 이하입니다. 연간 열부하를 배분할 곳이 없어 "
+                "부하가 통째로 사라집니다"
+            ),
+            action="월 가중치 중 적어도 하나를 0보다 큰 값으로 지정하십시오",
         )
     return values
 
 
-def _resolve_hdd_path(
-    heating_degree_days: float | None, kwh_per_hdd: float | None
-) -> float:
+def _resolve_hdd_path(heating_degree_days: float | None, kwh_per_hdd: float | None) -> float:
     """`RC-TL-P1`: 연간 열부하 = HDD × kWh/HDD."""
-    if (heating_degree_days is None) != (kwh_per_hdd is None):
-        raise ValueError(
-            "난방도일 추정은 `heating_degree_days` 와 `kwh_per_hdd` 를 **함께** "
-            "지정합니다. 한쪽만 주면 나머지를 기본값으로 채우게 되고, 그 기본값이 "
-            "결과를 좌우하면서도 입력 어디에도 남지 않습니다"
+    if heating_degree_days is not None and kwh_per_hdd is None:
+        raise ValidationError(
+            field="thermalload.kwh_per_hdd",
+            reason="난방도일만 주어졌고 kwh_per_hdd 가 없습니다 — 결과가 기본값에 좌우됩니다",
+            action="kwh_per_hdd 를 함께 지정하십시오",
         )
-    hdd = _check_amount(float(heating_degree_days or 0.0), label="난방도일(HDD)")
-    intensity = _check_amount(float(kwh_per_hdd or 0.0), label="HDD 원단위(kWh/HDD)")
+    if kwh_per_hdd is not None and heating_degree_days is None:
+        raise ValidationError(
+            field="thermalload.heating_degree_days",
+            reason="kwh_per_hdd 만 주어졌고 난방도일이 없습니다 — 결과가 기본값에 좌우됩니다",
+            action="heating_degree_days 를 함께 지정하십시오",
+        )
+    hdd = _check_amount(
+        float(heating_degree_days or 0.0),
+        field="thermalload.heating_degree_days", label="난방도일(HDD)",
+    )
+    intensity = _check_amount(
+        float(kwh_per_hdd or 0.0), field="thermalload.kwh_per_hdd", label="HDD 원단위(kWh/HDD)"
+    )
     return hdd * intensity
 
 
-def _expand(
-    monthly: Sequence[float], total_steps: int
-) -> list[float]:
+def _expand(monthly: Sequence[float], total_steps: int) -> list[float]:
     """월별 열부하 → 스텝별 시계열 (월 안에서는 균등).
 
-    월 안의 시간대 분포까지 재현하려면 8760 시계열 경로를 쓴다 — 여기서
-    임의의 일간 곡선을 지어내면 근거 없는 수치가 코드에 박힌다 (§15.1 방침).
+    임의의 일간 곡선을 지어내면 근거 없는 수치가 코드에 박히므로(§15.1 방침),
+    시간대 분포가 필요하면 8760 시계열 경로를 쓴다.
     """
     series = [0.0] * total_steps
     for (start, end), energy in zip(_month_bounds(total_steps), monthly, strict=True):
@@ -153,10 +178,17 @@ def _resolve_series(
     hdd_given = heating_degree_days is not None or kwh_per_hdd is not None
     given = [hourly_kwh is not None, hdd_given]
     if sum(given) != 1:
-        raise ValueError(
-            "열부하 입력은 `hourly_kwh`(8760 시계열) 또는 난방도일 추정 "
-            f"(`heating_degree_days`+`kwh_per_hdd`) 중 **하나**만 지정합니다 "
-            f"(현재 {sum(given)}개). spec FR-102-AC1.ThermalLoad 의 두 경로입니다"
+        raise ValidationError(
+            field="thermalload.hourly_kwh",
+            reason=(
+                "열부하 입력은 hourly_kwh(8760 시계열) 또는 난방도일 추정 "
+                f"(heating_degree_days+kwh_per_hdd) 중 하나만 지정합니다 "
+                f"(현재 {sum(given)}개). spec FR-102-AC1.ThermalLoad 의 두 경로입니다"
+            ),
+            action=(
+                "hourly_kwh 또는 heating_degree_days+kwh_per_hdd 중 정확히 하나만 "
+                "지정하십시오"
+            ),
         )
 
     weights = _normalize_weights(monthly_weights)
@@ -164,11 +196,16 @@ def _resolve_series(
     if hourly_kwh is not None:
         series = [float(v) for v in hourly_kwh]
         if len(series) != total_steps:
-            raise ValueError(
-                f"열부하 시계열 행수가 맞지 않습니다: {len(series)}행, "
-                f"기대 {total_steps}행 (FR-301-AC3)"
+            raise ValidationError(
+                field="thermalload.hourly_kwh",
+                reason=(
+                    f"열부하 시계열 행수가 맞지 않습니다: {len(series)}행, "
+                    f"기대 {total_steps}행 (FR-301-AC3)"
+                ),
+                action=f"열부하 시계열(hourly_kwh)을 정확히 {total_steps}행으로 맞춰 지정하십시오",
+                rule="DV-4",
             )
-        _check_non_negative(series, label="열부하 시계열")
+        _check_non_negative(series, field="thermalload.hourly_kwh", label="열부하 시계열")
         monthly = [math.fsum(series[s:e]) for s, e in _month_bounds(total_steps)]
         return series, monthly
 
@@ -187,8 +224,13 @@ def _validate_subcomponents(items: Sequence[Subcomponent]) -> list[Subcomponent]
     validated: list[Subcomponent] = []
     for label, life, cost in items:
         if life < 1:
-            raise ValueError(f"부속설비 `{label}` 수명은 1년 이상입니다: {life}")
-        validated.append((str(label), int(life), _check_amount(cost, label=f"`{label}` 교체비")))
+            raise ValidationError(
+                field="thermalload.subcomponents",
+                reason=f"부속설비 `{label}` 수명은 1년 이상입니다: {life}",
+                action="해당 부속설비의 수명을 1년 이상의 정수로 지정하십시오",
+            )
+        cost_won = _check_amount(cost, field="thermalload.subcomponents", label=f"`{label}` 교체비")
+        validated.append((str(label), int(life), cost_won))
     return validated
 
 
@@ -243,17 +285,30 @@ class ThermalLoad(DER):
         self._base_annual = math.fsum(self._base_monthly)
 
         self.annual_growth_rate = _check_rate(
-            annual_growth_rate, label="연간 증가율", low=-1.0, high=1.0
+            annual_growth_rate, field="thermalload.annual_growth_rate", label="연간 증가율",
+            low=-1.0, high=1.0,
         )
-        self._capacity_kw = _check_amount(capacity_kw, label="정격 열용량")
+        self._capacity_kw = _check_amount(
+            capacity_kw, field="thermalload.capacity_kw", label="정격 열용량"
+        )
         self._acquisition_won = (
-            _check_amount(unit_cost_won_per_kw, label="단가") * self._capacity_kw
-            + _check_amount(incidental_cost_won, label="부대비")
+            _check_amount(
+                unit_cost_won_per_kw, field="thermalload.unit_cost_won_per_kw", label="단가"
+            ) * self._capacity_kw
+            + _check_amount(
+                incidental_cost_won, field="thermalload.incidental_cost_won", label="부대비"
+            )
         )
-        self._vat_rate = _check_rate(vat_rate, label="부가세율", low=-1.0, high=1.0)
-        self._fixed_om_won = _check_amount(fixed_om_won_per_year, label="고정 O&M")
+        self._vat_rate = _check_rate(
+            vat_rate, field="thermalload.vat_rate", label="부가세율", low=-1.0, high=1.0
+        )
+        self._fixed_om_won = _check_amount(
+            fixed_om_won_per_year, field="thermalload.fixed_om_won_per_year", label="고정 O&M"
+        )
         self._variable_om_won_per_kwh = _check_amount(
-            variable_om_won_per_kwh, label="변동 O&M 단가"
+            variable_om_won_per_kwh,
+            field="thermalload.variable_om_won_per_kwh",
+            label="변동 O&M 단가",
         )
         self._subcomponents = _validate_subcomponents(subcomponents)
 
@@ -351,7 +406,9 @@ class ThermalLoad(DER):
         """
         return to_won(
             self.annual_energy_kwh(year=year)
-            * _check_amount(tariff_won_per_kwh, label="열 단가")
+            * _check_amount(
+                tariff_won_per_kwh, field="thermalload.tariff_won_per_kwh", label="열 단가"
+            )
         )
 
     # ── 비용 5종 (RC-ALL-C1~C5 / §13.2.2) ───────────────────────────
@@ -384,7 +441,11 @@ class ThermalLoad(DER):
         **FR-104-AC3**: `retire` 선택 시 빈 스케줄을 돌려준다.
         """
         if horizon < 1:
-            raise ValueError(f"분석기간은 1년 이상입니다: {horizon}")
+            raise ValidationError(
+                field="thermalload.horizon",
+                reason=f"분석기간은 1년 이상입니다: {horizon}",
+                action="분석기간(horizon)에 1 이상의 정수를 지정하십시오",
+            )
 
         # retire 선택 시 본체도 부속설비도 아무것도 교체하지 않는다
         if self.retires_at_end_of_life():

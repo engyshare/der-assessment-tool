@@ -39,6 +39,7 @@ from core.contracts.units import (
     steps_per_year,
     to_won,
 )
+from core.contracts.validation import ValidationError
 
 #: 평년 기준. 윤년을 쓰지 않는 이유는 8760/35040 이라는 스텝 수 규약 자체가
 #: 평년 전제이기 때문이다 — 여기서만 366일을 쓰면 마지막 하루가 갈 곳을 잃는다.
@@ -64,41 +65,59 @@ def _month_bounds(total_steps: int) -> list[tuple[int, int]]:
     return bounds
 
 
-def _check_non_negative(values: Sequence[float], *, label: str) -> None:
+def _check_non_negative(values: Sequence[float], *, label: str, field: str, name: str) -> None:
     for i, v in enumerate(values):
         if v < 0.0:
-            raise ValueError(
-                f"{label} 에 음수가 있습니다 (index {i}: {v}). 부하는 소비량이며 "
-                "부호는 `dispatch()` 가 붙입니다 — 입력에 음수를 넣으면 부호가 "
-                "두 번 뒤집혀 발전으로 잡힙니다"
+            raise ValidationError(
+                field=field,
+                reason=f"{name}: {label} 에 음수가 있습니다 (index {i}: {v})",
+                action=(
+                    f"{label}에 0 이상의 값을 지정하십시오 — "
+                    "부하는 소비량이며 부호는 `dispatch()` 가 붙습니다"
+                ),
             )
 
 
-def _check_length(values: Sequence[float], expected: int, *, label: str) -> None:
+def _check_length(
+    values: Sequence[float],
+    expected: int,
+    *,
+    label: str,
+    field: str,
+    name: str,
+) -> None:
     if len(values) != expected:
-        raise ValueError(
-            f"{label} 행수가 맞지 않습니다: {len(values)}행, 기대 {expected}행. "
-            "조용히 자르거나 채우면 어느 시각이 어긋났는지 영영 모릅니다 (FR-301-AC3)"
+        raise ValidationError(
+            field=field,
+            reason=f"{name}: {label} 행수가 맞지 않습니다: {len(values)}행, 기대 {expected}행",
+            action=(
+                f"{label}을(를) 정확히 {expected}행으로 맞춰 지정하십시오 — "
+                "조용히 자르거나 채우면 어느 시각이 어긋났는지 영영 모릅니다 (FR-301-AC3)"
+            ),
         )
 
 
-def _normalize_monthly(monthly_kwh: float | Sequence[float]) -> list[float]:
+def _normalize_monthly(monthly_kwh: float | Sequence[float], *, name: str) -> list[float]:
     """스칼라(매월 동일) 또는 12개월 목록 → 12개 값."""
     if isinstance(monthly_kwh, (int, float)):
         values = [float(monthly_kwh)] * _MONTHS
     else:
         values = [float(v) for v in monthly_kwh]
         if len(values) != _MONTHS:
-            raise ValueError(
-                f"월사용량은 12개월치입니다: {len(values)}개. "
-                "계절성이 있는 부하를 일부 달만 주면 나머지 달이 0이 됩니다"
+            raise ValidationError(
+                field="load.monthly_kwh",
+                reason=f"{name}: 월사용량은 12개월치입니다: {len(values)}개",
+                action=(
+                    "월사용량을 12개월치로 지정하십시오 — "
+                    "계절성이 있는 부하를 일부 달만 주면 나머지 달이 0이 됩니다"
+                ),
             )
-    _check_non_negative(values, label="월사용량")
+    _check_non_negative(values, label="월사용량", field="load.monthly_kwh", name=name)
     return values
 
 
 def _expand_monthly(
-    monthly: Sequence[float], shape: Sequence[float] | None, total_steps: int
+    monthly: Sequence[float], shape: Sequence[float] | None, total_steps: int, *, name: str
 ) -> list[float]:
     """월사용량 → 스텝별 시계열. **월 총량을 각각 보존한다.**
 
@@ -116,9 +135,13 @@ def _expand_monthly(
         weights = shape[start:end]
         weight_sum = math.fsum(weights)
         if weight_sum <= 0.0:
-            raise ValueError(
-                f"표준 프로파일의 {start}~{end} 구간 가중치 합이 0 이하입니다. "
-                "그 달의 사용량을 배분할 곳이 없어 통째로 사라집니다"
+            raise ValidationError(
+                field="load.shape",
+                reason=f"{name}: 표준 프로파일의 {start}~{end} 구간 가중치 합이 0 이하입니다",
+                action=(
+                    "표준 프로파일(shape)의 모든 값을 0보다 큰 값으로 지정하십시오 — "
+                    "그 달의 사용량을 배분할 곳이 없어 통째로 사라집니다"
+                ),
             )
         for offset, w in enumerate(weights):
             series[start + offset] = energy * w / weight_sum
@@ -131,6 +154,7 @@ def _resolve_series(
     monthly_kwh: float | Sequence[float] | None,
     shape: Sequence[float] | None,
     total_steps: int,
+    name: str,
 ) -> tuple[list[float], list[float]]:
     """두 입력 경로 중 **정확히 하나**를 골라 (스텝 시계열, 월별 합계)를 만든다.
 
@@ -139,29 +163,45 @@ def _resolve_series(
     """
     given = [hourly_kwh is not None, monthly_kwh is not None]
     if sum(given) != 1:
-        raise ValueError(
-            "부하 입력은 `hourly_kwh`(8760 시계열) 또는 `monthly_kwh`(월사용량) "
-            f"중 **하나**만 지정합니다 (현재 {sum(given)}개). "
-            "spec FR-102-AC1.Load 가 허용하는 두 경로입니다"
+        both = "둘 다 주었습니다" if hourly_kwh is not None else "둘 다 주지 않았습니다"
+        raise ValidationError(
+            field="load.hourly_kwh",
+            reason=(
+                f"{name}: 이용률(hourly_kwh)과 월사용량(monthly_kwh)을 {both} "
+                f"(받은 값 — 시계열 {'없음' if hourly_kwh is None else f'{len(hourly_kwh)}행'}, "
+                f"월사용량 {'없음' if monthly_kwh is None else '주어짐'})"
+            ),
+            action=(
+                "부하 입력은 `hourly_kwh`(8760 시계열) 또는 `monthly_kwh`(월사용량) "
+                "중 정확히 하나만 지정하십시오 — spec FR-102-AC1.Load 가 허용하는 두 경로입니다"
+            ),
         )
 
     if shape is not None:
-        _check_length(shape, total_steps, label="표준 프로파일")
-        _check_non_negative(shape, label="표준 프로파일")
+        _check_length(shape, total_steps, label="표준 프로파일", field="load.shape", name=name)
+        _check_non_negative(shape, label="표준 프로파일", field="load.shape", name=name)
 
     if hourly_kwh is not None:
         series = [float(v) for v in hourly_kwh]
-        _check_length(series, total_steps, label="부하 시계열")
-        _check_non_negative(series, label="부하 시계열")
+        _check_length(series, total_steps, label="부하 시계열", field="load.hourly_kwh", name=name)
+        _check_non_negative(series, label="부하 시계열", field="load.hourly_kwh", name=name)
         bounds = _month_bounds(total_steps)
         monthly = [math.fsum(series[s:e]) for s, e in bounds]
         return series, monthly
 
-    monthly = _normalize_monthly(monthly_kwh)  # type: ignore[arg-type]
-    return _expand_monthly(monthly, shape, total_steps), monthly
+    monthly = _normalize_monthly(monthly_kwh, name=name)  # type: ignore[arg-type]
+    return _expand_monthly(monthly, shape, total_steps, name=name), monthly
 
 
-def _check_rate(value: float, *, label: str, low: float, high: float) -> float:
+def _check_rate(
+    value: float,
+    *,
+    label: str,
+    low: float,
+    high: float,
+    field: str,
+    name: str,
+) -> float:
     """비율은 코드 내부에서 0~1 소수다 (§7.5).
 
     상한을 두는 이유는 %를 정규화하지 않고 넘긴 입력을 잡기 위해서다 —
@@ -169,16 +209,24 @@ def _check_rate(value: float, *, label: str, low: float, high: float) -> float:
     오류가 나지 않는다.
     """
     if not low < value <= high:
-        raise ValueError(
-            f"{label}는 {low} 초과 {high} 이하 소수입니다: {value}. "
-            "2%는 0.02 입니다 (§7.5 비율 — 코드 내부는 소수로 정규화)"
+        raise ValidationError(
+            field=field,
+            reason=f"{name}: {label}는 {low} 초과 {high} 이하 소수입니다: {value}",
+            action=(
+                f"{label}을(를) {low}~{high} 범위의 값으로 지정하십시오 — "
+                "2%는 0.02 입니다 (§7.5 비율 — 코드 내부는 소수로 정규화)"
+            ),
         )
     return float(value)
 
 
-def _check_amount(value: float, *, label: str) -> float:
+def _check_amount(value: float, *, label: str, field: str, name: str) -> float:
     if value < 0.0:
-        raise ValueError(f"{label}는 음수일 수 없습니다: {value}")
+        raise ValidationError(
+            field=field,
+            reason=f"{name}: {label}는 음수일 수 없습니다: {value}",
+            action=f"{label}에 0 이상의 값을 지정하십시오",
+        )
     return float(value)
 
 
@@ -228,23 +276,60 @@ class Load(DER):
             monthly_kwh=monthly_kwh,
             shape=shape,
             total_steps=self._steps,
+            name=name,
         )
         self._base_annual = math.fsum(self._base_monthly)
 
         self.annual_growth_rate = _check_rate(
-            annual_growth_rate, label="연간 증가율", low=-1.0, high=1.0
+            annual_growth_rate,
+            label="연간 증가율",
+            low=-1.0,
+            high=1.0,
+            field="load.annual_growth_rate",
+            name=name,
         )
-        self._capacity_kw = _check_amount(capacity_kw, label="계약전력")
+        self._capacity_kw = _check_amount(
+            capacity_kw,
+            label="계약전력",
+            field="load.capacity_kw",
+            name=name,
+        )
         self._acquisition_won = (
-            _check_amount(unit_cost_won_per_kw, label="단가") * self._capacity_kw
-            + _check_amount(incidental_cost_won, label="부대비")
+            _check_amount(
+                unit_cost_won_per_kw,
+                label="단가",
+                field="load.unit_cost_won_per_kw",
+                name=name,
+            )
+            * self._capacity_kw
+            + _check_amount(
+                incidental_cost_won,
+                label="부대비",
+                field="load.incidental_cost_won",
+                name=name,
+            )
         )
-        self._vat_rate = _check_rate(vat_rate, label="부가세율", low=-1.0, high=1.0)
-        self._fixed_om_won = _check_amount(fixed_om_won_per_year, label="고정 O&M")
+        self._vat_rate = _check_rate(
+            vat_rate,
+            label="부가세율",
+            low=-1.0,
+            high=1.0,
+            field="load.vat_rate",
+            name=name,
+        )
+        self._fixed_om_won = _check_amount(
+            fixed_om_won_per_year,
+            label="고정 O&M",
+            field="load.fixed_om_won_per_year",
+            name=name,
+        )
         self._variable_om_won_per_kwh = _check_amount(
-            variable_om_won_per_kwh, label="변동 O&M 단가"
+            variable_om_won_per_kwh,
+            label="변동 O&M 단가",
+            field="load.variable_om_won_per_kwh",
+            name=name,
         )
-        self._subcomponents = _validate_subcomponents(subcomponents)
+        self._subcomponents = _validate_subcomponents(subcomponents, name=name)
 
     # ── 물리 (RC-LD-P1 · P2) ────────────────────────────────────────
 
@@ -312,7 +397,12 @@ class Load(DER):
         """
         return to_won(
             self.annual_energy_kwh(year=year)
-            * _check_amount(tariff_won_per_kwh, label="요금단가")
+            * _check_amount(
+                tariff_won_per_kwh,
+                label="요금단가",
+                field="load.baseline_tariff_won_per_kwh",
+                name=self.name,
+            )
         )
 
     # ── 비용 5종 (RC-ALL-C1~C5 / §13.2.2) ───────────────────────────
@@ -393,7 +483,7 @@ class Load(DER):
         return [("본체", self.lifetime, self._acquisition_won), *self._subcomponents]
 
 
-def _validate_subcomponents(items: Sequence[Subcomponent]) -> list[Subcomponent]:
+def _validate_subcomponents(items: Sequence[Subcomponent], *, name: str) -> list[Subcomponent]:
     """부속설비의 독립 수명 (FR-104-AC4).
 
     본체 수명만 보면 20년 분석에서 12년짜리 부속설비 교체비가 통째로 빠진다.
@@ -402,6 +492,21 @@ def _validate_subcomponents(items: Sequence[Subcomponent]) -> list[Subcomponent]
     for item in items:
         label, life, cost = item
         if life < 1:
-            raise ValueError(f"부속설비 `{label}` 수명은 1년 이상입니다: {life}")
-        validated.append((str(label), int(life), _check_amount(cost, label=f"`{label}` 교체비")))
+            raise ValidationError(
+                field="load.subcomponents",
+                reason=f"{name}: 부속설비 `{label}` 수명은 1년 이상입니다: {life}",
+                action=f"부속설비 `{label}`의 수명을 1년 이상으로 지정하십시오",
+            )
+        validated.append(
+            (
+                str(label),
+                int(life),
+                _check_amount(
+                    cost,
+                    label=f"`{label}` 교체비",
+                    field="load.subcomponents",
+                    name=name,
+                ),
+            )
+        )
     return validated

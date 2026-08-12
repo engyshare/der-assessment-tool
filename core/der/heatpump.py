@@ -34,6 +34,7 @@ from core.contracts.units import (
     to_won,
     won_sum,
 )
+from core.contracts.validation import ValidationError
 
 # spec FR-105-AC1 이 HeatPump 예시로 열거한 세 가지를 **리터럴 그대로** 둔다.
 # 여기서 이름을 다시 지으면 spec 조항과 코드가 갈리고, 갈린 것은 아무도 모른다.
@@ -66,12 +67,25 @@ class HeatBaseline:
 
     def __post_init__(self) -> None:
         if not self.label:
-            raise ValueError("기준선에는 이름이 필요합니다 — '무엇 대비 절감인가'를 "
-                             "표시하지 못하면 증분 분석의 전제가 사라집니다 (FR-705-AC1)")
+            raise ValidationError(
+                field="heatpump.baseline_label",
+                reason="기준선 이름이 비어 있습니다 — '무엇 대비 절감인가'를 "
+                       "표시하지 못하면 증분 분석의 전제가 사라집니다 (FR-705-AC1)",
+                action="기준 열원을 가리키는 이름을 지정하십시오 (예: 전기보일러, 가스보일러)",
+            )
         if self.efficiency <= 0.0:
-            raise ValueError(f"{self.label}: 열효율은 0보다 커야 합니다: {self.efficiency}")
+            raise ValidationError(
+                field="heatpump.baseline_efficiency",
+                reason=f"{self.label}: 열효율은 0보다 커야 합니다 (받은 값 {self.efficiency})",
+                action="열효율을 0보다 큰 값으로 지정하십시오",
+            )
         if self.fuel_price_won_per_kwh < 0.0:
-            raise ValueError(f"{self.label}: 연료단가가 음수입니다")
+            raise ValidationError(
+                field="heatpump.baseline_fuel_price_won_per_kwh",
+                reason=f"{self.label}: 연료단가가 음수입니다 (받은 값 "
+                       f"{self.fuel_price_won_per_kwh})",
+                action="연료단가(원/kWh)를 0 이상의 값으로 지정하십시오",
+            )
 
     def cost_for_heat(self, heat_kwh: float) -> Money:
         """같은 열량을 기존 열원으로 공급했을 때의 연료비."""
@@ -131,31 +145,52 @@ def _normalize_cop_curve(curve: CopCurve) -> tuple[tuple[float, float], ...]:
         points = [(float(t), float(c)) for t, c in curve]
 
     if not points:
-        raise ValueError("COP 곡선이 비어 있습니다 — 소비전력을 계산할 수 없습니다")
+        raise ValidationError(
+            field="heatpump.cop_curve",
+            reason="COP 곡선이 비어 있습니다 — 소비전력을 계산할 수 없습니다",
+            action="스칼라 COP 값 하나 또는 (외기온, COP) 격자점 목록을 지정하십시오",
+        )
     points.sort()
 
     temps = [t for t, _ in points]
     if len(set(temps)) != len(temps):
-        raise ValueError(f"COP 곡선에 같은 외기온이 두 번 나옵니다: {temps}")
+        raise ValidationError(
+            field="heatpump.cop_curve",
+            reason=f"COP 곡선에 같은 외기온이 두 번 나옵니다: {temps}",
+            action="외기온 격자점이 서로 겹치지 않도록 COP 곡선을 다시 지정하십시오",
+        )
     for temp, cop in points:
         if cop <= 0.0:
-            raise ValueError(f"COP 가 0 이하입니다 ({temp}℃ → {cop}). 소비전력은 열량을 "
-                             "COP로 나눈 값이므로 발산하거나 음수가 됩니다")
+            raise ValidationError(
+                field="heatpump.cop_curve",
+                reason=f"COP 가 0 이하입니다 ({temp}℃ → {cop}). 소비전력은 열량을 "
+                       "COP로 나눈 값이므로 발산하거나 음수가 됩니다",
+                action="해당 격자점의 COP를 0보다 큰 값으로 고치십시오",
+            )
     return tuple(points)
 
 
 def _annual_tuple(
-    series: Sequence[float] | None, *, dt: int, name: str
+    series: Sequence[float] | None, *, dt: int, name: str, field: str
 ) -> tuple[float, ...] | None:
     """비용 산정용 시계열이 **1년치**임을 확인한 뒤 고정한다. 연간 합계를 내는
     자리에 24행짜리가 들어오면 변동 O&M과 편익이 365분의 1로 조용히 줄어든다.
+
+    `field` 를 인자로 받는 이유: 이 헬퍼는 세 필드(요금 시계열·외기온
+    시계열·열부하 프로파일)가 공유한다. 고정 키를 쓰면 어느 칸이 틀렸는지
+    사라지므로 호출부마다 다른 `field` 를 넘긴다.
     """
     if series is None:
         return None
     expected = steps_per_year(dt)
     if len(series) != expected:
-        raise ValueError(f"{name} 는 1년치 시계열이어야 합니다: {len(series)}행, "
-                         f"기대 {expected}행")
+        raise ValidationError(
+            field=field,
+            reason=f"{name} 는 1년치 시계열이어야 합니다: {len(series)}행, "
+                   f"기대 {expected}행",
+            action=f"{name} 을(를) {expected}행 시계열로 맞추십시오 (8760 또는 35040)",
+            rule="DV-4",
+        )
     return tuple(float(v) for v in series)
 
 
@@ -221,16 +256,33 @@ class HeatPump(DER):
                          end_of_life_action=end_of_life_action)
 
         if rated_heat_kw <= 0.0:
-            raise ValueError(f"{name}: 정격 열출력은 0보다 커야 합니다: {rated_heat_kw}")
+            raise ValidationError(
+                field="heatpump.rated_heat_kw",
+                reason=f"{name}: 정격 열출력은 0보다 커야 합니다 (받은 값 {rated_heat_kw})",
+                action="정격 열출력(kW)을 0보다 큰 값으로 지정하십시오",
+            )
         if aux_heater_kw < 0.0:
-            raise ValueError(f"{name}: 보조 열원 정격이 음수입니다: {aux_heater_kw}")
+            raise ValidationError(
+                field="heatpump.aux_heater_kw",
+                reason=f"{name}: 보조 열원 정격이 음수입니다 (받은 값 {aux_heater_kw})",
+                action="보조 열원 정격(kW)을 0 이상의 값으로 지정하십시오",
+            )
         # 운전 방법 소속 검사는 계약이 이미 했다 (super() 안에서). 여기서는
         # **그 방법이 필요한 입력을 갖췄는지**만 본다 — 성질이 다른 검사다.
         if operating_mode == MODE_PRICE_LINKED and price_profile_won_per_kwh is None:
             # 조용히 열부하 추종으로 되돌리면 사용자는 요금 연동으로 돌았다고 믿는다
-            raise ValueError(f"{name}: 전력요금 연동 운전에는 요금 시계열이 필요합니다")
+            raise ValidationError(
+                field="heatpump.price_profile_won_per_kwh",
+                reason=f"{name}: 전력요금 연동 운전에는 요금 시계열이 필요합니다",
+                action="price_profile_won_per_kwh 에 1년치 요금 시계열을 지정하십시오",
+            )
         if price_linked_hours <= 0:
-            raise ValueError(f"{name}: 요금 연동 운전 시간은 1시간 이상입니다")
+            raise ValidationError(
+                field="heatpump.price_linked_hours",
+                reason=f"{name}: 요금 연동 운전 시간은 1시간 이상입니다 "
+                       f"(받은 값 {price_linked_hours})",
+                action="price_linked_hours 를 1 이상의 정수로 지정하십시오",
+            )
 
         self.rated_heat_kw = float(rated_heat_kw)
         self.cop_curve = _normalize_cop_curve(cop_curve)
@@ -239,9 +291,11 @@ class HeatPump(DER):
         self.price_linked_hours = int(price_linked_hours)
         self.default_ambient_temp_c = float(default_ambient_temp_c)
         self.price_profile_won_per_kwh = _annual_tuple(
-            price_profile_won_per_kwh, dt=dt, name="price_profile_won_per_kwh")
+            price_profile_won_per_kwh, dt=dt, name="price_profile_won_per_kwh",
+            field="heatpump.price_profile_won_per_kwh")
         self.annual_ambient_temp_c = _annual_tuple(
-            annual_ambient_temp_c, dt=dt, name="annual_ambient_temp_c")
+            annual_ambient_temp_c, dt=dt, name="annual_ambient_temp_c",
+            field="heatpump.annual_ambient_temp_c")
         self._load_profile, self._annual_load_kwh = self._normalize_heat_load(heat_load_kwh)
 
         self.elec_price_won_per_kwh = float(elec_price_won_per_kwh)
@@ -280,13 +334,21 @@ class HeatPump(DER):
             )
         if isinstance(heat_load_kwh, (int, float)):
             if heat_load_kwh < 0.0:
-                raise ValueError(f"{self.name}: 연간 열부하가 음수입니다: {heat_load_kwh}")
+                raise ValidationError(
+                    field="heatpump.heat_load_kwh",
+                    reason=f"{self.name}: 연간 열부하가 음수입니다 (받은 값 {heat_load_kwh})",
+                    action="연간 열부하(kWh)를 0 이상의 값으로 지정하십시오",
+                )
             return None, float(heat_load_kwh)
 
         profile = tuple(float(v) for v in heat_load_kwh)
-        _annual_tuple(profile, dt=self.dt, name="heat_load_kwh")
+        _annual_tuple(profile, dt=self.dt, name="heat_load_kwh", field="heatpump.heat_load_kwh")
         if any(v < 0.0 for v in profile):
-            raise ValueError(f"{self.name}: 열부하 시계열에 음수가 있습니다")
+            raise ValidationError(
+                field="heatpump.heat_load_kwh",
+                reason=f"{self.name}: 열부하 시계열에 음수가 있습니다",
+                action="열부하 시계열의 모든 값을 0 이상으로 지정하십시오",
+            )
         return profile, float(sum(profile))
 
     def cop_at(self, temp_c: float, *, year: int = 1) -> float:
@@ -561,7 +623,11 @@ class HeatPump(DER):
         `retire` 면 교체하지 않으므로 빈 dict 를 돌려준다 (FR-104-AC3).
         """
         if horizon < 1:
-            raise ValueError(f"분석기간은 1년 이상입니다: {horizon}")
+            raise ValidationError(
+                field="heatpump.horizon",
+                reason=f"분석기간은 1년 이상입니다 (받은 값 {horizon})",
+                action="분석기간(horizon)에 1 이상의 정수를 지정하십시오",
+            )
         if self.retires_at_end_of_life():
             return {}
 

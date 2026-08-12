@@ -427,17 +427,35 @@ class DER(ABC):
         escalation_rate: float = 0.0,
         end_of_life_action: str = EOL_REPLACE,
     ) -> None:
+        # `field` 는 `<tag소문자>.<필드>` — `_check_operating_mode` 와 같은 방식
+        prefix = (getattr(type(self), "tag", None) or type(self).__name__).lower()
         if not name:
-            raise ValueError("자원 인스턴스는 이름을 갖습니다 — 리포트에서 "
-                             "같은 유형의 두 인스턴스를 구분하는 유일한 수단입니다 "
-                             "(FR-103)")
+            raise ValidationError(
+                field=f"{prefix}.name",
+                reason="자원 인스턴스에 이름이 없습니다",
+                action="리포트에서 같은 유형의 두 인스턴스를 구분할 이름을 "
+                       "지정하십시오 (FR-103)",
+            )
         steps_per_year(dt)
         if lifetime <= 0:
-            raise ValueError(f"lifetime 은 1년 이상입니다: {lifetime}")
+            raise ValidationError(
+                field=f"{prefix}.lifetime",
+                reason=f"{name}: lifetime 은 1년 이상입니다 (받은 값 {lifetime})",
+                action="lifetime 을 1 이상의 정수(년)로 지정하십시오",
+            )
+        # ⚠ `rule="DV-3"` 을 달지 않는다. 대장 `DV-3` 의 열화율 경계는
+        # `[0,10] %/년`(내부 소수 0~0.1)인데 이 검사는 `0 ≤ x < 1`(0~100 %/년)
+        # 로 **10배 넓다.** 넓은 경계에 규칙 ID 만 붙이면 추적표는 `DV-3` 이
+        # 검증된 것으로 세지만 열화율 50 %/년이 그대로 통과한다 — 이 저장소가
+        # 되풀이해 만난 「검사가 아무것도 붙들지 않았다」의 형태다.
+        # 경계를 맞추는 것은 **동작 변경**이라 별도 라운드에서 결정한다.
         if not 0.0 <= degradation_rate < 1.0:
-            raise ValueError(
-                f"degradation_rate 는 0~1 소수입니다: {degradation_rate}. "
-                "3%는 0.03 입니다 (§7.5 비율 — 코드 내부는 소수로 정규화)"
+            raise ValidationError(
+                field=f"{prefix}.degradation_rate",
+                reason=f"{name}: degradation_rate 는 0~1 소수입니다 "
+                       f"(받은 값 {degradation_rate})",
+                action="3%는 0.03 으로 지정하십시오 (§7.5 비율 — 코드 내부는 "
+                       "소수로 정규화)",
             )
         if not any((carries_electric, carries_heat, carries_cool, consumes_fuel)):
             raise ValueError(
@@ -459,8 +477,7 @@ class DER(ABC):
         self.escalation_rate = self._check_escalation_rate(escalation_rate)
         self.end_of_life_action = self._check_end_of_life_action(end_of_life_action)
 
-    @staticmethod
-    def _check_end_of_life_action(action: str) -> str:
+    def _check_end_of_life_action(self, action: str) -> str:
         """`FR-104-AC3` — 값을 **닫힌 집합으로** 받는다.
 
         오타(`"Retire"` · `"retired"`)를 조용히 통과시키면 `replace` 로 돌면서
@@ -468,9 +485,16 @@ class DER(ABC):
         이후 편익 전부이므로 **조용히 틀리면 안 되는 자리**다.
         """
         if action not in EOL_ACTIONS:
-            raise ValueError(
-                f"end_of_life_action 은 {' 또는 '.join(sorted(EOL_ACTIONS))} "
-                f"입니다: {action!r} (FR-104-AC3)"
+            prefix = (
+                getattr(type(self), "tag", None) or type(self).__name__
+            ).lower()
+            raise ValidationError(
+                field=f"{prefix}.end_of_life_action",
+                reason=f"end_of_life_action 이 닫힌 집합 밖입니다: {action!r} "
+                       "(FR-104-AC3)",
+                action="end_of_life_action 을 "
+                       f"{' 또는 '.join(sorted(EOL_ACTIONS))} 중 하나로 "
+                       "지정하십시오",
             )
         return action
 
@@ -551,9 +575,15 @@ class DER(ABC):
         """
         r = float(rate)
         if not -1.0 < r < 1.0:
-            raise ValueError(
-                f"{self.name}: escalation_rate 는 -1~1 소수입니다: {r}. "
-                "2%는 0.02 입니다 (§7.5 — %(0~100)는 입력·표시 경계에서만 씁니다)"
+            prefix = (
+                getattr(type(self), "tag", None) or type(self).__name__
+            ).lower()
+            raise ValidationError(
+                field=f"{prefix}.escalation_rate",
+                reason=f"{self.name}: escalation_rate 는 -1~1 소수입니다 "
+                       f"(받은 값 {r})",
+                action="2%는 0.02 로 지정하십시오 (§7.5 — %(0~100)는 입력·표시 "
+                       "경계에서만 씁니다)",
             )
         return r
 

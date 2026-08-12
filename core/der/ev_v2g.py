@@ -32,6 +32,7 @@ from core.contracts.units import (
     to_won,
     won_sum,
 )
+from core.contracts.validation import ValidationError
 
 # 대표 1개년 반복 전제(가정 A-4)에서 8760 = 365일 × 24시간이다.
 DAYS_PER_YEAR, SECONDS_PER_DAY, HOURS_PER_DAY = 365, 86_400, 24
@@ -167,17 +168,38 @@ class EV_V2G(DER):
         리포트는 "보장 충족"으로 나오고 실제로는 차주가 출근을 못 한다."""
         n = self.name
         if self.arrival_soc - self.available_dod < -1e-12:
-            raise ValueError(f"{n}: 가용 DOD {self.available_dod} 가 도착 SOC "
-                             f"{self.arrival_soc} 보다 깊습니다 — SOC가 음수가 됩니다")
+            raise ValidationError(
+                field="ev_v2g.available_dod",
+                reason=(
+                    f"{n}: 가용 DOD {self.available_dod} 가 도착 SOC {self.arrival_soc} "
+                    "보다 깊습니다 — SOC가 음수가 됩니다"
+                ),
+                action=f"available_dod 를 도착 SOC({self.arrival_soc}) 이하로 낮추십시오",
+            )
         if (self.operating_mode != self.MODE_UNIDIRECTIONAL
                 and self.arrival_soc + 1e-12 < self.min_departure_soc):
-            raise ValueError(f"{n}: 도착 SOC {self.arrival_soc} 로는 출발 보장 SOC "
-                             f"{self.min_departure_soc} 를 지킬 수 없습니다 — 방전을 "
-                             "아예 하지 않아도 미달입니다")
+            raise ValidationError(
+                field="ev_v2g.min_departure_soc",
+                reason=(
+                    f"{n}: 도착 SOC {self.arrival_soc} 로는 출발 보장 SOC "
+                    f"{self.min_departure_soc} 를 지킬 수 없습니다 — 방전을 아예 하지 "
+                    "않아도 미달입니다"
+                ),
+                action=f"min_departure_soc 를 {self.arrival_soc} 이하로 낮추십시오",
+            )
         if self.operating_mode == self.MODE_WINDOW_LIMITED and self._is_full_day:
-            raise ValueError(f"{n}: 운전 방법이 {self.MODE_WINDOW_LIMITED} 인데 "
-                             "접속가능시간대가 24시간입니다 — 제한 없는 제한 운전은 "
-                             "운전 방법 선택을 리포트 문구로만 남깁니다")
+            raise ValidationError(
+                field="ev_v2g.operating_mode",
+                reason=(
+                    f"{n}: 운전 방법이 {self.MODE_WINDOW_LIMITED} 인데 접속가능시간대가 "
+                    "24시간입니다 — 제한 없는 제한 운전은 운전 방법 선택을 리포트 문구로만 "
+                    "남깁니다"
+                ),
+                action=(
+                    "connect_start_hour/connect_end_hour 로 24시간보다 짧은 접속 시간대를 "
+                    "지정하거나 operating_mode 를 다른 값으로 바꾸십시오"
+                ),
+            )
         avail = len(self._cycle_offsets)
         dt_h = self.dt / SECONDS_PER_HOUR
         need_d = _steps_needed(self._daily_grid_discharge_kwh(1),
@@ -185,10 +207,18 @@ class EV_V2G(DER):
         need_c = _steps_needed(self._daily_grid_charge_kwh(1),
                                self._fleet_charge_kw() * dt_h)
         if need_d + need_c > avail:
-            raise ValueError(
-                f"{n}: 접속 시간대({avail}스텝) 안에 방전 {need_d}스텝 + 재충전 "
-                f"{need_c}스텝이 들어가지 않습니다. 조용히 재충전을 덜 하면 출발 SOC "
-                "보장이 깨지고, 조용히 방전을 줄이면 편익이 소리 없이 작아집니다")
+            raise ValidationError(
+                field="ev_v2g.max_discharge_kw",
+                reason=(
+                    f"{n}: 접속 시간대({avail}스텝) 안에 방전 {need_d}스텝 + 재충전 "
+                    f"{need_c}스텝이 들어가지 않습니다. 조용히 재충전을 덜 하면 출발 SOC "
+                    "보장이 깨지고, 조용히 방전을 줄이면 편익이 소리 없이 작아집니다"
+                ),
+                action=(
+                    "max_charge_kw/max_discharge_kw 를 높이거나 connect_start_hour/"
+                    "connect_end_hour 로 접속 시간대를 늘리십시오"
+                ),
+            )
 
     # ── 선언 (FR-105-AC1 · FR-404-AC1) ──────────────────────────────
 
@@ -419,7 +449,11 @@ class EV_V2G(DER):
 
         **`retire` 면 빈다** (`FR-104-AC3`) — 아무것도 다시 사지 않는다."""
         if horizon < 1:
-            raise ValueError(f"분석기간은 1년 이상입니다: {horizon}")
+            raise ValidationError(
+                field="ev_v2g.horizon",
+                reason=f"분석기간은 1년 이상입니다: {horizon}",
+                action="분석기간(horizon)에 1 이상의 정수를 지정하십시오",
+            )
         schedule: dict[int, Money] = {}
         if self.retires_at_end_of_life():
             return schedule
@@ -448,7 +482,11 @@ class EV_V2G(DER):
     def discounted_salvage_value(self, *, year: int, discount_rate: float) -> Money:
         """최종연도 잔존가치를 현재가치로 할인한 값 (§13.2.2 C-5 예시)."""
         if discount_rate <= -1.0:
-            raise ValueError(f"할인율은 -100%보다 커야 합니다: {discount_rate}")
+            raise ValidationError(
+                field="ev_v2g.discount_rate",
+                reason=f"할인율은 -100%보다 커야 합니다: {discount_rate}",
+                action="할인율을 -1(-100%)보다 큰 값으로 지정하십시오",
+            )
         y = int(Year(year))
         return to_won(float(self.salvage_value(year=y)) / (1.0 + discount_rate) ** y)
 
@@ -456,12 +494,16 @@ class EV_V2G(DER):
 # ── 모듈 보조 함수 — 자원 상태를 읽지 않는 순수 계산 ─────────────────
 
 
-def _check(owner: str, rule: str, ok: Callable[[float], bool], **values: float) -> None:
+def _check(owner: str, constraint: str, ok: Callable[[float], bool], **values: float) -> None:
     """정의역 위반을 **파라미터 이름과 함께** 알린다 — 이름 없이 거부하면
     파라미터가 25개인 생성자에서 어느 값이 문제인지 찾을 수 없다."""
     for label, value in values.items():
         if not ok(value):
-            raise ValueError(f"{owner}: {label} 은 {rule}: {value}")
+            raise ValidationError(
+                field=f"ev_v2g.{label}",
+                reason=f"{owner}: {label} 은 {constraint}: {value}",
+                action=f"{label} 값을 {constraint} 조건에 맞게 지정하십시오",
+            )
 
 
 def _connected_hours(start: int, end: int) -> list[int]:

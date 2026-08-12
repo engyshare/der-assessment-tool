@@ -16,6 +16,7 @@ import pytest
 
 from core.contracts.der import DER, EOL_REPLACE, EOL_RETIRE, DispatchContext
 from core.contracts.units import ENERGY_TOLERANCE_KWH, HOURS_PER_YEAR, Money, to_won, won_sum
+from core.contracts.validation import ValidationError
 from core.der.thermal_load import ThermalLoad
 from tests.contract.test_der_contract import DERContractTests
 
@@ -357,12 +358,23 @@ def test_rc_all_c5_salvage_value_is_prorated_and_zero_at_eol() -> None:
 
 @pytest.mark.req("NFR-206-M1")
 def test_module_stays_within_size_budget() -> None:
-    import inspect
+    """자원 파일 1개는 **코드 500줄** 이내 (NFR-206).
 
-    import core.der.thermal_load as module
+    ⚠ 잣대를 `scripts/check_file_size.py --code-strict` 와 맞춘 이유는
+    `tests/der/test_load.py` 의 같은 이름 테스트 독스트링에 적었다. 요지는
+    **게이트는 코드 줄만 상한에 걸고 이 단언은 raw 줄을 셌다**는 것이다.
+    """
+    from pathlib import Path
 
-    lines = inspect.getsource(module).splitlines()
-    assert len(lines) <= 500, f"thermal_load.py 가 {len(lines)}줄입니다 (NFR-206: 500)"
+    from scripts.check_file_size import LIMIT, measure_file
+
+    repo_root = Path(__file__).resolve().parents[2]
+    measured = measure_file(repo_root / "core" / "der" / "thermal_load.py")
+    assert measured.code <= LIMIT, (
+        f"core/der/thermal_load.py 의 코드 줄이 {measured.code}줄입니다 "
+        f"(NFR-206 상한 {LIMIT} · 총 {measured.total}줄). "
+        "근거 주석을 지워서 맞추지 마십시오 — 코드를 가르십시오."
+    )
 
 
 @pytest.mark.req("NFR-208-AC2")
@@ -517,3 +529,204 @@ def test_retire_does_not_affect_other_cost_methods() -> None:
     # salvage_value: 수명에 따른 잔존가치 동일
     for year in [10, 25]:
         assert tl_replace.salvage_value(year=year) == tl_retire.salvage_value(year=year)
+
+
+# ── 입력 검증 오류의 3요소(field·reason·action) 구조화 — R22/WP-32C, NFR-303-M1 ──
+#
+# `ValidationError` 로 전환한 raise 지점이 실제로 «어떤 필드가 / 왜 / 어떻게» 세 칸을
+# 모두 채우는지 확인한다. **«예외가 났다»만 보는 테스트는 셋이 빈 채로도 통과하지
+# 않지만(생성 조건이므로) 그 내용이 이 오류에 맞는지는 보지 않으므로**, 각 테스트는
+# field·reason·action 의 내용을 개별 단언한다.
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_negative_monthly_weight_carries_field_reason_action() -> None:
+    """월 가중치에 음수가 있으면 field·reason·action 셋을 채운 채 거부한다."""
+    with pytest.raises(ValidationError) as exc:
+        make_thermal_load(monthly_weights=[-1.0] + [1.0] * 11)
+    err = exc.value
+    assert err.field == "thermalload.monthly_weights"
+    assert "음수" in err.reason
+    assert "0 이상" in err.action
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_negative_hourly_series_carries_field_reason_action() -> None:
+    """열부하 시계열에 음수가 있으면 field·reason·action 셋을 채운 채 거부한다."""
+    series = [0.1] * (HOURS_PER_YEAR - 1) + [-0.1]
+    with pytest.raises(ValidationError) as exc:
+        make_thermal_load(heating_degree_days=None, kwh_per_hdd=None, hourly_kwh=series)
+    err = exc.value
+    assert err.field == "thermalload.hourly_kwh"
+    assert "음수" in err.reason
+    assert "0 이상" in err.action
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_negative_hdd_carries_field_reason_action() -> None:
+    """`_check_amount` 경로 — 대표 필드 `heating_degree_days`."""
+    with pytest.raises(ValidationError) as exc:
+        make_thermal_load(heating_degree_days=-1.0)
+    err = exc.value
+    assert err.field == "thermalload.heating_degree_days"
+    assert "음수일 수 없습니다" in err.reason
+    assert "0 이상" in err.action
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_negative_capacity_kw_carries_field_reason_action() -> None:
+    """`_check_amount` 경로 — 대표 필드 `capacity_kw`. 나머지 필드는 같은 코드 경로다."""
+    with pytest.raises(ValidationError) as exc:
+        make_thermal_load(capacity_kw=-1.0)
+    err = exc.value
+    assert err.field == "thermalload.capacity_kw"
+    assert "정격 열용량" in err.reason
+    assert "0 이상" in err.action
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_check_amount_field_wiring_for_remaining_call_sites() -> None:
+    """`_check_amount` 를 공유하는 나머지 호출부의 field 매핑을 확인한다 (로직은 위에서 검증됨)."""
+    cases = [
+        ({"kwh_per_hdd": -0.1}, "thermalload.kwh_per_hdd"),
+        ({"unit_cost_won_per_kw": -1.0}, "thermalload.unit_cost_won_per_kw"),
+        ({"incidental_cost_won": -1.0}, "thermalload.incidental_cost_won"),
+        ({"fixed_om_won_per_year": -1.0}, "thermalload.fixed_om_won_per_year"),
+        ({"variable_om_won_per_kwh": -1.0}, "thermalload.variable_om_won_per_kwh"),
+    ]
+    for overrides, expected_field in cases:
+        with pytest.raises(ValidationError) as exc:
+            make_thermal_load(**overrides)
+        assert exc.value.field == expected_field, f"{overrides} 의 field 불일치: {exc.value.field}"
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_negative_tariff_carries_field_reason_action() -> None:
+    """`baseline_energy_cost` 의 열 단가가 음수이면 field·reason·action 셋을 채운다."""
+    tl = make_thermal_load()
+    with pytest.raises(ValidationError) as exc:
+        tl.baseline_energy_cost(year=1, tariff_won_per_kwh=-1.0)
+    err = exc.value
+    assert err.field == "thermalload.tariff_won_per_kwh"
+    assert "음수일 수 없습니다" in err.reason
+    assert "0 이상" in err.action
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_growth_rate_out_of_range_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as exc:
+        make_thermal_load(annual_growth_rate=1.5)
+    err = exc.value
+    assert err.field == "thermalload.annual_growth_rate"
+    assert "1.5" in err.reason
+    assert "-1.0" in err.action
+    assert "1.0" in err.action
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_vat_rate_out_of_range_field_wiring() -> None:
+    """`_check_rate` 를 공유하는 vat_rate 의 field 매핑을 확인한다 (로직은 위에서 검증됨)."""
+    with pytest.raises(ValidationError) as exc:
+        make_thermal_load(vat_rate=2.0)
+    assert exc.value.field == "thermalload.vat_rate"
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_monthly_weights_wrong_length_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as exc:
+        make_thermal_load(monthly_weights=[1.0] * 11)
+    err = exc.value
+    assert err.field == "thermalload.monthly_weights"
+    assert "11개" in err.reason
+    assert "12개월" in err.reason
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_monthly_weights_sum_zero_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as exc:
+        make_thermal_load(monthly_weights=[0.0] * 12)
+    err = exc.value
+    assert err.field == "thermalload.monthly_weights"
+    assert "0 이하" in err.reason
+    assert "0보다 큰" in err.action
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_hdd_given_without_kwh_per_hdd_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as exc:
+        make_thermal_load(kwh_per_hdd=None)
+    err = exc.value
+    assert err.field == "thermalload.kwh_per_hdd"
+    assert "함께" in err.action
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_kwh_per_hdd_given_without_hdd_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as exc:
+        make_thermal_load(heating_degree_days=None)
+    err = exc.value
+    assert err.field == "thermalload.heating_degree_days"
+    assert "함께" in err.action
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_neither_input_path_given_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as exc:
+        make_thermal_load(heating_degree_days=None, kwh_per_hdd=None)
+    err = exc.value
+    assert err.field == "thermalload.hourly_kwh"
+    assert "하나만" in err.reason
+    assert "hourly_kwh" in err.action
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_both_input_paths_given_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as exc:
+        make_thermal_load(hourly_kwh=[0.25] * HOURS_PER_YEAR)
+    err = exc.value
+    assert err.field == "thermalload.hourly_kwh"
+    assert "하나만" in err.reason
+    assert "hourly_kwh" in err.action
+
+
+@pytest.mark.req("FR-301-AC3")
+def test_hourly_series_length_mismatch_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as exc:
+        make_thermal_load(heating_degree_days=None, kwh_per_hdd=None, hourly_kwh=[0.25] * 8759)
+    err = exc.value
+    assert err.field == "thermalload.hourly_kwh"
+    assert "8759행" in err.reason
+    assert "8760" in err.reason
+    assert "8760" in err.action
+    assert err.rule == "DV-4"
+
+
+@pytest.mark.req("FR-104-AC4")
+def test_invalid_subcomponent_life_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as exc:
+        make_thermal_load(subcomponents=[("순환펌프", 0, 400_000.0)])
+    err = exc.value
+    assert err.field == "thermalload.subcomponents"
+    assert "순환펌프" in err.reason
+    assert "1년 이상" in err.action
+
+
+@pytest.mark.req("FR-104-AC4")
+def test_negative_subcomponent_cost_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as exc:
+        make_thermal_load(subcomponents=[("순환펌프", 12, -400_000.0)])
+    err = exc.value
+    assert err.field == "thermalload.subcomponents"
+    assert "음수일 수 없습니다" in err.reason
+    assert "0 이상" in err.action
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_zero_horizon_in_replacement_schedule_carries_field_reason_action() -> None:
+    tl = make_thermal_load()
+    with pytest.raises(ValidationError) as exc:
+        tl.replacement_schedule(horizon=0)
+    err = exc.value
+    assert err.field == "thermalload.horizon"
+    assert "0" in err.reason
+    assert "1 이상" in err.action

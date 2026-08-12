@@ -27,6 +27,7 @@ from core.contracts.units import (
     to_won,
     won_sum,
 )
+from core.contracts.validation import ValidationError
 
 HOURS_PER_DAY = 24
 #: 1년 = 365일. `RC-ESS-P1` 의 연 방전 2,920 kWh = 8 kWh × 365 가 여기서 나온다
@@ -118,27 +119,53 @@ class ESS(DER):
         pcs_cost_won: float = 0.0,
         end_of_life_action: str = EOL_REPLACE,
     ) -> None:
-        for label, value in (("정격용량(kWh)", capacity_kwh), ("정격출력(kW)", power_kw),
-                             ("연간 사이클 수", cycles_per_year)):
-            if value <= 0:
-                raise ValueError(f"{label}은 0보다 커야 합니다: {value}")
-        for label, value in (("사이클수명", cycle_life), ("달력수명", calendar_life)):
-            if value <= 0:
-                raise ValueError(f"{label}은 1 이상입니다: {value}")
+        for label, field_name, value in (
+            ("정격용량(kWh)", "ess.capacity_kwh", capacity_kwh),
+            ("정격출력(kW)", "ess.power_kw", power_kw),
+            ("연간 사이클 수", "ess.cycles_per_year", cycles_per_year),
+            ("사이클수명", "ess.cycle_life", cycle_life),
+            ("달력수명", "ess.calendar_life", calendar_life),
+        ):
+            _positive(value, field=field_name, label=label, name=name)
         if not 0.0 < rte_pct <= 100.0:
-            raise ValueError(
-                f"RTE(왕복효율)는 0 초과 100 이하 %입니다: {rte_pct}. 0.9 를 그대로 "
-                "넘기고 있지 않은지 확인하십시오 (§7.5 비율)"
+            raise ValidationError(
+                field="ess.rte",
+                reason=f"{name}: RTE(왕복효율)는 0 초과 100 이하 %입니다 (받은 값 {rte_pct})",
+                action=(
+                    "RTE 를 0 초과 100 이하의 %값으로 지정하십시오 — 0.9 를 그대로 "
+                    "넘기고 있지 않은지 확인하십시오 (§7.5 비율)"
+                ),
+                rule="DV-3",
             )
-        if not 0.0 <= soc_min_pct < soc_max_pct <= 100.0:
-            raise ValueError(
-                f"SOC 상하한이 성립하지 않습니다: 하한 {soc_min_pct}% / 상한 "
-                f"{soc_max_pct}%. 0 ≤ 하한 < 상한 ≤ 100 이어야 가용량이 양수가 됩니다"
+        _in_range(
+            soc_min_pct, 0.0, 100.0, field="ess.soc_min", label="SOC 하한(%)", name=name,
+            rule="DV-2",
+        )
+        _in_range(
+            soc_max_pct, 0.0, 100.0, field="ess.soc_max", label="SOC 상한(%)", name=name,
+            rule="DV-2",
+        )
+        if soc_min_pct >= soc_max_pct:
+            raise ValidationError(
+                field="ess.soc_min",
+                reason=(
+                    f"{name}: SOC 하한({soc_min_pct}%)이 상한({soc_max_pct}%)보다 "
+                    "크거나 같습니다"
+                ),
+                action="SOC 하한을 상한보다 작은 값으로 고치십시오 — 가용량이 양수가 됩니다",
+                rule="DV-2",
             )
         if not 0.0 <= backup_reserve_pct < 100.0:
-            raise ValueError(f"백업 예비율은 0 이상 100 미만 %입니다: {backup_reserve_pct}")
-        if pcs_lifetime is not None and pcs_lifetime <= 0:
-            raise ValueError(f"PCS 수명은 1년 이상입니다: {pcs_lifetime}")
+            raise ValidationError(
+                field="ess.backup_reserve",
+                reason=(
+                    f"{name}: 백업 예비율은 0 이상 100 미만 %입니다 "
+                    f"(받은 값 {backup_reserve_pct})"
+                ),
+                action="백업 예비율(backup_reserve_pct)을 0 이상 100 미만의 값으로 지정하십시오",
+            )
+        if pcs_lifetime is not None:
+            _positive(pcs_lifetime, field="ess.pcs_lifetime", label="PCS 수명", name=name)
 
         self.capacity_kwh = float(capacity_kwh)
         self.power_kw = float(power_kw)
@@ -156,19 +183,25 @@ class ESS(DER):
         if not 0.0 < self.eol_soh < self.initial_soh:
             # 사용후배터리(초기 80%)에 EOL 80%를 주면 **취득 즉시 EOL** 이 된다.
             # 교체비가 매년 잡히는 형태라 "보수적으로 나왔나 보다"로 읽힌다.
-            raise ValueError(
-                f"EOL 잔존율({eol_soh_pct}%)은 초기 SOH"
-                f"({self.initial_soh * 100:.0f}%)보다 낮아야 합니다. 사용후배터리는 "
-                "이미 80%에서 시작하므로 EOL 을 그보다 낮게(예: 60%) 지정하십시오"
+            raise ValidationError(
+                field="ess.eol_soh",
+                reason=(
+                    f"{name}: EOL 잔존율({eol_soh_pct}%)은 초기 SOH"
+                    f"({self.initial_soh * 100:.0f}%)보다 낮아야 합니다"
+                ),
+                action=(
+                    "사용후배터리는 이미 80%에서 시작하므로 EOL 을 그보다 낮게(예: 60%) "
+                    "지정하십시오"
+                ),
             )
 
-        self.mode_weights = self._normalize_weights(operating_mode, mode_weights)
+        self.mode_weights = self._normalize_weights(operating_mode, mode_weights, name=name)
 
         self._capex_unit = float(capex_unit_won_per_kwh)
         self._capex_extra = float(capex_extra_won)
-        if not 0.0 <= vat_rate <= 1.0:
-            raise ValueError(f"부가세율은 0~1 소수입니다: {vat_rate} (§7.5)")
-        self._vat_rate = float(vat_rate)
+        self._vat_rate = _in_range(
+            vat_rate, 0.0, 1.0, field="ess.vat_rate", label="부가세율", name=name
+        )
         self._fixed_om = float(fixed_om_won_per_year)
         self._variable_om_unit = float(variable_om_won_per_kwh)
         self._replacement_unit = (
@@ -183,7 +216,7 @@ class ESS(DER):
             name=name,
             dt=dt,
             lifetime=self.eol_year(),
-            degradation_rate=self._annual_fade(),
+            degradation_rate=self._annual_fade(name=name),
             carries_electric=True,
             operating_mode=operating_mode,
             escalation_rate=escalation_rate,
@@ -194,31 +227,50 @@ class ESS(DER):
 
     @staticmethod
     def _normalize_weights(
-        mode: ESSOperatingMode, weights: dict[ESSOperatingMode, float] | None
+        mode: ESSOperatingMode, weights: dict[ESSOperatingMode, float] | None, *, name: str
     ) -> dict[ESSOperatingMode, float]:
         """운전 방법 가중치를 항상 「합 1」로 정규화한다. 단일 모드도
         `{mode: 1.0}` 으로 만들면 이후 계산에 분기가 없다 — 분기가 남으면 혼합
         모드에만 걸리는 규칙이 생기고 단일 모드에서 빠져도 보이지 않는다."""
         if mode is not ESSOperatingMode.HYBRID:
             if weights:
-                raise ValueError(
-                    f"가중치는 {ESSOperatingMode.HYBRID.value} 모드에서만 지정합니다 "
-                    f"(현재 {mode.value})"
+                raise ValidationError(
+                    field="ess.mode_weights",
+                    reason=(
+                        f"{name}: 가중치는 {ESSOperatingMode.HYBRID.value} 모드에서만 "
+                        f"지정합니다 (현재 {mode.value})"
+                    ),
+                    action=(
+                        "mode_weights 인자를 빼거나 운전 방법을 "
+                        f"{ESSOperatingMode.HYBRID.value} 로 바꾸십시오"
+                    ),
                 )
             return {mode: 1.0}
 
         if not weights:
-            raise ValueError(
-                f"{ESSOperatingMode.HYBRID.value} 모드는 가중치가 필요합니다. 무엇을 "
-                "어떤 비율로 섞는지 없이는 예비 확보량도 운전창도 판정할 수 없습니다"
+            raise ValidationError(
+                field="ess.mode_weights",
+                reason=f"{name}: {ESSOperatingMode.HYBRID.value} 모드는 가중치가 필요합니다",
+                action=(
+                    "무엇을 어떤 비율로 섞는지 mode_weights 로 지정하십시오 — 없으면 "
+                    "예비 확보량도 운전창도 판정할 수 없습니다"
+                ),
             )
         if any(w < 0 for w in weights.values()):
-            raise ValueError("운전 방법 가중치는 음수가 될 수 없습니다")
+            raise ValidationError(
+                field="ess.mode_weights",
+                reason=f"{name}: 운전 방법 가중치는 음수가 될 수 없습니다",
+                action="mode_weights 의 모든 값을 0 이상으로 지정하십시오",
+            )
         total = math.fsum(weights.values())
         if abs(total - 1.0) > 1e-9:
-            raise ValueError(
-                f"운전 방법 가중치의 합이 1이 아닙니다: {total}. 합이 1이 아니면 "
-                "가용량이 비율만큼 늘거나 줄어 편익이 왜곡됩니다"
+            raise ValidationError(
+                field="ess.mode_weights",
+                reason=f"{name}: 운전 방법 가중치의 합이 1이 아닙니다 (합 {total})",
+                action=(
+                    "mode_weights 의 합이 1이 되도록 지정하십시오 — 합이 1이 아니면 "
+                    "가용량이 비율만큼 늘거나 줄어 편익이 왜곡됩니다"
+                ),
             )
         return dict(weights)
 
@@ -269,16 +321,27 @@ class ESS(DER):
             raise ValueError(f"연도는 0 이상입니다: {year}")
         return min(self.soh_cycle(year=year), self.soh_calendar(year=year))
 
-    def _annual_fade(self) -> float:
-        """연간 열화율(소수) — `DER.degradation_rate` 에 싣는 보수적 연 환산값."""
+    def _annual_fade(self, *, name: str) -> float:
+        """연간 열화율(소수) — `DER.degradation_rate` 에 싣는 보수적 연 환산값.
+
+        **경계는 [0,100%) 이며 DV-3([0,10%])보다 넓다** — 대장 경계로 좁히는 것은
+        동작 변경이라 이 구획의 일이 아니다(브리프 판정). 그래서 `rule` 을 비운다.
+        """
         rate = self._fade_span() * max(
             1.0 / self.calendar_life, self.cycles_per_year / self.cycle_life
         )
         if rate >= 1.0:
-            raise ValueError(
-                f"연간 열화율이 {rate:.3f} 로 100%를 넘습니다. 사이클수명"
-                f"({self.cycle_life}회)·달력수명({self.calendar_life}년)·연간 사이클"
-                f"({self.cycles_per_year}회) 입력을 확인하십시오"
+            raise ValidationError(
+                field="ess.degradation_rate",
+                reason=(
+                    f"{name}: 연간 열화율이 {rate:.3f} 로 100%를 넘습니다 — 사이클수명"
+                    f"({self.cycle_life}회)·달력수명({self.calendar_life}년)·연간 사이클"
+                    f"({self.cycles_per_year}회) 조합에서 계산됨"
+                ),
+                action=(
+                    "사이클수명·달력수명·연간 사이클 수 중 하나 이상을 조정해 연간 "
+                    "열화율이 100% 미만이 되도록 하십시오"
+                ),
             )
         return rate
 
@@ -564,10 +627,17 @@ class ESS(DER):
         """정격출력 초과를 **거부**한다. 잘라내면 없는 출력으로 편익이 난다."""
         kw = step_kwh / hours_per_step
         if kw > self.power_kw + _KW_TOLERANCE:
-            raise ValueError(
-                f"{self.name}: {label} 계획 {kw:.6g} kW 가 정격출력 "
-                f"{self.power_kw:.6g} kW 를 넘습니다. 운전창이나 정격출력을 키우십시오 "
-                "— 자동으로 잘라내면 그만큼의 편익이 조용히 사라집니다"
+            raise ValidationError(
+                field="ess.power_kw",
+                reason=(
+                    f"{self.name}: {label} 계획 {kw:.6g} kW 가 정격출력 "
+                    f"{self.power_kw:.6g} kW 를 넘습니다"
+                ),
+                action=(
+                    "정격출력(power_kw)을 키우거나 운전창(운전 방법)을 조정해 계획이 "
+                    "정격출력 이내가 되도록 하십시오 — 자동으로 잘라내면 그만큼의 편익이 "
+                    "조용히 사라집니다"
+                ),
             )
 
     def _check_grid_limit(
@@ -579,7 +649,49 @@ class ESS(DER):
         for i, value in enumerate(electric):
             kw = abs(value) / hours_per_step
             if kw > ctx.grid_limit_kw[i] + _KW_TOLERANCE:
-                raise ValueError(
-                    f"{self.name}: {i}번 스텝의 계통 연계 한도 초과 — "
-                    f"계획 {kw:.6g} kW / 한도 {ctx.grid_limit_kw[i]:.6g} kW"
+                raise ValidationError(
+                    field="ess.power_kw",
+                    reason=(
+                        f"{self.name}: {i}번 스텝의 계통 연계 한도 초과 — "
+                        f"계획 {kw:.6g} kW / 한도 {ctx.grid_limit_kw[i]:.6g} kW"
+                    ),
+                    action=(
+                        "정격출력(power_kw)이나 용량(capacity_kwh)을 낮추거나, 시나리오의 "
+                        "계통 연계 한도(grid_limit_kw)를 이 자원의 계획에 맞게 올리십시오"
+                    ),
                 )
+
+
+# ── 입력 검증 도우미 ────────────────────────────────────────────────
+# 오류 메시지에 **자원 이름과 받은 값**을 반드시 넣는다 — 자원 수십 개짜리
+# 시나리오에서 «값이 범위 밖»만 나오면 어느 자원인지 찾지 못한다.
+
+
+def _positive(value: float, *, field: str, label: str, name: str) -> float:
+    if not value > 0:
+        raise ValidationError(
+            field=field,
+            reason=f"{name}: {label}은 0보다 커야 합니다 (받은 값 {value})",
+            action=f"{label}에 0보다 큰 값을 지정하십시오",
+        )
+    return float(value)
+
+
+def _in_range(
+    value: float,
+    low: float,
+    high: float,
+    *,
+    field: str,
+    label: str,
+    name: str,
+    rule: str | None = None,
+) -> float:
+    if not low <= value <= high:
+        raise ValidationError(
+            field=field,
+            reason=f"{name}: {label}은 {low}~{high} 범위입니다 (받은 값 {value})",
+            action=f"{label}을(를) {low}~{high} 범위의 값으로 지정하십시오",
+            rule=rule,
+        )
+    return float(value)

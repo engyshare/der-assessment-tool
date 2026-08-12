@@ -27,6 +27,7 @@ from core.contracts.units import (
     to_won,
     won_sum,
 )
+from core.contracts.validation import ValidationError
 from core.der.heatpump import (
     MODE_LOAD_FOLLOWING,
     MODE_NIGHT_STORAGE,
@@ -663,3 +664,168 @@ def test_annual_operation_enforces_one_based_year() -> None:
         "Year 로 조회했더니 다른 객체가 나왔습니다 — 캐시 키가 int 와 Year 를 "
         "다른 것으로 보고 있습니다"
     )
+
+
+# ── NFR-303 입력 검증 오류의 3요소 구조 (ValidationError) ──────────────
+#
+# 「예외가 났다」만 보지 않는다 — field·reason·action 을 as_dict() 로 꺼내
+# 구조를 단언한다 (§13.0 R22-WP32A).
+
+@pytest.mark.req("NFR-303-M1")
+def test_baseline_empty_label_carries_field_reason_action() -> None:
+    """기준선 이름이 비면 field·reason·action 셋을 갖춘 구조로 거부한다."""
+    with pytest.raises(ValidationError) as caught:
+        HeatBaseline(label="", efficiency=1.0, fuel_price_won_per_kwh=150.0)
+    parts = caught.value.as_dict()
+    assert parts["field"] == "heatpump.baseline_label"
+    assert "이름" in parts["reason"]
+    assert parts["action"]
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_baseline_nonpositive_efficiency_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as caught:
+        HeatBaseline(label="전기보일러", efficiency=0.0, fuel_price_won_per_kwh=150.0)
+    parts = caught.value.as_dict()
+    assert parts["field"] == "heatpump.baseline_efficiency"
+    assert "0.0" in parts["reason"]
+    assert "0" in parts["action"]
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_baseline_negative_fuel_price_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as caught:
+        HeatBaseline(label="전기보일러", efficiency=1.0, fuel_price_won_per_kwh=-1.0)
+    parts = caught.value.as_dict()
+    assert parts["field"] == "heatpump.baseline_fuel_price_won_per_kwh"
+    assert "-1.0" in parts["reason"]
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_cop_curve_empty_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as caught:
+        make_hp(cop_curve={})
+    parts = caught.value.as_dict()
+    assert parts["field"] == "heatpump.cop_curve"
+    assert "비어" in parts["reason"]
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_cop_curve_duplicate_temp_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as caught:
+        make_hp(cop_curve=[(0.0, 3.0), (0.0, 4.0)])
+    parts = caught.value.as_dict()
+    assert parts["field"] == "heatpump.cop_curve"
+    assert "0.0" in parts["reason"]
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_cop_curve_nonpositive_value_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as caught:
+        make_hp(cop_curve={0.0: 3.0, 10.0: -1.0})
+    parts = caught.value.as_dict()
+    assert parts["field"] == "heatpump.cop_curve"
+    assert "10.0" in parts["reason"]
+    assert "-1.0" in parts["reason"]
+
+
+@pytest.mark.req("NFR-303-M1")
+@pytest.mark.parametrize(
+    ("kwarg", "field"),
+    [
+        ("price_profile_won_per_kwh", "heatpump.price_profile_won_per_kwh"),
+        ("annual_ambient_temp_c", "heatpump.annual_ambient_temp_c"),
+    ],
+)
+def test_annual_series_wrong_length_carries_field_and_dv4(kwarg: str, field: str) -> None:
+    """가격·외기온 시계열이 1년치가 아니면 DV-4 로 거부하고, 공유 헬퍼라도
+    필드는 호출부마다 갈린다 (R21 이 확정한 「field 를 인자로」 관례)."""
+    with pytest.raises(ValidationError) as caught:
+        make_hp(**{kwarg: [1.0] * 100})
+    parts = caught.value.as_dict()
+    assert parts["field"] == field
+    assert parts["rule"] == "DV-4"
+    assert "100" in parts["reason"]
+    assert "8760" in parts["action"] or "35040" in parts["action"]
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_heat_load_profile_wrong_length_carries_field_and_dv4() -> None:
+    with pytest.raises(ValidationError) as caught:
+        make_hp(heat_load_kwh=[1.0] * 100)
+    parts = caught.value.as_dict()
+    assert parts["field"] == "heatpump.heat_load_kwh"
+    assert parts["rule"] == "DV-4"
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_rated_heat_kw_nonpositive_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as caught:
+        make_hp(rated_heat_kw=0.0)
+    parts = caught.value.as_dict()
+    assert parts["field"] == "heatpump.rated_heat_kw"
+    assert "0.0" in parts["reason"]
+    assert "0보다 큰" in parts["action"]
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_aux_heater_kw_negative_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as caught:
+        make_hp(aux_heater_kw=-1.0)
+    parts = caught.value.as_dict()
+    assert parts["field"] == "heatpump.aux_heater_kw"
+    assert "-1.0" in parts["reason"]
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_price_linked_without_profile_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as caught:
+        make_hp(operating_mode=MODE_PRICE_LINKED)
+    parts = caught.value.as_dict()
+    assert parts["field"] == "heatpump.price_profile_won_per_kwh"
+    assert "요금" in parts["reason"]
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_price_linked_hours_nonpositive_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as caught:
+        make_hp(
+            operating_mode=MODE_PRICE_LINKED,
+            price_profile_won_per_kwh=[100.0] * HOURS_PER_YEAR,
+            price_linked_hours=0,
+        )
+    parts = caught.value.as_dict()
+    assert parts["field"] == "heatpump.price_linked_hours"
+    assert "0" in parts["reason"]
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_heat_load_scalar_negative_carries_field_reason_action() -> None:
+    with pytest.raises(ValidationError) as caught:
+        make_hp(heat_load_kwh=-1.0)
+    parts = caught.value.as_dict()
+    assert parts["field"] == "heatpump.heat_load_kwh"
+    assert "-1.0" in parts["reason"]
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_heat_load_series_negative_carries_field_reason_action() -> None:
+    profile = [1.0] * HOURS_PER_YEAR
+    profile[0] = -5.0
+    with pytest.raises(ValidationError) as caught:
+        make_hp(heat_load_kwh=profile)
+    parts = caught.value.as_dict()
+    assert parts["field"] == "heatpump.heat_load_kwh"
+    assert "음수" in parts["reason"]
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_replacement_schedule_horizon_nonpositive_carries_field_reason_action() -> None:
+    hp = make_hp()
+    with pytest.raises(ValidationError) as caught:
+        hp.replacement_schedule(horizon=0)
+    parts = caught.value.as_dict()
+    assert parts["field"] == "heatpump.horizon"
+    assert "0" in parts["reason"]
+    assert "1 이상" in parts["action"]
+    assert parts["rule"] is None

@@ -12,6 +12,7 @@ import pytest
 
 from core.contracts.der import DER, DispatchContext
 from core.contracts.units import ENERGY_TOLERANCE_KWH, Money, to_won, won_sum
+from core.contracts.validation import ValidationError
 from core.der.ess import ESS, ESSOperatingMode
 from core.incentive.calculator import build_capex_cashflows
 from core.incentive.schemas import IncentiveScheme
@@ -89,6 +90,120 @@ def test_invalid_parameters_are_rejected_with_cause(bad: dict, needle: str) -> N
     """음성 케이스 (§13.2.1 「양·음성 쌍」) — 원인이 메시지에 있어야 한다."""
     with pytest.raises(ValueError, match=needle):
         _p1_ess(**bad)
+
+
+# ── NFR-303-M1 입력 검증 오류의 3요소 구조 (field·reason·action) ────────
+# 「예외가 났다」만 보는 테스트는 메시지가 비어도 통과한다 — 그래서 `as_dict()`
+# 로 구조를 꺼내 관례(field 경로)·받은 값(reason)·규칙 ID(rule) 를 각각 단언한다.
+@pytest.mark.req("NFR-303-M1")
+@pytest.mark.parametrize(
+    ("bad", "field", "value_needle", "action_needle", "rule"),
+    [
+        ({"capacity_kwh": 0.0}, "ess.capacity_kwh", "0.0", "0보다 큰", None),
+        ({"power_kw": -1.0}, "ess.power_kw", "-1.0", "0보다 큰", None),
+        ({"cycles_per_year": 0.0}, "ess.cycles_per_year", "0.0", "0보다 큰", None),
+        ({"cycle_life": 0}, "ess.cycle_life", "0", "0보다 큰", None),
+        ({"calendar_life": 0}, "ess.calendar_life", "0", "0보다 큰", None),
+        ({"rte_pct": 0.0}, "ess.rte", "0.0", "100 이하", "DV-3"),
+        ({"soc_min_pct": -1.0}, "ess.soc_min", "-1.0", "0.0~100.0", "DV-2"),
+        ({"soc_max_pct": 101.0}, "ess.soc_max", "101.0", "0.0~100.0", "DV-2"),
+        (
+            {"soc_min_pct": 90.0, "soc_max_pct": 10.0},
+            "ess.soc_min", "90.0", "상한보다 작은", "DV-2",
+        ),
+        ({"backup_reserve_pct": 100.0}, "ess.backup_reserve", "100.0", "100 미만", None),
+        ({"pcs_lifetime": 0}, "ess.pcs_lifetime", "0", "0보다 큰", None),
+        ({"vat_rate": 1.5}, "ess.vat_rate", "1.5", "0.0~1.0", None),
+    ],
+)
+def test_constructor_validation_errors_carry_field_reason_action(
+    bad: dict, field: str, value_needle: str, action_needle: str, rule: str | None
+) -> None:
+    """`DV-2`(SOC 상하한)·`DV-3`(RTE) 를 포함한 생성자 검증 12곳이 필드·사유·
+    조치·규칙을 구조로 갖춘다. `soc_min_pct=90/soc_max_pct=10` 케이스는 두 값이
+    각각 [0,100] 범위 안이라 개별 범위 검사를 통과하고 **관계 검사**(하한<상한)
+    에서만 걸린다 — 그래서 `field` 가 `ess.soc_min` 하나로 좁혀지는지도 함께 본다.
+
+    `action_needle` 은 **`action` 이 비어 있지 않다는 것만으로는 부족하다**는
+    것을 스스로 증명한다 — "값을 고치십시오" 같은 빈 조치로 바꿔도 진리값은
+    truthy 라 살아남는다. 그래서 조치의 **구체적 내용**(허용 범위·경계)을 본다.
+    """
+    with pytest.raises(ValidationError) as excinfo:
+        _p1_ess(**bad)
+    parts = excinfo.value.as_dict()
+    assert parts["field"] == field
+    assert value_needle in parts["reason"]
+    assert action_needle in parts["action"]
+    assert parts["rule"] == rule
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_eol_soh_validation_error_carries_field_reason_action() -> None:
+    """사용후배터리 EOL 관계 검사(§13.2.3 `RC-ESS-P4` 음성 케이스)도 구조를 갖춘다."""
+    with pytest.raises(ValidationError) as excinfo:
+        _p1_ess(second_life=True, eol_soh_pct=80.0)
+    parts = excinfo.value.as_dict()
+    assert parts["field"] == "ess.eol_soh"
+    assert "80.0" in parts["reason"]
+    assert parts["action"]
+    assert parts["rule"] is None
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_annual_fade_over_100_percent_validation_error_carries_field_reason_action() -> None:
+    """연간 열화율이 100%를 넘는 파라미터 조합 — `field` 는 개별 입력이 아니라
+    **파생값**(`degradation_rate`) 을 가리킨다. 세 입력 중 하나만 탓할 수 없다.
+
+    `rule` 은 비운다 — 대장 `DV-3` 의 열화율 경계는 `[0,10] %/년`(내부 소수
+    0~0.1)인데 이 검사의 경계는 `[0,100) %/년`(내부 소수 0~1)로 더 넓다. 경계를
+    좁히는 것은 동작 변경이라 이 구획의 일이 아니므로 `rule` 을 달지 않는다.
+    """
+    with pytest.raises(ValidationError) as excinfo:
+        _p1_ess(cycle_life=1)
+    parts = excinfo.value.as_dict()
+    assert parts["field"] == "ess.degradation_rate"
+    assert parts["action"]
+    assert parts["rule"] is None
+
+
+@pytest.mark.req("NFR-303-M1")
+@pytest.mark.parametrize(
+    ("kwargs", "needle"),
+    [
+        ({"mode_weights": {ESSOperatingMode.TOU_ARBITRAGE: 1.0}}, "혼합(가중치) 모드에서만"),
+        ({"operating_mode": ESSOperatingMode.HYBRID}, "가중치가 필요합니다"),
+        (
+            {
+                "operating_mode": ESSOperatingMode.HYBRID,
+                "mode_weights": {
+                    ESSOperatingMode.TOU_ARBITRAGE: -0.5, ESSOperatingMode.PEAK_SHAVING: 1.5,
+                },
+            },
+            "음수가 될 수 없습니다",
+        ),
+        (
+            {
+                "operating_mode": ESSOperatingMode.HYBRID,
+                "mode_weights": {
+                    ESSOperatingMode.TOU_ARBITRAGE: 0.5,
+                    ESSOperatingMode.PEAK_SHAVING: 0.2,
+                },
+            },
+            "합이 1이 아닙니다",
+        ),
+    ],
+)
+def test_mode_weight_validation_errors_carry_field_reason_action(
+    kwargs: dict, needle: str
+) -> None:
+    """운전 방법 가중치 4곳(§FR-105) 모두 `field="ess.mode_weights"` 로 좁혀진다."""
+    with pytest.raises(ValidationError) as excinfo:
+        _p1_ess(**kwargs)
+    parts = excinfo.value.as_dict()
+    assert parts["field"] == "ess.mode_weights"
+    assert needle in parts["reason"]
+    assert parts["action"]
+    assert parts["rule"] is None
 
 
 # ── RC-ESS-P1 왕복효율·SOC 경계 ──────────────────────────────────────
@@ -707,12 +822,45 @@ def test_dispatch_rejects_plan_that_exceeds_grid_limit() -> None:
         _p1_ess().dispatch(ctx)
 
 
+@pytest.mark.req("NFR-303-M1")
+def test_dispatch_grid_limit_violation_carries_field_reason_action() -> None:
+    """`_check_grid_limit` 도 3요소 구조로 던진다 — `grid_limit_kw` 는 엔진이
+    자원에 건네는 시나리오 입력(계통 연계 한도)이므로 **전환** 대상이다."""
+    ctx = DispatchContext(steps=24, dt=3600, year=1, grid_limit_kw=[0.5] * 24)
+    with pytest.raises(ValidationError) as excinfo:
+        _p1_ess().dispatch(ctx)
+    parts = excinfo.value.as_dict()
+    assert parts["field"] == "ess.power_kw"
+    assert "계통 연계" in parts["reason"]
+    assert parts["action"]
+    assert parts["rule"] is None
+
+
 @pytest.mark.req("FR-102-AC1.ESS")
 def test_dispatch_rejects_plan_that_exceeds_rated_power() -> None:
     """정격출력을 넘는 운전 계획도 거부한다 — 없는 출력으로 편익이 나면 안 된다."""
     ess = _p1_ess(capacity_kwh=200.0, power_kw=1.0, cycle_life=20000)
     with pytest.raises(ValueError, match="정격출력"):
         ess.dispatch(DispatchContext(steps=24, dt=3600, year=1))
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_dispatch_rated_power_violation_carries_field_reason_action() -> None:
+    """`_check_power`(§ dispatch 내부) 도 3요소 구조로 던진다.
+
+    `capacity_kwh`·`power_kw`·`cycles_per_year`·운전 방법의 조합이 만든 계획이
+    사용자가 넘긴 정격출력을 넘는 것이라 **전환** 대상이다(대상아님이 아니다) —
+    엔진이 임의로 계산해 넘긴 값이 아니라 이 자원 자신의 생성자 파라미터에서
+    파생된 값이다.
+    """
+    ess = _p1_ess(capacity_kwh=200.0, power_kw=1.0, cycle_life=20000)
+    with pytest.raises(ValidationError) as excinfo:
+        ess.dispatch(DispatchContext(steps=24, dt=3600, year=1))
+    parts = excinfo.value.as_dict()
+    assert parts["field"] == "ess.power_kw"
+    assert "정격출력" in parts["reason"]
+    assert parts["action"]
+    assert parts["rule"] is None
 
 
 @pytest.mark.req("NFR-205-M1")

@@ -33,6 +33,7 @@ from enum import StrEnum
 from typing import ClassVar
 
 from core.contracts.units import Money, Year, won_sum
+from core.contracts.validation import ValidationError
 
 
 class AllocationRule(StrEnum):
@@ -123,15 +124,32 @@ class CommonAsset(ABC):
         allocation: AllocationRule = AllocationRule.EQUAL_PER_HOUSEHOLD,
         escalation_rate: float = 0.0,
     ) -> None:
+        # **공통설비의 `field` 도 `<tag소문자>.<필드>` 다** — 자원과 같은 관례를
+        # 쓴다 (`core/contracts/validation.py` 머리). `tag` 는 `ClassVar` 선언만
+        # 있고 기본값이 없으므로 잊은 구현에서 클래스 이름으로 물러선다.
+        tag = getattr(type(self), "tag", None) or type(self).__name__
+        prefix = tag.lower()
         if not name:
-            raise ValueError("공통설비 인스턴스는 이름을 갖습니다")
+            raise ValidationError(
+                field=f"{prefix}.name",
+                reason="공통설비 인스턴스에 이름이 없습니다",
+                action="리포트에서 같은 유형의 두 인스턴스를 구분할 이름을 "
+                       "지정하십시오",
+            )
         for label, v in (("lifetime_sw", lifetime_sw), ("lifetime_hw", lifetime_hw)):
             if v <= 0:
-                raise ValueError(f"{label} 은 1년 이상입니다: {v}")
+                raise ValidationError(
+                    field=f"{prefix}.{label}",
+                    reason=f"{name}: {label} 은 1년 이상입니다 (받은 값 {v})",
+                    action=f"{label} 을 1 이상의 정수(년)로 지정하십시오",
+                )
         if not -1.0 < float(escalation_rate) < 1.0:
-            raise ValueError(
-                f"{name}: escalation_rate 는 -1~1 소수입니다: {escalation_rate}. "
-                "2%는 0.02 입니다 (§7.5 — %(0~100)는 입력·표시 경계에서만 씁니다)"
+            raise ValidationError(
+                field=f"{prefix}.escalation_rate",
+                reason=f"{name}: escalation_rate 는 -1~1 소수입니다 "
+                       f"(받은 값 {escalation_rate})",
+                action="2%는 0.02 로 지정하십시오 (§7.5 — %(0~100)는 입력·표시 "
+                       "경계에서만 씁니다)",
             )
         self.name = name
         self.lifetime_sw = lifetime_sw
