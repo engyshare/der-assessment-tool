@@ -104,6 +104,17 @@ def test_dod7_golden_3_scenarios_exist_and_valid() -> None:
 
 
 @pytest.mark.req("NFR-104-M1")
+def missing_ci_tools(content: str) -> list[str]:
+    """워크플로 본문에서 **빠진** 도구 이름. 없으면 빈 목록.
+
+    판정을 순수 함수로 빼 둔 이유는 **음성 테스트가 이것을 실제로 몰 수 있게**
+    하기 위해서다. R28 까지 음성 테스트는 `"pytest" not in modified_content` 처럼
+    **자기가 만든 지역 문자열만** 확인하고 판정 코드를 부르지 않았다 — 검사가
+    누락을 못 잡게 되어도 그 테스트는 통과한다(자기항진).
+    """
+    return [tool for tool in ("pytest", "ruff") if tool not in content]
+
+
 def test_dod7_ci_workflow_includes_pytest_and_ruff() -> None:
     """DoD 7 — GitHub Actions CI 워크플로에 pytest 및 ruff 검사 포함 확인.
 
@@ -115,8 +126,7 @@ def test_dod7_ci_workflow_includes_pytest_and_ruff() -> None:
 
     # 문자열 검사로 충분 — 실제 실행 검사는 tests/ci/test_ci_gates.py 에서
     # 이미 수행됨 (test_ci_runs_both_gates_and_does_not_swallow_their_verdict)
-    assert "pytest" in content
-    assert "ruff" in content
+    assert missing_ci_tools(content) == []
 
 
 @pytest.mark.req("NFR-104-M1")
@@ -293,21 +303,33 @@ def test_dod7_violation_detection_works_golden_scenario_missing_file() -> None:
 def test_dod7_violation_detection_works_ci_missing_pytest() -> None:
     """DoD 7 검사가 CI 에서 pytest 누락을 감지하는지 확인 (음성 테스트).
 
-    워크플로 내용에서 pytest 를 제거하고 검사가 실패하는지 확인한다.
-    저장소 파일을 더럽히지 않도록 임시 조작으로 확인한다.
+    워크플로 내용에서 pytest 를 제거하고 **판정 코드가 그것을 잡는지** 본다.
+
+    ⚠ **R28 까지 이 테스트는 자기항진이었다.** 하던 일은
+    `assert "pytest" not in modified_content` — 자기가 방금 지운 문자열이
+    없다는 확인이었다. **판정 코드(`missing_ci_tools`)를 부르지 않았으므로**,
+    그 판정이 누락을 못 잡게 되어도 이 테스트는 통과한다. 「감지 능력 확인」이
+    이름인데 감지기를 부르지 않았다.
+
+    이제 판정을 실제로 몬다. 저장소 파일은 건드리지 않는다 — 순수 함수라
+    문자열만 넘기면 되고, 그래서 중단돼도 실물에 변이가 남지 않는다
+    (R23 이 음성 스위트에서 겪은 형태).
     """
     original_content = WORKFLOW_PATH.read_text(encoding="utf-8")
 
-    try:
-        # pytest 제거
-        modified_content = original_content.replace("pytest", "")
+    # 양성 — 원본은 통과한다. 이것이 없으면 「무엇이든 누락으로 보는」 판정도
+    # 아래 음성을 통과시킨다
+    assert missing_ci_tools(original_content) == []
 
-        # 제거된 상태에서 검사 → 실패해야 함
-        assert "pytest" not in modified_content
-        assert "pytest" in original_content  # 원본에는 있음
-    finally:
-        # 원상복구 확인
-        assert WORKFLOW_PATH.read_text(encoding="utf-8") == original_content
+    # 음성 — pytest 를 지우면 그것을 **이름으로** 지목해야 한다
+    assert missing_ci_tools(original_content.replace("pytest", "")) == ["pytest"]
+
+    # 음성 — ruff 쪽도 따로 본다. 한쪽만 확인하면 다른 쪽 판정이 사라져도
+    # 초록불이다
+    assert missing_ci_tools(original_content.replace("ruff", "")) == ["ruff"]
+
+    # 저장소 파일을 읽기만 했다는 것을 확인한다
+    assert WORKFLOW_PATH.read_text(encoding="utf-8") == original_content
 
 
 @pytest.mark.req("FR-1103-AC1")
