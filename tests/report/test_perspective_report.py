@@ -94,6 +94,10 @@ def test_the_three_columns_hold_their_own_numbers() -> None:
     npvs = [column.npv for column in report.columns]
     assert len(set(npvs)) == 3, f"세 열이 같은 값을 들고 있다: {npvs}"
 
+    # 없는 관점을 물으면 **오류**다 — 아무 열이나 돌려주면 관점을 섞게 된다
+    with pytest.raises(KeyError):
+        report.column_for(Perspective.SOCIETY)
+
     benefits = [column.total_benefit for column in report.columns]
     assert len(set(benefits)) == 3, f"세 열의 편익 합계가 같다: {benefits}"
 
