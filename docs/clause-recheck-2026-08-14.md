@@ -25,7 +25,7 @@
 > | 조항 | 잘 지어진 것 | 부르는 배포 코드 |
 > |---|---|---|
 > | `FR-607-AC1` | `build_capex_cashflows_for_all_cases()` — 기준선 자동 포함 | **0곳** (호출자는 테스트 2개) |
-> | `FR-402-AC2.A` | `assert_no_exclusions()` + 선언적 규칙표 | **0곳** (`build_report` 호출부가 전부 테스트) |
+> | ~~`FR-402-AC2.A`~~ **R26 이 배선했다** | `assert_no_exclusions()` + 선언적 규칙표 | ~~0곳~~ → `core/casegrid/e2e_runner.py` 가 **CBA 에 닿기 전에** 부른다. 붙드는 것은 `tests/casegrid/test_e2e_exclusion_wiring.py` — 정상 조합은 돌고, 유형 A 는 거부되며, **거부가 계산 앞에 있다**(`npv` 호출 0회). ⚠ 조항의 「선택 시」 절반(편익 선택 API)은 여전히 없다 |
 > | `FR-1101-AC2` | `private_seed_path()` · `load_seeds()` | **0곳** — 게다가 로더가 `tests/ci/` 안에 있다 |
 > | `DV-5` (R24) | `check_analysis_period()` | **0곳** |
 >
@@ -98,9 +98,14 @@ spec `:872-879` 의 전체 탐색 구성표가 정본이다.
   그것은 `{"status": "ok"}` 상수 응답이다. 조항이 말하는 「웹 UI 조회 API」
   (`GET /scenarios` 등 다섯)는 **하나도 측정 대상이 아니다.** 시나리오 조회가
   5초로 느려져도 이 테스트는 초록불이다.
-- `FR-608-AC1` — 목표 「택일」은 충족, **「복수」는 자료형 자체가 없다.** IRR
-  경로는 테스트가 한 번도 실행하지 않는다. 마커도 어긋나 있다
-  (`test_incentive.py:319` 가 `FR-608-AC4` 를 달고 AC4 를 검사하지 않는다).
+- ~~`FR-608-AC1` — 「복수」 없음 · IRR 미실행 · 마커 오기~~ **R26 이 닫았다.**
+  `Goal` / `MultiGoalResult` / `solve_min_subsidy_rate_for_goals` 를 넣었고
+  (답은 **각 목표 최소 해의 최댓값**, 구속한 목표를 이름으로 돌려준다), IRR
+  케이스를 더했으며(그전에는 `is_met` 의 IRR 분기가 부등호를 뒤집어도 초록불),
+  서로 남의 조항을 달고 있던 마커 둘과 `solver.py` 주석을 고쳤다.
+  ⚠ **`FR-608-AC5`(역산 대상 변수를 융자금리·거치기간·직접거래단가·REC단가로도
+  지정)는 여전히 붙드는 테스트가 없다** — solver 는 `evaluate_func` 를 받으므로
+  변수에 무관하지만, **그 네 변수를 이름으로 세우는 진입점이 없다.**
 
 ---
 

@@ -11,7 +11,12 @@ from core.incentive.calculator import (
     calculate_loan_schedule,
 )
 from core.incentive.schemas import IncentiveScheme
-from core.incentive.solver import generate_iso_support_curve, solve_min_subsidy_rate
+from core.incentive.solver import (
+    Goal,
+    generate_iso_support_curve,
+    solve_min_subsidy_rate,
+    solve_min_subsidy_rate_for_goals,
+)
 
 
 def _scheme(**kwargs: Any) -> IncentiveScheme:
@@ -316,9 +321,19 @@ def test_build_capex_cashflows_baseline() -> None:
     assert cf_base_planned == []
 
 
-@pytest.mark.req("FR-608-AC1", "FR-608-AC2", "FR-608-AC4")
+# ⚠ **마커 오기를 R26 에 고쳤다.** 이 테스트는 `FR-608-AC4`(「해가 없으면 그
+# 사실과 부족분을 명시」)를 인용하고 있었으나 **AC4 를 검사하지 않는다** — 해가
+# 있는 경우만 본다. AC4 를 검사하는 것은 아래 `..._unachievable` 이고, 그쪽은
+# 반대로 `FR-608-AC5`(역산 대상 변수 확장)를 인용하고 있었다. 둘이 서로 남의
+# 조항을 달고 있었고, `core/incentive/solver.py` 의 주석도 같은 오기였다.
+@pytest.mark.req("FR-608-AC1", "FR-608-AC2")
 def test_solve_min_subsidy_rate_basic() -> None:
-    """FR-608-AC1, AC2, AC4: 역산 기본 기능"""
+    """FR-608-AC1(택일)·AC2: 목표 3종을 각각 역산한다.
+
+    ★ **`IRR` 갈래는 R26 까지 한 번도 실행되지 않았다.** 조항이 열거한 목표는
+    셋(`NPV`·`IRR`·`PAYBACK`)인데 검사는 둘만 지났고, 그동안 `is_met` 의 IRR
+    분기가 부등호를 뒤집어도 아무것도 빨간불이 되지 않았다.
+    """
 
     def eval_npv_linear(rate: float) -> float:
         return -100.0 + (200.0 * rate)
@@ -333,6 +348,18 @@ def test_solve_min_subsidy_rate_basic() -> None:
     res3 = solve_min_subsidy_rate(eval_payback, 10.0, "PAYBACK")
     assert res3.success is True
     assert abs(res3.subsidy_rate - 0.5) <= 0.001
+
+    # ★ IRR — 조항 예시가 「IRR ≥ 5%」다. 손계산: 지원율 r 에서 IRR = 10r 이면
+    # 5% 를 넘기는 최소 r 은 0.5 다. NPV 와 **같은 방향**(클수록 좋다)이므로
+    # `is_met` 이 PAYBACK 쪽 부등호를 쓰면 답이 0.0 으로 나온다.
+    def eval_irr(rate: float) -> float:
+        return 10.0 * rate
+
+    res_irr = solve_min_subsidy_rate(eval_irr, 5.0, "IRR")
+    assert res_irr.success is True
+    assert abs(res_irr.subsidy_rate - 0.5) <= 0.001, (
+        f"IRR 목표의 최소 지원율이 0.5 여야 합니다: {res_irr.subsidy_rate}"
+    )
 
 
 @pytest.mark.req("FR-608-AC3")
@@ -352,9 +379,13 @@ def test_solve_min_subsidy_rate_monotonicity() -> None:
     assert abs(res4.subsidy_rate - 0.3) <= 0.01
 
 
-@pytest.mark.req("FR-608-AC5")
+@pytest.mark.req("FR-608-AC4")
 def test_solve_min_subsidy_rate_unachievable() -> None:
-    """FR-608-AC5: 달성 불가 케이스"""
+    """FR-608-**AC4**: 해가 없으면 그 사실과 **부족분**을 명시한다.
+
+    (마커가 `AC5` 로 적혀 있었다 — R26 정정. AC5 는 역산 대상 변수 확장이며
+    이 테스트와 무관하다. `..._basic` 과 서로 남의 조항을 달고 있었다.)
+    """
 
     def eval_npv_linear(rate: float) -> float:
         return -100.0 + (200.0 * rate)
@@ -364,6 +395,68 @@ def test_solve_min_subsidy_rate_unachievable() -> None:
     assert res2.subsidy_rate == 1.0
     assert res2.shortfall == 100.0
     assert res2.reason is not None and "최대 지원" in res2.reason
+
+
+# ── FR-608-AC1 후반부 — 목표 「복수」 ────────────────────────────────────
+
+
+@pytest.mark.req("FR-608-AC1")
+def test_multiple_goals_take_the_binding_one() -> None:
+    """★ 복수 목표의 답은 **각 목표 최소 해의 최댓값**이고, 무엇이 구속했는지 말한다.
+
+    손계산 오라클:
+        NPV ≥ 0       NPV = -100 + 200r  →  200r ≥ 100  →  최소 r = 0.50
+        회수기간 ≤ 8  PB  = 15 - 10r     →  10r  ≥ 7    →  최소 r = 0.70
+    둘 다 만족하는 최소 지원율은 **0.70** 이고 구속하는 것은 회수기간이다.
+
+    **최댓값이 아니라 최솟값·평균을 쓰면 답이 0.50 이나 0.60 이 되고, 그 값에서
+    회수기간 목표는 충족되지 않는다** — 그래도 「해를 찾았다」로 보인다.
+    """
+    goals = [
+        Goal(lambda r: -100.0 + 200.0 * r, 0.0, "NPV", label="NPV≥0"),
+        Goal(lambda r: 15.0 - 10.0 * r, 8.0, "PAYBACK", label="회수기간≤8년"),
+    ]
+
+    result = solve_min_subsidy_rate_for_goals(goals)
+
+    assert result.success is True
+    assert abs(result.subsidy_rate - 0.7) <= 0.001
+    assert result.binding_label == "회수기간≤8년", (
+        "어느 목표가 답을 결정했는지 말해야 한다 — 그것이 없으면 지원율을 "
+        f"낮출 때 무엇을 완화해야 할지 알 수 없다: {result.binding_label!r}"
+    )
+
+    # 구속하지 않는 목표만 남기면 답이 내려간다 — 위 0.70 이 「둘 다」에서 온
+    # 값이지 목표 하나에서 온 우연이 아님을 보인다
+    only_npv = solve_min_subsidy_rate_for_goals([goals[0]])
+    assert abs(only_npv.subsidy_rate - 0.5) <= 0.001
+
+
+@pytest.mark.req("FR-608-AC1")
+@pytest.mark.req("FR-608-AC4")
+def test_multiple_goals_name_the_unreachable_one() -> None:
+    """하나라도 100%로 달성 불가하면 전체 실패이고 **그 목표를 지목한다.**
+
+    「어딘가 안 된다」로는 무엇을 고쳐야 할지 알 수 없다.
+    """
+    goals = [
+        Goal(lambda r: -100.0 + 200.0 * r, 0.0, "NPV", label="NPV≥0"),
+        Goal(lambda r: 15.0 - 10.0 * r, 1.0, "PAYBACK", label="회수기간≤1년"),
+    ]
+
+    result = solve_min_subsidy_rate_for_goals(goals)
+
+    assert result.success is False
+    assert result.binding_label == "회수기간≤1년"
+    assert result.shortfall is not None
+    assert "회수기간≤1년" in (result.reason or "")
+
+
+@pytest.mark.req("FR-608-AC1")
+def test_no_goals_is_refused() -> None:
+    """목표가 비면 역산할 대상이 없다 — 조용히 0.0 을 돌려주지 않는다."""
+    with pytest.raises(ValueError, match="목표가 하나도 없습니다"):
+        solve_min_subsidy_rate_for_goals([])
 
 
 @pytest.mark.req("FR-610-AC1")
