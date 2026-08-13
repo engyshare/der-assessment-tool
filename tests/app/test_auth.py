@@ -52,8 +52,86 @@ def test_cookie_kwargs_pass_to_fastapi() -> None:
 
 
 def test_default_ttl_is_24h() -> None:
-    """FR-901-AC1 — 기본 세션 만료 24시간."""
+    """FR-901-AC1 — 기본 세션 만료 24시간.
+
+    ⚠ **이 단언은 상수의 값만 본다.** R27 까지 「세션 만료」를 붙드는 것이
+    이것뿐이었고, 그래서 **만료 로직이 통째로 없어도 초록불이었다** — 실제로
+    그 상태였다(토큰에 시각이 없어 검증이 만료를 볼 수 없었다). 만료가
+    **동작하는지**는 아래 세 테스트가 본다.
+    """
     assert SESSION_TTL_SECONDS == 24 * 3600
+
+
+# ── FR-901-AC1 — 세션 만료가 **강제되는가** (R27) ─────────────────────────
+
+
+@pytest.mark.req("FR-901-AC1")
+def test_session_is_rejected_after_the_ttl() -> None:
+    """★★ 24시간 + 1초가 지난 세션은 **서명이 맞아도** 거부된다.
+
+    오라클: 손계산. TTL 이 24×3600초이므로 발급 시각 + 86,401초는 만료 밖이다.
+    시계를 앞당기는 대신 **발급 시각을 과거로 주입**한다 — 시스템 시각을
+    건드리면 다른 검사가 함께 흔들린다.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    secret = "expiry-secret"
+    issued = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
+    token = sign_session_value("user@example.com", secret, issued_at=issued)
+
+    fresh = issued + timedelta(seconds=SESSION_TTL_SECONDS - 1)
+    assert verify_session_value(token, secret, now=fresh) == "user@example.com", (
+        "만료 전인데 거부됐다 — 경계를 잘못 잡았다"
+    )
+
+    expired = issued + timedelta(seconds=SESSION_TTL_SECONDS + 1)
+    assert verify_session_value(token, secret, now=expired) is None, (
+        "24시간이 지난 세션이 그대로 유효하다 — 만료가 강제되지 않는다"
+    )
+
+
+@pytest.mark.req("FR-901-AC1")
+def test_issue_time_is_inside_the_signature() -> None:
+    """★★ 발급 시각을 **미래로 고쳐도** 통하지 않는다 — 시각이 서명 대상이다.
+
+    시각을 서명 밖에 두면 클라이언트가 그 자리를 고쳐 만료를 무한히 미룰 수
+    있다. 만료 검사는 있는데 우회되는 상태이며, 「만료가 있다」는 검사만으로는
+    드러나지 않는다.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    secret = "forge-secret"
+    issued = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
+    token = sign_session_value("user@example.com", secret, issued_at=issued)
+
+    rest, _, digest = token.rpartition(".")
+    email, _, issued_ts = rest.rpartition(".")
+    forged = f"{email}.{int(issued_ts) + SESSION_TTL_SECONDS * 10}.{digest}"
+
+    expired_moment = issued + timedelta(seconds=SESSION_TTL_SECONDS + 1)
+    assert verify_session_value(forged, secret, now=expired_moment) is None, (
+        "발급 시각을 미래로 고친 토큰이 통과했다 — 시각이 서명 밖에 있다"
+    )
+
+
+@pytest.mark.req("FR-901-AC1")
+def test_a_token_without_an_issue_time_is_refused() -> None:
+    """시각이 없는 토큰(R27 이전 형태)은 거부한다.
+
+    만료를 판정할 수 없는 토큰을 통과시키면 **옛 토큰이 영구 유효**해지고,
+    그러면 이 검사는 붙드는 것이 없다. 하위호환을 이유로 열어 두면 조항이
+    요구한 만료가 사실상 없는 것과 같다.
+    """
+    import hashlib
+    import hmac
+
+    secret = "legacy-secret"
+    email = "user@example.com"
+    legacy_digest = hmac.new(
+        secret.encode(), email.encode(), hashlib.sha256
+    ).hexdigest()
+
+    assert verify_session_value(f"{email}.{legacy_digest}", secret) is None
 
 
 def test_authenticate_with_correct_password() -> None:

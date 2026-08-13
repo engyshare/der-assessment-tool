@@ -111,25 +111,63 @@ def resolve_session_secret() -> str:
     return secret
 
 
-def sign_session_value(email: str, secret: str) -> str:
-    """세션 쿠키에 담을 서명된 값 — ``이메일.서명`` 형태.
+def sign_session_value(
+    email: str, secret: str, *, issued_at: datetime | None = None
+) -> str:
+    """세션 쿠키에 담을 서명된 값 — ``이메일.발급시각.서명`` 형태.
 
     평문 이메일을 그대로 쿠키에 넣지 않는다 — 서명이 없으면 클라이언트가
     임의 이메일 값으로 쿠키를 위조할 수 있다.
+
+    ★ **발급 시각이 서명 대상에 들어간다 (FR-901-AC1 「세션 만료」).**
+    ---------------------------------------------------------------
+    R27 까지 서명 대상은 이메일뿐이었다. 그래서 **토큰에 시각이 없었고,
+    `verify_session_value` 는 만료를 검사할 수 없었다** — 25시간 뒤든 1년
+    뒤든 그대로 유효했다. `SESSION_TTL_SECONDS` 는 쿠키 `max_age` 로만 나갔고
+    그것은 **브라우저에 대한 힌트이지 서버의 강제가 아니다**(쿠키를 손으로
+    다시 보내면 그만이다). `session_expires_at()` 은 호출자 0곳의 죽은 코드였다.
+
+    시각을 **서명 대상에 넣는 것**이 요점이다. 서명 밖에 두면 클라이언트가
+    발급 시각을 미래로 고쳐 만료를 무한히 미룰 수 있다.
     """
-    digest = hmac.new(secret.encode(), email.encode(), hashlib.sha256).hexdigest()
-    return f"{email}.{digest}"
+    issued = issued_at or datetime.now(UTC)
+    issued_ts = str(int(issued.timestamp()))
+    payload = f"{email}.{issued_ts}"
+    digest = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}.{digest}"
 
 
-def verify_session_value(token: str, secret: str) -> str | None:
+def verify_session_value(
+    token: str, secret: str, *, now: datetime | None = None
+) -> str | None:
     """서명된 세션 값 검증 — 성공하면 이메일, 실패하면 ``None``.
 
     잘못된 키로 서명됐거나 값이 변조됐으면 서명이 어긋나 ``None`` 이 된다.
+    **발급 후 `SESSION_TTL_SECONDS`(기본 24시간)를 넘겼으면 서명이 맞아도
+    거부한다** — 그것이 FR-901-AC1 의 「세션 만료」다.
+
+    시각 형식이 아닌 토큰(R27 이전 형태 포함)은 **거부한다.** 만료를 판정할
+    수 없는 토큰을 통과시키면 옛 토큰이 영구 유효해지고, 그러면 이 검사는
+    붙드는 것이 없다.
     """
-    email, _, digest = token.rpartition(".")
-    if not email:
+    # ⚠ **오른쪽부터 두 번 자른다.** 이메일에는 점이 들어간다
+    # (`user@example.com`) — 왼쪽부터 자르면 `user@example` 이 되어 서명이
+    # 어긋나고, 모든 정상 세션이 조용히 거부된다.
+    rest, _, digest = token.rpartition(".")
+    email, _, issued_ts = rest.rpartition(".")
+    if not email or not issued_ts or not digest:
         return None
-    expected = hmac.new(secret.encode(), email.encode(), hashlib.sha256).hexdigest()
+
+    payload = f"{email}.{issued_ts}"
+    expected = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(digest, expected):
+        return None
+
+    try:
+        issued_at = datetime.fromtimestamp(int(issued_ts), UTC)
+    except (ValueError, OverflowError, OSError):
+        return None
+
+    if (now or datetime.now(UTC)) > session_expires_at(issued_at):
         return None
     return email
