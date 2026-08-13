@@ -107,6 +107,29 @@ def test_presets_show_case_counts_thresholds_and_export_results() -> None:
     # 예상 실행시간은 케이스 수에서 파생된 표시값이다 — 문면의 81초와 같아야 한다
     assert quick.execution_plan().estimated_seconds == 81.0
 
+    # ★★ 전체 탐색도 같다 — 문면은 **결합 2집합 + 독립 4변수**이고 산식이
+    # `3 × 3 × 3⁴ = 729` 다(v0.5 정정 사유). R29 까지 결합 집합이 **하나도
+    # 없었고** 뒤 3변수가 빠진 채 설비단가를 독립축으로 펼쳐 729를 맞췄다 —
+    # `3**6` 하나만 보던 위 단언은 그것을 통과시켰다.
+    full_coupled = {cs.name: set(cs.variable_names) for cs in full.coupled_sets}
+    assert set(full_coupled) == {"equipment_cost_bundle", "trade_price_bundle"}, (
+        f"전체 탐색의 결합 집합이 문면(2집합)과 다릅니다: {sorted(full_coupled)}"
+    )
+    assert full_coupled["trade_price_bundle"] == {"direct_trade_price", "smp_price"}, (
+        "「직접거래·PPA 단가」는 구성표가 **SMP 와 동조**라고 적은 결합이다"
+    )
+    full_independent = {v.name for v in full.variables} - {
+        name for names in full_coupled.values() for name in names
+    }
+    assert full_independent == {
+        "discount_rate",
+        "tariff_escalation",
+        "pv_capacity_factor",
+        "ev_adoption_rate",
+    }, f"전체 탐색의 독립 4변수가 구성표와 다릅니다: {sorted(full_independent)}"
+    # 문면의 예상 실행시간 2,187초 — 케이스 수에서 파생된 표시값이다
+    assert full.execution_plan().estimated_seconds == 2187.0
+
     quick_plan = quick.execution_plan()
     full_plan = full.execution_plan()
 

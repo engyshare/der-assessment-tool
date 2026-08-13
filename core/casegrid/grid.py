@@ -204,14 +204,50 @@ def quick_preset_grid() -> CaseGrid:
 
 
 def full_preset_grid() -> CaseGrid:
+    """전체 탐색 프리셋 (FR-801-AC7.full) — 729 케이스.
+
+    ★ **구성은 spec §FR-801 구성표 6행이다** — 결합 **2집합** + 독립 **4변수**,
+    각 3수준이므로 `3 × 3 × 3⁴ = 729`(조항의 v0.5 정정 사유가 이 산식을 적는다).
+
+    R29 까지 이 함수는 **결합 집합이 하나도 없었고** 뒤 3변수(직접거래·PPA 단가·
+    PV 이용률·EV 보급률)가 통째로 빠진 채 설비단가 4종을 독립축으로 펼쳐 729를
+    맞췄다. **개수는 맞고 구성이 달랐으며**, 붙드는 검사가 `3**6` 하나뿐이라
+    드러나지 않았다 — `quick_preset_grid` 에서 고친 것과 **같은 형태**다.
+
+    「직접거래·PPA 단가」가 SMP 와 결합인 이유는 구성표가 *「결합 (SMP와 동조)」*
+    라고 적기 때문이다. 두 단가가 독립으로 흔들리면 SMP 최저 + PPA 최고 같은
+    실현 불가 조합이 생기고, 그것이 `FR-802` 가 없애려던 것이다.
+    """
     levels = ("low", "base", "high")
     return CaseGrid(
         variables=(
+            # 결합 ① 설비단가·시공비
             CaseVariable("pv_unit_cost", levels),
             CaseVariable("ess_unit_cost", levels),
             CaseVariable("heat_pump_unit_cost", levels),
             CaseVariable("construction_cost", levels),
+            # 결합 ② 직접거래·PPA 단가 (SMP 동조)
+            CaseVariable("direct_trade_price", levels),
+            CaseVariable("smp_price", levels),
+            # 독립 4
             CaseVariable("discount_rate", levels),
             CaseVariable("tariff_escalation", levels),
+            CaseVariable("pv_capacity_factor", levels),
+            CaseVariable("ev_adoption_rate", levels),
+        ),
+        coupled_sets=(
+            CoupledSet(
+                "equipment_cost_bundle",
+                (
+                    "pv_unit_cost",
+                    "ess_unit_cost",
+                    "heat_pump_unit_cost",
+                    "construction_cost",
+                ),
+            ),
+            CoupledSet(
+                "trade_price_bundle",
+                ("direct_trade_price", "smp_price"),
+            ),
         ),
     )
