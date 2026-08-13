@@ -361,7 +361,7 @@
 | `SC-2` | Must-have | 1 | `SC-2` | 시나리오 접근은 소유자 또는 유효 공유 토큰 보유자로 제한 | 자동 | test_authorization.py 2건 |
 | `SC-3` | Must-have | 1 | `SC-3` | 수집을 이메일·이름으로 최소화. 실증 참여 가구의 개별 식별정보 미저장 (부하 데이터는 익명 집계본만) | 자동 | test_sc3.py 2건, test_ci_gates.py, test_privacy_procedure.py |
 | `SC-4` | Must-have | 1 | `SC-4` | 로그인, 시나리오·전제 생성·수정·삭제, 관리자 카탈로그 변경 기록 | 자동 | test_audit.py |
-| `SC-5` | Must-have | 1 | `SC-5` | DB 경로·시크릿 키는 환경변수. 저장소 커밋 금지, gitleaks CI 스캔 | 자동 | test_auth.py 5건, test_ci_gates.py 2건, test_phase1_measurements.py 2건 |
+| `SC-5` | Must-have | 1 | `SC-5` | DB 경로·시크릿 키는 환경변수. 저장소 커밋 금지, gitleaks CI 스캔 | 자동 | test_auth.py 5건, test_ci_gates.py 2건, test_phase1_measurements.py 2건, test_precommit_installed.py 4건 |
 | `SC-6` | Must-have | 1 | `SC-6` | DER-VET 코드를 사용하지 않으므로 BSD 3-Clause 전파 의무 없음. 설계 참조 사실은 README에 명기 (부록 C) | 자동 | test_license.py |
 | `SC-7` | Must-have | 1 | `SC-7` | 요금표·단가 등 외부 데이터의 출처·이용조건을 메타데이터로 보관 | 자동 | test_catalog.py, test_items.py 2건, test_assumption_provider.py |
 | `SC-8` | Must-have | 1 | `SC-8` | 전제 데이터는 민감도 등급을 보유한다 — 공개 가능(공시·고시 등 공개 출처) / 비공개(업계 견적, 미공표 제도 검토, 제공자가 비공개를 조건으로 준 값). … | 자동 | test_ci_gates.py |
