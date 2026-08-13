@@ -27,6 +27,7 @@ R21 실측 — 대장 14규칙 중 **실제 코드가 `rule=` 로 던지는 것�
 from __future__ import annotations
 
 import ast
+from itertools import combinations
 from pathlib import Path
 
 import pytest
@@ -75,9 +76,34 @@ THROWN_BY_REAL_CODE: dict[str, str] = {
 #: 대장에 있으나 **아직 구조로 던지는 코드가 없는** 규칙.
 #: 줄어들면 위 표에 옮긴다. `NOT_YET` 이 비는 날 이 상수를 지운다.
 NOT_YET_THROWN: frozenset[str] = frozenset({
-    "DV-1", "DV-5", "DV-6",
-    "DV-7", "DV-8", "DV-9", "DV-10", "DV-11",
+    "DV-1", "DV-5", "DV-6", "DV-8", "DV-9", "DV-10",
 })
+
+#: ★★ **던지지 않지만 이미 강제되는** 규칙 — R24 가 신설한 세 번째 분류.
+#:
+#: 위 둘만 있던 동안 `DV-7`·`DV-11` 은 `NOT_YET_THROWN` 에 있었다. 그 이름이
+#: 뜻하는 것은 **「아직 아무도 강제하지 않는다」**인데 **둘 다 강제되고 있었다.**
+#: `DV-11` 은 위반을 심어서 확인하는 음성 테스트까지 있다.
+#:
+#: **이것은 이 저장소가 고치러 온 결함의 거울상이다.** 지금까지 찾은 열여섯 건은
+#: 전부 「검사가 실제보다 **넓게** 주장한다」였는데, 이 표는 **좁게** 주장하면서
+#: 강제 사실을 숨겼다. 다음 라운드가 이 표를 읽으면 「손대지 않았다」로 보고
+#: **이미 있는 것을 다시 만들려 한다.**
+#:
+#: 여기 드는 조건은 **런타임 사건이 없다**는 것이다 — 발동시킬 순간이 없으므로
+#: `ValidationError` 를 놓을 자리가 없다. 「귀찮아서 안 던진다」는 여기 들지
+#: 않는다. 그 판정 근거를 아래 두 경로로 적고, 검사가 **경로의 실재**를 본다.
+#:
+#:     규칙 → (강제하는 자리, 그것을 붙드는 테스트)
+ENFORCED_WITHOUT_A_THROW: dict[str, tuple[str, str]] = {
+    # 금액 타입이 `Money(Decimal)` 하위클래스이고 `to_won()` 이 반올림의
+    # **유일한 경계**다. 「모든 금액이 명목 원」은 값마다 검사할 사건이 아니라
+    # 경계를 하나로 둔 결과다 — `to_won(value)` 는 **어느 필드의 값인지 모른다.**
+    "DV-7": ("core/contracts/units.py", "tests/asset/test_common_asset.py"),
+    # `Scenario` 가 금지 필드를 **갖지 않는다**. 클래스에 필드가 없는 것은
+    # 실행 중에 일어나는 사건이 아니므로 던질 순간이 없다.
+    "DV-11": ("infra/orm/scenario.py", "tests/infra/test_scenario_ownership.py"),
+}
 
 
 @pytest.mark.contract
@@ -212,19 +238,33 @@ def test_the_catalogue_is_split_with_nothing_left_unclassified() -> None:
     이것이 이 파일의 요점이다. 「구조화된 오류를 쓴다」는 방침은 규칙이 늘 때
     조용히 새는데, 새는 자리가 **대장과 코드 사이**라 어느 테스트도 보지
     않는다. 합집합을 단언하면 그 자리가 검사 대상이 된다.
+
+    **R24 에 칸이 셋으로 늘었다.** 둘일 때는 「던지지 않지만 이미 강제된다」를
+    적을 자리가 없어 `DV-7`·`DV-11` 이 「아직」에 섞여 있었다 —
+    `ENFORCED_WITHOUT_A_THROW` 독스트링을 볼 것.
     """
-    classified = set(THROWN_BY_REAL_CODE) | NOT_YET_THROWN
+    buckets = {
+        "THROWN_BY_REAL_CODE": set(THROWN_BY_REAL_CODE),
+        "NOT_YET_THROWN": set(NOT_YET_THROWN),
+        "ENFORCED_WITHOUT_A_THROW": set(ENFORCED_WITHOUT_A_THROW),
+    }
+    classified: set[str] = set().union(*buckets.values())
     catalogue = set(DV_RULES)
 
-    assert not (THROWN_BY_REAL_CODE.keys() & NOT_YET_THROWN), (
-        "한 규칙이 양쪽에 있습니다 — 던지는지 아닌지 하나로 정하십시오"
-    )
+    # **셋이 서로 겹치지 않아야 한다** — 칸이 늘면 짝을 손으로 세게 되고 그때
+    # 한 짝을 빠뜨린다. 짝을 돌려서 센다
+    for (left, lhs), (right, rhs) in combinations(buckets.items(), 2):
+        assert not (lhs & rhs), (
+            f"한 규칙이 {left} 와 {right} 양쪽에 있습니다: {sorted(lhs & rhs)} — "
+            "셋 중 하나로 정하십시오"
+        )
     assert classified == catalogue, (
         "대장과 분류가 어긋납니다. 대장에만 있는 것: "
         f"{sorted(catalogue - classified)} / 분류에만 있는 것: "
         f"{sorted(classified - catalogue)}. 새 DV 규칙을 대장에 넣었다면 "
         "던지는 코드를 함께 놓고 THROWN_BY_REAL_CODE 에, 아직이면 "
-        "NOT_YET_THROWN 에 적으십시오"
+        "NOT_YET_THROWN 에, 던질 순간이 없는 규칙이면 "
+        "ENFORCED_WITHOUT_A_THROW 에 적으십시오"
     )
 
 
@@ -240,6 +280,57 @@ def test_every_rule_said_to_be_thrown_names_where_it_is_proven() -> None:
         assert rule in DV_RULES, f"{rule} 은 대장에 없다 (매달린 참조)"
         assert where.startswith("tests/"), f"{rule}: 근거 경로가 테스트가 아니다"
         assert "::" in where or where.endswith(".py"), f"{rule}: 경로 형식"
+
+
+@pytest.mark.contract
+@pytest.mark.req("NFR-303-M1")
+def test_rules_enforced_without_a_throw_name_places_that_exist() -> None:
+    """★ 세 번째 칸도 **경로를 대며** 적는다 — 아니면 새 형태의 빈 약속이다.
+
+    이 칸은 「던지지 않아도 강제된다」를 주장한다. 그 주장이 경로 없이 서면 이
+    파일이 고치러 온 결함과 **똑같은 것**이 하나 더 생기는 셈이다 — 그것도
+    「검증됨」으로 세어지는 자리에.
+
+    파일이 옮겨지거나 지워지면 여기서 빨간불이 난다. 그때 할 일은 경로를 고치는
+    것이거나, 강제가 정말 사라졌으면 `NOT_YET_THROWN` 으로 되돌리는 것이다.
+    """
+    for rule, (enforced_at, proven_by) in ENFORCED_WITHOUT_A_THROW.items():
+        assert rule in DV_RULES, f"{rule} 은 대장에 없다 (매달린 참조)"
+        assert (REPO_ROOT / enforced_at).is_file(), (
+            f"{rule}: 강제한다고 적은 자리가 없다 — {enforced_at}"
+        )
+        assert proven_by.startswith("tests/"), (
+            f"{rule}: 근거가 테스트가 아니다 — {proven_by}"
+        )
+        assert (REPO_ROOT / proven_by).is_file(), (
+            f"{rule}: 근거 테스트가 없다 — {proven_by}. 강제가 사라졌다면 "
+            "NOT_YET_THROWN 으로 되돌리십시오"
+        )
+
+
+@pytest.mark.contract
+@pytest.mark.req("NFR-303-M1")
+def test_a_rule_enforced_without_a_throw_is_not_secretly_thrown() -> None:
+    """★★ 세 번째 칸의 **드리프트 방향** — 던지기 시작하면 옮기라고 막는다.
+
+    `NOT_YET_THROWN` 이 코드보다 뒤처지는 것은 아래
+    `test_not_yet_list_cannot_hide_a_rule_the_code_already_throws` 가 막는다.
+    새 칸에도 같은 구멍이 있다 — 어느 라운드가 `DV-7` 에 진짜 던질 자리를
+    찾아내 `rule="DV-7"` 을 달아도, 이 칸에 적힌 채면 **전건 초록불**이다.
+    그러면 「던질 순간이 없다」는 판정이 **틀렸는데도 남는다.**
+
+    R22 가 `NOT_YET_THROWN` 에서 정확히 그 상태를 만들었다. 칸을 늘릴 때
+    같은 구멍을 함께 늘리지 않으려고 이 검사를 짝으로 놓는다.
+    """
+    thrown = _rules_carried_by_deployment_code()
+    stale = sorted(set(ENFORCED_WITHOUT_A_THROW) & thrown.keys())
+
+    assert not stale, (
+        "「던질 순간이 없다」고 분류된 규칙을 배포 코드가 던집니다: "
+        + " / ".join(f"{r} ← {', '.join(sorted(thrown[r]))}" for r in stale)
+        + ". 던질 자리가 있었다는 뜻이므로 THROWN_BY_REAL_CODE 로 옮기고 "
+        "그것을 발동시키는 테스트 경로를 함께 적으십시오."
+    )
 
 
 def _rules_carried_by_deployment_code() -> dict[str, set[str]]:
