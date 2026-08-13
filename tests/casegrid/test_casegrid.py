@@ -78,8 +78,34 @@ def test_presets_show_case_counts_thresholds_and_export_results() -> None:
     full = full_preset_grid()
 
     assert quick.case_count() == len(("low", "base", "high")) ** 3
-    assert quick.case_count(filter_coupled=False) == len(("low", "base", "high")) ** 5
+    assert quick.case_count(filter_coupled=False) == len(("low", "base", "high")) ** 6
     assert full.case_count() == len(("low", "base", "high")) ** 6
+
+    # ★★ **개수는 「어떤 27인가」를 말하지 않는다** (R26 변이 실측).
+    # 결합 집합은 몇 개를 묶든 축 하나이므로, spec 이 넷을 묶으라 한 자리에
+    # 셋만 묶여 있어도 **문면의 그 27**이 그대로 나온다. 실제로 히트펌프 단가가
+    # 다섯 라운드 동안 빠져 있었고 위 두 줄은 초록불이었다.
+    #
+    # 변이로 갈랐다 — 히트펌프 자리에 **다른 변수**를 넣으면 걸러진 27도,
+    # 걸러지지 않은 729도 **둘 다 그대로**이고 아래 단언만 빨간불이 된다.
+    # 즉 이 자리는 개수로는 원리상 붙들 수 없다.
+    coupled = {name for cs in quick.coupled_sets for name in cs.variable_names}
+    assert coupled == {
+        "pv_unit_cost",
+        "ess_unit_cost",
+        "heat_pump_unit_cost",
+        "construction_cost",
+    }, (
+        "빠른 탐색의 결합 집합이 spec §FR-801 구성표(설비단가 PV·ESS·히트펌프·"
+        f"시공비)와 다릅니다: {sorted(coupled)}"
+    )
+    independent = {v.name for v in quick.variables} - coupled
+    assert independent == {"discount_rate", "tariff_escalation"}, (
+        f"빠른 탐색의 독립축이 문면(할인율·전기요금 인상률)과 다릅니다: "
+        f"{sorted(independent)}"
+    )
+    # 예상 실행시간은 케이스 수에서 파생된 표시값이다 — 문면의 81초와 같아야 한다
+    assert quick.execution_plan().estimated_seconds == 81.0
 
     quick_plan = quick.execution_plan()
     full_plan = full.execution_plan()

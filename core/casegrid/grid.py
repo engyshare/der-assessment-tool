@@ -172,11 +172,19 @@ class CaseGrid:
 
 
 def quick_preset_grid() -> CaseGrid:
+    """빠른 탐색 프리셋 (FR-801-AC7.quick) — 27 케이스.
+
+    ★ **결합 집합은 spec §FR-801 구성표의 「설비단가(PV·ESS·히트펌프)·시공비」
+    넷이다.** R26 까지 히트펌프가 빠진 셋이었고, **케이스 수는 그래도 27이라
+    개수를 보는 검사로는 드러나지 않았다** — 결합 집합은 몇 개를 묶든 축 하나이기
+    때문이다. 그동안 빠른 탐색으로 돌리면 히트펌프 단가만 흔들리지 않았다.
+    """
     levels = ("low", "base", "high")
     return CaseGrid(
         variables=(
             CaseVariable("pv_unit_cost", levels),
             CaseVariable("ess_unit_cost", levels),
+            CaseVariable("heat_pump_unit_cost", levels),
             CaseVariable("construction_cost", levels),
             CaseVariable("discount_rate", levels),
             CaseVariable("tariff_escalation", levels),
@@ -184,7 +192,12 @@ def quick_preset_grid() -> CaseGrid:
         coupled_sets=(
             CoupledSet(
                 "equipment_cost_bundle",
-                ("pv_unit_cost", "ess_unit_cost", "construction_cost"),
+                (
+                    "pv_unit_cost",
+                    "ess_unit_cost",
+                    "heat_pump_unit_cost",
+                    "construction_cost",
+                ),
             ),
         ),
     )
