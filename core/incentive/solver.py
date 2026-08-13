@@ -85,6 +85,77 @@ def solve_min_subsidy_rate(  # noqa: PLR0912
         return SolverResult(success=True, subsidy_rate=best_rate)
 
 
+#: `FR-608-AC5` 가 이름으로 세운 역산 대상 변수. **보조율 외 넷이 문면에 있다.**
+#:
+#: 목록을 코드에 두는 이유는 「지정 가능」이 **아무 문자열이나 받는다**는 뜻이
+#: 아니기 때문이다. 열려 있으면 오타(`loan_rat`)가 조용히 통과하고, 어느 변수를
+#: 역산했는지가 결과에 남지 않아 표시 층이 그것을 말할 수 없다.
+SOLVE_VARIABLES: tuple[str, ...] = (
+    "subsidy_rate",
+    "loan_interest_rate",
+    "grace_period_years",
+    "direct_trade_price",
+    "rec_price",
+)
+
+
+class SolveVariableResult(NamedTuple):
+    """역산 결과 — **어느 변수를 역산했는지 함께 나른다** (`FR-608-AC5`).
+
+    `SolverResult` 의 필드 이름이 `subsidy_rate` 라서, 융자금리를 역산한 값을
+    거기에 담으면 **표시 층이 그것을 보조율로 읽는다.** 변수 이름을 함께
+    돌려주는 것이 그 혼동을 막는 유일한 방법이다.
+    """
+
+    success: bool
+    variable: str
+    value: float
+    shortfall: float | None = None
+    reason: str | None = None
+
+
+def solve_min_support_variable(
+    evaluate_func: Callable[[float], float],
+    target_value: float,
+    target_type: Literal["NPV", "IRR", "PAYBACK"],
+    *,
+    variable: str,
+    precision: float = 0.001,
+) -> SolveVariableResult:
+    """`FR-608-AC5`: 역산 대상을 **보조율 외 변수**로도 지정한다.
+
+    탐색 기계는 `solve_min_subsidy_rate` 와 같다 — `evaluate_func` 가 「그 변수를
+    x 로 두었을 때의 지표」를 돌려주므로 **탐색은 변수에 무관**하다. 이 함수가
+    더하는 것은 둘이다.
+
+    ① **변수 이름을 검사한다.** 조항이 이름으로 세운 다섯 밖이면 거부한다 —
+       열어 두면 오타가 조용히 통과하고, 그때 나오는 답은 아무 변수의 것도 아니다.
+    ② **어느 변수를 역산했는지 결과에 남긴다.** `SolverResult.subsidy_rate` 에
+       융자금리를 담으면 표시 층이 그것을 보조율로 읽는다.
+
+    ⚠ **정규화 범위는 호출자 몫이다.** 탐색은 `0~1` 구간에서 돈다(`FR-608-AC2`
+    의 이분 탐색이 그 구간을 쓴다). 거치기간처럼 단위가 다른 변수는 호출자가
+    `evaluate_func` 안에서 환산한다 — 여기서 변수별 범위를 지어내면 그것이
+    도메인 규칙 발명이다.
+    """
+    if variable not in SOLVE_VARIABLES:
+        raise ValueError(
+            f"역산 대상 변수가 아닙니다: {variable!r}. "
+            f"FR-608-AC5 가 세운 것은 {', '.join(SOLVE_VARIABLES)} 입니다"
+        )
+
+    result = solve_min_subsidy_rate(
+        evaluate_func, target_value, target_type, precision
+    )
+    return SolveVariableResult(
+        success=result.success,
+        variable=variable,
+        value=result.subsidy_rate,
+        shortfall=result.shortfall,
+        reason=result.reason,
+    )
+
+
 class Goal(NamedTuple):
     """역산 목표 하나 (`FR-608-AC1`).
 

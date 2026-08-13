@@ -16,6 +16,7 @@ from core.incentive.solver import (
     generate_iso_support_curve,
     solve_min_subsidy_rate,
     solve_min_subsidy_rate_for_goals,
+    solve_min_support_variable,
 )
 
 
@@ -450,6 +451,78 @@ def test_multiple_goals_name_the_unreachable_one() -> None:
     assert result.binding_label == "회수기간≤1년"
     assert result.shortfall is not None
     assert "회수기간≤1년" in (result.reason or "")
+
+
+# ── FR-608-AC5 — 역산 대상 변수를 보조율 외로도 지정 ──────────────────────
+#
+# ⚠ **이 조항은 R27 까지 붙드는 테스트가 없었다.** 있던 것은
+# `..._unachievable` 의 `FR-608-AC5` 마커뿐이고 그 테스트는 AC4(해 없음)를
+# 검사한다 — 즉 **유일한 매핑이 거짓이었다.** 마커를 바로잡자
+# `test_dod9_phase_1_musthave_unmapped_zero` 가 빨간불이 되어 그 사실이
+# 드러났다. R20 이 「마커를 지우면 DoD 9 가 빨간불」이라 적어 둔 자리와 같은
+# 형태이며, 그때와 달리 이번에는 조항을 **구현해서** 닫는다.
+
+
+@pytest.mark.req("FR-608-AC5")
+def test_other_support_variables_can_be_solved_and_are_named() -> None:
+    """보조율 외 변수도 역산하고, **어느 변수였는지 결과가 말한다.**
+
+    손계산 오라클: 융자금리를 x 로 두었을 때 NPV = -100 + 200x 이면 NPV ≥ 0 인
+    최소 x 는 0.5 다(보조율 예시와 같은 식 — 탐색은 변수에 무관하다는 것이
+    요점이므로 식을 일부러 같게 둔다).
+
+    ★ **변수 이름이 결과에 남아야 한다.** `SolverResult` 의 필드는
+    `subsidy_rate` 라서, 거기에 융자금리를 담으면 표시 층이 그것을 보조율로
+    읽는다 — 값은 맞는데 뜻이 틀린 상태가 되고 아무 예외도 나지 않는다.
+    """
+    def eval_npv(x: float) -> float:
+        return -100.0 + 200.0 * x
+
+    result = solve_min_support_variable(
+        eval_npv, 0.0, "NPV", variable="loan_interest_rate"
+    )
+
+    assert result.success is True
+    assert abs(result.value - 0.5) <= 0.001
+    assert result.variable == "loan_interest_rate", (
+        "어느 변수를 역산했는지 결과에 없다 — 표시 층이 보조율로 읽게 된다"
+    )
+
+
+@pytest.mark.req("FR-608-AC5")
+def test_the_four_named_variables_are_all_accepted() -> None:
+    """조항이 **이름으로 세운 넷**이 전부 받아들여진다.
+
+    하나만 확인하면 나머지 셋이 빠져 있어도 통과한다 — 조항은 넷을 열거한다
+    (융자금리·거치기간·직접거래단가·REC단가).
+    """
+    def eval_npv(x: float) -> float:
+        return -100.0 + 200.0 * x
+
+    for variable in (
+        "loan_interest_rate",
+        "grace_period_years",
+        "direct_trade_price",
+        "rec_price",
+    ):
+        result = solve_min_support_variable(
+            eval_npv, 0.0, "NPV", variable=variable
+        )
+        assert result.success is True, variable
+        assert result.variable == variable
+
+
+@pytest.mark.req("FR-608-AC5")
+def test_an_unknown_variable_is_refused() -> None:
+    """★ 목록 밖 이름은 거부한다 — 열어 두면 오타가 조용히 통과한다.
+
+    `loan_rat` 같은 오타를 받아 답을 돌려주면 그 답은 **아무 변수의 것도
+    아니다.** 그런데 값은 그럴듯하고 예외도 나지 않는다.
+    """
+    with pytest.raises(ValueError, match="역산 대상 변수가 아닙니다"):
+        solve_min_support_variable(
+            lambda x: x, 0.0, "NPV", variable="loan_rat"
+        )
 
 
 @pytest.mark.req("FR-608-AC1")
