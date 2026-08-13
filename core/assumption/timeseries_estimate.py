@@ -23,7 +23,8 @@ HOURS_PER_DAY = 24
 
 #: 비윤년 기준 월별 일수. 대체 입력은 실측이 아니라 근사이므로 윤년 보정을
 #: 별도로 두지 않는다 — 이 근사 자체가 AC4 가 허용하는 "표준 프로파일"의
-#: 성격이다.
+#: 성격이다. **규칙 자체는 `core.contracts.units.LEAP_YEAR_POLICY` 가 선언한다
+#: (DV-4)** — 이 모듈만의 사정이 아니라 저장소 전체의 규약이다.
 DAYS_PER_MONTH: tuple[int, ...] = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 
 HOURS_PER_YEAR = sum(d * HOURS_PER_DAY for d in DAYS_PER_MONTH)

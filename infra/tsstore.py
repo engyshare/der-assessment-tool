@@ -35,7 +35,13 @@ from typing import Final
 import pyarrow as pa  # type: ignore[import-untyped]
 import pyarrow.parquet as pq  # type: ignore[import-untyped]
 
-from core.contracts.units import HOURS_PER_YEAR, STEPS_15MIN_PER_YEAR
+from core.contracts.units import (
+    HOURS_PER_LEAP_YEAR,
+    HOURS_PER_YEAR,
+    LEAP_YEAR_POLICY,
+    STEPS_15MIN_PER_LEAP_YEAR,
+    STEPS_15MIN_PER_YEAR,
+)
 from core.contracts.validation import ValidationError
 
 #: 검증하는 시계열 종류 — TimeSeriesDataset.kind CHECK 제약과 동일.
@@ -44,6 +50,13 @@ TS_KINDS: Final[frozenset[str]] = frozenset({"load", "pv", "smp", "temp"})
 #: 허용 행 수 (DV-4). 8760(1시간) 또는 35040(15분). 임의 해상도는 거부한다.
 ALLOWED_ROW_COUNTS: Final[frozenset[int]] = frozenset(
     {HOURS_PER_YEAR, STEPS_15MIN_PER_YEAR}
+)
+
+#: 366일(윤년) 시계열의 행 수 — **허용값이 아니다.** 거부할 때 「이것은 윤년
+#: 자료다」를 알아보고 `LEAP_YEAR_POLICY` 를 사용자에게 건네기 위한 것이다.
+#: 규칙 자체는 `core/contracts/units.py` 가 선언한다 (DV-4 후반부).
+LEAP_YEAR_ROW_COUNTS: Final[frozenset[int]] = frozenset(
+    {HOURS_PER_LEAP_YEAR, STEPS_15MIN_PER_LEAP_YEAR}
 )
 
 #: Parquet 파일의 메타데이터에 새기는 키. 읽을 때 다시 꺼내서 정합을 본다.
@@ -106,13 +119,26 @@ def write_series(
             action=f"허용값 중 하나를 쓰십시오: {', '.join(sorted(TS_KINDS))}",
         )
     if table.num_rows not in ALLOWED_ROW_COUNTS:
+        # ★ **윤년 행 수는 따로 알아본다 (DV-4 후반부).** 366일 시계열은 「잘리거나
+        # 중복된」 자료가 아니라 **규약이 다른** 자료다. 같은 문장으로 거절하면
+        # 사용자는 자기 자료가 온전한데 왜 거부되는지 알 수 없고, 이 저장소의
+        # 윤년 규칙이 무엇인지도 끝내 알 수 없다 — 그것이 `LEAP_YEAR_POLICY` 를
+        # 선언한 이유이고, 선언은 **닿아야** 선언이다.
+        is_leap_shaped = table.num_rows in LEAP_YEAR_ROW_COUNTS
         raise TimeSeriesShapeError(
             field="timeseries.rows",
             reason=(
+                f"행 수가 {table.num_rows} 입니다 — 366일(윤년) 시계열로 보입니다. "
+                "이 도구는 평년 규약을 쓰므로 8760(1시간)·35040(15분)만 받습니다."
+                if is_leap_shaped
+                else
                 f"행 수가 {table.num_rows} 입니다 — 8760(1시간) 또는 35040(15분)만 "
                 "받습니다. 잘리거나 중복된 시계열이 조용히 통과하는 것을 막는다."
             ),
             action=(
+                LEAP_YEAR_POLICY
+                if is_leap_shaped
+                else
                 "시계열을 8760행(1시간 해상도) 또는 35040행(15분 해상도)으로 "
                 "맞춰 다시 저장하십시오"
             ),

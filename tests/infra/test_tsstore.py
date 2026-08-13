@@ -19,6 +19,7 @@ from pathlib import Path
 import pyarrow as pa  # type: ignore[import-untyped]
 import pytest
 
+from core.contracts.units import HOURS_PER_LEAP_YEAR, LEAP_YEAR_POLICY
 from core.contracts.validation import ValidationError
 from infra.tsstore import (
     ALLOWED_ROW_COUNTS,
@@ -254,3 +255,64 @@ def test_checksum_is_actually_sha256_of_file_bytes(tmp_path: Path) -> None:
         "compute_checksum 이 hashlib.sha256(file_bytes) 와 다릅니다 — "
         "chunked read 가 drop 하거나 알고리즘이 다릅니다."
     )
+
+
+# ── DV-4 후반부 — 윤년 처리 규칙이 **사용자에게 닿는가** ────────────────────
+#
+# 규칙의 선언과 그것이 참인지는 `tests/contract/test_leap_year_policy.py` 가
+# 붙든다. 여기서 보는 것은 **선언이 닿는가** — 366일 자료를 가져온 사람이
+# 그 문면을 실제로 받는가다. 닿지 않는 선언은 주석과 다르지 않다.
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_write_rejects_leap_year_rows_and_hands_over_the_policy(
+    tmp_path: Path,
+) -> None:
+    """366일 시계열은 「잘린 자료」가 아니라 **규약이 다른 자료**다.
+
+    같은 문장으로 거절하면 사용자는 자기 8784행이 온전한데 왜 거부되는지 알 수
+    없고, 이 저장소의 윤년 규칙이 무엇인지도 끝내 알 수 없다. 조치 자리에
+    선언 그대로가 실려야 한다 — **문면을 여기서 다시 쓰지 않는다**(두 벌이 되면
+    갈리고, 갈린 것을 붙드는 검사를 또 놓아야 한다).
+    """
+    path = tmp_path / "leap.parquet"
+    leap = pa.table({"load_kw": pa.array([1.0] * HOURS_PER_LEAP_YEAR)})
+
+    with pytest.raises(TimeSeriesShapeError) as caught:
+        write_series(path, leap, kind="load", year=2024)
+
+    err = caught.value
+    assert err.rule == "DV-4"
+    assert err.field == "timeseries.rows"
+    assert str(HOURS_PER_LEAP_YEAR) in err.reason, "받은 행 수가 사유에 없다"
+    assert "윤년" in err.reason or "366일" in err.reason, (
+        f"윤년 자료임을 알아보지 못하고 일반 문장으로 거절했다: {err.reason!r}"
+    )
+    assert err.action == LEAP_YEAR_POLICY, (
+        "조치가 선언 그대로가 아니다 — 문면을 두 곳에 두면 반드시 갈린다"
+    )
+    assert not path.exists(), "거부했는데 파일이 남았다"
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_write_accepts_common_year_rows_even_in_a_leap_year_by_declared_policy(
+    tmp_path: Path,
+) -> None:
+    """★ 윤년(2024)에도 **8760행이 맞다** — 우연이 아니라 선언에 따른 것이다.
+
+    이 파일의 다른 테스트들은 예전부터 `year=2024` 에 8760행을 써 왔고 전부
+    통과했다. **그러나 그것은 윤년 규칙을 검사한 것이 아니라 규칙이 없는 채로
+    한쪽 결과를 고정한 것**이었다 — R24 인수에서 그 형태가 드러났다(「조항의
+    반대를 고정한 테스트」). 같은 사실을 **이유와 함께** 붙들어 둔다.
+
+    2024는 윤년이다. 그 해의 실제 달력은 8784시간이지만, 이 도구는 평년 규약을
+    쓰므로 8760행이 정상이며 거부되면 안 된다. 이 테스트가 빨간불이면 규약이
+    바뀐 것이고, 그때 고칠 것은 이 테스트가 아니라 **선언**이다.
+    """
+    path = tmp_path / "load_leapyear_2024.parquet"
+
+    checksum = write_series(path, _synthetic_load(), kind="load", year=2024)
+
+    assert path.exists()
+    assert checksum, "윤년 연도의 평년 길이 시계열이 거부됐다"
+    assert read_series(path, expected_checksum=checksum).num_rows == 8760

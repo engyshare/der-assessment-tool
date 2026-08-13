@@ -43,6 +43,8 @@ from core.contracts.validation import ValidationError
 
 #: 평년 기준. 윤년을 쓰지 않는 이유는 8760/35040 이라는 스텝 수 규약 자체가
 #: 평년 전제이기 때문이다 — 여기서만 366일을 쓰면 마지막 하루가 갈 곳을 잃는다.
+#: **규칙 자체는 `core.contracts.units.LEAP_YEAR_POLICY` 가 선언한다 (DV-4).**
+#: 여기 적힌 것은 그 규칙의 사본이 아니라 **이 모듈이 그 규칙을 따르는 근거**다.
 _DAYS_IN_MONTH: Final[tuple[int, ...]] = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
 _MONTHS: Final[int] = 12
 _DAYS_IN_YEAR: Final[int] = 365

@@ -61,18 +61,21 @@ THROWN_BY_REAL_CODE: dict[str, str] = {
     # ↓ R24 WP-34D — `core/incentive/schemas.py` 가 보조금+융자 초과를 실제로 던진다.
     "DV-1": "tests/incentive/test_incentive.py::"
             "test_dv1_subsidy_plus_loan_exceeds_capex_raises_validation_error",
-    # ⚠ **R24 인수 실측 — `DV-4` 는 규칙의 「절반」만 붙든다.** 원문은 「시계열
-    # 행수 = 8760 (또는 35,040), **윤년 처리 규칙 명시**」인데 강제되는 것은
-    # 앞쪽뿐이다. 저장소 전체에 `8784`·`35136`·`isleap` 이 **0건**이고, 윤년을
-    # 언급하는 것은 「윤년을 쓰지 않는다」는 모듈 내부 주석 둘
-    # (`core/der/load.py:44` · `core/assumption/timeseries_estimate.py:24`)
-    # 뿐이다 — 그 둘은 `rule="DV-4"` 와도, 어느 계약 문서와도 이어져 있지 않다.
+    # ★ **`DV-4` 는 R24 인수까지 규칙의 「절반」만 붙들고 있었다 — R25 에 닫았다.**
+    # 원문은 「시계열 행수 = 8760 (또는 35,040), **윤년 처리 규칙 명시**」인데
+    # 강제되는 것은 앞쪽뿐이었다. 저장소 전체에 `8784`·`35136`·`isleap` 이
+    # **0건**이었고, 윤년을 말하는 것은 「윤년을 쓰지 않는다」는 모듈 내부 주석
+    # 둘뿐이라 **자기 모듈의 사정**이었지 규칙의 선언이 아니었다. 게다가
+    # `tests/infra/test_tsstore.py` 가 `year=2024`(윤년)에 8760행을 쓰고 통과하는
+    # 것을 여러 곳에서 붙들고 있었다 — **규칙 없이 한쪽 결과만 고정한 형태.**
     #
-    # **오히려 테스트가 반대를 고정하고 있다** — `tests/infra/test_tsstore.py`
-    # 는 `year=2024`(윤년)에 8760행을 쓰고 통과하는 것을 여러 곳에서 붙든다.
-    # 「명시」는 던지는 일이 아니라 **선언하는 일**이므로 닫는 방법도 다르다:
-    # 정책을 계약 층 한 곳(`core/contracts/units.py` 후보)에 적고 그것을
-    # 붙드는 검사를 놓는 것이다. `status.md` R25 후보 1번.
+    # 「명시」는 던지는 일이 아니라 **선언하는 일**이므로 닫는 방법도 달랐다.
+    # `core/contracts/units.py` 의 `LEAP_YEAR_POLICY` 가 규칙을 선언하고,
+    # `tests/contract/test_leap_year_policy.py` 가 **선언의 실재와 그것이 참인지**
+    # 를 붙든다(문면 · 스텝 수가 연도를 못 받는다 · 윤년 행 수가 허용에 없다).
+    # 366일 자료를 가져온 사람에게 그 문면이 닿는지는
+    # `tests/infra/test_tsstore.py::test_write_rejects_leap_year_rows_and_hands_over_the_policy`
+    # 가 본다. 변이 6종 전건 확인.
     "DV-4": "tests/infra/test_tsstore.py::test_write_rejects_wrong_row_count_"
             "carries_field_reason_action",
     "DV-12": "tests/contract/test_exclusion_rules_contract.py",
