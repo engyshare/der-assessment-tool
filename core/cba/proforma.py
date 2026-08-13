@@ -10,10 +10,44 @@
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from decimal import Decimal
 
 from core.contracts.schemas import CashFlowRow
 from core.contracts.units import Money, to_won
+from core.contracts.validation import ValidationError
+
+
+def check_analysis_period(
+    *, analysis_years: int, asset_lifetimes_years: Sequence[int]
+) -> None:
+    """분석기간 상한 검사 — 분석기간 ≤ 최장 자원 수명 × 2, 경계 포함 (DV-5).
+
+    ``asset_lifetimes_years`` 는 분석 대상 전 자원의 수명(년) 목록이다.
+    ``CommonAsset`` 처럼 SW·HW 수명이 따로 있으면 **둘 다** 넣는다 — 대표수명
+    (``CommonAsset.lifetime``, SW·HW 중 짧은 쪽)은 교체를 놓치지 않으려고
+    작은 쪽을 쓰지만, 이 규칙이 묻는 것은 그 반대로 «가장 오래 남는
+    구성요소가 얼마나 버티는가» 이므로 여기서는 최댓값을 쓴다.
+
+    **「기본 20년」은 이 함수의 대상이 아니다.** 대장 문면의 그 절은 상한이
+    아니라 기본값 규칙이고, 기본값을 주는 자리(있다면 케이스그리드·앱 조합
+    계층)가 `core/cba` 밖이라 여기서 강제할 근거가 없다 — 구획 밖으로 둔다.
+    """
+    if not asset_lifetimes_years:
+        raise ValueError(
+            "asset_lifetimes_years 가 비었습니다 — 최장 자원 수명을 정할 수 없습니다"
+        )
+    longest = max(asset_lifetimes_years)
+    ceiling = longest * 2
+    if analysis_years > ceiling:
+        raise ValidationError(
+            field="cba.analysis_years",
+            reason=f"분석기간({analysis_years}년)이 최장 자원 수명"
+                   f"({longest}년)의 2배({ceiling}년)를 초과합니다",
+            action=f"분석기간을 {ceiling}년 이하로 낮추거나, 최장 자원 수명"
+                   f"({longest}년)이 실제와 맞는지 확인하십시오",
+            rule="DV-5",
+        )
 
 
 def capex_row(tag: str, year: int, amount_won: int) -> CashFlowRow:
@@ -41,10 +75,12 @@ def fixed_om_row(
     ``escalation_rate`` 는 소수(0~1). 0.02 = 2%/년. COMMON §6 — 비율은 소수.
     """
     if escalation_rate < 0:
-        raise ValueError(
-            f"에스컬레이션율은 음수일 수 없습니다: {escalation_rate}. "
-            "비용이 해마다 줄어드는 자원은 드물며, 음수면 회수기간이 단축되어 "
-            "경제성이 과대 계상된다"
+        raise ValidationError(
+            field="proforma.escalation_rate",
+            reason=f"에스컬레이션율은 음수일 수 없습니다: {escalation_rate}. "
+                   "비용이 해마다 줄어드는 자원은 드물며, 음수면 회수기간이 "
+                   "단축되어 경제성이 과대 계상된다",
+            action="escalation_rate 를 0 이상의 소수로 지정하십시오",
         )
     amounts: dict[int, Decimal] = {}
     current = float(annual_amount_won)
@@ -67,7 +103,11 @@ def replacement_row(
     만들지 않는다. 음수 비용(O&M 이 계속 붙는 것)이 생기지 않게 한다.
     """
     if asset_lifetime_years <= 0:
-        raise ValueError(f"자산 수명은 양수여야 합니다: {asset_lifetime_years}")
+        raise ValidationError(
+            field="proforma.asset_lifetime_years",
+            reason=f"자산 수명은 양수여야 합니다: {asset_lifetime_years}",
+            action="asset_lifetime_years 를 1 이상의 정수(년)로 지정하십시오",
+        )
     rows: list[CashFlowRow] = []
     for rep_year in replacement_years:
         if rep_year > analysis_end_year:

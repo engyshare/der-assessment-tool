@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from core.contracts.units import Money, to_won
+from core.contracts.validation import ValidationError
 
 
 def salvage_value(
@@ -30,9 +31,11 @@ def salvage_value(
     **음수가 될 수 없다.** remaining < 0 이면 0 — 수명 종료 자원의 잔존가치는 0.
     """
     if asset_lifetime_years <= 0:
-        raise ValueError(
-            f"자산 수명은 양수여야 합니다: {asset_lifetime_years}. "
-            "잔존 수명 비례 산출이 정의되지 않는다"
+        raise ValidationError(
+            field="salvage.asset_lifetime_years",
+            reason=f"자산 수명은 양수여야 합니다: {asset_lifetime_years}. "
+                   "잔존 수명 비례 산출이 정의되지 않는다",
+            action="asset_lifetime_years 를 1 이상의 정수(년)로 지정하십시오",
         )
     remaining = asset_lifetime_years - elapsed_years_at_analysis_end
     if remaining <= 0:

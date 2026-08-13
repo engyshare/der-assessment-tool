@@ -429,3 +429,96 @@ def test_generate_iso_support_curve() -> None:
     assert result.min_fiscal_point is not None
     assert result.min_fiscal_point.is_minimum_fiscal_burden is True
     assert result.min_fiscal_point.loan_rate == 0.8
+
+
+# ⚠ **`req` 마커에 `DV-N` 을 쓰지 않는다** — R24 인수 정정. `DV-1` 은 §7.3 검증
+# 규칙 대장의 ID 이지 **수용기준 ID 가 아니다.** `gen_traceability.py` 가 이 넷을
+# *「해당 수용기준이 spec에 없음」* 으로 잡았다(매달린 참조). 이 자리가 인용해야
+# 하는 것은 **같은 규칙을 붙드는 기존 테스트가 인용하던 조항**(`FR-604-AC9` —
+# 자부담 음수 불가, `test_calculate_financing_no_negative_equity` 와 동일)과
+# **구조화 요구**(`NFR-303-M1`)다. 규칙 ID 는 코드의 `rule="DV-1"` 과 그것을
+# 붙드는 `tests/contract/test_dv_rule_enforcement.py` 가 나른다.
+@pytest.mark.req("FR-604-AC9")
+@pytest.mark.req("NFR-303-M1")
+def test_dv1_subsidy_plus_loan_exceeds_capex_raises_validation_error() -> None:
+    """DV-1: 보조금+융자 합이 총사업비를 초과하면 ValidationError 구조로 던진다.
+
+    NFR-303: 오류 메시지는 «어떤 필드가 / 왜 / 어떻게 고쳐야 하는지»를 제시해야 한다.
+    세 금액(보조·융자·총사업비)이 전부 사유에 실려야 하며, 규칙 ID가 있어야 한다.
+
+    기대값 계산: capex=1000, subsidy_rate=0.6 → subsidy=600, loan_rate=0.5 → loan=500
+    subsidy+loan=1100 > capex=1000 → 자부담 음수(-100) → 위반
+    """
+    from core.contracts.validation import ValidationError
+
+    scheme = _scheme(subsidy_rate=0.6, loan_rate=0.5)
+    capex = 1000
+
+    with pytest.raises(ValidationError) as caught:
+        scheme.calculate_financing(capex)
+
+    parts = caught.value.as_dict()
+    assert parts["field"] == "incentivescheme.subsidy_rate_or_loan_rate", (
+        "관례에 맞는 키여야 한다"
+    )
+    assert parts["rule"] == "DV-1", "대장 규칙 ID 가 있어야 한다"
+
+    # 세 금액이 전부 사유에 실려야 한다
+    reason = parts["reason"] or ""
+    assert "600" in reason or "500" in reason, "보조·융자 금액 중 하나는 사유에 있어야 한다"
+    assert "1000" in reason, "총사업비 금액이 사유에 있어야 한다"
+    assert "초과" in reason or "자부담" in reason, "어떤 위반인지 명시되어야 한다"
+
+    # 조치가 구체적이어야 한다
+    assert (parts["action"] or "").strip(), "조치가 비어 있으면 안 된다"
+
+
+@pytest.mark.req("FR-604-AC9")
+def test_dv1_boundary_case_subsidy_plus_loan_equals_capex_passes() -> None:
+    """DV-1: 보조금+융자 합이 총사업비와 같으면 통과한다 (자부담 0).
+
+    대장은 「오차 1원 이내」이므로, 따로 같을 때는 통과해야 한다.
+    기대값: capex=1000, subsidy_rate=0.4 → subsidy=400, loan_rate=0.6 → loan=600
+    subsidy+loan=1000 == capex=1000 → equity=0 → 통과
+    """
+    scheme = _scheme(subsidy_rate=0.4, loan_rate=0.6)
+    result = scheme.calculate_financing(1000)
+
+    assert result["subsidy"] == 400
+    assert result["loan"] == 600
+    assert result["equity"] == 0
+
+
+@pytest.mark.req("FR-604-AC9")
+@pytest.mark.req("NFR-303-M1")
+def test_dv1_fixed_subsidy_plus_loan_exceeds_capex_raises_validation_error() -> None:
+    """DV-1: 정액 보조금 + 융자 초과도 ValidationError 구조로 던진다.
+
+    정액 보조금 케이스에서도 같은 규칙이 적용되어야 한다.
+    기대값: capex=1000, subsidy_fixed=700, loan_rate=0.4 → loan=400
+    subsidy+loan=1100 > capex=1000 → 위반
+    """
+    from core.contracts.validation import ValidationError
+
+    scheme = _scheme(subsidy_fixed=Decimal("700"), loan_rate=0.4)
+
+    with pytest.raises(ValidationError) as caught:
+        scheme.calculate_financing(1000)
+
+    parts = caught.value.as_dict()
+    assert parts["rule"] == "DV-1"
+    reason = parts["reason"] or ""
+    assert "700" in reason or "1000" in reason, "정액 보조금·총사업비 금액이 사유에 있어야 한다"
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_dv1_validation_error_is_catchable_as_valueerror() -> None:
+    """DV-1: ValidationError는 ValueError를 상속하므로 기존 코드가 그대로 받는다.
+
+    tests/incentive/test_incentive.py::test_calculate_financing_no_negative_equity
+    가 `pytest.raises(ValueError, match="...")` 로 물려 있고, 그대로 통과해야 한다.
+    """
+    scheme = _scheme(subsidy_rate=0.6, loan_rate=0.5)
+
+    with pytest.raises(ValueError, match="초과하여 자부담이 음수가 됩니다"):
+        scheme.calculate_financing(1000)

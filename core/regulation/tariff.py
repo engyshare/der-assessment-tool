@@ -15,6 +15,7 @@ from typing import Literal, TypeVar
 
 from core.contracts.assumptions import AssumptionProvider
 from core.contracts.units import Money, to_won
+from core.contracts.validation import ValidationError
 
 _TariffTable = TypeVar(
     "_TariffTable",
@@ -151,7 +152,11 @@ class ResidentialTariffTable:
 
     def __post_init__(self) -> None:
         if not self.blocks:
-            raise ValueError("residential tariff needs at least one block")
+            raise ValidationError(
+                field="tariff.residential_blocks",
+                reason=f"누진 요금표 `{self.name}` 에 구간(block)이 하나도 없습니다",
+                action="누진 구간을 최소 1개 이상 정의하십시오",
+            )
 
 
 @dataclass(frozen=True)
@@ -197,7 +202,11 @@ class TouTariffTable:
 
     def __post_init__(self) -> None:
         if not self.periods:
-            raise ValueError("TOU tariff needs at least one period")
+            raise ValidationError(
+                field="tariff.tou_periods",
+                reason=f"TOU 요금표 `{self.name}` 에 시간대(period)가 하나도 없습니다",
+                action="TOU 시간대를 최소 1개 이상 정의하십시오",
+            )
 
 
 @dataclass(frozen=True)
@@ -274,7 +283,11 @@ class TariffEngine:
 
     def bill_residential(self, kwh: float, *, when: date) -> BillBreakdown:
         if kwh < 0:
-            raise ValueError("kWh must be non-negative")
+            raise ValidationError(
+                field="tariff.residential_kwh",
+                reason=f"사용량이 음수입니다: {kwh!r}",
+                action="사용량(kWh)을 0 이상 값으로 입력하십시오",
+            )
         table = self._catalog.select_residential(when)
         assert isinstance(table, ResidentialTariffTable)
 
@@ -317,7 +330,11 @@ class TariffEngine:
 
         for usage in usages:
             if usage.kwh < 0:
-                raise ValueError("kWh must be non-negative")
+                raise ValidationError(
+                    field="tariff.tou_kwh",
+                    reason=f"사용량이 음수입니다: {usage.kwh!r}",
+                    action="사용량(kWh)을 0 이상 값으로 입력하십시오",
+                )
             period = self._period_for(table, usage.timestamp)
             rate = self._rate(period.energy_rate_key)
             charge = _decimal(usage.kwh) * _decimal(rate)
@@ -352,7 +369,11 @@ class TariffEngine:
 
     def bill_direct_trade(self, kwh: float, *, when: date) -> BillBreakdown:
         if kwh < 0:
-            raise ValueError("kWh must be non-negative")
+            raise ValidationError(
+                field="tariff.direct_trade_kwh",
+                reason=f"사용량이 음수입니다: {kwh!r}",
+                action="사용량(kWh)을 0 이상 값으로 입력하십시오",
+            )
         table = self._catalog.select_direct_trade(when)
         assert isinstance(table, DirectTradeTariffTable)
         lines = [

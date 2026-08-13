@@ -58,6 +58,21 @@ class ModelessPV(ReferencePV):
 # 지점이 `ValidationError(..., rule="DV-N")` 을 올리고, **그것을 실제 진입점으로
 # 발동시키는 테스트가 있다.** 예외를 손으로 만들어 보는 것은 여기에 들지 않는다.
 THROWN_BY_REAL_CODE: dict[str, str] = {
+    # ↓ R24 WP-34D — `core/incentive/schemas.py` 가 보조금+융자 초과를 실제로 던진다.
+    "DV-1": "tests/incentive/test_incentive.py::"
+            "test_dv1_subsidy_plus_loan_exceeds_capex_raises_validation_error",
+    # ⚠ **R24 인수 실측 — `DV-4` 는 규칙의 「절반」만 붙든다.** 원문은 「시계열
+    # 행수 = 8760 (또는 35,040), **윤년 처리 규칙 명시**」인데 강제되는 것은
+    # 앞쪽뿐이다. 저장소 전체에 `8784`·`35136`·`isleap` 이 **0건**이고, 윤년을
+    # 언급하는 것은 「윤년을 쓰지 않는다」는 모듈 내부 주석 둘
+    # (`core/der/load.py:44` · `core/assumption/timeseries_estimate.py:24`)
+    # 뿐이다 — 그 둘은 `rule="DV-4"` 와도, 어느 계약 문서와도 이어져 있지 않다.
+    #
+    # **오히려 테스트가 반대를 고정하고 있다** — `tests/infra/test_tsstore.py`
+    # 는 `year=2024`(윤년)에 8760행을 쓰고 통과하는 것을 여러 곳에서 붙든다.
+    # 「명시」는 던지는 일이 아니라 **선언하는 일**이므로 닫는 방법도 다르다:
+    # 정책을 계약 층 한 곳(`core/contracts/units.py` 후보)에 적고 그것을
+    # 붙드는 검사를 놓는 것이다. `status.md` R25 후보 1번.
     "DV-4": "tests/infra/test_tsstore.py::test_write_rejects_wrong_row_count_"
             "carries_field_reason_action",
     "DV-12": "tests/contract/test_exclusion_rules_contract.py",
@@ -71,12 +86,63 @@ THROWN_BY_REAL_CODE: dict[str, str] = {
             "test_constructor_validation_errors_carry_field_reason_action",
     "DV-3": "tests/der/test_ess.py::"
             "test_constructor_validation_errors_carry_field_reason_action",
+    # ↓ R24 — `core/casegrid/grid.py` 가 결합 집합 길이 불일치를 실제로 던진다.
+    "DV-9": "tests/casegrid/test_dv9_dv10.py::"
+            "test_dv9_mismatched_coupled_set_lengths_raise_structured_error",
+    # ↓ R24 — `core/casegrid/execution.py` 의 `run_cases()` 가 확인 없이는
+    # 러너를 부르기 전에 거부한다. 그전에는 `RunPlan.requires_confirmation`
+    # 깃발만 계산되고 아무도 읽지 않았다.
+    #
+    # ⚠ **R24 인수 기록 — 임계치의 출처가 둘이다.** `CaseGrid` 는 자기
+    # `confirmation_threshold` 를 갖고 `execution_plan()` 에 넘기는데,
+    # `run_cases()` 는 케이스 목록만 받으므로 **호출측이 `threshold=` 를 넘기지
+    # 않으면 기본 500 을 쓴다.** 그리드를 10 으로 설정해도 20건이 확인 없이
+    # 돈다는 뜻이다 — 규칙 문면의 「기본 500」은 지켜지지만 **사용자가 바꾼
+    # 임계치는 지켜지지 않는다.** 지금은 그리드에서 실행으로 잇는 배포 경로가
+    # 아예 없어(앱·웹에 `run_cases` 호출 0곳) 드러날 자리가 없다. **그 경로를
+    # 놓는 라운드가 두 값을 하나로 이어야 한다.**
+    "DV-10": "tests/casegrid/test_dv9_dv10.py::"
+             "test_dv10_rejects_over_threshold_execution_without_confirmation_before_running",
+    # ↓ R24 — `core/cba/proforma.py` 의 `check_analysis_period()` 가 분석기간
+    # 상한(최장 자원 수명의 2배)을 실제로 던진다. 신설 검사(그전에는 이 자리에
+    # 강제 코드 자체가 없었다) — WP-34C.
+    #
+    # ⚠ **R24 인수 기록 — 이 규칙은 배포 코드가 던지지만 「아무도 부르지
+    # 않는다」.** `check_analysis_period` 를 호출하는 배포 코드가 0곳이다
+    # (`grep -rn check_analysis_period core app web infra` → 정의 한 줄뿐).
+    # 즉 사용자가 200년 분석기간을 넣어도 이 함수를 지나지 않으면 아무도
+    # 막지 않는다. **이 칸의 뜻은 「강제된다」가 아니라 「던지는 코드가
+    # 있다」이므로 분류 자체는 맞다** — 그러나 추적표를 읽는 사람이 그것을
+    # 「강제된다」로 읽지 않도록 여기에 적는다.
+    #
+    # 배선하지 못한 이유는 **분석기간의 소유자가 아직 없다**는 것이다. 값이
+    # 함수 인자(`analysis_end_year`)로만 떠다니고, 자연스러운 자리인
+    # `Scenario` 는 **`DV-11` 이 명시적으로 금지한다.** 어느 층이 갖는지는
+    # 사용자 판단이며 `status.md` 「미해결」에 올렸다.
+    "DV-5": "tests/cba/test_proforma.py::"
+            "test_check_analysis_period_rejects_over_double_the_longest_lifetime",
+    # ↓ R24 — `core/assumption/catalog.py` 의 `escalate_with_detail()` 이
+    # base_year 에서 연도를 못 읽으면 실제로 던진다(「기준연도 보유」는 필수
+    # 필드로 이미 타입이 강제 — ENFORCED_WITHOUT_A_THROW 아님, DV-8 의
+    # 「물가 조정」 절반이 여기서 구조로 던지므로 THROWN 이 맞다) — WP-34C.
+    "DV-8": "tests/assumption/test_catalog.py::"
+            "test_escalate_with_detail_rejects_unparseable_base_year",
 }
 
 #: 대장에 있으나 **아직 구조로 던지는 코드가 없는** 규칙.
 #: 줄어들면 위 표에 옮긴다. `NOT_YET` 이 비는 날 이 상수를 지운다.
 NOT_YET_THROWN: frozenset[str] = frozenset({
-    "DV-1", "DV-5", "DV-6", "DV-8", "DV-9", "DV-10",
+    "DV-6",
+    # ↓ R24 인수 정정. `DV-7` 은 R24 파견 중 `ENFORCED_WITHOUT_A_THROW` 로
+    # 갔으나 **그 판정은 절단된 사본을 근거로 한 것이라 틀렸다.** 사본은
+    # 「실질/명목 구분을 1회 선언」까지였고, spec 원문은 그 선언 자리를
+    # **`AssumptionSet` 수준**으로 못 박고 **전 항목에 강제**하라고 한다.
+    # `infra/orm/assumption.py` 의 `AssumptionSet` 필드는 `name`·`version`·
+    # `parent_version_id`·`notes` 넷뿐이고, 저장소 전체에 실질/명목을 선언하는
+    # 필드가 없다(`real_or_nominal`·`is_nominal`·`price_basis` 전건 0건).
+    # 강제되는 것은 「금액이 정수 원」쪽(`Money` + `to_won`)**뿐**이다 —
+    # 즉 **발동시킬 사건이 없는 것이 아니라 강제가 아직 없다.**
+    "DV-7",
 })
 
 #: ★★ **던지지 않지만 이미 강제되는** 규칙 — R24 가 신설한 세 번째 분류.
@@ -96,14 +162,17 @@ NOT_YET_THROWN: frozenset[str] = frozenset({
 #:
 #:     규칙 → (강제하는 자리, 그것을 붙드는 테스트)
 ENFORCED_WITHOUT_A_THROW: dict[str, tuple[str, str]] = {
-    # 금액 타입이 `Money(Decimal)` 하위클래스이고 `to_won()` 이 반올림의
-    # **유일한 경계**다. 「모든 금액이 명목 원」은 값마다 검사할 사건이 아니라
-    # 경계를 하나로 둔 결과다 — `to_won(value)` 는 **어느 필드의 값인지 모른다.**
-    "DV-7": ("core/contracts/units.py", "tests/asset/test_common_asset.py"),
     # `Scenario` 가 금지 필드를 **갖지 않는다**. 클래스에 필드가 없는 것은
-    # 실행 중에 일어나는 사건이 아니므로 던질 순간이 없다.
+    # 실행 중에 일어나는 사건이 아니므로 던질 순간이 없다. **원문이 「스키마
+    # 검사로 강제」라고 직접 적고 있어**(R24 가 사본을 원문으로 되돌리며
+    # 드러났다) 이 분류는 규칙 문면 자신이 뒷받침한다.
     "DV-11": ("infra/orm/scenario.py", "tests/infra/test_scenario_ownership.py"),
 }
+#
+# ⚠ **`DV-7` 은 여기 있었고, R24 인수에서 `NOT_YET_THROWN` 으로 되돌렸다.**
+# 사본이 원문보다 짧아서 「이미 강제됨」으로 보였다 — 그 경위를 위 칸에 적었다.
+# 이 칸은 **강제 사실을 숨긴 분류**를 고치려고 만들었는데, 첫 라운드에 그
+# 반대(강제되지 않는 것을 강제된다고 적는 것)를 한 번 냈다.
 
 
 @pytest.mark.contract

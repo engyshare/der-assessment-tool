@@ -21,8 +21,10 @@ from core.cba import (
     replacement_row,
     total_row,
 )
+from core.cba.proforma import check_analysis_period
 from core.contracts.schemas import CashFlowRow
 from core.contracts.units import Money
+from core.contracts.validation import ValidationError
 
 
 @pytest.mark.req("FR-701-AC1")
@@ -137,12 +139,39 @@ def test_fixed_om_applies_per_item_escalation() -> None:
 
 def test_negative_escalction_rejected() -> None:
     """escalation_rate 음수 거부 — 비용이 해마다 줄어드는 자원은 드물며,
-    음수면 회수기간이 단축되어 경제성이 과대 계상된다."""
-    with pytest.raises(ValueError, match="음수"):
+    음수면 회수기간이 단축되어 경제성이 과대 계상된다.
+
+    §7.3 대장(DV-1~14)에 이 규칙 전용 ID 가 없으므로 구조화(``ValidationError``)
+    는 하되 ``rule`` 은 비운다 — 대장에 없는 ID 를 지어내면 매달린 참조가 된다.
+    """
+    with pytest.raises(ValidationError) as caught:
         fixed_om_row(
             tag="X", start_year=1, end_year=3,
             annual_amount_won=100_000, escalation_rate=-0.01,
         )
+    parts = caught.value.as_dict()
+    assert parts["field"] == "proforma.escalation_rate"
+    assert "음수" in (parts["reason"] or "")
+    assert (parts["action"] or "").strip()
+    assert parts["rule"] is None
+
+
+def test_replacement_row_rejects_non_positive_asset_lifetime() -> None:
+    """자산 수명이 0 이하면 거부 — 교체 주기가 정의되지 않는다.
+
+    §7.3 대장에 이 값의 양수 여부를 다루는 전용 규칙이 없어 ``rule`` 은 비운다.
+    """
+    with pytest.raises(ValidationError) as caught:
+        replacement_row(
+            tag="X", replacement_years=[10],
+            unit_cost_won=1_000_000,
+            asset_lifetime_years=0, analysis_end_year=20,
+        )
+    parts = caught.value.as_dict()
+    assert parts["field"] == "proforma.asset_lifetime_years"
+    assert "0" in (parts["reason"] or "")
+    assert (parts["action"] or "").strip()
+    assert parts["rule"] is None
 
 
 # ── FR-701-AC1 — 8종 프로포마 행 전체 검증 ──────────────────────────────
@@ -223,3 +252,96 @@ def test_proforma_row_types_all_available() -> None:
         elapsed_years_at_analysis_end=20,
     )
     assert int(salvage_row) == int(salvage)
+
+
+def test_salvage_value_rejects_non_positive_asset_lifetime() -> None:
+    """자산 수명이 0 이하면 잔존 수명 비례 산출이 정의되지 않는다.
+
+    §7.3 대장에 이 값의 양수 여부를 다루는 전용 규칙이 없어 ``rule`` 은 비운다.
+    """
+    from core.cba.salvage import salvage_value
+
+    with pytest.raises(ValidationError) as caught:
+        salvage_value(
+            capex_won=10_000_000,
+            asset_lifetime_years=-1,
+            elapsed_years_at_analysis_end=0,
+        )
+    parts = caught.value.as_dict()
+    assert parts["field"] == "salvage.asset_lifetime_years"
+    assert "-1" in (parts["reason"] or "")
+    assert (parts["action"] or "").strip()
+    assert parts["rule"] is None
+
+
+# ── DV-5 — 분석기간 ≤ 최장 자원 수명 × 2 (신설) ──────────────────────────
+
+
+@pytest.mark.contract
+@pytest.mark.req("NFR-303-M1")
+def test_check_analysis_period_accepts_exactly_double_the_longest_lifetime() -> None:
+    """딱 2배(경계값)는 통과해야 한다 — `≤` 이지 `<` 가 아니다.
+
+    오라클: 손계산. 최장 수명 25년 × 2 = 50년. 분석기간 50년은 경계에서
+    거부되면 안 된다.
+
+    ⚠ **호출만 두지 않는다** — R24 인수에서 `check_marker_substance` 가 이
+    테스트를 *「조항 마커가 있는데 검증이 없다」*로 잡았다. 조항을 인용한
+    테스트가 아무것도 단언하지 않으면 추적표는 그 조항을 검증된 것으로 세고,
+    실제로 붙드는 것은 「예외가 나지 않았다」뿐인데 그것이 **어디에도 적혀
+    있지 않다.** 거부됐을 때 무엇이 왜 틀렸는지도 함께 남긴다.
+    """
+    try:
+        check_analysis_period(analysis_years=50, asset_lifetimes_years=[25, 10])
+    except ValidationError as exc:
+        pytest.fail(f"경계값(정확히 2배)인 50년이 거부됐다 — `≤` 여야 한다: {exc.as_dict()}")
+
+
+@pytest.mark.contract
+@pytest.mark.req("NFR-303-M1")
+def test_check_analysis_period_rejects_over_double_the_longest_lifetime() -> None:
+    """경계를 1년 넘으면 거부 — field·reason·action·rule 을 모두 실어야 한다.
+
+    오라클: 손계산. 최장 수명 25년 × 2 = 50년. 분석기간 51년은 초과.
+    """
+    with pytest.raises(ValidationError) as caught:
+        check_analysis_period(analysis_years=51, asset_lifetimes_years=[25, 10])
+
+    parts = caught.value.as_dict()
+    assert parts["field"] == "cba.analysis_years"
+    assert "51" in (parts["reason"] or ""), "받은 분석기간이 사유에 들어가야 한다"
+    assert "25" in (parts["reason"] or ""), "최장 수명이 사유에 들어가야 한다"
+    assert "50" in (parts["action"] or ""), "★ 상한을 조치가 알려 주어야 한다"
+    assert parts["rule"] == "DV-5"
+
+
+@pytest.mark.contract
+@pytest.mark.req("NFR-303-M1")
+def test_check_analysis_period_uses_the_longest_not_the_first_lifetime() -> None:
+    """★ 「최장」— 자원이 여럿이면 목록의 **최댓값**이 기준이다, 첫째가 아니다.
+
+    오라클: 손계산. 수명 목록 [10, 25, 15] 의 최장은 25년 → 상한 50년.
+    첫째(10년)를 기준으로 삼으면 상한이 20년이 되어 분석기간 21년이
+    (잘못) 거부된다 — 여기서는 25년 기준 상한(50년) 안이므로 통과해야 한다.
+    """
+    check_analysis_period(analysis_years=21, asset_lifetimes_years=[10, 25, 15])  # 예외 없으면 통과
+
+    # 최장(25년)의 상한(50년)을 넘기면, 첫째(10년) 기준이 아니라 25년 기준으로
+    # 거부 사유를 낸다
+    with pytest.raises(ValidationError) as caught:
+        check_analysis_period(analysis_years=51, asset_lifetimes_years=[10, 25, 15])
+    parts = caught.value.as_dict()
+    assert "25" in (parts["reason"] or "")
+    assert "50" in (parts["action"] or "")
+
+
+@pytest.mark.contract
+@pytest.mark.req("NFR-303-M1")
+def test_check_analysis_period_rejects_empty_lifetime_list() -> None:
+    """자원이 하나도 없으면 최장을 정할 수 없다 — 호출측 계약 위반(대상아님 성격).
+
+    NFR-303 대상(사용자 입력 규칙 위반)이 아니라 함수 호출 계약 위반이므로
+    `ValidationError` 가 아니라 맨 `ValueError` 로 거부한다.
+    """
+    with pytest.raises(ValueError, match="비었습니다"):
+        check_analysis_period(analysis_years=20, asset_lifetimes_years=[])

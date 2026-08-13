@@ -190,7 +190,7 @@
 |  |  | 1 | `FR-602-AC3` | 오버라이드 시 사유 입력을 권장 필드로 제공한다 | 자동 | test_set.py |
 | `FR-603` | Must-have | 1 | `FR-603-AC1` | 항목 필드 (v0.5 정정): (자원유형, 규격, 단가·단위, 기준일·기준연도·버전, 적용 범위·조건, 산출 방법·표본, 출처(문서명·위치·전체URL), 최종확… | 자동 | test_catalog.py |
 |  |  | 1 | `FR-603-AC2` | 카탈로그 값과 사용자 변경값이 리포트에서 시각적으로 구분된다 | 자동 | test_catalog.py |
-|  |  | 1 | `FR-603-AC3` | 기준연도가 분석연도와 다르면 물가 조정 후 사용하며 조정 내역을 표시한다 | 자동 | test_catalog.py |
+|  |  | 1 | `FR-603-AC3` | 기준연도가 분석연도와 다르면 물가 조정 후 사용하며 조정 내역을 표시한다 | 자동 | test_catalog.py 2건 |
 | `FR-604` | Must-have | 1 | `FR-604-AC1` | 스킴 구성 | 자동 | test_incentive.py |
 |  |  | 1 | `FR-604-AC2` | 보조: 보조율(%) 또는 정액(원), 상한, 대상 비용 범위(설비비만 / 설치비 포함) | 자동 | test_incentive.py |
 |  |  | 1 | `FR-604-AC3` | 융자: 융자율(%), 연이자율, 거치기간(년), 상환기간(년), 상환방식(원리금균등/원금균등/만기일시) | 자동 | test_incentive.py |
@@ -199,7 +199,7 @@
 |  |  | 1 | `FR-604-AC6` | 지원 주체: 국비 / 지방비 / 민간 | 자동 | test_incentive.py |
 |  |  | 1 | `FR-604-AC7` | 보조 확정액 + 융자 확정액 + 자부담액 = 대상 총사업비 (오차 1원 이내) | 자동 | test_incentive.py |
 |  |  | 1 | `FR-604-AC8` | 보조 확정액 = min(대상비용 × 보조율, 보조 상한) 또는 정액 | 자동 | test_incentive.py |
-|  |  | 1 | `FR-604-AC9` | 자부담액은 잔여로 자동 계산되며 음수가 될 수 없다 | 자동 | test_incentive.py |
+|  |  | 1 | `FR-604-AC9` | 자부담액은 잔여로 자동 계산되며 음수가 될 수 없다 | 자동 | test_incentive.py 4건 |
 | `FR-605` | Must-have | 1 | `FR-605-AC1` | 자원 유형별 상이한 조건이 한 시나리오에서 동시 적용되고 프로포마에 분리 표시된다 | 자동 | test_incentive.py |
 | `FR-606` | Must-have | 1 | `FR-606-AC1` | 거치기간 중 이자만, 상환기간 중 원리금 상환 스케줄 생성 | 자동 | test_casevariant_contract.py, test_incentive.py |
 |  |  | 1 | `FR-606-AC2` | 상환 스케줄이 프로포마 독립 행으로 표시되고 총 이자비용이 별도 집계된다 | 자동 | test_incentive.py |
@@ -255,14 +255,14 @@
 | `FR-801` | Must-have | 1 | `FR-801-AC1` | 임의 파라미터를 "탐색 변수"로 지정하고 값 목록(예: [저, 중, 고] 또는 [100, 150, 200])을 부여 | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-801-AC2` | 탐색 변수로 지정 가능한 대상에는 스칼라 파라미터뿐 아니라 자원 운전 방법(FR-105), 규제 프로파일(FR-504), 시계열 데이터셋(FR-905) 도 포함… | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-801-AC3` | 시스템이 전조합(Cartesian product)을 생성하고 일괄 실행한다 | 자동 | test_casegrid.py |
-|  |  | 1 | `FR-801-AC4` | 케이스 수를 실행 전에 표시하고, 임계치(기본 500) 초과 시 경고 후 확인을 요구한다 | 자동 | test_casegrid.py |
+|  |  | 1 | `FR-801-AC4` | 케이스 수를 실행 전에 표시하고, 임계치(기본 500) 초과 시 경고 후 확인을 요구한다 | 자동 | test_casegrid.py, test_dv9_dv10.py 3건 |
 |  |  | 1 | `FR-801-AC5` | 결과를 단일 테이블(케이스 × 지표)로 집계하고 CSV/XLSX 내보내기 가능 | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-801-AC6` | 기본 탐색 변수 프리셋 — 2단계 제공 (v0.5 정정): 사용자가 백지에서 시작하지 않도록 기본 세트를 제시하되, 기본 선택은 빠른 탐색 으로 한다 | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-801-AC7.quick` | 빠른 탐색 (기본값) — 결합 집합 1(설비단가·시공비) 3수준 × 할인율 3 × 전기요금 인상률 3 = 27 케이스, 예상 실행시간 81초(1 vCPU, NF… | 자동 | test_phase1_dod.py, test_17_2_dod2.py, test_casegrid.py |
 |  |  | 1 | `FR-801-AC7.full` | 전체 탐색 (명시 선택) — 아래 6변수 전건 = 729 케이스, 예상 실행시간 2,187초(36.5분). DV-10 경고 후 백그라운드 실행으로 전환된다 (N… | 자동 | test_casegrid.py |
 | `FR-802` | Must-have | 1 | `FR-802-AC1` | 여러 변수를 하나의 결합 집합으로 선언할 수 있다 | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-802-AC2` | 결합 집합 내 변수들은 동일 인덱스끼리만 조합된다. 예: {PV단가, ESS단가, 시공비}를 결합하고 각각 3수준을 주면 27개가 아닌 3개 케이스(저/저/저,… | 자동 | test_casegrid.py |
-|  |  | 1 | `FR-802-AC3` | 결합 집합 내 값 목록의 길이가 다르면 명확한 오류로 거부한다 | 자동 | test_casegrid.py |
+|  |  | 1 | `FR-802-AC3` | 결합 집합 내 값 목록의 길이가 다르면 명확한 오류로 거부한다 | 자동 | test_casegrid.py, test_dv9_dv10.py 2건 |
 |  |  | 1 | `FR-802-AC4` | 결합 집합과 독립 변수를 혼용할 수 있다. 예: 결합 3케이스 × 독립 할인율 3수준 = 9케이스 | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-802-AC5` | 실행 전 생성될 케이스 목록을 미리보기로 제시한다 | 자동 | test_casegrid.py |
 | `FR-803` | Must-have | 1 | `FR-803-AC1` | 2변수 히트맵: 축 변수 2개 선택 → 지표 등고선. "목표 달성 영역"을 음영으로 구분 | 자동 | test_phase1_dod.py, test_17_2_dod2.py, test_casegrid.py, test_charts_feasible_region.py 13건 |
@@ -339,7 +339,7 @@
 |  |  | 1 | `NFR-208-M1` | import-linter 계약(layers + independence)을 CI에서 강제. 위반 0건 | 자동 | test_17_10_dod10.py, test_import_boundaries.py 2건 |
 | `NFR-301` | Should-have | 1 | `NFR-301-M1` | 사용자 5명 태스크 수행 테스트 | 수동 | test_manual_stubs.py (스텁) + MC-2 (미수행) |
 | `NFR-302` | Should-have | 1 | `NFR-302-M1` | UI 검수 체크리스트 | 자동 | test_dashboard.py 2건 |
-| `NFR-303` | Should-have | 1 | `NFR-303-M1` | 오류 메시지 리뷰 체크리스트 | 자동 | test_chart_contract.py, test_dv_rule_enforcement.py 10건, test_validation_contract.py 5건, test_ess.py 6건, test_ev_v2g.py 8건, test_heatpump.py 15건, test_load.py 17건, test_pv_validation.py 9건, test_thermal_load.py 15건, test_tsstore.py 2건, test_charts_feasible_region.py, test_charts_wp28a.py 3건, test_dashboard.py |
+| `NFR-303` | Should-have | 1 | `NFR-303-M1` | 오류 메시지 리뷰 체크리스트 | 자동 | test_dv9_dv10.py 2건, test_structured_errors.py 22건, test_proforma.py 4건, test_chart_contract.py, test_dv_catalogue_matches_spec.py 3건, test_dv_rule_enforcement.py 10건, test_validation_contract.py 5건, test_ess.py 6건, test_ev_v2g.py 8건, test_heatpump.py 15건, test_load.py 17건, test_pv_validation.py 9건, test_thermal_load.py 15건, test_incentive.py 3건, test_tsstore.py 2건, test_charts_feasible_region.py, test_charts_wp28a.py 3건, test_dashboard.py |
 | `NFR-304` | Nice-to-have | 1 | `NFR-304-AC1` | 주요 화면은 1366×768 이상에서 가로 스크롤 없이 표시되어야 한다 | 수동 | test_manual_stubs.py (스텁) + MC-5 (미수행) |
 | `NFR-401` | Must-have | 1 | `NFR-401-AC1` | 비밀번호는 Argon2id 또는 bcrypt(cost≥12)로 해싱 저장 | 자동 | test_hashing.py 2건 |
 | `NFR-402` | Must-have | 1 | `NFR-402-AC1` | 모든 통신은 TLS 1.2 이상 | 자동 | test_phase1_measurements.py |
@@ -363,7 +363,7 @@
 | `SC-4` | Must-have | 1 | `SC-4` | 로그인, 시나리오·전제 생성·수정·삭제, 관리자 카탈로그 변경 기록 | 자동 | test_audit.py |
 | `SC-5` | Must-have | 1 | `SC-5` | DB 경로·시크릿 키는 환경변수. 저장소 커밋 금지, gitleaks CI 스캔 | 자동 | test_auth.py 5건, test_ci_gates.py 2건, test_phase1_measurements.py 2건 |
 | `SC-6` | Must-have | 1 | `SC-6` | DER-VET 코드를 사용하지 않으므로 BSD 3-Clause 전파 의무 없음. 설계 참조 사실은 README에 명기 (부록 C) | 자동 | test_license.py |
-| `SC-7` | Must-have | 1 | `SC-7` | 요금표·단가 등 외부 데이터의 출처·이용조건을 메타데이터로 보관 | 자동 | test_items.py 2건, test_assumption_provider.py |
+| `SC-7` | Must-have | 1 | `SC-7` | 요금표·단가 등 외부 데이터의 출처·이용조건을 메타데이터로 보관 | 자동 | test_catalog.py, test_items.py 2건, test_assumption_provider.py |
 | `SC-8` | Must-have | 1 | `SC-8` | 전제 데이터는 민감도 등급을 보유한다 — 공개 가능(공시·고시 등 공개 출처) / 비공개(업계 견적, 미공표 제도 검토, 제공자가 비공개를 조건으로 준 값). … | 자동 | test_ci_gates.py |
 
 ## ID 규약

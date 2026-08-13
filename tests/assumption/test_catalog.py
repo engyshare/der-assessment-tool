@@ -1,7 +1,7 @@
 from datetime import date
 
 import pytest
-from pydantic import ValidationError
+from pydantic import ValidationError as PydanticValidationError
 
 from core.assumption.catalog import (
     CatalogValueResolution,
@@ -10,6 +10,7 @@ from core.assumption.catalog import (
     resolve_catalog_value,
 )
 from core.assumption.item import ConfidenceLevel
+from core.contracts.validation import ValidationError
 
 
 def _item(**overrides: object) -> TechCatalogItem:
@@ -66,7 +67,7 @@ def test_tech_catalog_item_field_set() -> None:
     assert item.sample == "업계 견적 3건 평균"
 
     # 하나라도 빠지면(v0.4 상태로 되돌아가면) 생성 거부 — 필수 필드다
-    with pytest.raises(ValidationError):
+    with pytest.raises(PydanticValidationError):
         _item(version=None)
 
 
@@ -128,3 +129,47 @@ def test_catalog_escalation_shows_adjustment_detail() -> None:
     no_change = item.escalate_with_detail(target_year=2026, inflation_rate=0.02)
     assert no_change.diff_years == 0
     assert no_change.escalated_value == 1600000
+
+
+@pytest.mark.req("FR-603-AC3")
+def test_escalate_with_detail_rejects_unparseable_base_year() -> None:
+    """base_year 에서 4자리 연도를 못 찾으면 물가 조정이 정의되지 않는다 (DV-8).
+
+    사용자가 넣은 base_year 문자열의 문제이므로 구조화된 ValidationError
+    (rule="DV-8") 로 던진다 — 「카탈로그·전제 단가는 기준연도 보유, 분석연도로
+    물가 조정」 중 후자(조정)가 base_year 를 못 읽어 실패하는 경로.
+    """
+    item = _item(base_year="확인불가")
+    with pytest.raises(ValidationError) as caught:
+        item.escalate_with_detail(target_year=2028, inflation_rate=0.02)
+
+    parts = caught.value.as_dict()
+    assert parts["field"] == "techcatalog.base_year"
+    assert "확인불가" in (parts["reason"] or ""), "받은 값이 사유에 들어가야 한다"
+    assert (parts["action"] or "").strip()
+    assert parts["rule"] == "DV-8"
+
+
+@pytest.mark.req("SC-7")
+def test_usage_terms_required_for_external_source_carries_field_reason_action() -> None:
+    """외부 출처인데 usage_terms 가 없으면 구조화된 사유를 낸다 — SC-7, `DV-8` 아님.
+
+    이 검사는 pydantic ``model_validator`` 안에서 돈다. pydantic 은 검증
+    실패를 무조건 자기 ``ValidationError`` 로 다시 감싸므로 (v2 확인됨),
+    원본 ``core.contracts.validation.ValidationError`` 는
+    ``e.errors()[0]["ctx"]["error"]`` 에서 회수한다 — ``except ValueError`` 로
+    받던 자리는 pydantic 의 래핑도 ``ValueError`` 하위형이므로 그대로 잡힌다.
+
+    §7.3 대장에는 SC-7(데이터 출처)에 대응하는 DV 규칙이 없으므로 `rule` 은
+    비운다 — 없는 ID 를 지어내면 매달린 참조가 된다.
+    """
+    with pytest.raises(PydanticValidationError) as caught:
+        _item(usage_terms=None)
+
+    original = caught.value.errors()[0]["ctx"]["error"]
+    assert isinstance(original, ValidationError)
+    parts = original.as_dict()
+    assert parts["field"] == "techcatalog.usage_terms"
+    assert "usage_terms" in (parts["reason"] or "") or "이용조건" in (parts["reason"] or "")
+    assert (parts["action"] or "").strip()
+    assert parts["rule"] is None

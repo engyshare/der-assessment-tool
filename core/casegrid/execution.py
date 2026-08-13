@@ -6,6 +6,7 @@ from concurrent.futures import Executor, Future, ProcessPoolExecutor, as_complet
 from typing import TypeAlias, cast
 
 from core.casegrid.models import Case, CaseResult, Progress, RunPlan
+from core.contracts.validation import ValidationError
 
 DEFAULT_CONFIRMATION_THRESHOLD = 500
 DEFAULT_SECONDS_PER_CASE = 3.0
@@ -32,11 +33,23 @@ def execution_plan(
     if case_count < 0:
         raise ValueError("case count must be non-negative")
     if seconds_per_case < 0:
-        raise ValueError("seconds per case must be non-negative")
+        raise ValidationError(
+            field="casegrid.seconds_per_case",
+            reason=f"케이스당 예상 소요시간이 음수입니다: {seconds_per_case}",
+            action="0 이상의 값을 지정하십시오",
+        )
     if parallelism < 1:
-        raise ValueError("parallelism must be at least one")
+        raise ValidationError(
+            field="casegrid.parallelism",
+            reason=f"병렬도가 1 미만입니다: {parallelism}",
+            action="1 이상의 정수를 지정하십시오",
+        )
     if threshold < 0:
-        raise ValueError("threshold must be non-negative")
+        raise ValidationError(
+            field="casegrid.confirmation_threshold",
+            reason=f"확인 임계치가 음수입니다: {threshold}",
+            action="0 이상의 정수를 지정하십시오",
+        )
     estimated = case_count * seconds_per_case / parallelism
     return RunPlan(
         case_count=case_count,
@@ -56,7 +69,20 @@ def run_cases(
     executor_factory: ExecutorFactory | None = None,
     progress: ProgressCallback | None = None,
     stop_requested: StopPredicate | None = None,
+    confirmed: bool = False,
+    threshold: int = DEFAULT_CONFIRMATION_THRESHOLD,
 ) -> tuple[CaseResult, ...]:
+    case_count = len(cases)
+    if case_count > threshold and not confirmed:
+        raise ValidationError(
+            field="casegrid.case_count",
+            reason=(
+                f"케이스 수 {case_count}건이 확인 임계치 {threshold}건을 "
+                "초과했습니다"
+            ),
+            action="케이스 수를 줄이거나, 사용자 확인 후 confirmed=True 로 다시 호출하십시오",
+            rule="DV-10",
+        )
     ordered_cases = tuple(sorted(cases, key=lambda case: case.index))
     if not parallel:
         return _run_cases_sequential(ordered_cases, runner, progress, stop_requested)

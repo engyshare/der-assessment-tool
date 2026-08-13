@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from core.contracts.units import Money, to_won
+from core.contracts.validation import ValidationError
 
 
 class IncentiveScheme(BaseModel):
@@ -57,8 +58,16 @@ class IncentiveScheme(BaseModel):
     @model_validator(mode="after")
     def _validate_subsidy(self) -> IncentiveScheme:
         if self.subsidy_fixed is not None and self.subsidy_rate > 0:
-            raise ValueError(
-                "정액 보조금(subsidy_fixed)과 정률 보조금(subsidy_rate)은 동시에 설정할 수 없습니다."  # noqa: E501
+            raise ValidationError(
+                field="incentivescheme.subsidy_fixed_and_subsidy_rate",
+                reason=(
+                    "정액 보조금(subsidy_fixed)과 정률 보조금(subsidy_rate)은 "
+                    "동시에 설정할 수 없습니다"
+                ),
+                action=(
+                    "둘 중 하나만 사용하십시오 — 정액 보조금을 쓰려면 subsidy_rate를 0으로, "
+                    "정률 보조금을 쓰려면 subsidy_fixed를 None으로 하십시오"
+                ),
             )
         return self
 
@@ -66,14 +75,20 @@ class IncentiveScheme(BaseModel):
     def _validate_prefunding_status(self) -> IncentiveScheme:
         if self.is_prefunded:
             if self.prefunded_status not in ("확정 지원", "지원 예정"):
-                raise ValueError(
-                    "기지원 설비는 prefunded_status 를 '확정 지원' 또는 '지원 예정'으로 "
-                    "명시해야 합니다"
+                raise ValidationError(
+                    field="incentivescheme.prefunded_status",
+                    reason=(
+                        f"기지원 설비는 prefunded_status 를 '확정 지원' 또는 '지원 예정'으로 "
+                        f"명시해야 합니다 — 현재 값: {self.prefunded_status!r}"
+                    ),
+                    action="prefunded_status를 '확정 지원' 또는 '지원 예정' 중 하나로 고치십시오",
                 )
             return self
         if self.prefunded_status is not None:
-            raise ValueError(
-                "prefunded_status 는 is_prefunded=True 인 설비에만 지정합니다"
+            raise ValidationError(
+                field="incentivescheme.prefunded_status",
+                reason="prefunded_status 는 is_prefunded=True 인 설비에만 지정합니다",
+                action="is_prefunded=True로 설정하거나 prefunded_status를 None으로 하십시오",
             )
         return self
 
@@ -95,9 +110,16 @@ class IncentiveScheme(BaseModel):
         loan = to_won(float(capex_won) * self.loan_rate)
 
         # 보조금 + 융자금이 총사업비를 초과하는지 검사 (자부담 음수 불가)
+        # DV-1: 보조 확정액 + 융자 확정액 + 자부담액 = 대상 총사업비 (오차 1원 이내)
         if subsidy + loan > capex_won:
-            raise ValueError(
-                f"보조금({subsidy})과 융자({loan})의 합이 총사업비({capex_won})를 초과하여 자부담이 음수가 됩니다."  # noqa: E501
+            raise ValidationError(
+                field="incentivescheme.subsidy_rate_or_loan_rate",
+                reason=(
+                    f"보조금({subsidy})과 융자({loan})의 합이 총사업비({capex_won})를 "
+                    "초과하여 자부담이 음수가 됩니다"
+                ),
+                action="보조금율 또는 융자율을 낮추어 자부담이 0 이상이 되도록 고치십시오",
+                rule="DV-1",
             )
 
         # 자부담 잔여 자동 계산

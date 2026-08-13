@@ -48,7 +48,7 @@ def test_coupled_filter_counts_are_generated_from_grid_definition() -> None:
     assert len(unfiltered_cases) == len(("low", "base", "high")) ** len(grid.variables)
     assert grid.preview(limit=2) == filtered_cases[:2]
 
-    with pytest.raises(ValueError, match="same length"):
+    with pytest.raises(ValueError, match="길이"):
         CaseGrid(
             variables=(
                 CaseVariable("pv_cost", ("low", "base", "high")),

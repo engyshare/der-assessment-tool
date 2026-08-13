@@ -5,6 +5,7 @@ from datetime import date
 from pydantic import BaseModel, model_validator
 
 from core.assumption.item import ConfidenceLevel, _has_external_source
+from core.contracts.validation import ValidationError
 
 
 class TechCatalogItem(BaseModel):
@@ -50,9 +51,12 @@ class TechCatalogItem(BaseModel):
         if _has_external_source(self.source) and not (
             self.usage_terms and self.usage_terms.strip()
         ):
-            raise ValueError(
-                "source 가 외부 출처이면 usage_terms (이용조건) 가 필수입니다 "
-                "(SC-7). 카탈로그값의 출처·재사용 조건을 적으십시오."
+            raise ValidationError(
+                field="techcatalog.usage_terms",
+                reason=f"source({self.source!r})가 외부 출처인데 usage_terms "
+                       "(이용조건)가 없습니다 (SC-7)",
+                action="카탈로그값의 출처·재사용 조건(라이선스·재배포 조건·"
+                       "출처 표기 의무 등)을 usage_terms 에 적으십시오",
             )
         return self
 
@@ -72,7 +76,14 @@ class TechCatalogItem(BaseModel):
         # base_year 문자열에서 연도를 추출 (e.g. "2026 (전망)" -> 2026)
         match = re.search(r'\d{4}', self.base_year)
         if not match:
-            raise ValueError(f"기준연도를 추출할 수 없습니다: {self.base_year}")
+            raise ValidationError(
+                field="techcatalog.base_year",
+                reason=f"base_year 에서 4자리 연도를 찾을 수 없습니다: "
+                       f"{self.base_year!r}",
+                action="base_year 에 4자리 연도를 포함하십시오 "
+                       "(예: '2026' 또는 '2026 (전망)')",
+                rule="DV-8",
+            )
 
         base_y = int(match.group())
         diff_years = target_year - base_y

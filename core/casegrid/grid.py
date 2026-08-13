@@ -9,6 +9,7 @@ from core.casegrid.execution import (
 )
 from core.casegrid.execution import execution_plan as build_execution_plan
 from core.casegrid.models import Case, CaseVariable, CoupledSet, RunPlan
+from core.contracts.validation import ValidationError
 
 
 class CaseGrid:
@@ -24,11 +25,23 @@ class CaseGrid:
         self.confirmation_threshold = confirmation_threshold
         self.seconds_per_case = seconds_per_case
         if not self.variables:
-            raise ValueError("case grid must contain at least one variable")
+            raise ValidationError(
+                field="casegrid.variables",
+                reason="케이스 그리드는 변수를 최소 1개 이상 가져야 합니다",
+                action="variables 에 CaseVariable 을 1개 이상 추가하십시오",
+            )
         if self.confirmation_threshold < 0:
-            raise ValueError("confirmation threshold must be non-negative")
+            raise ValidationError(
+                field="casegrid.confirmation_threshold",
+                reason=f"확인 임계치가 음수입니다: {self.confirmation_threshold}",
+                action="0 이상의 정수를 지정하십시오",
+            )
         if self.seconds_per_case < 0:
-            raise ValueError("seconds per case must be non-negative")
+            raise ValidationError(
+                field="casegrid.seconds_per_case",
+                reason=f"케이스당 예상 소요시간이 음수입니다: {self.seconds_per_case}",
+                action="0 이상의 값을 지정하십시오",
+            )
         self._validate_variable_names()
         self._validate_coupled_sets()
 
@@ -50,7 +63,11 @@ class CaseGrid:
 
     def preview(self, limit: int | None = None) -> tuple[Case, ...]:
         if limit is not None and limit < 0:
-            raise ValueError("preview limit must be non-negative")
+            raise ValidationError(
+                field="casegrid.preview_limit",
+                reason=f"미리보기 한도가 음수입니다: {limit}",
+                action="0 이상의 값을 지정하거나 생략하십시오",
+            )
         generated = self.generate()
         if limit is None:
             return generated
@@ -67,7 +84,12 @@ class CaseGrid:
     def _validate_variable_names(self) -> None:
         names = [variable.name for variable in self.variables]
         if len(set(names)) != len(names):
-            raise ValueError("case grid variable names must be unique")
+            duplicates = sorted({name for name in names if names.count(name) > 1})
+            raise ValidationError(
+                field="casegrid.variables",
+                reason=f"변수 이름이 중복되었습니다: {duplicates}",
+                action="변수 이름을 서로 다르게 지정하십시오",
+            )
 
     def _validate_coupled_sets(self) -> None:
         variables_by_name = {variable.name: variable for variable in self.variables}
@@ -77,18 +99,35 @@ class CaseGrid:
             for variable_name in coupled.variable_names:
                 variable = variables_by_name.get(variable_name)
                 if variable is None:
-                    raise ValueError(
-                        f"coupled set {coupled.name!r} references unknown variable "
-                        f"{variable_name!r}"
+                    raise ValidationError(
+                        field="casegrid.coupled_sets",
+                        reason=(
+                            f"결합 집합 {coupled.name!r} 이 알 수 없는 변수 "
+                            f"{variable_name!r} 를 참조합니다"
+                        ),
+                        action="결합 집합이 참조하는 변수 이름을 variables 목록에 선언하십시오",
                     )
                 if variable_name in assigned:
-                    raise ValueError(
-                        f"case variable {variable_name!r} appears in more than one coupled set"
+                    raise ValidationError(
+                        field="casegrid.coupled_sets",
+                        reason=(
+                            f"변수 {variable_name!r} 가 둘 이상의 결합 집합에 "
+                            "속해 있습니다"
+                        ),
+                        action="변수 하나는 하나의 결합 집합에만 속하게 하십시오",
                     )
                 assigned[variable_name] = coupled.name
                 lengths.add(len(variable.values))
             if len(lengths) != 1:
-                raise ValueError(f"coupled set {coupled.name!r} values must have same length")
+                raise ValidationError(
+                    field="casegrid.coupled_sets",
+                    reason=(
+                        f"결합 집합 {coupled.name!r} 의 값 목록 길이가 서로 다릅니다: "
+                        f"{sorted(lengths)}"
+                    ),
+                    action="결합된 변수들의 값 개수를 모두 같게 맞추십시오",
+                    rule="DV-9",
+                )
 
     def _components(self, *, filter_coupled: bool) -> tuple[tuple[Mapping[str, object], ...], ...]:
         if not filter_coupled:
