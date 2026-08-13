@@ -90,6 +90,15 @@ def _compare_golden_values(
         )
 
 
+#: 골든 회귀 허용오차 — **조항이 정한 값이다** (`NFR-104`: 승인 기준값 대비
+#: 0.1% 이내). R26 까지 이 자리는 `0.15`(=15%) 였다. 손픽스처에만 쓰여 게이트를
+#: 무르게 하지는 않았지만, **`NFR-104-M1` 마커가 붙은 경로에 조항의 150배
+#: 허용치가 상수로 박혀 있었다** — 이 헬퍼를 실제 골든 파일에 재사용하는 순간
+#: 조용히 15%가 적용된다. 실물 대조는 `tests/golden/test_regression_scenarios.py`
+#: 가 `rel=1e-3`(NPV 는 완전 일치)로 하고 있으며, 두 값이 같아야 한다.
+GOLDEN_TOLERANCE = 0.001
+
+
 def _golden_regression_status(
     paths: list[Path], actual_by_scenario: dict[str, dict[str, float]]
 ) -> tuple[list[str], list[str]]:
@@ -103,7 +112,7 @@ def _golden_regression_status(
             skipped.append(f"{path.name}: expected_values are all null")
             continue
         _compare_golden_values(
-            expected, actual_by_scenario.get(scenario, {}), tolerance=0.15
+            expected, actual_by_scenario.get(scenario, {}), tolerance=GOLDEN_TOLERANCE
         )
         checked.append(path.name)
     return checked, skipped
@@ -156,7 +165,16 @@ def test_repo_golden_files_are_all_readable_and_declare_provenance() -> None:
 
 @pytest.mark.req("NFR-104-M1")
 def test_filled_golden_oracle_is_compared_and_can_fail(tmp_path: Path) -> None:
-    """Hand oracle: 100 within 15 percent passes; 140 is 40 percent high and fails."""
+    """손 오라클: 기준값 100 에 대해 **조항 허용치(0.1%) 안쪽은 통과, 밖은 실패**.
+
+    R26 까지 이 픽스처는 `114.0`(14% 높음)이 통과하도록 되어 있었다 — 헬퍼의
+    허용치가 15% 였기 때문이다. **조항(`NFR-104`)은 0.1% 이고**, 픽스처가
+    허용치에 맞춰져 있으면 허용치가 조항에서 얼마나 멀어졌는지 이 테스트는
+    영영 말해 주지 않는다. 허용치를 조항 값으로 되돌리고 픽스처를 그에 맞췄다.
+
+        100.05  0.05% 높음 → 통과 (경계 안쪽)
+        140.0   40% 높음   → 실패
+    """
     case = tmp_path / "scenario_demo.yaml"
     case.write_text(
         "\n".join(
@@ -171,7 +189,7 @@ def test_filled_golden_oracle_is_compared_and_can_fail(tmp_path: Path) -> None:
     )
 
     checked, skipped = _golden_regression_status(
-        [case], {"demo": {"npv_won": 114.0}}
+        [case], {"demo": {"npv_won": 100.05}}
     )
     assert checked == ["scenario_demo.yaml"]
     assert skipped == []
@@ -179,11 +197,12 @@ def test_filled_golden_oracle_is_compared_and_can_fail(tmp_path: Path) -> None:
     with pytest.raises(AssertionError, match="npv_won"):
         _golden_regression_status([case], {"demo": {"npv_won": 140.0}})
 
-    # NFR-104-M1: CI 환경에서 골든 수치비교 검증
-    # 환경 프로파일을 통해 CI/로컬 구분 가능성 확인
-    from core.casegrid.performance import detect_environment
-    env = detect_environment()
-    assert env.label in ("local process", "CI environment")
-    # 골든 수치비교 검사가 CI 게이트 경로에 있음을 확인
-    # 로컬 환경에서도 동일한 검사 로직이 수행됨을 확인
-    assert "npv_won" in ({"demo": {"npv_won": 114.0}})["demo"]
+    # ★ **경계 바깥이 실제로 걸리는지** — 통과 케이스만 두면 허용치를 넓혀도
+    # 아무것도 빨간불이 되지 않는다. 0.2% 는 조항(0.1%) 밖이므로 실패해야 한다.
+    with pytest.raises(AssertionError, match="npv_won"):
+        _golden_regression_status([case], {"demo": {"npv_won": 100.2}})
+
+    # ⚠ R26 에 여기 있던 세 줄을 지웠다 — `assert "npv_won" in ({...})["demo"]`
+    # 는 **리터럴에 대한 단언**이라 아무것도 검증하지 않았고, `detect_environment()`
+    # 단언도 두 값 중 하나면 통과라 항상 참이었다. 주석은 「CI 게이트 경로에
+    # 있음을 확인」이라 적고 있었으나 확인하는 것이 없었다.
