@@ -74,7 +74,7 @@ spec `:872-879` 의 전체 탐색 구성표가 정본이다.
 
 | 위치 | 무엇이 항진인가 |
 |---|---|
-| `tests/web/test_dashboard.py::test_advanced_mode_shows_all_parameters` | 「전체 파라미터」의 기대값을 **`demo_context()` 자기 자신**에서 다시 불러와 대조한다. 템플릿이 그 사전을 그대로 렌더하므로 **구조적으로 실패할 수 없다.** 「전체」를 정의하는 외부 기준(`ModelConfig` 필드·전제 대장)과 한 번도 만나지 않는다 |
+| ~~`tests/web/test_dashboard.py::test_advanced_mode_shows_all_parameters`~~ **R28 이 항진을 벗겼다** | 「전체 파라미터」의 기대값을 **`demo_context()` 자기 자신**에서 다시 불러와 대조했다. 템플릿이 그 사전을 그대로 렌더하므로 **구조적으로 실패할 수 없었다.** 이제 테스트가 **자기 입력을 지어 주입**하고 그것이 화면에 나오는지 본다 — 템플릿이 목록을 자르는 변이가 잡힌다. ⚠ **다만 「전체」는 여전히 검증되지 않는다** — `ModelConfig` 은 `name`·`resources`·… 이고 `DERConfig.params` 는 `dict[str, Any]` 라 **파라미터 목록을 갖지 않는다.** 「전체」의 기준이 코드에 생기기 전에는 어떤 검사도 그것을 말할 수 없다. 이름을 `..._renders_the_inputs_it_is_given` 으로 좁혔다 |
 | ~~`tests/ci/test_performance_and_golden.py:182`~~ **R26 이 지웠다** | `assert "npv_won" in ({"demo": {"npv_won": 114.0}})["demo"]` — **리터럴에 대한 단언**이었다. 같은 자리의 `detect_environment()` 단언도 두 값 중 하나면 통과라 항상 참이었다. 주석은 「CI 게이트 경로에 있음을 확인」이라 적고 있었으나 확인하는 것이 없었다 |
 | `tests/acceptance2/test_17_7_dod7.py:293` | 문자열을 치환한 **로컬 변수**만 확인하고 검사 함수를 부르지 않는다 |
 

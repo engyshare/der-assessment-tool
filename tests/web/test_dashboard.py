@@ -4,7 +4,7 @@ from html.parser import HTMLParser
 
 import pytest
 
-from web.render import render_dashboard
+from web.render import demo_context, render_dashboard
 
 
 class Element:
@@ -122,29 +122,55 @@ def test_wizard_has_multiple_ordered_steps() -> None:
 
 
 @pytest.mark.req("UI-1-AC1")
-def test_advanced_mode_shows_all_parameters() -> None:
-    """UI-1-AC1 조각 ②: 고급 모드가 '전체' 파라미터다 — 입력 목록 전부를 담는가"""
-    parser = parse(render_dashboard())
+def test_advanced_mode_renders_the_inputs_it_is_given() -> None:
+    """고급 모드가 **넘겨받은 입력을 그대로 그리는가** — 하드코딩이 아닌가.
 
-    # 고급 모드 안의 모든 input 요소 찾기
+    ⚠ **이 테스트는 R28 까지 항진이었다.** 기대값을 `demo_context()` 에서 다시
+    불러와, **템플릿이 그 사전을 그대로 렌더하는데** 그 결과를 같은 사전과
+    대조했다. 렌더러가 무엇을 하든 두 집합은 같으므로 **구조적으로 실패할 수
+    없었다** — 그런데 이름은 `..._shows_all_parameters` 였다.
+
+    항진을 벗기려면 기대값이 **렌더러가 먹은 것과 다른 곳**에서 와야 한다.
+    그래서 이 테스트가 자기 입력 목록을 지어 주입하고, 그것이 화면에 그대로
+    나오는지 본다. 템플릿이 필드를 하드코딩하면 빨간불이 된다.
+
+    ★★ **그러나 이것은 「전체 파라미터」를 검증하지 않는다.** 조항 문면은
+    *「숙련자용 **전체 파라미터** 단일 화면」* 인데, **「전체」의 기준이 저장소에
+    없다** — `ModelConfig` 은 `name`·`resources`·`common_load`·`contract`·
+    `regulation` 이고 `DERConfig.params` 는 `dict[str, Any]` 라 파라미터 목록을
+    갖지 않는다. 기준이 생기기 전에는 어떤 검사도 「전체」를 말할 수 없고,
+    말하는 척하면 그것이 이 파일이 방금 벗어난 상태다.
+    `docs/clause-recheck-2026-08-14.md` 에 적었다.
+    """
+    injected = {
+        "id": "injected_only_in_this_test",
+        "label": "주입 확인용",
+        "value": "7",
+        "unit": "kW",
+        "help": "이 값이 화면에 나오면 템플릿이 데이터를 돈다는 뜻이다.",
+        "source": "테스트",
+        "step": "0.5",
+    }
+    context = demo_context()
+    context["inputs"] = (*context["inputs"], injected)
+
+    parser = parse(render_dashboard(context))
     advanced_inputs = [
-        element for element in parser.elements
+        element
+        for element in parser.elements
         if element.tag == "input" and element.attrs.get("type") == "number"
     ]
+    advanced_input_ids = {inp.attrs.get("id") for inp in advanced_inputs}
 
-    # demo_context()에 있는 모든 입력의 id를 확인
-    from web.render import demo_context
-    context = demo_context()
-    input_ids = {item["id"] for item in context["inputs"]}
-
-    # 고급 모드에 있는 input들의 id를 추출
-    advanced_input_ids = {inp.attrs.get("id") for inp in advanced_inputs if inp.attrs.get("id")}
-
-    # 고급 모드가 모든 입력을 포함하는지 확인
-    assert input_ids == advanced_input_ids, (
-        f"고급 모드가 모든 파라미터를 담지 않습니다. "
-        f"컨텍스트: {input_ids}, 고급 모드: {advanced_input_ids}, "
-        f"누락: {input_ids - advanced_input_ids}, 초과: {advanced_input_ids - input_ids}"
+    expected_ids = {item["id"] for item in context["inputs"]}
+    assert expected_ids == advanced_input_ids, (
+        "고급 모드가 넘겨받은 입력을 그대로 그리지 않습니다 — 템플릿이 필드를 "
+        f"하드코딩하고 있지 않은지 보십시오. 누락: {expected_ids - advanced_input_ids}, "
+        f"초과: {advanced_input_ids - expected_ids}"
+    )
+    assert injected["id"] in advanced_input_ids, (
+        "주입한 입력이 화면에 없습니다 — 이 단언이 없으면 위 비교는 렌더러가 "
+        "고정 목록을 낼 때도 통과할 수 있습니다"
     )
 
     # 각 입력에 필수 필드(label, unit, help, source)가 있는지 확인
