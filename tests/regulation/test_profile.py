@@ -105,18 +105,17 @@ def test_profile_selects_effective_items_with_sources_on_inclusive_dates() -> No
 
 
 @pytest.mark.req("FR-504-AC2")
-# ⚠ 아래 `FR-504-AC3` 은 **조항을 붙들지 못한다. 그래도 유지한다** (R20 판정).
+# ✔ **R23 에 `FR-504-AC3` 마커를 여기서 뗐다 — R20 이 적어 둔 닫는 조건대로다.**
 # `AC3` 은 *「**admin 권한** 사용자가 **웹 UI** 에서 프로파일을 생성·복제·수정한다.
-# 파일 수정이나 재배포를 요구하지 않는다」* 인데, 아래 검사는 `RegulationProfileDraft`
-# 의 **순수 파이썬 객체 조작**을 본다. 웹 UI 도 권한 검사도 지나지 않는다.
+# 파일 수정이나 재배포를 요구하지 않는다」* 이고 아래 검사는 `RegulationProfileDraft`
+# 의 **순수 파이썬 객체 조작**을 본다 — 웹 UI 도 권한 검사도 지나지 않는다. R20 은
+# 「대체 검증을 만들 수 없으니 무관한 채로 유지한다」고 판정하고 **닫는 조건**으로
+# *「웹 UI 편집 화면과 admin 권한 검사를 구현하고 마커를 옮긴 뒤 지운다」* 를 적었다.
+# R21 이 선행(`FR-901` 인증)을 닫았고 R23 이 나머지를 놓았다. 마커는 이제 세 층에 있다:
 #
-# **그런데 지우면 안 된다.** 이 마커가 `FR-504-AC3`(Must-have·Phase 1)의 **유일한
-# 매핑**이고, 웹 UI·admin 권한 검사가 저장소 어디에도 없다. 지우면 조항이
-# 미매핑이 되어 `test_17_9_dod9` 가 빨간불이 되며 대체 검증도 만들 수 없다.
-#
-# **닫는 조건**: 웹 UI 의 프로파일 편집 화면과 admin 권한 검사를 구현하고,
-# 그것을 보는 테스트로 이 마커를 옮긴 뒤 여기서 지운다. `FR-901`(인증)이 선행이다.
-@pytest.mark.req("FR-504-AC3")
+#   core   tests/regulation/test_profile_editing.py    생성·복제·수정 연산
+#   app    tests/app/test_regulation_admin_router.py   admin 경로 · 파일·재배포 불요
+#   web    tests/web/test_regulation_admin_view.py     화면의 세 조작과 권한 분기
 @pytest.mark.req("FR-504-AC4")
 @pytest.mark.req("FR-504-AC7")
 def test_profile_draft_adds_arbitrary_items_and_diff_previews_changes() -> None:

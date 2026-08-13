@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from app.services.model_composer import ModelCompositionService
 from app.services.scenario_store import (
     InMemoryScenarioStore,
     ScenarioRecord,
@@ -121,6 +122,7 @@ __all__ = (
     "AssumptionService",
     "CaseGridService",
     "InMemoryScenarioStore",
+    "ModelCompositionService",
     "RunService",
     "ScenarioRecord",
     "ScenarioService",

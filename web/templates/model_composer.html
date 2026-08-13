@@ -1,0 +1,90 @@
+{# 자원 구성 화면 — FR-201-AC1.
+
+   자원 종류 목록(`available_tags`)은 **템플릿에 적지 않는다.** 여기에 적으면
+   자원 1종 추가가 화면 수정을 부르고, 조항의 「구성 변경 시 엔진 코드 변경이
+   발생하지 않는다」가 서버에서만 성립하고 화면에서 깨진다. 목록은 레지스트리에서
+   온다 (`core/model/composition.py::available_resource_tags`).
+#}
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>자원 구성 — {{ model_name }}</title>
+  <link rel="stylesheet" href="/static/wp12.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">본문으로 이동</a>
+  <header class="topbar">
+    <h1>자원 구성</h1>
+    <p class="model-name">모델: {{ model_name }}</p>
+  </header>
+
+  <main id="main">
+    <section id="resources" class="band" aria-labelledby="resources-title">
+      <h2 id="resources-title">자원 목록</h2>
+      <table>
+        <caption>구성에 담긴 자원 — 행마다 삭제·복제할 수 있다</caption>
+        <thead>
+          <tr><th scope="col">이름</th><th scope="col">종류</th><th scope="col">조작</th></tr>
+        </thead>
+        <tbody>
+          {% for resource in resources %}
+          <tr data-resource-name="{{ resource.name }}">
+            <td>{{ resource.name }}</td>
+            <td>{{ resource.tag }}</td>
+            <td>
+              <form method="post"
+                    action="/models/{{ model_name }}/resources/{{ resource.name }}/duplicate">
+                <label for="new-name-{{ loop.index }}">복제본 이름</label>
+                <input id="new-name-{{ loop.index }}" name="new_name" type="text"
+                       value="{{ resource.name }}-복제">
+                <button type="submit" name="action" value="duplicate">자원 복제</button>
+              </form>
+              <form method="post"
+                    action="/models/{{ model_name }}/resources/{{ resource.name }}?_method=DELETE">
+                <button type="submit" name="action" value="delete">자원 삭제</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3">구성에 자원이 없습니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section id="add-resource" class="band" aria-labelledby="add-title">
+      <h2 id="add-title">자원 추가</h2>
+      <form method="post" action="/models/{{ model_name }}/resources">
+        <label for="resource-tag">자원 종류</label>
+        <select id="resource-tag" name="tag">
+          {% for tag in available_tags %}
+          <option value="{{ tag }}">{{ tag }}</option>
+          {% endfor %}
+        </select>
+        <label for="resource-name">자원 이름</label>
+        <input id="resource-name" name="name" type="text">
+        <button type="submit" name="action" value="add">자원 추가</button>
+      </form>
+      <p class="hint">
+        추가할 수 있는 종류는 {{ available_tags | length }}종이며 레지스트리에서
+        옵니다 — 새 자원 파일을 놓으면 이 목록이 늘어납니다.
+      </p>
+    </section>
+
+    {% if errors %}
+    <section id="errors" class="band" aria-labelledby="errors-title">
+      <h2 id="errors-title">입력 오류</h2>
+      <ul>
+        {% for error in errors %}
+        <li data-field="{{ error.field }}">
+          <strong>{{ error.field }}</strong> — {{ error.reason }} {{ error.action }}
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+  </main>
+</body>
+</html>

@@ -90,7 +90,7 @@
 |  |  | 1 | `FR-106-AC5` | 안분 규칙을 선언적으로 지정한다: 가구 균등 배분 / 설비용량 비례 / 안분하지 않고 단지 총계로만 표시. 선택한 규칙이 리포트에 명시된다 | 자동 | test_common_asset.py 10건 |
 |  |  | 1 | `FR-106-AC6` | 가구 단위 경제성 산출 시 안분된 공통비용이 별도 행으로 표시되어, 가구 자체 설비 비용과 구분된다 | 자동 | test_common_asset.py 3건 |
 |  |  | 1 | `FR-106-AC7` | CommonAsset이 없는 모델(단독주택 등)도 정상 동작한다 (기본값 없음) | 자동 | test_common_asset.py 4건 |
-| `FR-201` | Must-have | 1 | `FR-201-AC1` | GUI에서 자원 추가/삭제/복제로 구성 가능하며, 구성 변경 시 엔진 코드 변경이 발생하지 않는다 | 자동 | test_model.py |
+| `FR-201` | Must-have | 1 | `FR-201-AC1` | GUI에서 자원 추가/삭제/복제로 구성 가능하며, 구성 변경 시 엔진 코드 변경이 발생하지 않는다 | 자동 | test_model_composition_router.py 4건, test_composition.py 7건, test_model_composer_view.py 5건 |
 |  |  | 1 | `FR-201-AC2` | 모델 정의 전체가 단일 JSON 문서로 export/import 된다 | 자동 | test_model.py |
 | `FR-202` | Must-have | 1 | `FR-202-AC1` | 하나의 AssumptionSet을 참조하는 여러 모델을 일괄 실행한다 | 자동 | test_comparison.py 3건 |
 |  |  | 1 | `FR-202-AC2` | 비교표에 모델별 NPV·IRR·회수기간·필요 지원율을 나란히 표시한다 | 자동 | test_comparison.py 3건 |
@@ -159,7 +159,7 @@
 | `FR-503` | Should-have | - | `FR-503-AC1` | 산정식·결과 표시, 미달 시 경고. 산정 기준(자급량 기준 / 계통부담 기준) 선택 가능 | 자동 | test_compliance.py |
 | `FR-504` | Must-have | 1 | `FR-504-AC1` | 기본 구성: RegulationProfile = {70% 의무 비율, 면제기간, 최소계약기간, 초과발전량 우선공급, 망이용요금 예외, 거래지원수수료, 자급률 기… | 자동 | test_profile.py |
 |  |  | 1 | `FR-504-AC2` | 항목 추가 확장성: 제도가 신설 항목을 요구할 때 스키마 변경·코드 배포 없이 항목을 추가할 수 있어야 한다. 프로파일은 고정 컬럼이 아닌 (항목키, 값, 단위… | 자동 | test_profile.py |
-|  |  | 1 | `FR-504-AC3` | 웹에서 편집: admin 권한 사용자가 웹 UI에서 프로파일을 생성·복제·수정할 수 있다. 파일 수정이나 재배포를 요구하지 않는다 | 자동 | test_profile.py |
+|  |  | 1 | `FR-504-AC3` | 웹에서 편집: admin 권한 사용자가 웹 UI에서 프로파일을 생성·복제·수정할 수 있다. 파일 수정이나 재배포를 요구하지 않는다 | 자동 | test_regulation_admin_router.py 5건, test_profile_editing.py 6건, test_regulation_admin_view.py 4건 |
 |  |  | 1 | `FR-504-AC4` | 개정 이력: 프로파일은 버전을 가지며 이전 버전으로 복원 가능하다. 두 버전 간 diff 뷰를 제공한다 | 자동 | test_profile.py, test_dashboard.py |
 |  |  | 1 | `FR-504-AC5` | 유효기간: 각 항목에 유효기간(from~to)을 부여하여 분석연도에 맞는 값이 자동 선택된다. 분석기간 중 제도가 바뀌는 경우(예: 면제기간 3년 → 5년 개정… | 자동 | test_profile.py |
 |  |  | 1 | `FR-504-AC6` | 근거 추적: 각 항목에 근거 고시·조문 링크와 최종확인일 필드를 보유한다 | 자동 | test_profile.py |
@@ -247,10 +247,10 @@
 | `FR-704` | Must-have | 1 | `FR-704-AC1` | 주민: 자부담액 대비 요금 절감 회수기간 | 자동 | test_transfer.py |
 |  |  | 1 | `FR-704-AC2` | 사업자: 총투자 대비 IRR | 자동 | test_transfer.py |
 |  |  | 1 | `FR-704-AC3` | 정부: 투입 국비 1억원당 확보 설비용량(kW)·감축량(tCO2)·유발 민간투자액 — 재정효율 지표 | 자동 | test_transfer.py |
-|  |  | 1 | `FR-704-AC4` | 세 관점이 하나의 리포트에 병렬 표시 | 자동 | test_transfer.py |
+|  |  | 1 | `FR-704-AC4` | 세 관점이 하나의 리포트에 병렬 표시 | 자동 | test_perspective_report.py 7건 |
 |  |  | 1 | `FR-704-AC5` | 사회 관점 산출 시 보조금은 이전지출로 처리하여 편익에 포함하지 않는다 (분산자원 경제성 평가 원칙 원칙 2-3 관점 분리 — 「핵심 규칙 세 가지」 1항) | 자동 | test_transfer.py |
 |  |  | 1 | `FR-704-AC6` | 타 사업 기지원 설비(FR-611)의 관점별 계상 (v0.5 추가): 정부 관점 재정효율 지표의 분모(투입 국비)에는 본 사업 국비만 포함한다. 타 사업 국비는… | 자동 | test_transfer.py |
-|  |  | 1 | `FR-704-AC7` | 관점 전환 시 어떤 항목이 왜 포함/제외되었는지를 리포트에 표시한다 (관점 섞기가 가장 흔한 중복 오류 — 도메인 원칙 2-3) | 자동 | test_transfer.py |
+|  |  | 1 | `FR-704-AC7` | 관점 전환 시 어떤 항목이 왜 포함/제외되었는지를 리포트에 표시한다 (관점 섞기가 가장 흔한 중복 오류 — 도메인 원칙 2-3) | 자동 | test_transfer.py, test_perspective_report.py |
 | `FR-705` | Must-have | 1 | `FR-705-AC1` | "설비 미설치 시 전기·열 비용"을 기준선으로 계산하고 모든 편익을 증분으로 산출. 기준선 자체 비용도 리포트에 표시 | 자동 | test_baseline.py, test_heatpump.py |
 | `FR-801` | Must-have | 1 | `FR-801-AC1` | 임의 파라미터를 "탐색 변수"로 지정하고 값 목록(예: [저, 중, 고] 또는 [100, 150, 200])을 부여 | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-801-AC2` | 탐색 변수로 지정 가능한 대상에는 스칼라 파라미터뿐 아니라 자원 운전 방법(FR-105), 규제 프로파일(FR-504), 시계열 데이터셋(FR-905) 도 포함… | 자동 | test_casegrid.py |
@@ -301,7 +301,7 @@
 | `FR-1004` | Must-have | 1 | `FR-1004-AC1` | 일간 대표일 디스패치 스택, 월별 에너지 수지, 누적 현금흐름 곡선, 토네이도, 케이스 히트맵, 모델 비교 바 차트 | 자동 | test_chart_contract.py 5건, test_charts_wp28a.py 8건, test_report.py |
 | `FR-1005` | Must-have | 1 | `FR-1005-AC1` | 실행마다 {실행ID, 시각, 코드 커밋 해시, 전제집합 버전, 시나리오 해시, 데이터셋 해시, 엔진 종류, 결과 요약} 기록. 동일 매니페스트 재실행 시 비트 … | 자동 | test_report.py |
 | `FR-1101` | Must-have | 1 | `FR-1101-AC1` | 공개 저장소: 소스코드, 테스트, 계약, 골든 시나리오의 구조(입력 스키마·기대값 형식), 문서(README·CONTRIBUTING·이슈/PR 템플릿·docs/… | 자동 | test_license.py |
-|  |  | 1 | `FR-1101-AC2` | 비공개 시드: 설비 단가·업계 견적·미공표 제도 검토 내용을 담은 AssumptionSet 시드 데이터와 골든 시나리오의 실제 수치. 별도 비공개 저장소 또는 … | 자동 | test_seed_fallback.py |
+|  |  | 1 | `FR-1101-AC2` | 비공개 시드: 설비 단가·업계 견적·미공표 제도 검토 내용을 담은 AssumptionSet 시드 데이터와 골든 시나리오의 실제 수치. 별도 비공개 저장소 또는 … | 자동 | test_private_seed.py 2건 |
 |  |  | 1 | `FR-1101-AC3` | 공개 저장소만으로 실행 가능해야 한다 — 비공개 시드가 없으면 합성 예시 전제(공개 가능한 대표값, 신뢰도 가정)로 동작한다. 외부 기여자가 코드를 돌려보고 개… | 자동 | test_seed_fallback.py |
 |  |  | 1 | `FR-1101-AC4` | CI는 공개 저장소만으로 통과해야 한다. 비공개 수치에 의존하는 골든 회귀는 별도 잡으로 분리하고, 공개 CI에는 합성 전제 기반 회귀를 둔다 | 자동 | test_seed_fallback.py |
 |  |  | 1 | `FR-1101-AC5` | 비공개 데이터가 공개 저장소에 유입되지 않도록 커밋 전 스캔을 pre-commit·CI에 둔다 (SC-7) | 자동 | test_ci_gates.py 3건 |

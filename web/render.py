@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from app.security.authorization import can_edit_regulation_profile
+from core.contracts.regulation import RegulationProfile
 from core.contracts.units import Money
+from core.model.composition import available_resource_tags, resource_name
+from core.model.schemas import ModelConfig
 
 _ROOT = Path(__file__).resolve().parent
 _ENV = Environment(
@@ -120,6 +125,68 @@ def demo_context() -> dict[str, Any]:
             "additional_cost": Money(Decimal("187500")),  # 추가 비용 (원)
         },
     }
+
+
+def model_composer_context(
+    config: ModelConfig, *, errors: tuple[dict[str, str | None], ...] = ()
+) -> dict[str, Any]:
+    """자원 구성 화면의 문맥 — FR-201-AC1.
+
+    **자원 종류 목록을 여기서 짓지 않고 레지스트리에서 가져온다.** 화면이 종류를
+    자기 안에 적어 두면 자원 1종 추가가 화면 수정을 부르고, 조항의 「구성 변경 시
+    엔진 코드 변경이 발생하지 않는다」가 서버에서만 성립하고 화면에서 깨진다.
+    """
+    return {
+        "model_name": config.name,
+        "resources": tuple(
+            {"name": resource_name(r), "tag": r.tag} for r in config.resources
+        ),
+        "available_tags": available_resource_tags(),
+        "errors": errors,
+    }
+
+
+def render_model_composer(context: dict[str, Any]) -> str:
+    """자원 구성 화면을 그린다 (FR-201-AC1 「GUI에서」)."""
+    template = _ENV.get_template("model_composer.html")
+    return template.render(context)
+
+
+def regulation_admin_context(
+    profile: RegulationProfile,
+    *,
+    role: str,
+    when: date,
+    versions: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    """제도 프로파일 편집 화면의 문맥 — FR-504-AC3.
+
+    **`can_edit` 를 화면이 스스로 판정하지 않는다.** 인가 규칙이 두 곳에 있으면
+    한쪽만 고쳐지고, 그때 화면과 서버가 서로 다른 답을 낸다 — 그리고 그 어긋남은
+    권한 없는 사용자가 실제로 눌러 볼 때까지 드러나지 않는다.
+    """
+    return {
+        "profile_name": profile.name,
+        "profile_version": profile.version,
+        "role": role,
+        "can_edit": can_edit_regulation_profile(role=role, operation="편집").allowed,
+        "items": tuple(
+            {
+                "key": item.key,
+                "value": item.value,
+                "unit": item.unit,
+                "source": item.source,
+            }
+            for item in profile.items(when=when)
+        ),
+        "versions": versions,
+    }
+
+
+def render_regulation_admin(context: dict[str, Any]) -> str:
+    """제도 프로파일 편집 화면을 그린다 (FR-504-AC3 「웹 UI 에서」)."""
+    template = _ENV.get_template("regulation_admin.html")
+    return template.render(context)
 
 
 def render_dashboard(context: dict[str, Any] | None = None) -> str:

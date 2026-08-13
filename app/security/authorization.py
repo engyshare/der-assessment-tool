@@ -75,3 +75,35 @@ def assert_can_access(
 def is_owner(resource_owner_id: int, requesting_user_id: int) -> bool:
     """단순 소유자 판정 — 공유 토큰 없이 «내 것인가» 만 본다."""
     return resource_owner_id == requesting_user_id
+
+
+#: 제도 프로파일을 웹에서 편집할 수 있는 역할 (FR-504-AC3).
+#:
+#: **소유자 판정으로는 대신할 수 없다.** 제도 프로파일은 시나리오와 달리
+#: «누구의 것» 이 아니라 **전 사용자가 공유하는 제도 데이터**다. 소유자 모형으로
+#: 두면 만든 사람만 고칠 수 있게 되고, 조항이 말하는 「admin 권한 사용자」와
+#: 어긋난다 — 제도 개정을 반영할 사람이 원 작성자일 이유가 없다.
+ADMIN_ROLE = "admin"
+
+
+def can_edit_regulation_profile(*, role: str, operation: str) -> AccessDecision:
+    """제도 프로파일 편집 인가 — `admin` 만 허용 (FR-504-AC3).
+
+    **`operation` 을 사유에 싣는다.** 세 조작(생성·복제·수정)이 같은 함수를
+    지나므로, 사유가 조작을 말하지 않으면 「어느 경로가 막혔는가」를 기계도 사람도
+    구분할 수 없다. 그러면 한 경로에서 가드가 빠져도 **이웃 경로의 거부 메시지가
+    같아서** 공통 단언이 전부 통과한다 (R22 실측 형태).
+    """
+    if role == ADMIN_ROLE:
+        return AccessDecision.allow(f"{ADMIN_ROLE} 권한 — 제도 프로파일 {operation} 허용")
+    return AccessDecision.deny(
+        f"역할 {role!r} 은(는) 제도 프로파일 {operation} 권한이 없습니다 — "
+        f"{ADMIN_ROLE!r} 권한이 필요합니다 (FR-504-AC3)"
+    )
+
+
+def assert_can_edit_regulation_profile(*, role: str, operation: str) -> None:
+    """제도 프로파일 편집 인가 — 거부 시 ``PermissionError``."""
+    decision = can_edit_regulation_profile(role=role, operation=operation)
+    if not decision.allowed:
+        raise PermissionError(decision.reason)

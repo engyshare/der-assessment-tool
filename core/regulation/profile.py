@@ -7,6 +7,7 @@ from datetime import date
 from typing import Any, Literal
 
 from core.contracts.regulation import RegulationItem, RegulationProfile
+from core.contracts.validation import ValidationError
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,31 @@ def _later(left: RegulationItem, right: RegulationItem) -> bool:
     return (left.valid_from or date.min) > (right.valid_from or date.min)
 
 
+def _checked_name(name: str) -> str:
+    """프로파일 이름 — 비면 거부한다. 이름 없는 프로파일은 지목할 수 없다."""
+    if not isinstance(name, str) or not name.strip():
+        raise ValidationError(
+            field="regulation.profile_name",
+            reason="프로파일 이름이 비어 있습니다",
+            action="「현행」·「개정안」처럼 사람이 고를 수 있는 이름을 주십시오",
+        )
+    return name
+
+
+def _checked_version(version: str) -> str:
+    """프로파일 버전 — 비면 거부한다. 버전이 없으면 이력·복원이 성립하지 않는다."""
+    if not isinstance(version, str) or not version.strip():
+        raise ValidationError(
+            field="regulation.profile_version",
+            reason="프로파일 버전이 비어 있습니다",
+            action=(
+                "`v2026.1` 처럼 버전을 주십시오 — 버전이 없으면 개정 이력과 "
+                "복원(FR-504-AC4)이 성립하지 않습니다"
+            ),
+        )
+    return version
+
+
 @dataclass(frozen=True)
 class RegulationProfileDraft:
     name: str
@@ -48,6 +74,41 @@ class RegulationProfileDraft:
     def from_profile(cls, profile: DataRegulationProfile,
                      *, version: str) -> RegulationProfileDraft:
         return cls(name=profile.name, version=version, entries=profile.entries)
+
+    @classmethod
+    def create(cls, *, name: str, version: str) -> RegulationProfileDraft:
+        """빈 프로파일 초안 — FR-504-AC3 「생성」.
+
+        `from_profile` 은 기존 프로파일의 **다음 버전**을 만드는 것이고, 이것은
+        **없던 프로파일**을 만드는 것이다. 둘을 한 함수로 두면 「원본 없이
+        만든다」가 `None` 을 넘기는 특수 경우가 되고, 그 경우를 잊은 호출부가
+        빈 이름의 프로파일을 만들어 낸다.
+        """
+        return cls(name=_checked_name(name), version=_checked_version(version), entries=())
+
+    def clone(self, *, name: str, version: str) -> RegulationProfileDraft:
+        """항목을 물려받은 **별개** 프로파일 — FR-504-AC3 「복제」.
+
+        「현행」을 복제해 「개정안」을 만드는 것이 이 조항이 겨냥한 쓰임이다
+        (FR-504-AC8 비교 실행의 입력). 원본과 **이름이 같으면 복제가 아니라
+        새 버전**이므로 거부한다 — 그것은 `from_profile` 의 일이다.
+        """
+        new_name = _checked_name(name)
+        if new_name == self.name:
+            raise ValidationError(
+                field="regulation.profile_name",
+                reason=(
+                    f"복제본이 원본과 같은 이름입니다: {new_name!r}. 같은 이름의 "
+                    "다음 버전을 만드는 것은 복제가 아닙니다"
+                ),
+                action=(
+                    "복제본에 다른 이름을 주십시오. 같은 프로파일의 다음 버전이라면 "
+                    "`from_profile` 로 버전을 올리십시오"
+                ),
+            )
+        return RegulationProfileDraft(
+            name=new_name, version=_checked_version(version), entries=self.entries
+        )
 
     def upsert(self, item: RegulationItem) -> RegulationProfileDraft:
         kept = tuple(entry for entry in self.entries if entry.key != item.key)

@@ -1,0 +1,116 @@
+{# 제도 프로파일 편집 화면 — FR-504-AC3.
+
+   **편집 조작은 `can_edit` 가 참일 때만 그린다.** 권한 없는 사용자에게 버튼을
+   보여 주고 서버에서만 막으면, 조항의 「admin 권한 사용자가 편집할 수 있다」가
+   화면에서는 「누구나 눌러 볼 수 있다」로 나타난다. 서버 가드는 그대로 두되
+   (버튼을 지우는 것은 방어가 아니다) 화면도 권한을 안다.
+#}
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>제도 프로파일 관리 — {{ profile_name }}</title>
+  <link rel="stylesheet" href="/static/wp12.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">본문으로 이동</a>
+  <header class="topbar">
+    <h1>제도 프로파일 관리</h1>
+    <p class="profile-name">프로파일: {{ profile_name }} <span class="version">{{ profile_version }}</span></p>
+    <p class="role">역할: {{ role }}</p>
+  </header>
+
+  <main id="main">
+    <section id="items" class="band" aria-labelledby="items-title">
+      <h2 id="items-title">제도 항목</h2>
+      <table>
+        <caption>현재 유효한 항목 — 항목키·값·단위·근거</caption>
+        <thead>
+          <tr>
+            <th scope="col">항목키</th><th scope="col">값</th>
+            <th scope="col">단위</th><th scope="col">근거</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+          <tr data-item-key="{{ item.key }}">
+            <td>{{ item.key }}</td>
+            <td>{{ item.value }}</td>
+            <td>{{ item.unit or "—" }}</td>
+            <td>{{ item.source or "근거 미기재" }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4">유효한 항목이 없습니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    {% if can_edit %}
+    <section id="admin-edit" class="band" aria-labelledby="admin-title">
+      <h2 id="admin-title">편집 (admin)</h2>
+
+      <form method="post" action="/regulation/profiles?role={{ role }}">
+        <h3>프로파일 생성</h3>
+        <label for="create-name">이름</label>
+        <input id="create-name" name="name" type="text">
+        <label for="create-version">버전</label>
+        <input id="create-version" name="version" type="text">
+        <button type="submit" name="operation" value="create">프로파일 생성</button>
+      </form>
+
+      <form method="post" action="/regulation/profiles/{{ profile_name }}/clone?role={{ role }}">
+        <h3>프로파일 복제</h3>
+        <label for="clone-name">복제본 이름</label>
+        <input id="clone-name" name="name" type="text" value="{{ profile_name }}-개정안">
+        <label for="clone-version">복제본 버전</label>
+        <input id="clone-version" name="version" type="text">
+        <button type="submit" name="operation" value="clone">프로파일 복제</button>
+      </form>
+
+      <form method="post"
+            action="/regulation/profiles/{{ profile_name }}/items?role={{ role }}&amp;_method=PATCH">
+        <h3>항목 추가·개정</h3>
+        <label for="item-key">항목키</label>
+        <input id="item-key" name="key" type="text">
+        <label for="item-value">값</label>
+        <input id="item-value" name="value" type="text">
+        <label for="item-unit">단위</label>
+        <input id="item-unit" name="unit" type="text">
+        <label for="item-source">근거 고시·조문</label>
+        <input id="item-source" name="source" type="text">
+        <label for="item-valid-from">유효 시작</label>
+        <input id="item-valid-from" name="valid_from" type="date">
+        <label for="item-version">새 버전</label>
+        <input id="item-version" name="version" type="text">
+        <button type="submit" name="operation" value="update">항목 수정</button>
+      </form>
+
+      <p class="hint">
+        편집은 파일 수정이나 재배포를 요구하지 않습니다 — 저장하면 곧바로 반영됩니다.
+      </p>
+    </section>
+    {% else %}
+    <section id="admin-denied" class="band" aria-labelledby="denied-title">
+      <h2 id="denied-title">편집 권한 없음</h2>
+      <p data-denied-role="{{ role }}">
+        제도 프로파일 편집은 admin 권한이 필요합니다 (FR-504-AC3).
+        현재 역할은 {{ role }} 입니다.
+      </p>
+    </section>
+    {% endif %}
+
+    {% if versions %}
+    <section id="versions" class="band" aria-labelledby="versions-title">
+      <h2 id="versions-title">개정 이력</h2>
+      <ul>
+        {% for version in versions %}
+        <li data-version="{{ version }}">{{ version }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+  </main>
+</body>
+</html>
