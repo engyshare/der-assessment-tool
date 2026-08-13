@@ -149,18 +149,41 @@ def test_empty_golden_oracles_are_reported_as_skipped_not_passed(
 
 
 @pytest.mark.req("NFR-104-M1")
-def test_repo_golden_files_are_all_readable_and_declare_provenance() -> None:
-    """저장소의 골든 3종이 **읽히고 출처를 밝히는가.**
+def test_repo_golden_files_are_readable_and_declare_an_oracle_rank_and_source() -> None:
+    """저장소의 골든 3종이 **읽히고 오라클 등급·출처 필드를 선언하는가.**
 
-    기준값이 있든 없든 이것은 성립해야 한다. 값 자체를 단언하지 않는 이유는
-    위와 같다 — 값은 대장 판이 바뀌면 재산출되며, 그때 이 검사가 깨지면
+    ⚠ **이름을 R28 에 고쳤다.** 전에는 `..._declare_provenance` 였는데 실제로는
+    파일이 3개인지와 `"expected_values"` 라는 **문자열이 본문에 있는지**만 봤다 —
+    출처 필드를 열지도 않았다. 이름이 하는 일보다 넓게 주장하면, 읽는 사람은
+    「출처가 검증된다」로 읽고 §13.3 이 닫힌 줄 안다.
+
+    이제 `oracle_rank` 와 `oracle_source` 의 **존재**를 단언한다. 값은 대장 판이
+    바뀌면 재산출되므로 여기서 단언하지 않는다 — 그때 이 검사가 깨지면
     **재산출을 막는 압력**이 된다.
+
+    ★★ **이 검사가 보지 않는 것을 적어 둔다.** `oracle_source` 가 **저장소
+    안쪽**(`tests/…`)을 가리키는지는 보지 않는다. 지금 3종이 정확히 그 상태이고
+    (`oracle_rank: 3` 인데 출처가 저장소 자신의 테스트 파일이며, 파일 머리말이
+    스스로 *「스냅샷이며 정확성의 증거가 아니다」* 라고 적는다), 그것은
+    §13.0.2 가 금지한 자기충족 테스트다. **그러나 그것을 여기서 차단하면 CI 가
+    `Q-4`·`Q-5` 회신 전까지 영구 빨간불이 되고, 그런 검사는 곧 무시된다** —
+    `check_task_mapping` 을 차단으로 올리지 않은 것과 같은 판단이다. 외부 근거
+    확보는 「미해결」의 `Q-4`·`Q-5` 항목이다.
     """
+    import yaml as _yaml
+
     paths = sorted(GOLDEN_DIR.glob("scenario_*.yaml"))
     assert len(paths) == 3, f"골든 시나리오는 3종이다: {[p.name for p in paths]}"
     for p in paths:
-        text = p.read_text(encoding="utf-8")
-        assert "expected_values" in text, f"{p.name}: 기준값 자리가 없습니다"
+        case = _yaml.safe_load(p.read_text(encoding="utf-8"))
+        assert "expected_values" in case, f"{p.name}: 기준값 자리가 없습니다"
+        assert case.get("oracle_rank") is not None, (
+            f"{p.name}: `oracle_rank` 가 없습니다 — §13.0.2 의 오라클 순위를 "
+            "선언하지 않으면 그 값이 무엇에 정박했는지 알 수 없습니다"
+        )
+        assert str(case.get("oracle_source") or "").strip(), (
+            f"{p.name}: `oracle_source` 가 비었습니다"
+        )
 
 
 @pytest.mark.req("NFR-104-M1")
