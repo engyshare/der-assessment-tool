@@ -13,7 +13,8 @@ from app.security.authorization import can_edit_regulation_profile
 from core.contracts.regulation import RegulationProfile
 from core.contracts.units import Money
 from core.model.composition import available_resource_tags, resource_name
-from core.model.schemas import ModelConfig
+from core.model.parameters import ParameterKind, ParameterSpec, resource_parameters
+from core.model.schemas import DERConfig, ModelConfig
 
 _ROOT = Path(__file__).resolve().parent
 _ENV = Environment(
@@ -22,11 +23,75 @@ _ENV = Environment(
 )
 
 
+#: 고급 모드 화면이 그리는 데모 구성. **자원 종류와 파라미터를 여기서 짓지
+#: 않는다** — 종류는 레지스트리가, 파라미터는 `core.model.parameters` 카탈로그가
+#: 정본이며 여기는 「어떤 자원을 몇 개 놓았는가」만 정한다.
+DEMO_MODEL = ModelConfig(
+    name="에너지자립가구 기본안",
+    resources=[
+        DERConfig(tag="PV", params={"name": "옥상 태양광", "capacity_kw": 12.0}),
+        DERConfig(tag="ESS", params={"name": "공용 ESS", "capacity_kwh": 30.0}),
+    ],
+)
+
+
+def advanced_mode_fields(config: ModelConfig) -> tuple[dict[str, Any], ...]:
+    """고급 모드 화면의 **전체 파라미터** — UI-1-AC1.
+
+    「전체」의 기준은 `core.model.parameters` 가 갖는다(레지스트리에 등록된 자원의
+    생성자 시그니처). **이 함수는 그 목록을 줄이지 않는다** — 줄이면 화면이
+    「전체」라고 적은 채 일부만 그리게 되고, 그 상태는 사용자가 없는 칸을 찾을
+    때까지 드러나지 않는다.
+
+    자원 **인스턴스마다** 한 벌씩 편다. 같은 `PV` 를 둘 놓으면 파라미터도 두
+    벌이며, 종(種) 단위로 한 벌만 그리면 둘째 자원의 값을 고칠 방법이 없다.
+    """
+    fields: list[dict[str, Any]] = []
+    for index, resource in enumerate(config.resources):
+        for spec in resource_parameters(resource.tag):
+            fields.append(_field(index, resource, spec))
+    return tuple(fields)
+
+
+def _field(index: int, resource: DERConfig, spec: ParameterSpec) -> dict[str, Any]:
+    configured = resource.params.get(spec.name)
+    if configured is not None:
+        value, source = str(configured), "구성값"
+    elif spec.required:
+        value, source = "", "필수 입력 — 기본값 없음"
+    else:
+        value, source = spec.default_text, f"{spec.tag} 자원 기본값"
+    return {
+        # **화면 식별자는 자원 이름이 아니라 순번으로 짓는다** — 자원 이름은
+        # 사용자가 짓는 자유 문자열이라 HTML id 로 쓸 수 없고, 같은 이름이 두 번
+        # 나오지 않는다는 보장도 `composition` 안에서만 성립한다.
+        "id": f"res{index}-{spec.name}",
+        "parameter": f"{index}.{spec.name}",
+        "label": f"{resource_name(resource)} · {spec.name}",
+        "kind": str(spec.kind),
+        "unit": spec.unit,
+        "value": value,
+        "source": source,
+        "help": f"{spec.tag} 자원의 {spec.name} 입니다. 형식 {spec.type_text}.",
+        # 정수·실수를 가리지 않고 `any` 다. 형식별로 가르면 그 규칙이 카탈로그의
+        # 형식 판정과 갈리고, 갈린 뒤에도 화면은 멀쩡해 보인다.
+        "step": "any",
+        "scalar": spec.kind is ParameterKind.NUMBER,
+    }
+
+
 def demo_context() -> dict[str, Any]:
-    """Return deterministic UI data used by template tests and early integration."""
+    """Return deterministic UI data used by template tests and early integration.
+
+    ⚠ **`inputs` 와 `parameters` 는 다른 것이다.** `parameters` 는 고급 모드가 그리는
+    **전체 파라미터**(카탈로그가 정본)이고, `inputs` 는 결과 화면의 「입력값 부록」이
+    그리는 **결과를 낸 주요 입력의 요약**이다. 부록에 133개를 늘어놓으면 그것은
+    부록이 아니다.
+    """
     supported = 1_250_000
     baseline = 980_000
     return {
+        "parameters": advanced_mode_fields(DEMO_MODEL),
         "scenario_name": "에너지자립가구 기본안",
         "inputs": (
             {
@@ -193,4 +258,3 @@ def render_dashboard(context: dict[str, Any] | None = None) -> str:
     """Render the main dashboard template."""
     template = _ENV.get_template("dashboard.html")
     return template.render(context or demo_context())
-

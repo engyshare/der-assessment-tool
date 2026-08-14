@@ -4,7 +4,9 @@ from html.parser import HTMLParser
 
 import pytest
 
-from web.render import demo_context, render_dashboard
+from core.model.parameters import ParameterKind, resource_parameters
+from core.model.schemas import DERConfig, ModelConfig
+from web.render import DEMO_MODEL, demo_context, render_dashboard
 
 
 class Element:
@@ -121,59 +123,121 @@ def test_wizard_has_multiple_ordered_steps() -> None:
         assert expected in step_texts[i], f"단계 {i+1}: '{expected}'가 '{step_texts[i]}'에 없습니다"
 
 
-@pytest.mark.req("UI-1-AC1")
-def test_advanced_mode_renders_the_inputs_it_is_given() -> None:
-    """고급 모드가 **넘겨받은 입력을 그대로 그리는가** — 하드코딩이 아닌가.
-
-    ⚠ **이 테스트는 R28 까지 항진이었다.** 기대값을 `demo_context()` 에서 다시
-    불러와, **템플릿이 그 사전을 그대로 렌더하는데** 그 결과를 같은 사전과
-    대조했다. 렌더러가 무엇을 하든 두 집합은 같으므로 **구조적으로 실패할 수
-    없었다** — 그런데 이름은 `..._shows_all_parameters` 였다.
-
-    항진을 벗기려면 기대값이 **렌더러가 먹은 것과 다른 곳**에서 와야 한다.
-    그래서 이 테스트가 자기 입력 목록을 지어 주입하고, 그것이 화면에 그대로
-    나오는지 본다. 템플릿이 필드를 하드코딩하면 빨간불이 된다.
-
-    ★★ **그러나 이것은 「전체 파라미터」를 검증하지 않는다.** 조항 문면은
-    *「숙련자용 **전체 파라미터** 단일 화면」* 인데, **「전체」의 기준이 저장소에
-    없다** — `ModelConfig` 은 `name`·`resources`·`common_load`·`contract`·
-    `regulation` 이고 `DERConfig.params` 는 `dict[str, Any]` 라 파라미터 목록을
-    갖지 않는다. 기준이 생기기 전에는 어떤 검사도 「전체」를 말할 수 없고,
-    말하는 척하면 그것이 이 파일이 방금 벗어난 상태다.
-    `docs/clause-recheck-2026-08-14.md` 에 적었다.
-    """
-    injected = {
-        "id": "injected_only_in_this_test",
-        "label": "주입 확인용",
-        "value": "7",
-        "unit": "kW",
-        "help": "이 값이 화면에 나오면 템플릿이 데이터를 돈다는 뜻이다.",
-        "source": "테스트",
-        "step": "0.5",
+def _fields_on_screen(html: str) -> set[str]:
+    """화면에 자리를 가진 파라미터 — 수치 칸이든 편집 버튼이든."""
+    return {
+        element.attrs["data-parameter"]
+        for element in parse(html).elements
+        if "data-parameter" in element.attrs
     }
-    context = demo_context()
-    context["inputs"] = (*context["inputs"], injected)
 
-    parser = parse(render_dashboard(context))
+
+def _expected_parameters(config: ModelConfig) -> set[str]:
+    """구성이 요구하는 전체 파라미터 — **기준은 카탈로그가 갖는다.**
+
+    기대값을 `web.render` 에서 다시 불러오지 않는 것이 요점이다. 렌더러가 먹은
+    것과 같은 곳에서 기대값을 가져오면 렌더러가 무엇을 하든 두 집합이 같아지고,
+    그것이 R28 까지 이 파일에 있던 항진이다.
+    """
+    return {
+        f"{index}.{spec.name}"
+        for index, resource in enumerate(config.resources)
+        for spec in resource_parameters(resource.tag)
+    }
+
+
+@pytest.mark.req("UI-1-AC1")
+def test_advanced_mode_shows_every_parameter_the_configuration_has() -> None:
+    """고급 모드가 **전체 파라미터**를 그린다 — UI-1-AC1 의 「전체」.
+
+    ⚠ **R29 까지 이 자리는 「전체」를 말할 수 없었다.** 기준이 저장소에 없었기
+    때문이다(`DERConfig.params` 는 `dict[str, Any]`). R31 이 기준을 정했다 —
+    **레지스트리에 등록된 자원의 생성자 시그니처**(`core/model/parameters.py`).
+    이제 이 단언이 실제로 「전체」를 붙든다.
+
+    ★ **집합 비교이지 포함 관계가 아니다.** 부분집합만 보면 목록을 잘라도
+    통과한다 — `[:5]` 로 자르는 변이가 이 단언에만 잡힌다.
+    """
+    on_screen = _fields_on_screen(render_dashboard())
+    expected = _expected_parameters(DEMO_MODEL)
+
+    assert on_screen == expected, (
+        "고급 모드가 그리는 파라미터가 카탈로그와 다릅니다. "
+        f"화면에 없음: {sorted(expected - on_screen)}, "
+        f"카탈로그에 없음: {sorted(on_screen - expected)}"
+    )
+    # 「전체」가 자원 한 종의 것이 아니라 **구성 전체**의 것이다
+    assert len(DEMO_MODEL.resources) > 1
+
+
+@pytest.mark.req("UI-1-AC1")
+def test_advanced_mode_follows_the_configuration_not_a_fixed_list() -> None:
+    """구성이 바뀌면 화면도 바뀐다 — 템플릿이 필드를 하드코딩하지 않는다.
+
+    자원을 하나 더 놓으면 그 자원의 파라미터가 **한 벌 더** 나와야 한다.
+    고정 목록을 그리는 템플릿은 위 테스트를 통과할 수 있어도 이것은 못 한다.
+    """
+    from web.render import advanced_mode_fields
+
+    grown = DEMO_MODEL.model_copy(
+        update={
+            "resources": [
+                *DEMO_MODEL.resources,
+                DERConfig(tag="PV", params={"name": "벽면 BIPV", "capacity_kw": 4.0}),
+            ]
+        }
+    )
+    context = demo_context()
+    context["parameters"] = advanced_mode_fields(grown)
+
+    assert _fields_on_screen(render_dashboard(context)) == _expected_parameters(grown)
+    # 같은 종을 둘 놓으면 파라미터도 두 벌이다 — 종 단위로 한 벌만 그리면
+    # 둘째 자원의 값을 고칠 방법이 없다
+    pv_rows = [name for name in _expected_parameters(grown) if name.endswith(".capacity_kw")]
+    assert len(pv_rows) == 2
+
+
+@pytest.mark.req("UI-1-AC1")
+def test_non_scalar_parameters_still_have_a_place_on_the_screen() -> None:
+    """시계열·구조·선택도 화면에 자리를 갖는다 — 수치 칸이 아닐 뿐이다.
+
+    **그리는 방법이 없는 것과 자리가 없는 것은 다르다.** 8760개짜리 시계열을
+    수치 칸으로 그릴 수는 없지만, 자리마저 없으면 그것이 곧 「전체」가 아닌
+    것이고 사용자는 그 값을 고칠 입구를 찾지 못한다.
+    """
+    parser = parse(render_dashboard())
+    kinds = {
+        element.attrs["data-parameter"]: element.attrs.get("data-kind", "")
+        for element in parser.elements
+        if "data-parameter" in element.attrs
+    }
+    non_scalar = {name for name, kind in kinds.items() if kind != str(ParameterKind.NUMBER)}
+    assert non_scalar, "데모 구성에 비수치 파라미터가 하나도 없습니다 — 검사가 성립하지 않습니다"
+
+    number_input_ids = {
+        element.attrs.get("id")
+        for element in parser.elements
+        if element.tag == "input" and element.attrs.get("type") == "number"
+    }
+    for name in non_scalar:
+        index, _, param = name.partition(".")
+        assert f"res{index}-{param}" not in number_input_ids, (
+            f"{name} 은 수치 칸으로 그릴 수 없는 파라미터인데 `type=number` 로 "
+            "그려졌습니다 — 사용자가 시계열을 그 칸에 넣을 방법이 없습니다"
+        )
+
+
+@pytest.mark.req("UI-1-AC1")
+def test_every_scalar_field_carries_label_unit_and_tooltip() -> None:
+    """수치 칸마다 라벨·단위·도움말이 자기 입력과 결속된다."""
+    parser = parse(render_dashboard())
     advanced_inputs = [
         element
         for element in parser.elements
         if element.tag == "input" and element.attrs.get("type") == "number"
     ]
-    advanced_input_ids = {inp.attrs.get("id") for inp in advanced_inputs}
+    assert advanced_inputs
 
-    expected_ids = {item["id"] for item in context["inputs"]}
-    assert expected_ids == advanced_input_ids, (
-        "고급 모드가 넘겨받은 입력을 그대로 그리지 않습니다 — 템플릿이 필드를 "
-        f"하드코딩하고 있지 않은지 보십시오. 누락: {expected_ids - advanced_input_ids}, "
-        f"초과: {advanced_input_ids - expected_ids}"
-    )
-    assert injected["id"] in advanced_input_ids, (
-        "주입한 입력이 화면에 없습니다 — 이 단언이 없으면 위 비교는 렌더러가 "
-        "고정 목록을 낼 때도 통과할 수 있습니다"
-    )
-
-    # 각 입력에 필수 필드(label, unit, help, source)가 있는지 확인
     for inp in advanced_inputs:
         inp_id = inp.attrs.get("id")
         if not inp_id:

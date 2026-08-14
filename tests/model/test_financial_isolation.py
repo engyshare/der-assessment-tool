@@ -40,7 +40,7 @@ def test_financial_isolation_between_instances():
     config = ModelConfig(
         name="테스트 모델",
         resources=[pv1_config, pv2_config],
-        contract=ContractConfig(structure="개별 직접계약"),
+        contract=ContractConfig(structure="개별 세대 직접계약"),
     )
 
     model = Model(config, provider)

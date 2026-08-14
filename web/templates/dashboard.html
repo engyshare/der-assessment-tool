@@ -32,12 +32,16 @@
 
     <section id="advanced" class="band" aria-labelledby="advanced-title">
       <h2 id="advanced-title">고급 모드</h2>
+      {# 「전체 파라미터」의 정본은 `core.model.parameters` 카탈로그다.
+         여기에 필드를 손으로 적으면 자원 1종 추가가 이 파일 수정을 부르고,
+         고치지 않은 동안 화면은 「전체」라고 적은 채 일부만 그린다. #}
       <form aria-label="전체 파라미터">
         <div class="field-grid">
-          {% for item in inputs %}
-          <div class="field">
+          {% for item in parameters %}
+          <div class="field" data-parameter="{{ item.parameter }}" data-kind="{{ item.kind }}">
             <label for="{{ item.id }}">{{ item.label }}</label>
             <div class="control">
+              {% if item.scalar %}
               <input
                 id="{{ item.id }}"
                 name="{{ item.id }}"
@@ -56,6 +60,17 @@
                 title="단위 {{ item.unit }} · {{ item.help }} · 기본값 출처 {{ item.source }}"
                 id="{{ item.id }}-tip"
               >?</button>
+              {% else %}
+              {# 시계열·구조·선택은 수치 칸으로 그릴 수 없다. 그리는 방법이 다를
+                 뿐 자리는 있어야 한다 — 자리가 없으면 그것이 「전체」가 아니다. #}
+              <button
+                type="button"
+                class="editor"
+                id="{{ item.id }}"
+                name="{{ item.id }}"
+                title="{{ item.kind }} · {{ item.help }} · 기본값 출처 {{ item.source }}"
+              >{{ item.kind }} 편집{% if item.value %} — 현재 {{ item.value }}{% endif %}</button>
+              {% endif %}
             </div>
           </div>
           {% endfor %}

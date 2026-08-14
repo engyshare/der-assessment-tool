@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import ast
+from pathlib import Path
 from types import MappingProxyType
 from typing import ClassVar
 
@@ -124,3 +126,61 @@ def test_structure_vocabulary_is_the_spec_literal() -> None:
     assert len(CONTRACT_STRUCTURES) == 7
     assert "상계거래" in CONTRACT_STRUCTURES
     assert "VPP 경유" in CONTRACT_STRUCTURES
+
+
+def _string_constants_excluding_docstrings(source: Path) -> set[str]:
+    """소스의 문자열 상수 — **독스트링은 제외한다.**
+
+    포함하면 「구조 이름을 여기 적지 않는다」를 설명하는 문장 자신이 위반으로
+    잡힌다. 이 저장소가 여섯 번 만난 형태이고 R23 이 같은 처방을 적어 두었다.
+    """
+    tree = ast.parse(source.read_text(encoding="utf-8"))
+    docstrings = {
+        id(node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+    }
+    return {
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and id(node) not in docstrings
+    }
+
+
+@pytest.mark.contract
+@pytest.mark.req("FR-205-AC1")
+def test_structure_vocabulary_has_exactly_one_owner() -> None:
+    """★ **구조 이름의 사본이 배포 코드에 없다** — R31 이 사본 하나를 없앴다.
+
+    `core/model/settlement.py` 가 `SUPPORTED_STRUCTURES` 로 자기 목록을 들고
+    있었고 **일곱 중 셋이 이 계약과 달랐다**(「상계」 대 「상계거래」 등). 그
+    어긋남은 조용하다 — 엔진이 받아 준 이름이 `payer_by_structure` 의 어느 키와도
+    맞지 않으면 **그 편익의 지불 주체가 기본값으로 떨어지고 결과는 그럴듯하다.**
+
+    ⚠ **`__init_subclass__` 의 기동 시점 대조가 이것을 잡지 못했다** — 그것은
+    편익 클래스의 **표**만 보고 정산엔진의 목록은 보지 않는다. 그래서 여기에
+    따로 둔다: 계약 파일 밖에서 구조 이름을 리터럴로 적으면 빨간불이다.
+    """
+    root = Path(__file__).resolve().parents[2]
+    owner = root / "core/contracts/valuestream.py"
+
+    offenders: dict[str, set[str]] = {}
+    for package in ("core", "app", "infra"):
+        for source in sorted((root / package).rglob("*.py")):
+            if source == owner:
+                continue
+            found = _string_constants_excluding_docstrings(source) & set(CONTRACT_STRUCTURES)
+            if found:
+                offenders[str(source.relative_to(root))] = found
+
+    assert not offenders, (
+        "구조 이름이 계약 밖에 리터럴로 적혀 있습니다: "
+        + "; ".join(f"{path} → {sorted(names)}" for path, names in offenders.items())
+        + ". `CONTRACT_STRUCTURES` 를 읽으십시오 — 사본을 두면 여덟 번째 구조가 "
+        "생길 때 한쪽만 고쳐지고, 그 상태에서 편익의 지불 주체가 조용히 "
+        "기본값으로 떨어집니다"
+    )
