@@ -36,6 +36,40 @@ def _valid_on(valid_from: date | None, valid_to: date | None, when: date) -> boo
 
 
 @dataclass(frozen=True)
+class TariffFallbackNotice:
+    """요청 시점에 유효한 요금표가 없어 **최근접 표로 대체했다** — `DV-6`.
+
+    `DV-6` 원문: *「요금표 유효기간이 분석연도를 포함 **(미포함 시 경고 후 최근접
+    표)**」*. R24 가 이 규칙을 「거부」로 읽었던 것은 `DV_RULES` 사본이 괄호를
+    잘라 먹었기 때문이고, 원문은 **거부의 반대**를 요구한다.
+
+    `direction` 을 함께 싣는 이유: 「과거 표로 계산했다」와 「미래 표로 계산했다」는
+    **읽는 사람에게 뜻이 다르다.** 과거 표는 그 뒤의 요금 개정을 반영하지 않은
+    것이고, 미래 표는 **아직 시행되지 않은 요금으로 과거를 계산한 것**이다.
+    """
+
+    kind: str
+    requested: date
+    used_table: str
+    used_from: date | None
+    used_to: date | None
+    direction: Literal["과거", "미래"]
+
+    @property
+    def message(self) -> str:
+        """사용자에게 보이는 한 줄. 리포트·화면이 그대로 싣는다."""
+        window = (
+            f"{self.used_from.isoformat() if self.used_from else '(무제한)'}"
+            f" ~ {self.used_to.isoformat() if self.used_to else '(무제한)'}"
+        )
+        return (
+            f"{self.requested.isoformat()} 에 유효한 {self.kind} 요금표가 없어 "
+            f"{self.direction} 방향 최근접 표 «{self.used_table}»({window})로 "
+            "계산했습니다"
+        )
+
+
+@dataclass(frozen=True)
 class BillLine:
     key: str
     label: str
@@ -48,6 +82,17 @@ class BillLine:
 @dataclass(frozen=True)
 class BillBreakdown:
     lines: tuple[BillLine, ...]
+    #: 요금표 대체 경고 — `DV-6` 의 「경고 후 최근접 표」의 「경고」다.
+    #:
+    #: **왜 예외도 로그도 아니라 결과에 실리는가.** 규칙이 요구하는 것은 거부가
+    #: 아니라 **폴백**이므로 계산은 계속되어야 하고, 그러면 사용자에게 「이 청구서는
+    #: 요청한 연도의 표로 계산된 것이 아니다」를 전할 통로가 필요하다. 로그로
+    #: 흘리면 리포트가 그것을 그릴 수 없고, 그리지 못하는 경고는 없는 것과 같다.
+    #:
+    #: 선례가 셋 있다 — `DispatchResult.notes` · UI `compliance_alert` ·
+    #: `benefit.v2g_discharge` 의 `UserWarning`. 결과에 담으면 **새 경고 종류가 늘 때
+    #: 채널을 새로 만들 필요가 없다.**
+    notices: tuple[TariffFallbackNotice, ...] = ()
 
     @property
     def total(self) -> Money:
@@ -117,6 +162,18 @@ class ScenarioBill:
     def total(self) -> Money:
         total = sum((Decimal(item.bill.total) for item in self.meter_bills), Decimal(0))
         return Money(total)
+
+    @property
+    def notices(self) -> tuple[TariffFallbackNotice, ...]:
+        """계량점 전부의 요금표 대체 경고를 **한자리에** 모은다 — `DV-6`.
+
+        모아 주지 않으면 읽는 사람이 계량점을 하나씩 뒤져야 하고, `TU-6` 판단대로
+        한 단지의 계량점은 여럿이다(가구부 N개 + 공용부 + 거래분). 뒤져야 하는
+        경고는 곧 읽히지 않는 경고다.
+        """
+        return tuple(
+            notice for item in self.meter_bills for notice in item.bill.notices
+        )
 
     def meter_bill(self, meter_id: str) -> BillBreakdown:
         for item in self.meter_bills:
@@ -231,28 +288,92 @@ class TariffCatalog:
     tou: tuple[TouTariffTable, ...]
     direct_trade: tuple[DirectTradeTariffTable, ...]
 
-    def select_residential(self, when: date) -> ResidentialTariffTable:
-        return _select_effective(self.residential, when, "residential")
+    def select_residential(
+        self, when: date
+    ) -> tuple[ResidentialTariffTable, TariffFallbackNotice | None]:
+        return _select_effective(self.residential, when, "주택용")
 
-    def select_tou(self, when: date) -> TouTariffTable:
-        return _select_effective(self.tou, when, "tou")
+    def select_tou(
+        self, when: date
+    ) -> tuple[TouTariffTable, TariffFallbackNotice | None]:
+        return _select_effective(self.tou, when, "TOU")
 
-    def select_direct_trade(self, when: date) -> DirectTradeTariffTable:
-        return _select_effective(self.direct_trade, when, "direct_trade")
+    def select_direct_trade(
+        self, when: date
+    ) -> tuple[DirectTradeTariffTable, TariffFallbackNotice | None]:
+        return _select_effective(self.direct_trade, when, "직접거래")
 
 
 def _select_effective(
     tables: tuple[_TariffTable, ...],
     when: date,
     kind: str,
-) -> _TariffTable:
+) -> tuple[_TariffTable, TariffFallbackNotice | None]:
+    """유효한 표를 고르고, 없으면 **최근접 표로 대체하며 경고를 낸다** — `DV-6`.
+
+    ★ **거부가 아니라 폴백이다.** 종전에는 `KeyError` 를 던졌는데, `DV-6` 원문은
+    *「미포함 시 **경고 후 최근접 표**」* 이며 그것은 거부의 반대다. R24 가 이
+    규칙을 「거부」로 읽은 것은 `DV_RULES` 사본이 그 괄호를 잘라 먹었기 때문이다.
+
+    ★★ **「최근접」을 과거 방향 우선으로 정했다 (R31 결정 §3).** 미래 개정본이
+    날짜상 더 가까워도 쓰지 않는다 — 미래 요금표로 과거를 정산하면 **실제로
+    청구되지 않은 요금**이 결과에 들어간다. 과거 방향에 아무것도 없을 때만 미래
+    최근접으로 내려가고, 그때도 경고의 `direction` 이 그 사실을 나른다.
+
+    ⚠ **표가 하나도 없으면 거부한다.** 대체할 대상이 없으므로 폴백이 성립하지
+    않고, 그때 빈 표로 계산하면 요금이 0 원으로 나온다 — 「요금표가 없다」가
+    「요금이 없다」와 구별되지 않는다.
+    """
     matched = [
         table for table in tables
         if _valid_on(table.valid_from, table.valid_to, when)
     ]
-    if not matched:
-        raise KeyError(f"effective {kind} tariff table is missing for {when.isoformat()}")
-    return max(matched, key=lambda table: table.valid_from or date.min)
+    if matched:
+        return max(matched, key=lambda table: table.valid_from or date.min), None
+
+    if not tables:
+        raise ValidationError(
+            field=f"tariff.{kind}",
+            reason=(
+                f"{kind} 요금표가 하나도 없습니다 — {when.isoformat()} 에 대해 "
+                "대체할 표가 없습니다"
+            ),
+            action=(
+                "요금표를 최소 하나 등재하십시오. 빈 표로 계산하면 요금이 0 원으로 "
+                "나오고, 「요금표가 없다」가 「요금이 없다」와 구별되지 않습니다"
+            ),
+            rule="DV-6",
+        )
+
+    past = [t for t in tables if t.valid_to is not None and t.valid_to < when]
+    if past:
+        chosen = max(past, key=lambda t: t.valid_to or date.min)
+        direction: Literal["과거", "미래"] = "과거"
+    else:
+        future = [t for t in tables if t.valid_from is not None and t.valid_from > when]
+        if not future:
+            # 유효하지도, 과거도, 미래도 아닌 표만 있는 경우는 `_valid_on` 의
+            # 정의상 존재할 수 없다 — 그래도 조용히 아무 표를 고르지 않는다.
+            raise ValidationError(
+                field=f"tariff.{kind}",
+                reason=(
+                    f"{kind} 요금표 {len(tables)}건 중 {when.isoformat()} 의 최근접을 "
+                    "정할 수 없습니다 — 유효기간이 비어 있는 표만 있습니다"
+                ),
+                action="요금표의 `valid_from`·`valid_to` 를 확인하십시오",
+                rule="DV-6",
+            )
+        chosen = min(future, key=lambda t: t.valid_from or date.max)
+        direction = "미래"
+
+    return chosen, TariffFallbackNotice(
+        kind=kind,
+        requested=when,
+        used_table=chosen.name,
+        used_from=chosen.valid_from,
+        used_to=chosen.valid_to,
+        direction=direction,
+    )
 
 
 @dataclass(frozen=True)
@@ -288,7 +409,7 @@ class TariffEngine:
                 reason=f"사용량이 음수입니다: {kwh!r}",
                 action="사용량(kWh)을 0 이상 값으로 입력하십시오",
             )
-        table = self._catalog.select_residential(when)
+        table, notice = self._catalog.select_residential(when)
         assert isinstance(table, ResidentialTariffTable)
 
         lines: list[BillLine] = []
@@ -318,10 +439,10 @@ class TariffEngine:
                 table.essential_discount_key,
             ))
         self._append_tax_and_fund(lines, table.tax_and_fund)
-        return BillBreakdown(tuple(lines))
+        return BillBreakdown(tuple(lines), notices=() if notice is None else (notice,))
 
     def bill_tou(self, usages: Iterable[TouUsage], *, when: date) -> BillBreakdown:
-        table = self._catalog.select_tou(when)
+        table, notice = self._catalog.select_tou(when)
         assert isinstance(table, TouTariffTable)
         energy_raw: dict[str, Decimal] = {}
         rate_keys: dict[str, str] = {}
@@ -365,7 +486,7 @@ class TariffEngine:
             for key, amount in discount_raw.items()
         )
         self._append_tax_and_fund(lines, table.tax_and_fund)
-        return BillBreakdown(tuple(lines))
+        return BillBreakdown(tuple(lines), notices=() if notice is None else (notice,))
 
     def bill_direct_trade(self, kwh: float, *, when: date) -> BillBreakdown:
         if kwh < 0:
@@ -374,7 +495,7 @@ class TariffEngine:
                 reason=f"사용량이 음수입니다: {kwh!r}",
                 action="사용량(kWh)을 0 이상 값으로 입력하십시오",
             )
-        table = self._catalog.select_direct_trade(when)
+        table, notice = self._catalog.select_direct_trade(when)
         assert isinstance(table, DirectTradeTariffTable)
         lines = [
             self._usage_rate_line(
@@ -391,7 +512,7 @@ class TariffEngine:
             ),
         ]
         self._append_tax_and_fund(lines, table.tax_and_fund)
-        return BillBreakdown(tuple(lines))
+        return BillBreakdown(tuple(lines), notices=() if notice is None else (notice,))
 
     def bill_scenario(self, meters: Iterable[MeterPoint], *, when: date) -> ScenarioBill:
         bills: list[ScenarioMeterBill] = []
@@ -406,7 +527,14 @@ class TariffEngine:
         return ScenarioBill(tuple(bills))
 
     def price_signal_for_tou(self, timestamp: datetime, *, when: date) -> float:
-        table = self._catalog.select_tou(when)
+        """스텝별 단가 신호 — 경고를 **의도적으로 버린다**.
+
+        이 함수는 `DispatchContext` 의 가격 신호를 만드는 자리이고 스텝마다
+        불린다(8760회). 경고를 실으면 같은 경고가 8760번 쌓이고, 그것은
+        정보가 아니라 소음이다 — 같은 요금표 대체 사실은 청구서
+        (`bill_tou`)가 한 번 나른다.
+        """
+        table, _ = self._catalog.select_tou(when)
         assert isinstance(table, TouTariffTable)
         return self._rate(self._period_for(table, timestamp).energy_rate_key)
 

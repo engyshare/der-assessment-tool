@@ -141,6 +141,18 @@ THROWN_BY_REAL_CODE: dict[str, str] = {
     # (`escalation.electricity_tariff` 의 `value_unit` 이 「%/년 (명목)」이었다).
     "DV-7": "tests/assumption/test_price_basis.py::"
             "test_an_item_that_redeclares_the_basis_is_refused",
+    # ↓ R31 — **이 규칙은 「던진다」의 뜻이 다르다.** 원문은 *「요금표 유효기간이
+    # 분석연도를 포함 **(미포함 시 경고 후 최근접 표)**」* 이므로 미포함은 거부가
+    # 아니라 **폴백**이다(R24 가 사본의 절단 때문에 「거부」로 읽었던 자리).
+    #
+    # 그래서 던지는 자리는 **폴백조차 성립하지 않는 경우**다 — 요금표가 하나도
+    # 없으면 대체할 대상이 없고, 빈 표로 계산하면 요금이 0 원으로 나와 「요금표가
+    # 없다」가 「요금이 없다」와 구별되지 않는다.
+    #
+    # 폴백 자체(경고 후 최근접, 과거 방향 우선)는
+    # `tests/regulation/test_tariff_fallback.py` 가 전건 붙든다.
+    "DV-6": "tests/regulation/test_tariff_fallback.py::"
+            "test_no_table_at_all_is_refused_not_silently_zero",
 }
 
 #: 대장에 있으나 **아직 구조로 던지는 코드가 없는** 규칙.
@@ -157,7 +169,11 @@ NOT_YET_THROWN: frozenset[str] = frozenset({
     # 정확했다. 없던 것은 **선언할 자리**였고, R31 이 그것을 만들었다 —
     # 계약의 `PriceBasis`(기본값 없음) · `AssumptionSet.price_basis` ·
     # ORM 컬럼(NOT NULL + CHECK) · 대장 최상위 `price_basis: 명목`.
-    "DV-6",
+    # ★★★ **`DV-6` 이 마지막이었고 R31 이 옮겼다 — 이 집합은 이제 비어 있다.**
+    # 이 상수를 지우라고 아래 주석이 적어 두었으나 **지우지 않는다**: 열다섯 번째
+    # 규칙이 대장에 들어올 때 「아직 던지지 않는다」를 놓을 자리가 필요하고, 자리가
+    # 없으면 그 규칙이 `THROWN_BY_REAL_CODE` 에 억지로 들어가거나 분류에서 빠진다.
+    # `test_every_catalogue_rule_is_classified` 가 그때 빨간불을 낸다.
 })
 
 #: ★★ **던지지 않지만 이미 강제되는** 규칙 — R24 가 신설한 세 번째 분류.
