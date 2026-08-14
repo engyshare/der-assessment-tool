@@ -31,10 +31,15 @@
 
 ## 아직 조립기가 없는 구조를 **빈 목록으로 돌려주지 않는다**
 
-다섯 구조는 단가·수수료 근거가 `docs/assumptions.yaml` 에 없다(결정 §2-3 —
-Q항목 등재 대기). 그때 조용히 빈 목록을 돌려주면 **편익 0 인 사업**이 그럴듯하게
-나오고, 사용자는 그 구조가 미구현인지 정말 편익이 없는지 구별할 수 없다.
-`NOT_YET_ASSEMBLED` 가 사유를 들고 거부한다.
+넷은 아직 조립되지 않는다. 조용히 빈 목록을 돌려주면 **편익 0 인 사업**이
+그럴듯하게 나오고, 사용자는 그 구조가 미구현인지 정말 편익이 없는지 구별할 수
+없다. `NOT_YET_ASSEMBLED` 가 **구조마다 무엇이 막고 있는지**를 들고 거부한다.
+
+⚠ **그 사유를 R31 이 한 번 고쳐 썼다.** 초판은 넷 다 「대장에 값이 없다」로
+적었는데, `Q-14`~`Q-16` 을 등재하고 보니 **값이 막고 있던 것은 하나뿐**이었다
+(「잉여 직거래」 — 지금 조립된다). 나머지 셋은 값이 아니라 **정산 대상 미정 ·
+요금엔진 통합 · 없는 편익 클래스**가 막고 있다. 사유를 낡은 채 두면 다음 사람이
+값을 등재하고 「이제 되겠다」고 착수한 뒤에야 그것을 알게 된다.
 """
 
 from __future__ import annotations
@@ -56,6 +61,9 @@ TARIFF_KEY = "tariff.hv_single_contract.avg"
 
 #: 거래지원수수료 단가(원/kWh) — Q-7. 하단 0(면제 케이스)을 겸한다.
 TRADE_FEE_KEY = "fee.direct_trade_support"
+
+#: 잉여 직거래 판매단가(원/kWh) — Q-16. **약관요금보다 낮다**(도매 정산단가 계열).
+SURPLUS_SALE_KEY = "tariff.surplus_direct_sale"
 
 
 @dataclass(frozen=True)
@@ -110,6 +118,29 @@ def _net_metering(
             SurplusSale(sale_price_won_per_kwh=tariff, structure=structure),
         ),
         assumption_keys=(TARIFF_KEY,),
+    )
+
+
+def _surplus_direct_sale(
+    provider: AssumptionProvider, inputs: SettlementInputs
+) -> SettlementPlan:
+    """잉여 직거래 — 잉여를 **판매**한다. 상계와 같은 산식, **다른 단가**.
+
+    `surplus_sale.py` 독스트링이 *「판매단가는 판매 경로(직거래·상계·SMP)에 따라
+    다르다 … 경로가 섞이면 인스턴스를 여러 개 둔다」* 고 스스로 적고 있었다.
+    이 조립기와 `_net_metering` 이 그 「여러 개」의 실물이며, **구조가 어느
+    경로인지를 고른다.**
+
+    ⚠ **상계와 단가가 다른 것이 이 구조의 전부다.** 같은 단가를 쓰면 두 구조가
+    수치까지 같아지고, 그러면 `FR-202`(구조 비교)의 표에 같은 줄이 두 번 나온다 —
+    조립기는 둘인데 결과는 하나인 상태이며 아무 예외도 나지 않는다.
+    """
+    structure = "잉여 직거래"
+    price = provider.require_float(SURPLUS_SALE_KEY)
+    return SettlementPlan(
+        structure=structure,
+        streams=(SurplusSale(sale_price_won_per_kwh=price, structure=structure),),
+        assumption_keys=(SURPLUS_SALE_KEY,),
     )
 
 
@@ -169,6 +200,7 @@ def _distributed_direct_trade(
 #: (`payer_by_structure` 를 선언표로 둔 것과 같은 근거).
 ASSEMBLERS: Mapping[str, _Assembler] = MappingProxyType({
     "상계거래": _net_metering,
+    "잉여 직거래": _surplus_direct_sale,
     "분산특구 직접거래": _distributed_direct_trade,
 })
 
@@ -176,29 +208,41 @@ ASSEMBLERS: Mapping[str, _Assembler] = MappingProxyType({
 #:
 #: **빈 목록을 돌려주지 않기 위해 존재한다.** 조용히 편익 0 을 내면 사용자는
 #: 미구현과 「정말 편익이 없다」를 구별할 수 없다.
+#:
+#: ★ **R31 이 이 표의 사유를 한 번 고쳐 썼다.** 초판은 넷 다 「대장에 값이 없다」로
+#: 적었는데, `Q-14`~`Q-16` 을 등재하고 보니 **값이 막고 있던 것은 하나뿐**이었다
+#: (「잉여 직거래」 — 지금 조립된다). 나머지 셋은 값이 아니라 **구조가 요구하는
+#: 자료형이나 조항 자체**가 막고 있다. 사유를 낡은 채 두면 다음 사람이 값을
+#: 등재하고 「이제 되겠다」고 착수한 뒤에야 그것을 알게 된다.
 NOT_YET_ASSEMBLED: Mapping[str, str] = MappingProxyType({
     "개별 세대 직접계약": (
-        "정산 대상 수량(잉여 순액 대 자가소비)과 단가 출처가 spec 에 없습니다 — "
-        "결정 §2-3 에 따라 `docs/assumptions.yaml` Q항목 등재가 선행합니다 (갈래 C)"
+        "값이 아니라 **정산 대상이 정해지지 않았습니다.** 조항은 「가구가 구매자와 "
+        "직접 계약」만 적고, 정산 대상이 잉여 순액인지 자가소비 절감인지 spec 에 "
+        "없습니다 — 둘은 배타 규칙표에서 유형 A 로 서로를 배제하므로 하나를 골라야 "
+        "하고, 그 선택이 편익을 통째로 바꿉니다. 계약단가는 협상값이므로 "
+        "`SettlementInputs` 로 받으면 되고 대장 등재 대상이 아닙니다"
     ),
     "단일계약+관리주체 경유": (
-        "관리주체 수수료의 근거가 대장에 없습니다(단가 `tariff.hv_single_contract.avg` "
-        "는 있습니다) — Q항목 등재가 선행합니다 (갈래 B)"
-    ),
-    "잉여 직거래": (
-        "「분산특구 직접거래」와의 구분은 R31 이 정했으나(전자는 판매단가 경로만 "
-        "다른 잉여판매) 그 판매단가(SMP 계열)가 대장에 없습니다 — Q항목 등재가 "
-        "선행합니다 (갈래 B)"
+        "값은 갖췄습니다(단가 `tariff.hv_single_contract.avg` Q-6 · 수수료 "
+        "`fee.manager_entity` Q-14). 남은 것은 **요금엔진 통합**입니다 — 이 구조의 "
+        "편익은 `SelfConsumption`(기존 요금 빼기 신규 요금)이고 그 두 요금은 요금엔진"
+        "(WP-3)이 누진·TOU 를 풀어서 내는 값이라 대장에도 협상값에도 없습니다. "
+        "**그리고 수수료를 실을 자리가 없습니다** — `SelfConsumption` 에 차감항이 "
+        "없고, 수수료는 편익이 아니라 비용이므로 비용 행으로 놓아야 합니다"
     ),
     "집합 PPA": (
-        "PPA 단가와 중개 수수료가 대장에 없습니다(`grep -i ppa docs/assumptions.yaml` "
-        "0건) — Q항목 등재가 선행합니다 (갈래 C)"
+        "값은 갖췄습니다(`tariff.aggregated_ppa.ratio` Q-15). 남은 것은 **편익 "
+        "클래스**입니다 — PPA 는 잉여판매가 아니라 발전량 전량의 일괄 판매이고, "
+        "`SurplusSale` 은 계통 역송분(잉여)만 봅니다. 잉여판매로 대신하면 자가소비분이 "
+        "빠져 편익이 조용히 작아집니다. `FR-401-AC2` 에 대응 편익이 없으므로 spec "
+        "개정이 함께 붙습니다"
     ),
     "VPP 경유": (
-        "값 문제가 아니라 **Phase 불일치**입니다 — `FR-401-AC2.VPPMarket`(VPP 시장참여 "
-        "수익)은 spec 이 `[Phase 2]` 로 표시하는데 `FR-205` 는 Phase 1 Must-have 에 "
-        "있습니다. 결정 §2-3 이 이 구조를 Phase 2 로 미루고 spec §16.5 개정 대상으로 "
-        "등재했습니다"
+        "값 문제가 아니라 **Phase 불일치**였습니다 — `FR-401-AC2.VPPMarket`(VPP "
+        "시장참여 수익)은 v0.1부터 `[Phase 2]` 인데 `FR-205`(VPP 경유 포함)는 Phase 1 "
+        "Must-have 입니다. **아직 조항 쪽은 그대로입니다** — `FR-205-AC1` 이 일곱을 "
+        "한 수용기준에 열거하므로 VPP 만 옮기려면 `FR-801-AC7` 처럼 AC 를 쪼개야 하고 "
+        "수용기준 총수가 바뀝니다. spec §16.5 개정 대상으로 등재했습니다"
     ),
 })
 

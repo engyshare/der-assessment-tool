@@ -32,6 +32,7 @@ from core.contracts.valuestream import CONTRACT_STRUCTURES, Payer
 from core.valuestream.settlement import (
     ASSEMBLERS,
     NOT_YET_ASSEMBLED,
+    SURPLUS_SALE_KEY,
     TARIFF_KEY,
     TRADE_FEE_KEY,
     SettlementInputs,
@@ -42,6 +43,8 @@ from core.valuestream.settlement import (
 #: 비교하면 무엇을 넣어도 통과한다(R29 가 걷어낸 항진의 형태).
 TARIFF = 150.0
 FEE_RATE = 5.0
+#: 잉여 직거래 판매단가 — **약관요금보다 낮다**(도매 계열). 그 관계가 뜻이다.
+DIRECT_SALE_PRICE = 110.0
 
 
 def _provider() -> AssumptionProvider:
@@ -57,6 +60,7 @@ def _provider() -> AssumptionProvider:
         items={
             TARIFF_KEY: item(TARIFF_KEY, TARIFF, "원/kWh"),
             TRADE_FEE_KEY: item(TRADE_FEE_KEY, FEE_RATE, "원/kWh"),
+            SURPLUS_SALE_KEY: item(SURPLUS_SALE_KEY, DIRECT_SALE_PRICE, "원/kWh"),
         },
         price_basis=PriceBasis.NOMINAL,
     )
@@ -228,8 +232,9 @@ def test_the_seven_structures_are_partitioned_with_no_gap_and_no_overlap() -> No
         f"두 표에 겹치는 구조가 있습니다: {sorted(assembled & pending)} — "
         "어느 쪽이 정본인지 실행 시점에 갈립니다"
     )
-    # 갈래 A 가 둘이라는 사실 자체를 적어 둔다 — 늘면 이 수를 함께 고치게 된다
-    assert len(assembled) == 2
+    # 조립되는 구조 수를 적어 둔다 — 늘면 이 수를 함께 고치게 되고, 그때
+    # `NOT_YET_ASSEMBLED` 에서 무엇이 빠졌는지 위 합집합 단언이 함께 말한다
+    assert len(assembled) == 3
 
 
 @pytest.mark.req("FR-205-AC1")
@@ -285,3 +290,30 @@ def test_the_assembler_checks_its_own_output_against_the_exclusion_table(
         assemble("상계거래", provider=_provider())
 
     assert caught.value.rule == "DV-12"
+
+
+@pytest.mark.req("FR-205-AC1", "NFR-202-M1")
+def test_surplus_direct_sale_uses_a_different_price_than_net_metering() -> None:
+    """★★ **같은 산식, 다른 단가** — 그것이 두 구조를 가르는 전부다.
+
+    `surplus_sale.py` 독스트링이 *「판매단가는 판매 경로(직거래·상계·SMP)에 따라
+    다르다 … 경로가 섞이면 인스턴스를 여러 개 둔다」* 고 스스로 적고 있었다.
+    두 조립기가 그 「여러 개」의 실물이며 **구조가 경로를 고른다.**
+
+    ⚠ **같은 단가를 쓰면 두 구조가 수치까지 같아진다** — 그러면 `FR-202`(구조
+    비교)의 표에 같은 줄이 두 번 나오고, 조립기는 둘인데 결과는 하나인 상태가
+    아무 예외 없이 만들어진다. 그래서 「다르다」를 단언한다.
+
+    오라클: 순위 1(해석해). 잉여 500 kWh × 110 원/kWh = 55,000 원.
+    """
+    (direct_sale,) = assemble("잉여 직거래", provider=_provider()).streams
+    (net,) = assemble("상계거래", provider=_provider()).streams
+
+    surplus = _dispatch(500.0)
+    assert direct_sale.annual_value(surplus, year=1) == 500 * DIRECT_SALE_PRICE
+    assert direct_sale.annual_value(surplus, year=1) != net.annual_value(surplus, year=1)
+
+    # **도매가가 소매 요금보다 낮다**는 관계까지 고정한다 — 뒤집히면 「잉여를
+    # 팔면 사는 것보다 이득」이 되어 상계거래가 원리상 열등해지고, 그 결론은
+    # 단가 가정이 만든 것이지 사업의 성질이 아니다
+    assert DIRECT_SALE_PRICE < TARIFF
