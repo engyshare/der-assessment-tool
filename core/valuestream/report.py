@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Final
 
 from core.contracts.der import DispatchResult
 from core.contracts.units import ZERO, Money
@@ -24,6 +25,14 @@ from core.valuestream.exclusion_table import (
     rules_for_profile,
 )
 
+#: `BenefitLine.state` 의 네 값. **리터럴을 흩어 두지 않는다** — R31 이 엑셀
+#: 리포트에서 「계상됨」을 조건으로 쓰게 되면서, 문면이 두 모듈에 사본으로 남으면
+#: 한쪽만 고쳐진 상태에서 **합계가 조용히 0 이 된다**(`SUMIF` 조건이 안 맞는다).
+STATE_ACCOUNTED: Final[str] = "계상됨"
+STATE_EXCLUDED: Final[str] = "배타제외"
+STATE_INCREMENT_ONLY: Final[str] = "증분만"
+STATE_UNMONETIZED_ZERO: Final[str] = "미화폐화0"
+
 
 @dataclass(frozen=True)
 class BenefitLine:
@@ -33,7 +42,8 @@ class BenefitLine:
     name: str
     payer: Payer
     annual_value: Money
-    state: str  # "계상됨" | "배타제외" | "증분만" | "미화폐화0"
+    #: 위 `STATE_*` 넷 중 하나
+    state: str
 
 
 @dataclass
@@ -103,17 +113,17 @@ def build_report(
             # 하고, 관점별 귀속(FR-704)이 이 값을 그대로 쓴다
             payer=s.effective_payer,
             annual_value=s.annual_value(dispatch, year=year),
-            state="계상됨",
+            state=STATE_ACCOUNTED,
         )
         if type(s).tag in excluded_tags:
-            line = _with_state(line, "배타제외")
+            line = _with_state(line, STATE_EXCLUDED)
             report.excluded.append(line)
         elif type(s).tag in type_b_tags:
-            line = _with_state(line, "증분만")
+            line = _with_state(line, STATE_INCREMENT_ONLY)
             report.increment_only.append(line)
         elif line.annual_value == ZERO and s.enabled:
             # 활성화됐지만 0 — FR-404 미화폐화 (제도 미확인)
-            line = _with_state(line, "미화폐화0")
+            line = _with_state(line, STATE_UNMONETIZED_ZERO)
             report.unmonetized_zero.append(line)
         else:
             report.accounted.append(line)

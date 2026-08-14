@@ -200,11 +200,30 @@ class PerformancePoint:
 
 @dataclass(frozen=True)
 class FeasibleCell:
+    """달성영역 격자의 칸 하나 — `FR-803-AC1`.
+
+    ## `x_index`/`y_index` — **수치 축** (R31 결정 §8)
+
+    프리셋 축의 값은 `"low"`/`"base"`/`"high"` **문자열**이라 등고선·음영 차트가
+    원리상 그려지지 않는다(차트는 수치 좌표를 받는다). 그래서 축의 **수준
+    인덱스**를 함께 싣는다.
+
+    **문자열을 정렬해서 지수를 만들지 않는다** — 사전순으로는
+    `base < high < low` 가 되어 **중간 수준이 맨 앞에 오고**, 그 격자는 좌표가
+    뒤섞인 채 그럴듯하게 그려진다. 인덱스는 케이스 그리드가 **선언한 수준
+    순서**에서만 나온다(`feasible_region(axis_levels=…)`).
+
+    `None` 은 「수준 순서를 받지 못했다」이며 「0번 수준」이 아니다 — 그 둘을 같은
+    값으로 두면 축을 못 그린 격자가 첫 수준에 뭉친다.
+    """
+
     x_value: object
     y_value: object
     metric_value: float
     achieved: bool
     case_index: int
+    x_index: int | None = None
+    y_index: int | None = None
 
 
 @dataclass(frozen=True)

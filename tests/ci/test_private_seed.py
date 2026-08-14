@@ -22,6 +22,7 @@ import pytest
 from tests.ci.seed_loader import (
     DEFAULT_PRIVATE_SEED_PATH,
     PRIVATE_SEED_PATH_ENV,
+    SeedOrigin,
     load_seeds,
     private_seed_path,
 )
@@ -64,7 +65,8 @@ def test_injected_private_seed_is_read_instead_of_synthetic(monkeypatch, tmp_pat
     monkeypatch.setenv(PRIVATE_SEED_PATH_ENV, str(injected))
     assert private_seed_path() == injected, "환경변수 주입이 경로 결정에 반영되지 않았다"
 
-    private_seeds = load_seeds()
+    loaded_private = load_seeds()
+    private_seeds = loaded_private.assumptions
     private_err = capsys.readouterr().err
     assert "Using PRIVATE seed data" in private_err
     assert str(injected) in private_err, "어느 파일을 읽었는지 로그가 말하지 않는다"
@@ -82,7 +84,8 @@ def test_injected_private_seed_is_read_instead_of_synthetic(monkeypatch, tmp_pat
 
     # ③ 주입을 걷으면 **다른** 값이 나온다 — 「항상 같은 값」 구현을 배제한다
     monkeypatch.setenv(PRIVATE_SEED_PATH_ENV, str(tmp_path / "absent.yaml"))
-    synthetic_seeds = load_seeds()
+    loaded_synthetic = load_seeds()
+    synthetic_seeds = loaded_synthetic.assumptions
     capsys.readouterr()
     synthetic_capex = synthetic_seeds.get("capex.pv")
     assert synthetic_capex is not None
@@ -93,6 +96,19 @@ def test_injected_private_seed_is_read_instead_of_synthetic(monkeypatch, tmp_pat
     assert synthetic_seeds.get("quote.vendor_premium") is None, (
         "비공개 항목이 합성 시드에서도 나온다 — 두 시드가 섞였다"
     )
+
+    # ★★ **출처가 결과에 남고, 두 경우가 다르다 (R31 결정 §6).**
+    #
+    # 「대체이지 병합이 아니다」를 택한 이유가 *「어느 시드로 돌렸는가 한 줄이
+    # 출처를 결정한다」* 인데, 그 한 줄이 결과에 없으면 이점이 사라진다 — 골든
+    # 대조(`NFR-104`)가 어긋났을 때 원인이 시드인지 코드인지 가릴 수 없다.
+    #
+    # **두 경우를 대조한다** — 한쪽만 보면 「늘 같은 출처를 적는」 구현도 통과한다.
+    assert loaded_private.origin is SeedOrigin.PRIVATE
+    assert loaded_synthetic.origin is SeedOrigin.SYNTHETIC
+    assert loaded_private.origin is not loaded_synthetic.origin
+    # 출처 문면이 **어느 파일인지**까지 말한다 — 종류만으로는 주입 자리를 모른다
+    assert str(injected) in loaded_private.provenance
 
 
 @pytest.mark.req("FR-1101-AC2")

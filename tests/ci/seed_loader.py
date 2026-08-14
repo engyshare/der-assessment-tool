@@ -13,6 +13,8 @@
 
 import os
 import sys
+from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 from core.assumption.provider import AssumptionSet
@@ -28,6 +30,39 @@ DEFAULT_PRIVATE_SEED_PATH = "data/private/seeds.yaml"
 SYNTHETIC_SEED_FILENAME = "synthetic_seeds.yaml"
 
 
+class SeedOrigin(StrEnum):
+    """시드가 **어디서 왔는가** — `FR-1101-AC2` / R31 (결정 §6).
+
+    **결정: 비공개 시드는 공개 시드를 「대체」한다. 병합하지 않는다.**
+
+    병합하면 어떤 값이 어디서 왔는지 결과만 보고 알 수 없고, 그 상태에서 골든
+    대조(`NFR-104`)가 어긋나면 **원인이 시드인지 코드인지 가릴 수 없다.** 대체하면
+    「어느 시드로 돌렸는가」 한 줄이 출처를 결정한다.
+
+    ⚠ **그 한 줄을 결과에 남기지 않으면 대체의 이점이 사라진다.** 종전에는
+    `stderr` 로만 알렸고, 그것은 결과에 남지 않으므로 리포트도 골든 비교도 그
+    사실을 말할 수 없었다 — `DV-6` 의 경고를 `BillBreakdown.notices` 에 실은 것과
+    같은 판단이다.
+    """
+
+    PRIVATE = "비공개 시드"
+    SYNTHETIC = "합성 예시 시드"
+
+
+@dataclass(frozen=True)
+class LoadedSeeds:
+    """읽은 시드와 **그 출처**. 출처가 결과와 함께 다닌다."""
+
+    assumptions: AssumptionSet
+    origin: SeedOrigin
+    path: Path
+
+    @property
+    def provenance(self) -> str:
+        """결과 메타·리포트에 그대로 싣는 한 줄."""
+        return f"{self.origin.value} ({self.path})"
+
+
 def private_seed_path() -> Path:
     """비공개 시드의 자리 — 환경변수 주입이 기본 자리를 덮는다."""
     return Path(os.getenv(PRIVATE_SEED_PATH_ENV, DEFAULT_PRIVATE_SEED_PATH))
@@ -38,13 +73,30 @@ def synthetic_seed_path() -> Path:
     return Path(__file__).parent / SYNTHETIC_SEED_FILENAME
 
 
-def load_seeds() -> AssumptionSet:
-    """비공개 시드가 있으면 그것을, 없으면 합성 시드를 읽는다."""
+def load_seeds() -> LoadedSeeds:
+    """비공개 시드가 있으면 그것을, 없으면 합성 시드를 읽는다 — **대체이지 병합이 아니다.**
+
+    ★ **출처를 반환값에 싣는다 (R31).** 종전에는 `AssumptionSet` 만 돌려주고 출처는
+    `stderr` 로만 알렸다. 그러면 「어느 시드로 돌렸는가」가 결과에 남지 않으므로
+    골든 대조가 어긋났을 때 **원인이 시드인지 코드인지 가릴 수 없다** — 대체를
+    택한 이유 자체가 사라진다.
+
+    `stderr` 출력은 남긴다. 사람이 실행 중에 보는 것과 결과에 기록되는 것은 서로를
+    대신하지 않는다.
+    """
     private = private_seed_path()
     if private.exists():
         print(f"Using PRIVATE seed data from {private}", file=sys.stderr)
-        return AssumptionSet.load_from_yaml(str(private))
+        return LoadedSeeds(
+            assumptions=AssumptionSet.load_from_yaml(str(private)),
+            origin=SeedOrigin.PRIVATE,
+            path=private,
+        )
 
     synthetic = synthetic_seed_path()
     print(f"Using SYNTHETIC seed data (fallback) from {synthetic}", file=sys.stderr)
-    return AssumptionSet.load_from_yaml(str(synthetic))
+    return LoadedSeeds(
+        assumptions=AssumptionSet.load_from_yaml(str(synthetic)),
+        origin=SeedOrigin.SYNTHETIC,
+        path=synthetic,
+    )
