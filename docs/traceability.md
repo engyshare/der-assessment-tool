@@ -214,7 +214,7 @@
 | `FR-605` | Must-have | 1 | `FR-605-AC1` | 자원 유형별 상이한 조건이 한 시나리오에서 동시 적용되고 프로포마에 분리 표시된다 | 자동 | test_incentive.py |
 | `FR-606` | Must-have | 1 | `FR-606-AC1` | 거치기간 중 이자만, 상환기간 중 원리금 상환 스케줄 생성 | 자동 | test_casevariant_contract.py, test_incentive.py |
 |  |  | 1 | `FR-606-AC2` | 상환 스케줄이 프로포마 독립 행으로 표시되고 총 이자비용이 별도 집계된다 | 자동 | test_incentive.py |
-| `FR-607` | Must-have | 1 | `FR-607-AC1` | 모든 실행에서 지원 0 케이스가 자동 포함되어 결과 상단에 표시된다 | 자동 | test_phase1_dod.py, test_incentive_cases.py 4건, test_variant_production_wiring.py 8건, test_casevariant_contract.py 4건, test_incentive.py, test_variant_report.py 9건 |
+| `FR-607` | Must-have | 1 | `FR-607-AC1` | 모든 실행에서 지원 0 케이스가 자동 포함되어 결과 상단에 표시된다 | 자동 | test_phase1_dod.py, test_incentive_cases.py 4건, test_variant_production_wiring.py 8건, test_casevariant_contract.py 4건, test_incentive.py, test_case_report.py 2건, test_narrative.py, test_variant_report.py 9건 |
 |  |  | 1 | `FR-607-AC2` | "무지원 시 회수기간 XX년 / 목표 대비 부족분 YY년" 형태로 격차를 명시한다 | 자동 | test_incentive.py |
 |  |  | 1 | `FR-607-AC3` | 기준선의 정의 (v0.5 추가): 지원 0은 본 사업의 지원이 0을 뜻한다. 타 사업으로 확정 지원된 설비는 기준선에 포함하고, 지원 예정(미확정)은 제외한다.… | 자동 | test_casevariant_contract.py, test_incentive.py |
 | `FR-608` | Must-have | 1 | `FR-608-AC1` | 목표 지정: "할인 회수기간 ≤ 10년" / "NPV ≥ 0" / "IRR ≥ 5%" 중 택일 또는 복수 | 자동 | test_phase1_dod.py, test_incentive.py 4건 |
@@ -297,20 +297,20 @@
 |  |  | 1 | `FR-905-AC8` | 출처 메타데이터: 데이터셋도 (출처, 계측기간, 해상도, 신뢰도, 최종확인일) 을 보유하고 리포트에 표기한다 | 자동 | test_timeseries.py |
 | `FR-1001` | Must-have | 1 | `FR-1001-AC1` | (가) 영향 인자 우선 제시 — 각 결과 지표 옆에 그 값을 좌우한 상위 인자를 영향도 순으로 제시한다. 순위는 감이 아니라 민감도 계산 결과로 정한다 (FR-… | 자동 | test_phase1_dod.py, test_report.py |
 |  |  | 1 | `FR-1001-AC2` | (나) 산식 확인 — 임의 지표·프로포마 항목에서 그것을 만든 산식과 대입값을 그 자리에서 펼쳐볼 수 있다. 이동 횟수를 제약하지 않으며, "펼치면 보인다"가 … | 자동 | test_report.py |
-|  |  | 1 | `FR-1001-AC3` | (다) 3중 표기 — 각 산식은 자연어 설명 + 수식 + 대입값으로 표기한다 | 자동 | test_phase1_dod.py, test_report.py 3건 |
-|  |  | 1 | `FR-1001-AC4` | (라) 출처 동반 — 산식에 등장하는 모든 입력값에 출처·기준연도·신뢰도가 함께 표시된다 | 자동 | test_report.py |
+|  |  | 1 | `FR-1001-AC3` | (다) 3중 표기 — 각 산식은 자연어 설명 + 수식 + 대입값으로 표기한다 | 자동 | test_phase1_dod.py, test_case_report.py, test_report.py 3건 |
+|  |  | 1 | `FR-1001-AC4` | (라) 출처 동반 — 산식에 등장하는 모든 입력값에 출처·기준연도·신뢰도가 함께 표시된다 | 자동 | test_case_report.py, test_narrative.py, test_report.py |
 |  |  | 1 | `FR-1001-AC5` | (마) 판정 기준 — 비개발자 검토자가 리포트만 보고 "이 회수기간이 왜 이 값인지"와 "어떤 가정이 바뀌면 결론이 달라지는지"를 설명할 수 있다. 측정: 심의… | 수동 | test_report.py (스텁) + MC-1 (미수행) |
-| `FR-1002` | Must-have | 1 | `FR-1002-AC1` | 영향도 순 정렬이 1순위: 리포트 첫 화면은 주 지표(할인 회수기간)에 대한 인자별 영향도 순위로 시작한다. 입력 순·분류 순 나열은 부록으로 보낸다 | 자동 | test_phase1_dod.py, test_report.py, test_sensitivity_real.py, test_dashboard.py |
-|  |  | 1 | `FR-1002-AC2` | 영향도 산출 방식: 각 인자를 합리적 변동 범위(전제의 신뢰구간, 없으면 기본 ±20%)에서 변동시켜 주 지표가 움직인 폭으로 측정한다. 케이스 그리드를 실행하… | 자동 | test_report.py, test_sensitivity_real.py |
-|  |  | 1 | `FR-1002-AC3` | 각 인자마다 함께 표시: 사용값 / 단위 / 기준연도 / 출처 / 신뢰도 / 최종확인일 / 지표 변동폭 / 결론이 뒤집히는 임계값 존재 여부 | 자동 | test_report.py |
-|  |  | 1 | `FR-1002-AC4` | 결론 전환 강조: 합리적 변동 범위 안에서 목표 달성 여부가 뒤바뀌는 인자는 최상단에 별도 강조한다. 이것이 정책 판단에서 가장 중요한 정보다 | 자동 | test_report.py, test_sensitivity_real.py 2건 |
-|  |  | 1 | `FR-1002-AC5` | 가정 값 결합 표시 (v0.5 어휘 정정): 신뢰도 가정 인자는 영향도와 함께 표시하여, "영향도 낮은 가정"과 "영향도 높은 가정"을 구분할 수 있게 한다. … | 자동 | test_report.py 2건 |
-|  |  | 1 | `FR-1002-AC6` | 전체 가정 목록: 영향도 순위와 별개로 전 가정 목록을 부록 시트로 제공한다 (재현·검증용) | 자동 | test_report.py 2건 |
+| `FR-1002` | Must-have | 1 | `FR-1002-AC1` | 영향도 순 정렬이 1순위: 리포트 첫 화면은 주 지표(할인 회수기간)에 대한 인자별 영향도 순위로 시작한다. 입력 순·분류 순 나열은 부록으로 보낸다 | 자동 | test_phase1_dod.py, test_case_report.py, test_narrative.py, test_report.py, test_sensitivity_real.py, test_dashboard.py |
+|  |  | 1 | `FR-1002-AC2` | 영향도 산출 방식: 각 인자를 합리적 변동 범위(전제의 신뢰구간, 없으면 기본 ±20%)에서 변동시켜 주 지표가 움직인 폭으로 측정한다. 케이스 그리드를 실행하… | 자동 | test_case_report.py 2건, test_report.py, test_sensitivity_real.py |
+|  |  | 1 | `FR-1002-AC3` | 각 인자마다 함께 표시: 사용값 / 단위 / 기준연도 / 출처 / 신뢰도 / 최종확인일 / 지표 변동폭 / 결론이 뒤집히는 임계값 존재 여부 | 자동 | test_case_report.py 2건, test_narrative.py, test_report.py |
+|  |  | 1 | `FR-1002-AC4` | 결론 전환 강조: 합리적 변동 범위 안에서 목표 달성 여부가 뒤바뀌는 인자는 최상단에 별도 강조한다. 이것이 정책 판단에서 가장 중요한 정보다 | 자동 | test_case_report.py, test_narrative.py, test_report.py, test_sensitivity_real.py 2건 |
+|  |  | 1 | `FR-1002-AC5` | 가정 값 결합 표시 (v0.5 어휘 정정): 신뢰도 가정 인자는 영향도와 함께 표시하여, "영향도 낮은 가정"과 "영향도 높은 가정"을 구분할 수 있게 한다. … | 자동 | test_case_report.py, test_report.py 2건 |
+|  |  | 1 | `FR-1002-AC6` | 전체 가정 목록: 영향도 순위와 별개로 전 가정 목록을 부록 시트로 제공한다 (재현·검증용) | 자동 | test_case_report.py, test_report.py 2건 |
 | `FR-1003` | Must-have | 1 | `FR-1003-AC1` | XLSX: 엑셀에서 검산 가능한 형태 — 입력·프로포마·시계열·결과 시트를 분리하고, 주요 계산은 값이 아닌 셀 수식으로 출력하여 기존 엑셀 검토 방식과 병행 … | 자동 | test_benefit_breakdown_sheet.py 3건, test_report.py 3건 |
 |  |  | 1 | `FR-1003-AC2` | PDF: 심의자료용 요약 (표지·가정·결과·조합탐색·결론 5부) | 자동 | test_report.py 2건 |
-|  |  | 1 | `FR-1003-AC3` | JSON: 시나리오+전제 정의 전체 (재현용) | 자동 | test_report.py |
+|  |  | 1 | `FR-1003-AC3` | JSON: 시나리오+전제 정의 전체 (재현용) | 자동 | test_reports_router.py, test_report.py |
 | `FR-1004` | Must-have | 1 | `FR-1004-AC1` | 일간 대표일 디스패치 스택, 월별 에너지 수지, 누적 현금흐름 곡선, 토네이도, 케이스 히트맵, 모델 비교 바 차트 | 자동 | test_chart_contract.py 5건, test_charts_wp28a.py 8건, test_report.py |
-| `FR-1005` | Must-have | 1 | `FR-1005-AC1` | 실행마다 {실행ID, 시각, 코드 커밋 해시, 전제집합 버전, 시나리오 해시, 데이터셋 해시, 엔진 종류, 결과 요약} 기록. 동일 매니페스트 재실행 시 비트 … | 자동 | test_report.py |
+| `FR-1005` | Must-have | 1 | `FR-1005-AC1` | 실행마다 {실행ID, 시각, 코드 커밋 해시, 전제집합 버전, 시나리오 해시, 데이터셋 해시, 엔진 종류, 결과 요약} 기록. 동일 매니페스트 재실행 시 비트 … | 자동 | test_case_report.py, test_report.py |
 | `FR-1101` | Must-have | 1 | `FR-1101-AC1` | 공개 저장소: 소스코드, 테스트, 계약, 골든 시나리오의 구조(입력 스키마·기대값 형식), 문서(README·CONTRIBUTING·이슈/PR 템플릿·docs/… | 자동 | test_license.py |
 |  |  | 1 | `FR-1101-AC2` | 비공개 시드: 설비 단가·업계 견적·미공표 제도 검토 내용을 담은 AssumptionSet 시드 데이터와 골든 시나리오의 실제 수치. 별도 비공개 저장소 또는 … | 자동 | test_private_seed.py 2건 |
 |  |  | 1 | `FR-1101-AC3` | 공개 저장소만으로 실행 가능해야 한다 — 비공개 시드가 없으면 합성 예시 전제(공개 가능한 대표값, 신뢰도 가정)로 동작한다. 외부 기여자가 코드를 돌려보고 개… | 자동 | test_seed_fallback.py |
@@ -336,10 +336,10 @@
 |  |  | 1 | `NFR-107-AC5` | 수동 검증 분류의 정본은 docs/manual-checks.yaml이다. spec은 어느 수용기준이 수동인지 열거하지 않는다. 대장의 전건에 대해 ⓐ crite… | 자동 | test_traceability_gate.py |
 |  |  | 1 | `NFR-107-M1` | CI가 spec 수용기준 목록과 마커·YAML을 대조하여 미매핑 0건 확인. 구현: scripts/gen_traceability.py (Wave 0 산출물 0.… | 자동 | test_17_9_dod9.py, test_marker_substance.py 11건, test_traceability_gate.py 4건 |
 | `NFR-201` | Must-have | 1 | `NFR-201-M1` | 신규 자원 추가 PR에서 core/engine/, core/cba/ diff 0줄 | 자동 | test_phase1_measurements.py |
-| `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | 자동 | test_e2e_settlement_wiring.py 2건, test_ci_gates.py, test_der_contract.py 2건, test_tariff.py, test_aggregated_ppa.py, test_settlement.py 3건, test_settlement_household_contract.py, test_settlement_manager_structure.py |
+| `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | 자동 | test_e2e_settlement_wiring.py 2건, test_ledger_levels.py 4건, test_ci_gates.py, test_der_contract.py 2건, test_tariff.py, test_aggregated_ppa.py, test_settlement.py 3건, test_settlement_household_contract.py, test_settlement_manager_structure.py |
 | `NFR-203` | Should-have | 1 | `NFR-203-M1` | pytest-cov CI 게이트 | 자동 | test_ci_gates.py |
 | `NFR-204` | Should-have | 1 | `NFR-204-M1` | mypy strict 통과 | 자동 | test_ci_gates.py |
-| `NFR-205` | Must-have | 1 | `NFR-205-M1` | 코드 리뷰 + lint 규칙. 근거: DER-VET Params.py의 클래스 변수 전역 상태는 동시 실행·테스트 격리를 불가능하게 만든다 (부록 C.5) | 자동 | test_ci_gates.py 2건, test_ess.py |
+| `NFR-205` | Must-have | 1 | `NFR-205-M1` | 코드 리뷰 + lint 규칙. 근거: DER-VET Params.py의 클래스 변수 전역 상태는 동시 실행·테스트 격리를 불가능하게 만든다 (부록 C.5) | 자동 | test_ledger_levels.py, test_ci_gates.py 2건, test_ess.py |
 | `NFR-206` | Should-have | 1 | `NFR-206-M1` | lint 경고. 근거: DER-VET Params.py 1,830줄의 유지보수 실패 사례 | 자동 | test_17_12_scale.py 2건, test_phase1_measurements.py 2건, test_load.py, test_thermal_load.py |
 | `NFR-207` | Must-have | 1 | `NFR-207-AC1` | 등록은 패키지 디렉터리 스캔 또는 데코레이터 자동 수집으로 수행한다. 신규 자원 추가 시 core/der/__init__.py, REGISTRY = [...] … | 자동 | test_router_collection.py, test_chart_contract.py, test_registry.py 6건 |
 |  |  | 1 | `NFR-207-AC2` | 등록 충돌(동일 tag 중복)은 기동 시점에 명확한 오류로 검출된다 | 자동 | test_registry.py |
@@ -369,7 +369,7 @@
 | `UI-4` | Must-have | 1 | `UI-4-AC1` | 결과 지표 카드는 항상 무지원 기준선 대비 증분을 함께 표시 | 자동 | test_dashboard.py |
 | `UI-5` | Should-have | 1 | `UI-5-AC1` | 한국어 우선. 영어 병기는 지표명(NPV, IRR, LCOE)에 한정 | 수동 | test_manual_stubs.py (스텁) + MC-7 (미수행) |
 | `UI-6` | Should-have | 2 | `UI-6-AC1` | 접근성: WCAG 2.1 AA 목표 (색상 단독 정보전달 금지, 명암비 4.5:1 이상, 키보드 내비게이션) | 자동 | test_dashboard.py |
-| `UI-7` | Must-have | 1 | `UI-7-AC1` | 결과 화면은 영향도 순위를 최상단에 둔다. 입력값 나열은 부록으로 보낸다 (FR-1002) | 자동 | test_dashboard.py |
+| `UI-7` | Must-have | 1 | `UI-7-AC1` | 결과 화면은 영향도 순위를 최상단에 둔다. 입력값 나열은 부록으로 보낸다 (FR-1002) | 자동 | test_narrative.py, test_dashboard.py |
 | `SC-1` | Must-have | 1 | `SC-1` | 이메일 + 비밀번호, 세션 쿠키(HttpOnly, Secure, SameSite=Lax) | 자동 | test_auth.py 2건 |
 | `SC-2` | Must-have | 1 | `SC-2` | 시나리오 접근은 소유자 또는 유효 공유 토큰 보유자로 제한 | 자동 | test_authorization.py 2건 |
 | `SC-3` | Must-have | 1 | `SC-3` | 수집을 이메일·이름으로 최소화. 실증 참여 가구의 개별 식별정보 미저장 (부하 데이터는 익명 집계본만) | 자동 | test_sc3.py 2건, test_ci_gates.py, test_privacy_procedure.py |

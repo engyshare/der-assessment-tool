@@ -177,7 +177,13 @@ def test_the_case_grid_carries_the_variants_into_the_result() -> None:
 
     assert table.baseline_row.tag == "unsupported"
     assert table.baseline_row.baseline is True
-    assert table.metric_names == ("npv", "payback_years")
+    # ★ **목록을 못 박는다.** 지표가 변형마다 갈리면 `build_variant_table` 이
+    # 거부하므로 그 어긋남은 여기까지 오지 않는다. 이 단언이 지키는 것은 다른
+    # 것이다 — **지표가 조용히 사라지는 것**. R33 이 `initial_outlay_won` 을
+    # 더했고(리포트가 「얼마를 덜 냈기에 그런가」를 말하려면 필요하다) 그때
+    # 이 줄이 빨간불로 그 사실을 알렸다. 지우면 다음 사람이 지표를 지워도
+    # 아무 일도 일어나지 않는다.
+    assert table.metric_names == ("initial_outlay_won", "npv", "payback_years")
 
 
 @pytest.mark.req("FR-607-AC1", "FR-805-AC1")

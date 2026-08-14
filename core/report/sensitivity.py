@@ -20,6 +20,9 @@ import math
 from collections.abc import Callable
 from typing import Any
 
+#: 수렴 기준을 **탐색 구간에 대한 비율**로 잡는다 (R33).
+_RELATIVE_TOL = 1e-6
+
 
 def _find_flip_threshold(
     metric_fn: Callable[[float], float],
@@ -27,7 +30,7 @@ def _find_flip_threshold(
     low: float,
     high: float,
     *,
-    tol: float = 0.5,
+    tol: float | None = None,
     max_iter: int = 64,
 ) -> float | None:
     """metric_fn 이 부호를 바꾸는 지점을 이진탐색으로 찾는다.
@@ -35,8 +38,28 @@ def _find_flip_threshold(
     base 쪽 부호와 다른 부호가 low 또는 high 쪽에 있어야 탐색 가능하다.
     찾지 못하면 None 을 반환한다.
 
-    tol: 탐색 종료 폭 (수렴 기준)
+    tol: 탐색 종료 폭. `None` 이면 **구간 폭의 비율**로 잡는다.
+
+    ## ★ 절대 허용오차 `0.5` 가 기본값이었다 — 인자의 단위를 몰라서 생긴 결함
+
+    종전 기본값은 `tol = 0.5` 였다. 원 단위 단가(구간 폭이 수십만)에서는 잘
+    돌지만, **할인율처럼 구간 폭이 0.03 인 인자에서는 첫 줄에서 곧바로
+    `hi - lo < tol` 이 성립해 이진탐색이 한 번도 돌지 않는다.** 그때 이 함수는
+    실패를 알리지 않고 **구간의 중점을 임계값으로 돌려준다** — 계산과 아무
+    관계가 없는 수인데 `flips_conclusion` 은 참이므로, 리포트는 *「할인율이
+    3.75% 를 넘으면 사업성이 뒤집힌다」* 를 자신 있게 싣는다.
+
+    R33 에 리포트 조립기를 붙이면서 **보고된 임계값으로 파이프라인을 다시
+    돌려 보는 검사**(`tests/report/test_case_report.py`)를 세우자 즉시 잡혔다.
+    그 전까지 이 함수를 검증하던 테스트는 구간이 `0~200` 이어서 우연히 이
+    결함을 밟지 않았다 — **인자의 크기가 검사 결과를 갈랐고, 아무도 그 크기를
+    보고 있지 않았다.**
+
+    허용오차를 구간에 상대적으로 잡으면 단위를 몰라도 된다. `max_iter` 가
+    회수를 막으므로 비율을 작게 잡아도 멈추지 않는 일은 없다.
     """
+    if tol is None:
+        tol = abs(high - low) * _RELATIVE_TOL
     base_positive = metric_fn(base) >= 0.0
 
     # low~base 구간과 base~high 구간 중 부호 전환이 있는 쪽을 찾는다

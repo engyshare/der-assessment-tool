@@ -20,7 +20,7 @@ from core.casegrid.incentive_cases import (
     Viewpoint,
     build_capex_cashflows_for_all_cases,
 )
-from core.casegrid.models import CaseOutcome
+from core.casegrid.models import CaseBasis, CaseOutcome
 from core.cba.metrics import npv, payback_discounted
 from core.cba.proforma import (
     benefit_row,
@@ -315,9 +315,23 @@ def run_single_case_e2e(
         )
     }
 
+    # 6. 산식의 대입값 — **리포트가 「왜 이 값인가」에 답하는 재료**
+    # (`FR-1001-AC3` · `CaseBasis` 독스트링). 여기서 담지 않으면 리포트가
+    # 지표를 다시 계산하거나 자원 구성을 사본으로 갖게 된다.
+    annual_cost = sum(
+        int(row.amounts.get(1, 0)) for row in cost_rows
+    )
+
     return CaseOutcome(
         metrics=_metrics_for(initial_investment, all_rows, discount_rate),
         variants=variants,
+        basis=CaseBasis(
+            initial_investment_won=int(initial_investment),
+            annual_benefit_won=annual_benefit,
+            annual_cost_won=annual_cost,
+            discount_rate=discount_rate,
+            horizon_years=horizon_years,
+        ),
     )
 
 
@@ -369,12 +383,20 @@ def _metrics_for(
     갈라 두면 한쪽에 지표가 추가될 때 다른 쪽이 따라오지 않고, 그 상태에서
     `build_variant_table()` 은 「변형마다 지표가 다릅니다」로 거부한다 —
     즉 증상이 **표시 층에서** 나타나 원인을 여기까지 되짚어야 한다.
+
+    ★ **초기지출을 함께 싣는다 (R33).** 지표가 둘뿐일 때 리포트는 *「무지원과
+    입력 지원안의 NPV 가 이만큼 다르다」* 까지만 말할 수 있고 **「얼마를 덜
+    냈기에 그런가」** 를 말할 수 없었다 — 변형별 초기지출이 경계를 넘지
+    않았기 때문이다. `MC-1` 이 재는 것이 정확히 그 「왜」이므로 여기서 싣는다.
+    지표가 아니라 대입값이지만, 변형마다 **다른** 값이고 변형별로 담을 자리는
+    여기뿐이다(`CaseBasis` 는 케이스 하나에 하나다).
     """
     return {
         "npv": float(npv(initial_investment, operating, discount_rate=discount_rate)),
         "payback_years": payback_discounted(
             initial_investment, operating, discount_rate=discount_rate
         ),
+        "initial_outlay_won": float(initial_investment),
     }
 
 

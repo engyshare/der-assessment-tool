@@ -174,6 +174,41 @@ def _freeze_variants(
 
 
 @dataclass(frozen=True)
+class CaseBasis:
+    """산식의 **대입값** — `FR-1001-AC3` 의 3중 표기 중 셋째 줄이 여기서 온다.
+
+    ## 왜 지표만으로는 안 되는가
+
+    `MC-1` 은 *「비개발자 검토자가 리포트만 보고 **회수기간의 근거**를 설명할 수
+    있는가」* 를 잰다. 지표 사전(`{"npv": …, "payback_years": …}`)은 **답이지
+    근거가 아니다** — 검토자가 「왜 10.5년인가」를 재구성하려면 초기투자·연
+    편익·할인율·분석기간이 그 자리에 있어야 하고, 없으면 리포트가 *"계산했더니
+    그렇습니다"* 로 끝난다. 그것이 이 저장소가 `AssumptionValue` 에서 이미 한 번
+    내린 판단이다(*「값만 넘기면 리포트가 그 값이 어디서 왔는가에 답할 수
+    없다」*).
+
+    ⚠ **선택 필드로 두지 않았다.** 두면 안 채운 실행에 근거가 없고 **빠졌을 때
+    나는 증상이 없다** — 리포트가 조용히 빈 산식을 그린다. R21 이 `is_baseline`
+    깃발에서, R32 가 `with_variants` 에서 두 번 없앤 형태다.
+
+    ⚠ **여기 담는 것은 「무엇을 넣었는가」이지 「무엇이 나왔는가」가 아니다.**
+    지표는 `CaseOutcome.metrics` 가 갖는다. 같은 수를 두 곳에 담으면 한쪽만
+    고쳐진다.
+    """
+
+    #: `t=0` 초기투자(원). 지원을 반영하지 않은 **케이스 기준** 총사업비다 —
+    #: 변형별 초기지출은 `CaseOutcome.variants` 가 따로 갖는다.
+    initial_investment_won: int
+    #: 1년차 편익 합계(원).
+    annual_benefit_won: int
+    #: 1년차 운영비 합계(원). **양수로 담는다** — 부호를 뒤집는 자리는
+    #: `net_operating_flows()` 하나여야 한다(R32).
+    annual_cost_won: int
+    discount_rate: float
+    horizon_years: int
+
+
+@dataclass(frozen=True)
 class CaseOutcome:
     """케이스 러너 하나의 산출 — 지표 **와 변형별 지표** (`FR-607-AC1` / R32).
 
@@ -201,6 +236,8 @@ class CaseOutcome:
     #: 변형 tag → 그 변형의 지표. `run_order()` 의 변형 **전부**가 들어 있어야
     #: 하며, 그 확인은 표시 층(`build_variant_table`)이 거부로 한다.
     variants: Mapping[str, Mapping[str, float]]
+    #: 산식의 대입값 — 위 `CaseBasis` 참조. 리포트가 근거를 그리는 재료다.
+    basis: CaseBasis
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "metrics", MappingProxyType(dict(self.metrics)))

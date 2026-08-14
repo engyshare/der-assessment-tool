@@ -14,14 +14,13 @@ from __future__ import annotations
 import os
 import time
 from pathlib import Path
-from types import MappingProxyType
 
 import pytest
-import yaml
 
 from core.assumption.provider import AssumptionSet
 from core.casegrid import feasible_region, quick_preset_grid, run_cases
 from core.casegrid.e2e_runner import run_single_case_e2e
+from core.casegrid.ledger_levels import build_level_map
 from core.report.variant_report import build_variant_table
 
 THRESHOLD_SECONDS = 90.0
@@ -29,69 +28,12 @@ THRESHOLD_SECONDS = 90.0
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS_YAML = _REPO_ROOT / "docs" / "assumptions.yaml"
 
-#: Mapping from case-grid variable name → assumption ledger key.
-_VAR_TO_KEY: tuple[tuple[str, str], ...] = (
-    ("pv_unit_cost", "capex.pv.rooftop"),
-    ("ess_unit_cost", "capex.ess.new"),
-)
-
-# discount_rate and tariff_escalation are modelling parameters, not ledger
-# data.  They are *not* financial quantities in won so NFR-202 does not apply.
-_FIXED_LEVELS: tuple[tuple[str, tuple[str, str, str]], ...] = (
-    ("discount_rate", ("low", "base", "high")),
-    ("tariff_escalation", ("low", "base", "high")),
-)
-
-_FIXED_NUMERIC: tuple[tuple[str, tuple[float, float, float]], ...] = (
-    ("discount_rate", (0.030, 0.045, 0.060)),
-    ("tariff_escalation", (0.010, 0.020, 0.030)),
-)
-
-
-def _build_level_map() -> dict[str, MappingProxyType[str, float]]:
-    """Build a variable→levels map from the assumption ledger sensitivity data.
-
-    Reads ``docs/assumptions.yaml`` and extracts the ``sensitivity`` dict for
-    each mapped variable.  Returns immutable ``MappingProxyType`` values so the
-    map is safe for parallel execution (NFR-205).
-
-    All financial values (원/kW) originate from the ledger.  Modelling
-    parameters (discount_rate, tariff_escalation) are fixed here because they
-    are not ledger data.
-    """
-    with open(_ASSUMPTIONS_YAML, encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-
-    # Index by key for fast lookup
-    items_by_key: dict[str, dict] = {}
-    for item in data.get("assumptions", []):
-        items_by_key[item["key"]] = item
-
-    level_map: dict[str, MappingProxyType[str, float]] = {}
-
-    for var_name, assumption_key in _VAR_TO_KEY:
-        item = items_by_key.get(assumption_key)
-        if item is None:
-            raise ValueError(
-                f"대장에 {assumption_key!r} 항목이 없습니다. "
-                f"docs/assumptions.yaml 을 확인하십시오"
-            )
-        sensitivity = item.get("sensitivity")
-        if sensitivity is None:
-            raise ValueError(
-                f"대장 항목 {assumption_key!r} 에 sensitivity 필드가 없습니다"
-            )
-        level_map[var_name] = MappingProxyType(dict(sensitivity))
-
-    for (var_name, _), (_, values) in zip(
-        _FIXED_LEVELS, _FIXED_NUMERIC, strict=True
-    ):
-        level_map[var_name] = MappingProxyType(
-            dict(zip(("low", "base", "high"), values, strict=True))
-        )
-
-    return level_map
-
+# ★ **수준표를 만드는 코드가 여기 있었다 (R33).** 대장을 읽어 `level_map` 을
+# 만드는 것은 **배포 경로가 해야 하는 일**인데 그 코드가 이 파일 안에만
+# 있었다 — 즉 「대장이 정본이다」가 이 인수 테스트가 도는 동안에만 성립했고,
+# 러너를 부르는 배포 코드에는 대장을 읽는 자리가 아예 없었다.
+# 지금 소유자는 `core/casegrid/ledger_levels.py` 이며 여기서는 그것을 쓴다 —
+# 사본을 남기면 대장 스키마가 바뀔 때 한쪽만 고쳐진다.
 
 @pytest.mark.req("FR-801-AC7.quick", "FR-803-AC1")
 def test_dod2_e2e_27cases_within_90s_with_environment() -> None:
@@ -110,7 +52,7 @@ def test_dod2_e2e_27cases_within_90s_with_environment() -> None:
     cases = grid.generate()
     assert len(cases) == 27
 
-    level_map = _build_level_map()
+    level_map = build_level_map(_ASSUMPTIONS_YAML)
     cpu_count = os.cpu_count() or 1
 
     # ★ **분석기간을 대장에서 읽는다 (R31).** 종전에는 러너의 모듈 상수
