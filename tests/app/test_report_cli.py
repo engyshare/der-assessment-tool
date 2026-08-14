@@ -28,8 +28,8 @@ def test_cli_writes_a_report_file(tmp_path: Path) -> None:
 
     text = target.read_text(encoding="utf-8")
     assert text.startswith("# 경제성 평가 리포트"), "머리글이 리포트가 아니다"
-    assert "## 2. 영향도 순위" in text
-    assert "## 부록. 전 가정 목록" in text
+    assert "## 4. 영향도 순위" in text
+    assert "## 부록 A. 전 가정 목록" in text
 
 
 def test_missing_scenario_stops_with_a_nonzero_code(capsys) -> None:

@@ -164,6 +164,9 @@ class CaseReport:
 
     scenario_name: str
     scenario_path: str
+    #: 재현 명령의 `--scenario` 인자. 표제용 이름(`scenario_name`)과 다를 수
+    #: 있으므로 따로 나른다 — 표제를 고치면 재현 명령이 조용히 틀려진다.
+    scenario_name_slug: str
     subsidy_rate: float
     assumption_set_name: str
     assumption_set_version: str
@@ -184,9 +187,46 @@ class CaseReport:
     manifest_hash: str
 
     @property
+    def uncertain_influences(self) -> tuple[InfluenceEntry, ...]:
+        """**틀릴 수 있는 값** — 대장 항목에서 온 인자만.
+
+        ## ★ 왜 할인율을 여기서 빼는가 (검토 지적 4)
+
+        첫 판은 할인율을 영향도 1위로 실었다. 지적이 정확했다 — *「대부분의
+        분석은 할인율을 통제할 수 있는 값으로 보지 않는다. 고정적으로 적용하는
+        값을 주요 요인으로 뽑는 것이 의미가 있는가」*.
+
+        영향도 순위가 답하려는 물음은 *「우리가 모르는 것 중 무엇이 결론을
+        좌우하는가」*, 즉 **어느 자료를 먼저 확보할 것인가**다. 할인율은 모르는
+        값이 아니라 **평가자가 정하는 값**이다. 둘을 한 표에 섞으면 순위 1위가
+        「확보할 자료」가 아니라 「이미 정한 규칙」이 되고, 그 표를 읽은 사람은
+        확보 우선순위를 잘못 잡는다.
+
+        그렇다고 **버리지도 않는다** — 할인율을 몇으로 정하느냐가 결론을 바꾸는
+        것은 사실이며, 그것은 *자료 문제가 아니라 정책 선택*이다. 그래서
+        `policy_influences` 로 갈라 **따로** 싣는다.
+        """
+        return tuple(
+            entry for entry in self.influences if entry.ledger_key is not None
+        )
+
+    @property
+    def policy_influences(self) -> tuple[InfluenceEntry, ...]:
+        """**평가자가 정하는 값** — 대장 항목이 아닌 모형 파라미터.
+
+        불확실성이 아니라 **선택**이다. 위 `uncertain_influences` 참조.
+        """
+        return tuple(entry for entry in self.influences if entry.ledger_key is None)
+
+    @property
     def flipping(self) -> tuple[InfluenceEntry, ...]:
-        """결론을 뒤집는 인자 — 최상단에 별도 강조한다 (`FR-1002-AC4`)."""
-        return tuple(entry for entry in self.influences if entry.flips_conclusion)
+        """결론을 뒤집는 **불확실** 인자 — 최상단에 별도 강조 (`FR-1002-AC4`).
+
+        ⚠ 모형 파라미터는 여기 들어오지 않는다. 위 `uncertain_influences` 참조.
+        """
+        return tuple(
+            entry for entry in self.uncertain_influences if entry.flips_conclusion
+        )
 
     @property
     def provisional_warning(self) -> tuple[InfluenceEntry, ...]:
@@ -473,6 +513,7 @@ def build_case_report(
     return CaseReport(
         scenario_name=str(scenario.get("scenario", scenario_path.stem)),
         scenario_path=_repo_relative(scenario_path),
+        scenario_name_slug=scenario_path.stem,
         subsidy_rate=subsidy_rate,
         assumption_set_name=provider.set_name,
         assumption_set_version=provider.set_version,

@@ -7,13 +7,22 @@
 절의 순서 자체가 조항이다 — **가정 목록을 위로 올리면 그 순간 이 파일은 조항을
 어긴다.** 순서를 바꾸려면 조항을 먼저 고쳐야 한다.
 
-    ① 결론 한 줄            ← 검토자가 가장 먼저 묻는 것
-    ② 결론을 뒤집는 인자     ← FR-1002-AC4 「최상단에 별도 강조」
-    ③ 영향도 순위 전체       ← FR-1002-AC1·AC3 (부기를 같은 행에 둔다)
-    ④ 변형 비교와 증분       ← FR-607-AC1 · UI-4
-    ⑤ 산식 3중 표기          ← FR-1001-AC2·AC3·AC4
-    ⑥ 부록: 전 가정 목록     ← FR-1002-AC6
-    ⑦ 재현 정보              ← FR-1005-AC1
+    결론 한 줄               ← 검토자가 가장 먼저 묻는 것
+    0. 무엇을 평가했는가      ← R33 검토 지적 1 (`method_sections`)
+    1. 어떻게 계산했는가      ← R33 검토 지적 3 (`method_sections`)
+    2. 자원별 비용·편익       ← R33 검토 지적 2 (`method_sections`)
+    3. 결론을 뒤집는 인자     ← FR-1002-AC4 「최상단에 별도 강조」
+    4. 영향도 순위            ← FR-1002-AC1·AC3 (부기를 같은 행에 둔다)
+    5. 정책 설정값 감도       ← R33 검토 지적 4 (할인율은 불확실성이 아니다)
+    6. 지원 유무 비교         ← FR-607-AC1 · UI-4
+    7. 산식 3중 표기          ← FR-1001-AC2·AC3·AC4
+    부록 A. 전 가정 목록      ← FR-1002-AC6
+    부록 B. 재현 절차         ← R33 검토 지적 5 · FR-1005-AC1
+
+**0~2 절이 3 절보다 앞에 오는 것은 `FR-1002-AC1` 위반이 아니다.** 그 조항이
+부록으로 보내라는 것은 *「입력 순·분류 순 나열」* 이고, 0~2 절은 나열이 아니라
+**대상과 방법의 규정**이다 — 무엇을 평가했는지 모르면 영향도 순위를 읽을 수
+없다. 부록으로 밀려난 것은 그대로 전 가정 목록(부록 A)이다.
 
 ## ★ 왜 마크다운인가
 
@@ -35,6 +44,11 @@ from core.report.case_report import (
     AssumptionRow,
     CaseReport,
     InfluenceEntry,
+)
+from core.report.method_sections import (
+    cost_benefit_section,
+    method_section,
+    model_section,
 )
 
 #: 부록에 몇 건이 있든 전부 싣는다. 잘라 내면 「재현·검증용」이 성립하지 않는다.
@@ -82,7 +96,7 @@ def _conclusion_line(report: CaseReport) -> str:
 
 def _flip_section(report: CaseReport) -> list[str]:
     """`FR-1002-AC4` — 결론이 뒤집히는 인자를 **최상단에 별도로**."""
-    lines = ["## 1. 결론을 뒤집는 인자", ""]
+    lines = ["## 3. 결론을 뒤집는 인자", ""]
     if not report.flipping:
         lines += [
             "검토한 변동 범위 안에서 결론을 뒤집는 인자는 **없다.** 아래 3절의",
@@ -135,16 +149,20 @@ def _influence_row(entry: InfluenceEntry) -> str:
 def _influence_section(report: CaseReport) -> list[str]:
     """`FR-1002-AC1`·`AC2`·`AC3` — 순위·산출 방식·인자별 부기."""
     lines = [
-        "## 2. 영향도 순위",
+        "## 4. 영향도 순위",
         "",
         "각 인자를 **대장이 밝힌 변동 범위**에서 혼자 움직여 파이프라인을 다시",
         "돌리고, 결론이 움직인 폭으로 순위를 매겼다 (`FR-1002-AC2` 1변수 스윕).",
+        "",
+        "여기 있는 것은 **틀릴 수 있는 값**뿐이다 — 즉 이 표는 *「어느 자료를 먼저",
+        "확보해야 하는가」* 에 답한다. 평가자가 정하는 값(할인율 등)은 불확실성이",
+        "아니라 선택이므로 5절에서 따로 본다.",
         "",
         "| 인자 | 대장 키 | 사용값 | 단위 | 변동 범위 | 결론 변동폭 | 전환 "
         "| 신뢰도 | 출처 | 기준연도 | 최종확인 |",
         "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
-    lines += [_influence_row(entry) for entry in report.influences]
+    lines += [_influence_row(entry) for entry in report.uncertain_influences]
     lines.append("")
     if report.unread_variables:
         names = " · ".join(e.variable for e in report.unread_variables)
@@ -159,10 +177,58 @@ def _influence_section(report: CaseReport) -> list[str]:
     return lines
 
 
+def _policy_section(report: CaseReport) -> list[str]:
+    """5절 — **평가자가 정하는 값**의 감도 (R33 검토 지적 4).
+
+    ## 왜 순위표에서 뺐는가
+
+    첫 판은 할인율을 영향도 1위로 실었다. 지적이 정확했다 — *「대부분의 분석은
+    할인율을 통제할 수 있는 값으로 보지 않는다. 고정적으로 적용하는 값을 주요
+    요인으로 뽑는 것이 의미가 있는가」*.
+
+    영향도 순위가 답하려는 물음은 **「어느 자료를 먼저 확보할 것인가」**다.
+    할인율은 확보할 자료가 아니라 정해 놓고 쓰는 규칙이다. 한 표에 섞으면
+    1위가 「확보 대상」이 아니게 되고, 표를 읽은 사람은 우선순위를 잘못 잡는다.
+
+    **그렇다고 버리지 않는다.** 할인율을 몇으로 정하느냐가 결론을 바꾸는 것은
+    사실이고, 그것은 *자료 문제가 아니라 정책 선택*이다. 그래서 여기서 「이
+    선택이 결론을 얼마나 좌우하는가」로 따로 적는다.
+    """
+    entries = report.policy_influences
+    lines = [
+        "## 5. 정책 설정값이 결론에 미치는 영향",
+        "",
+        "아래는 **모르는 값이 아니라 정해 놓고 쓰는 값**이다. 4절의 순위와 성격이",
+        "다르므로 갈라 싣는다 — 4절은 「무엇을 더 알아봐야 하는가」이고, 여기는",
+        "「우리가 어떤 규칙을 골랐고 그 선택이 결론을 얼마나 좌우하는가」다.",
+        "",
+        "| 설정값 | 적용값 | 검토 범위 | 결론이 바뀌는 값 | 결론 변동폭 |",
+        "|---|---|---|---|---|",
+    ]
+    for entry in entries:
+        threshold = (
+            _num(entry.threshold) if entry.threshold is not None else "범위 내 없음"
+        )
+        lines.append(
+            f"| {entry.variable} | {_num(entry.used_value)} | "
+            f"{_num(entry.low)}~{_num(entry.high)} | {threshold} | "
+            f"{_won(entry.delta_won)} |"
+        )
+    lines += [
+        "",
+        "> **읽는 법.** 「결론이 바뀌는 값」은 *그 설정값을 그렇게 정했다면* 결론이",
+        "> 달라졌다는 뜻이지, 그 값이 틀렸다는 뜻이 아니다. 할인율은 사업 성격과",
+        "> 자금 조달 조건에 따라 정하는 것이므로, **바꾸려면 그 근거를 먼저**",
+        "> 정해야 한다 — 결론을 유리하게 만들려고 고르는 순간 평가가 아니게 된다.",
+        "",
+    ]
+    return lines
+
+
 def _variant_section(report: CaseReport) -> list[str]:
     """`FR-607-AC1`(무지원 기준선 자동 포함) · `UI-4`(증분 병기)."""
     lines = [
-        "## 3. 지원 유무 비교",
+        "## 6. 지원 유무 비교",
         "",
         "| 변형 | 초기지출 | 순현재가치 | 할인 회수기간 | 무지원 대비 증분 |",
         "|---|---|---|---|---|",
@@ -191,7 +257,7 @@ def _variant_section(report: CaseReport) -> list[str]:
 def _formula_section(report: CaseReport) -> list[str]:
     """`FR-1001-AC2`·`AC3` — 산식을 자연어·수식·대입값 셋으로."""
     lines = [
-        "## 4. 이 값이 어떻게 나왔는가",
+        "## 7. 이 값이 어떻게 나왔는가",
         "",
         "각 산식을 **자연어 · 수식 · 대입값** 셋으로 적는다. 대입값의 각 인자는",
         "2절 표에서 출처·기준연도·신뢰도를 확인할 수 있다 (`FR-1001-AC4`).",
@@ -228,7 +294,7 @@ def _appendix_row(row: AssumptionRow) -> str:
 def _appendix_section(report: CaseReport) -> list[str]:
     """`FR-1002-AC6` — 전 가정 목록. **영향도 순위와 별개로** 부록에 둔다."""
     lines = [
-        "## 부록. 전 가정 목록",
+        "## 부록 A. 전 가정 목록",
         "",
         f"재현·검증용이다. 전제 대장 `{report.assumption_set_name}` "
         f"판 {report.assumption_set_version} 의 **전 항목**이며, 위 순위에",
@@ -260,24 +326,84 @@ def render_markdown(report: CaseReport) -> str:
         "---",
         "",
     ]
+    lines += model_section(report)
+    lines += ["---", ""]
+    lines += method_section(report)
+    lines += ["---", ""]
+    lines += cost_benefit_section(report.basis)
+    lines += ["---", ""]
     lines += _flip_section(report)
     lines += ["---", ""]
     lines += _influence_section(report)
+    lines += ["---", ""]
+    lines += _policy_section(report)
     lines += ["---", ""]
     lines += _variant_section(report)
     lines += ["---", ""]
     lines += _formula_section(report)
     lines += ["---", ""]
     lines += _appendix_section(report)
-    lines += [
-        "---",
+    lines += ["---", ""]
+    lines += _reproduction_section(report)
+    return "\n".join(lines)
+
+
+def _reproduction_section(report: CaseReport) -> list[str]:
+    """부록 B — **다른 사람(또는 다른 에이전트)이 이 결과를 다시 낼 수 있는가**
+    (R33 검토 지적 5).
+
+    지적 원문은 *「타 에이전트가 보고서의 내용을 보고 분석결과를 재현할 수
+    있도록 자세한 정보가 기재되어야 함」* 이었다. 첫 판에는 매니페스트 해시
+    한 줄뿐이었는데, **해시는 같은지 다른지만 말하고 어떻게 만드는지는 말하지
+    않는다** — 재현의 근거가 아니라 재현 뒤의 대조 수단이다.
+
+    그래서 ⓐ 명령 ⓑ 입력의 좌표 ⓒ 계산이 서 있는 규약 ⓓ 대조할 해시를 함께
+    적는다. 넷이 다 있어야 「해 보았더니 다른 수가 나왔다」가 **어디서** 갈렸는지
+    말할 수 있다.
+    """
+    basis = report.basis
+    return [
+        "## 부록 B. 재현 절차",
         "",
-        "## 재현 정보",
+        "### 같은 결과를 다시 내는 명령",
         "",
-        f"- 실행 매니페스트 해시 `{report.manifest_hash}` — 같은 해시는 같은",
-        "  입력을 뜻한다 (`FR-1005-AC1`).",
-        "- 이 리포트의 수치는 위 전제 대장의 값으로 계산된 것이며, 신뢰도 `가정`",
-        "  항목이 포함되어 있다. 대장이 갱신되면 수치가 바뀐다.",
+        "```bash",
+        "PYTHONUTF8=1 python -m app.run.report_cli \\",
+        f"    --scenario {report.scenario_name_slug} \\",
+        "    --out <출력경로>",
+        "```",
+        "",
+        "### 이 결과를 만든 입력",
+        "",
+        "| 입력 | 좌표 · 값 |",
+        "|---|---|",
+        f"| 시나리오 파일 | `{report.scenario_path}` (읽는 것은 `subsidy_rate` 하나) |",
+        f"| 전제 대장 | `docs/assumptions.yaml` 판 **{report.assumption_set_version}** |",
+        f"| 보조율 | {report.subsidy_rate:.0%} |",
+        f"| 분석기간 | {basis.horizon_years}년 (`analysis.period_years`) |",
+        f"| 할인율 | {basis.discount_rate:.4g} (모형 파라미터 — 대장 항목 아님) |",
+        f"| 가격 기준 | {report.price_basis} |",
+        f"| 초기투자 | {_won(basis.initial_investment_won)} (지원 반영 전 총사업비) |",
+        f"| 1년차 편익 | {_won(basis.annual_benefit_won)} |",
+        f"| 1년차 운영비 | {_won(basis.annual_cost_won)} |",
+        "",
+        "설비 제원은 0절 표가 전부이며 그 값의 소유자는",
+        "`core/casegrid/e2e_runner.py` 의 모듈 상수다 — 대장이 아니다(설비 제원은",
+        "금액이 아니기 때문이다). 단가·분석기간만 대장에서 온다.",
+        "",
+        "### 대조",
+        "",
+        f"- 실행 매니페스트 해시 **`{report.manifest_hash}`**",
+        "- 위 입력이 전부 같으면 해시가 같고, 하나라도 다르면 달라진다",
+        "  (`FR-1005-AC1`). **해시가 같은데 수치가 다르면 코드가 바뀐 것**이다.",
+        "- 골든 회귀는 `fixtures/golden/` 이 따로 붙든다 — 그쪽 기준값은 대장",
+        "  가정에 묶여 있어 **대장을 갱신하면 재산출이 필요하다.** 회귀 실패가",
+        "  곧 결함은 아니다.",
+        "",
+        "### 이 수치의 유효기간",
+        "",
+        "부록 A 에 신뢰도 `가정` 항목이 포함되어 있다. **대장이 갱신되면 이",
+        "리포트의 모든 수치가 바뀐다** — 리포트를 손으로 고치지 말고 위 명령을",
+        "다시 돌려 새로 뽑을 것.",
         "",
     ]
-    return "\n".join(lines)

@@ -174,6 +174,60 @@ def _freeze_variants(
 
 
 @dataclass(frozen=True)
+class ResourceLine:
+    """**무엇을 평가했는가** — 리포트 0절의 한 행 (`FR-1001-AC2`).
+
+    ## 왜 자원 제원이 경계를 넘는가
+
+    리포트 첫 판을 검토에 걸었더니 *「분석 대상 모델에 대한 소개가 없다」* 가
+    첫 지적이었다. 맞다 — 리포트는 「NPV −865,881원」과 「PV 단가가 결론을
+    뒤집는다」를 말하면서 **PV 를 몇 kW 놓았는지, 무엇과 함께 놓았는지**를 한
+    번도 말하지 않았다. 검토자는 대상을 모르는 채 민감도만 읽은 것이다.
+
+    ⚠ **리포트가 자원을 다시 세우게 두지 않는다.** 표시 층이 `PV(...)` 를
+    똑같이 한 번 더 만들면 그것은 사본이고, 러너의 제원이 바뀔 때 리포트는
+    **옛 제원을 그럴듯하게 계속 인쇄한다.** 아무 예외도 나지 않는다.
+    """
+
+    name: str
+    #: 자원 종류 — 클래스 이름이 아니라 사람이 읽는 말.
+    kind: str
+    #: 용량 문면. 단위가 자원마다 다르므로(kW · kWh) 문자열로 나른다.
+    capacity: str
+    operating_mode: str
+    lifetime_years: int
+    #: 단가 문면 — 「1,600,000원/kW」처럼 **무엇당 얼마인지**까지.
+    unit_capex: str
+    capex_won: int
+    fixed_om_won_per_year: int
+    #: 이 자원이 만드는 편익의 태그. 비어 있으면 **비용만 내는 자원**이다.
+    produces: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class BenefitLine:
+    """편익 한 갈래가 **얼마이며 무엇에서 나왔는가** — 리포트 2절의 한 행.
+
+    ## 왜 갈래별로 나누는가
+
+    검토 지적 둘째가 *「pv.rooftop capex 는 잡혀 있는데 그 비용 대비 편익이
+    적정한지는 어떻게 보는가」* 였다. 연 편익을 **한 덩어리(904,860원)** 로만
+    실으면 그 물음에 답할 자리가 없다 — 검토자는 PV 에 480만원을 쓴 것이
+    타당한지 판단하려는데, 리포트는 PV 가 그중 얼마를 벌어 오는지 말하지
+    않았다.
+    """
+
+    tag: str
+    label: str
+    #: 1년차 금액(원).
+    annual_won: int
+    #: 이 편익을 만든 자원 이름. 규약이 아니라 **이 파이프라인의 실제 귀속**이다.
+    from_resource: str
+    #: 산식 문면 — 대입값까지 (`FR-1001-AC3`).
+    formula: str
+
+
+@dataclass(frozen=True)
 class CaseBasis:
     """산식의 **대입값** — `FR-1001-AC3` 의 3중 표기 중 셋째 줄이 여기서 온다.
 
@@ -206,6 +260,14 @@ class CaseBasis:
     annual_cost_won: int
     discount_rate: float
     horizon_years: int
+    #: 평가 대상 자원 — 위 `ResourceLine` 참조.
+    resources: tuple[ResourceLine, ...]
+    #: 편익 갈래별 금액 — 위 `BenefitLine` 참조.
+    benefits: tuple[BenefitLine, ...]
+    #: 디스패치 규약 문면 — 「대표일 24스텝 × 365일」처럼 **결과를 읽는 데
+    #: 필요한 전제**다. 규약을 적지 않으면 검토자가 시간해상도를 모른 채
+    #: 연간 금액을 읽는다(재현도 불가능하다).
+    dispatch_note: str
 
 
 @dataclass(frozen=True)

@@ -20,7 +20,12 @@ from core.casegrid.incentive_cases import (
     Viewpoint,
     build_capex_cashflows_for_all_cases,
 )
-from core.casegrid.models import CaseBasis, CaseOutcome
+from core.casegrid.models import (
+    BenefitLine,
+    CaseBasis,
+    CaseOutcome,
+    ResourceLine,
+)
 from core.cba.metrics import npv, payback_discounted
 from core.cba.proforma import (
     benefit_row,
@@ -59,6 +64,42 @@ from core.valuestream.settlement import SettlementInputs, assemble
 STEPS_PER_DAY = 24
 SECONDS_PER_HOUR = 3_600
 DAYS_PER_YEAR = 365
+MONTHS_PER_YEAR = 12
+
+# ── 평가 대상 모델의 제원 ────────────────────────────────────────────────
+#
+# ★ **여기 있었던 값들은 `PV(...)`·`ESS(...)` 호출 안의 리터럴이었다 (R33).**
+#
+# 리포트가 *「무엇을 평가했는가」* 를 말하려면 이 수들이 필요한데, 자원 객체는
+# 생성자 인자를 전부 다시 내놓지 않는다(`ESS.rte_pct` 같은 접근자가 없다).
+# 그렇다고 리포트 쪽에 같은 수를 적으면 **사본**이 되고, 제원을 고칠 때 리포트는
+# 옛 수를 그럴듯하게 계속 인쇄한다 — 아무 예외도 나지 않는다.
+#
+# 그래서 이름을 붙여 위로 올렸다. 생성자와 리포트가 **같은 이름 하나**를 읽는다.
+#
+# ⚠ 금액이 아니라 **설비 제원**이다. 단가·할인율은 대장에서 오며(`NFR-202`)
+# 여기 없다 — `level_map` 인자가 그 자리다.
+PV_CAPACITY_KW = 3.0
+PV_CAPACITY_FACTOR = 0.15
+PV_FIXED_OM_WON_PER_YEAR = 100_000
+PV_OM_ESCALATION = 0.02
+PV_SELF_CONSUMPTION_RATIO = 0.0
+
+ESS_CAPACITY_KWH = 10.0
+ESS_POWER_KW = 5.0
+ESS_RTE_PCT = 90.0
+ESS_SOC_MIN_PCT = 10.0
+ESS_SOC_MAX_PCT = 90.0
+ESS_CYCLE_LIFE = 6_000
+ESS_CALENDAR_LIFE = 20
+ESS_EOL_SOH_PCT = 80.0
+ESS_CYCLES_PER_YEAR = 365.0
+ESS_FIXED_OM_WON_PER_YEAR = 100_000
+
+#: 첨두 기본요금 단가. **요금표 값이며 대장으로 옮겨야 한다** — `Q-6`(고압 단일
+#: 계약 평균단가) 회신 뒤 `tariff.*` 항목에서 읽는 것이 맞다. 지금 여기 있는
+#: 것은 부채이며 리포트가 출처를 「소스 상수」로 표시해 그 사실을 드러낸다.
+DEMAND_CHARGE_WON_PER_KW_MONTH = 8_320.0
 
 
 def _resolve(
@@ -179,28 +220,28 @@ def run_single_case_e2e(
     # 1. Resources
     pv = PV(
         name="e2e-pv",
-        capacity_kw=3.0,
-        capacity_factor=0.15,
+        capacity_kw=PV_CAPACITY_KW,
+        capacity_factor=PV_CAPACITY_FACTOR,
         unit_capex_won_per_kw=pv_capex,
-        fixed_om_won_per_year=100_000,
-        escalation_rate=0.02,
-        self_consumption_ratio=0.0,
+        fixed_om_won_per_year=PV_FIXED_OM_WON_PER_YEAR,
+        escalation_rate=PV_OM_ESCALATION,
+        self_consumption_ratio=PV_SELF_CONSUMPTION_RATIO,
         operating_mode=OperatingMode.FULL_EXPORT,
     )
     ess = ESS(
         name="e2e-ess",
-        capacity_kwh=10.0,
-        power_kw=5.0,
-        rte_pct=90.0,
-        soc_min_pct=10.0,
-        soc_max_pct=90.0,
-        cycle_life=6_000,
-        calendar_life=20,
-        eol_soh_pct=80.0,
-        cycles_per_year=365.0,
+        capacity_kwh=ESS_CAPACITY_KWH,
+        power_kw=ESS_POWER_KW,
+        rte_pct=ESS_RTE_PCT,
+        soc_min_pct=ESS_SOC_MIN_PCT,
+        soc_max_pct=ESS_SOC_MAX_PCT,
+        cycle_life=ESS_CYCLE_LIFE,
+        calendar_life=ESS_CALENDAR_LIFE,
+        eol_soh_pct=ESS_EOL_SOH_PCT,
+        cycles_per_year=ESS_CYCLES_PER_YEAR,
         operating_mode=ESSOperatingMode.PEAK_SHAVING,
         capex_unit_won_per_kwh=ess_capex,
-        fixed_om_won_per_year=100_000,
+        fixed_om_won_per_year=ESS_FIXED_OM_WON_PER_YEAR,
     )
 
     # ★ **자원이 서자마자 분석기간을 잰다 (DV-5).** 수명은 자원이 갖고 있으므로
@@ -255,19 +296,21 @@ def run_single_case_e2e(
         settlement_streams = (SurplusSale(sale_price_won_per_kwh=120.0),)
         settlement_costs = ()
 
+    peak_reduction_kw = ess.reducible_peak_kw(year=1)
     peak = PeakShaving(
-        monthly_peak_reduction_kw=[ess.reducible_peak_kw(year=1)] * 12,
-        demand_charge_won_per_kw_month=8_320.0,
+        monthly_peak_reduction_kw=[peak_reduction_kw] * MONTHS_PER_YEAR,
+        demand_charge_won_per_kw_month=DEMAND_CHARGE_WON_PER_KW_MONTH,
     )
 
     # ★ **CBA 에 닿기 전에 거부한다.** 계산한 뒤에 막으면 「예외는 나지만 이미
     # 다 돌린 뒤」가 되고, 무엇보다 **위반 조합의 NPV 가 한 번은 만들어진다.**
     assert_no_exclusions([*settlement_streams, peak, *extra_value_streams])
 
-    settlement_per_day = sum(
-        int(stream.annual_value(grid_export_result, year=1))
+    settlement_by_stream = [
+        (stream, int(stream.annual_value(grid_export_result, year=1)))
         for stream in settlement_streams
-    )
+    ]
+    settlement_per_day = sum(value for _, value in settlement_by_stream)
     peak_per_day = peak.annual_value(grid_export_result, year=1)
     annual_benefit = int(settlement_per_day * DAYS_PER_YEAR + peak_per_day)
 
@@ -321,6 +364,13 @@ def run_single_case_e2e(
     annual_cost = sum(
         int(row.amounts.get(1, 0)) for row in cost_rows
     )
+    benefit_lines = _benefit_lines(
+        settlement_by_stream,
+        peak_tag=peak.tag,
+        peak_reduction_kw=peak_reduction_kw,
+        demand_charge=DEMAND_CHARGE_WON_PER_KW_MONTH,
+        peak_per_year=float(peak_per_day),
+    )
 
     return CaseOutcome(
         metrics=_metrics_for(initial_investment, all_rows, discount_rate),
@@ -331,6 +381,107 @@ def run_single_case_e2e(
             annual_cost_won=annual_cost,
             discount_rate=discount_rate,
             horizon_years=horizon_years,
+            resources=_resource_lines(pv, pv_capex, ess, ess_capex, benefit_lines),
+            benefits=benefit_lines,
+            dispatch_note=(
+                f"대표일 1일을 {STEPS_PER_DAY}스텝(1시간 간격)으로 모의하고 "
+                f"{DAYS_PER_YEAR}일로 연간화한다. 계절·요일 변동을 반영하지 "
+                "않으므로 잉여 판매량은 대표일의 {DAYS_PER_YEAR}배다. "
+                "첨두 절감은 월 단위 12회로 이미 연간값이라 곱하지 않는다"
+            ).replace("{DAYS_PER_YEAR}", str(DAYS_PER_YEAR)),
+        ),
+    )
+
+
+def _benefit_lines(
+    settlement_by_stream: Sequence[tuple[ValueStream, int]],
+    *,
+    peak_tag: str,
+    peak_reduction_kw: float,
+    demand_charge: float,
+    peak_per_year: float,
+) -> tuple[BenefitLine, ...]:
+    """편익을 **갈래별로** 갈라 담는다 (`BenefitLine` 독스트링 참조).
+
+    ⚠ **연간화 규약이 갈래마다 다르다.** 정산 편익은 대표일 1일치라 365를
+    곱하고, 첨두 절감은 월 12회를 이미 안고 있어 곱하지 않는다. 이 차이는
+    합계만 보면 보이지 않으므로 산식 문면에 그대로 적는다 — 검토자가 곱하기
+    하나를 잘못 짚으면 365배가 틀린다.
+    """
+    lines = [
+        BenefitLine(
+            tag=stream.tag,
+            label=f"잉여 전력 판매 ({stream.tag})",
+            annual_won=per_day * DAYS_PER_YEAR,
+            from_resource="PV",
+            formula=(
+                # RUF001: 「×」는 검토자가 읽는 산식 문면이다. `x` 로 바꾸면
+                # 곱셈이 변수 이름처럼 보인다 — 대상을 좁히는 면제이지 규칙을
+                # 넓히는 것이 아니다.
+                f"대표일 {per_day:,}원 × {DAYS_PER_YEAR}일 "  # noqa: RUF001
+                f"= {per_day * DAYS_PER_YEAR:,}원"
+            ),
+        )
+        for stream, per_day in settlement_by_stream
+    ]
+    lines.append(
+        BenefitLine(
+            tag=peak_tag,
+            label=f"첨두 수요 절감 ({peak_tag})",
+            annual_won=int(peak_per_year),
+            from_resource="ESS",
+            formula=(
+                f"월 감축 {peak_reduction_kw:.2f}kW × "  # noqa: RUF001
+                f"{demand_charge:,.0f}원/kW·월 × {MONTHS_PER_YEAR}개월 "  # noqa: RUF001
+                f"= {int(peak_per_year):,}원"
+            ),
+        )
+    )
+    return tuple(lines)
+
+
+def _resource_lines(
+    pv: PV,
+    pv_capex: float,
+    ess: ESS,
+    ess_capex: float,
+    benefits: Sequence[BenefitLine],
+) -> tuple[ResourceLine, ...]:
+    """평가 대상 자원 제원 — 리포트 0절의 재료 (`ResourceLine` 독스트링)."""
+
+    def produced_by(resource: str) -> tuple[str, ...]:
+        return tuple(line.tag for line in benefits if line.from_resource == resource)
+
+    return (
+        ResourceLine(
+            name=pv.name,
+            kind="태양광 (옥상 고정형)",
+            capacity=(
+                f"{PV_CAPACITY_KW:g} kW · 이용률 {PV_CAPACITY_FACTOR:.0%} · "
+                f"자가소비율 {PV_SELF_CONSUMPTION_RATIO:.0%}"
+            ),
+            operating_mode=str(pv.operating_mode),
+            lifetime_years=int(pv.lifetime),
+            unit_capex=f"{pv_capex:,.0f}원/kW",
+            capex_won=int(pv.capex(year=1)),
+            fixed_om_won_per_year=int(pv.fixed_om(year=1)),
+            produces=produced_by("PV"),
+        ),
+        ResourceLine(
+            name=ess.name,
+            kind="에너지저장장치 (신품)",
+            capacity=(
+                f"{ESS_CAPACITY_KWH:g} kWh / {ESS_POWER_KW:g} kW · "
+                f"왕복효율 {ESS_RTE_PCT:g}% · SOC {ESS_SOC_MIN_PCT:g}~"
+                f"{ESS_SOC_MAX_PCT:g}% · 수명종료 SOH {ESS_EOL_SOH_PCT:g}% · "
+                f"연 {ESS_CYCLES_PER_YEAR:g}사이클"
+            ),
+            operating_mode=str(ess.operating_mode),
+            lifetime_years=int(ess.lifetime),
+            unit_capex=f"{ess_capex:,.0f}원/kWh",
+            capex_won=int(ess.capex(year=1)),
+            fixed_om_won_per_year=int(ess.fixed_om(year=1)),
+            produces=produced_by("ESS"),
         ),
     )
 

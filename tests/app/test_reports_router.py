@@ -44,7 +44,12 @@ def test_report_endpoint_is_collected_and_returns_a_report(client: TestClient) -
     assert "markdown" in response.headers["content-type"]
 
     body = response.text
-    for heading in ("## 1. 결론을 뒤집는 인자", "## 2. 영향도 순위", "## 부록. 전 가정 목록"):
+    for heading in (
+        "## 0. 무엇을 평가했는가",
+        "## 1. 어떻게 계산했는가",
+        "## 3. 결론을 뒤집는 인자",
+        "## 부록 B. 재현 절차",
+    ):
         assert heading in body, f"리포트에 «{heading}» 절이 없다"
 
 
