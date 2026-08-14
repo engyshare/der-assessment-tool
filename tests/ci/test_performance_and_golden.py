@@ -22,8 +22,100 @@ REQUESTS_PER_USER = 5
 
 
 @pytest.mark.req("NFR-004-M1")
+def test_real_lookup_apis_p95_under_500ms_at_20_concurrent_users() -> None:
+    """★★ **조항이 말하는 「웹 UI 조회 API」를 실제로 잰다** — NFR-004-M1.
+
+    ⚠ **R29 까지 측정 대상이 조항의 대상이 아니었다.** 아래
+    `..._health_...` 는 `/health` 만 때리고, 그것은 `{"status": "ok"}` 를
+    돌려주는 **상수 핸들러**다 — DB 도, 서비스 계층도, 직렬화도 지나지 않는다.
+    조항이 말하는 조회 API(`GET /scenarios` 등)는 **하나도 측정 대상이 아니었고**,
+    시나리오 목록 조회가 5초로 느려져도 그 검사는 초록불이었다.
+
+    여기서는 **자료를 적재한 뒤** 목록 조회와 상세 조회를 잰다. 적재는 API 로
+    한다 — 저장소가 in-memory 라 픽스처 배관 없이도 실제 경로를 그대로 지난다.
+
+    오라클: 조항 문면. 동시 사용자 20명, p95 500ms 이내.
+    """
+    seeded = 50
+
+    async def run_probe() -> dict[str, list[float]]:
+        transport = httpx.ASGITransport(app=create_app())
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
+            owner = 4242
+            ids: list[int] = []
+            for i in range(seeded):
+                created = await client.post(
+                    "/scenarios",
+                    params={"name": f"perf-{i}", "owner_id": owner, "tags": "a,b"},
+                )
+                assert created.status_code == 200, created.text
+                ids.append(int(created.json()["id"]))
+
+            # 목록이 실제로 비어 있지 않은지 먼저 본다 — 빈 목록을 재면
+            # 「빠르다」가 「아무것도 안 한다」와 구별되지 않는다
+            listed = await client.get("/scenarios", params={"owner_id": owner})
+            assert listed.status_code == 200
+            assert len(listed.json()) >= seeded, "적재가 되지 않았다"
+
+            async def timed(url: str, params: dict[str, object]) -> float:
+                start = time.perf_counter()
+                response = await client.get(url, params=params)
+                elapsed = time.perf_counter() - start
+                assert response.status_code == 200, response.text
+                return elapsed
+
+            async def user_session(kind: str) -> list[float]:
+                out = []
+                for _ in range(REQUESTS_PER_USER):
+                    if kind == "list":
+                        out.append(
+                            await timed("/scenarios", {"owner_id": owner})
+                        )
+                    else:
+                        out.append(
+                            await timed(
+                                f"/scenarios/{ids[0]}",
+                                {"requesting_user_id": owner},
+                            )
+                        )
+                return out
+
+            for kind in ("list", "detail"):
+                await user_session(kind)  # 워밍업
+
+            gathered = {}
+            for kind in ("list", "detail"):
+                results = await asyncio.gather(
+                    *(user_session(kind) for _ in range(CONCURRENT_USERS))
+                )
+                gathered[kind] = [e for user in results for e in user]
+        return gathered
+
+    measured = asyncio.run(run_probe())
+
+    for kind, elapsed in measured.items():
+        assert len(elapsed) == CONCURRENT_USERS * REQUESTS_PER_USER
+        p95 = statistics.quantiles(elapsed, n=100, method="inclusive")[94]
+        assert p95 <= P95_LIMIT_SECONDS, (
+            f"GET /scenarios({kind}) p95 {p95 * 1000:.1f}ms 가 "
+            f"{P95_LIMIT_SECONDS * 1000:.0f}ms 를 넘습니다 "
+            f"({CONCURRENT_USERS} 동시 사용자 · 적재 {seeded}건)"
+        )
+
+
+@pytest.mark.req("NFR-004-M1")
 def test_health_lookup_api_p95_under_500ms_at_20_concurrent_users() -> None:
-    """Measured oracle: 20 concurrent clients call the read-only health endpoint."""
+    """기준선 — 상수 핸들러의 왕복시간. **조항의 대상은 위 테스트다.**
+
+    이 검사가 재는 것은 사실상 `httpx.ASGITransport` 의 오버헤드이며, 조회
+    API 가 느려져도 여기서는 드러나지 않는다. 지우지 않는 이유는 **위 측정의
+    바닥값**으로 쓸 수 있기 때문이다 — 둘이 함께 느려지면 원인이 앱이 아니라
+    환경이다.
+
+    Measured oracle: 20 concurrent clients call the read-only health endpoint.
+    """
 
     async def run_probe() -> list[float]:
         transport = httpx.ASGITransport(app=create_app())

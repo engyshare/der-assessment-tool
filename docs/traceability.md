@@ -310,7 +310,7 @@
 | `NFR-001` | Must-have | 1 | `NFR-001-M1` | 무료 티어(1 vCPU / 512MB) 벤치마크 10회 평균 | 자동 | test_casegrid.py 2건 |
 | `NFR-002` | Must-have | 1 | `NFR-002-M1` | 27 / 100 / 500 케이스 3개 지점 종단 측정 | 자동 | test_casegrid.py 2건 |
 | `NFR-003` | Should-have | 2 | `NFR-003-M1` | 초과 시 비동기 큐 전환 + 진행률 표시 | **미매핑** | — |
-| `NFR-004` | Should-have | 1 | `NFR-004-M1` | 동시 사용자 20명 부하 테스트 | 자동 | test_performance_and_golden.py |
+| `NFR-004` | Should-have | 1 | `NFR-004-M1` | 동시 사용자 20명 부하 테스트 | 자동 | test_performance_and_golden.py 2건 |
 | `NFR-101` | Must-have | 1 | `NFR-101-M1` | 동일 시나리오 10회 실행 결과 해시 일치 | 자동 | test_rule_based.py, test_report.py |
 | `NFR-102` | Must-have | 1 | `NFR-102-M1` | 시뮬레이션 종료 시 자동 assertion, 위반 시 실행 실패 | 자동 | test_rule_based.py |
 | `NFR-103` | Must-have | 1 | `NFR-103-M1` | 20년 프로포마 합계와 항목별 합계 일치 검증 | 자동 | test_common_asset.py, test_der_contract.py, test_money_boundary.py 7건, test_smoke_wave0.py, test_ev_v2g.py |
