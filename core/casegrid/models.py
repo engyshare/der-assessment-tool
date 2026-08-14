@@ -94,19 +94,43 @@ class Case:
 
 @dataclass(frozen=True)
 class CaseResult:
+    """케이스 하나의 결과.
+
+    ## `variants` — 변형 축을 **자료구조로** 세운다 (`FR-607-AC1` / R31 결정 §5)
+
+    조항은 *「모든 실행에서 `지원 0` 케이스가 자동 포함되어 결과 상단에 표시」* 다.
+    `run_order()` 가 그 목록을 보증하고 `incentive_cases` 가 현금흐름을 만드는데,
+    **결과에 변형별 지표를 담을 자리가 없었다.**
+
+    `metrics` 에 키 접두어(`"무지원.npv_won"`)를 붙이는 안을 버렸다. 접두어는
+    **소비자마다 문자열 파싱을 만들게 하고 그 파싱이 갈린다** — 어느 소비자는
+    첫 점에서 자르고 어느 소비자는 마지막 점에서 자른다. 그리고 변형이 셋 넷으로
+    늘면 키가 곱으로 폭발한다.
+
+    ⚠ **`__getstate__`/`__setstate__` 에 함께 넣어야 한다.** 케이스 그리드는
+    `ProcessPool` 로 병렬 실행되므로(`FR-805-AC1`) 결과가 피클을 지난다 — 여기
+    빠뜨리면 **직렬 실행에서는 보이고 병렬 실행에서만 변형이 사라진다.** 그 차이는
+    케이스 수가 적은 테스트에서 드러나지 않는다.
+    """
+
     case_index: int
     values: Mapping[str, object]
     metrics: Mapping[str, float]
+    #: 변형 tag → 그 변형의 지표. 비어 있으면 「변형을 산출하지 않은 실행」이다.
+    variants: Mapping[str, Mapping[str, float]] = MappingProxyType({})
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "values", MappingProxyType(dict(self.values)))
         object.__setattr__(self, "metrics", MappingProxyType(dict(self.metrics)))
+        object.__setattr__(self, "variants", _freeze_variants(self.variants))
 
     def __getstate__(self) -> dict[str, object]:
         return {
             "case_index": self.case_index,
             "values": dict(self.values),
             "metrics": dict(self.metrics),
+            # 병렬 실행이 이 줄에 달려 있다 — 위 독스트링 참조
+            "variants": {tag: dict(m) for tag, m in self.variants.items()},
         }
 
     def __setstate__(self, state: dict[str, object]) -> None:
@@ -121,6 +145,24 @@ class CaseResult:
             object.__setattr__(self, "metrics", MappingProxyType(dict(met)))
         else:
             object.__setattr__(self, "metrics", MappingProxyType({}))
+        var = state.get("variants")
+        object.__setattr__(
+            self, "variants", _freeze_variants(var) if isinstance(var, Mapping) else
+            MappingProxyType({})
+        )
+
+
+def _freeze_variants(
+    variants: Mapping[str, Mapping[str, float]],
+) -> Mapping[str, Mapping[str, float]]:
+    """중첩 사전을 **두 층 모두** 읽기 전용으로 만든다.
+
+    바깥만 얼리면 안쪽 지표 사전을 밖에서 고칠 수 있고, 그것은 `NFR-205` 가
+    막으려는 전역 가변 상태와 같은 결과다 — 병렬 실행에서 특히 나쁘다.
+    """
+    return MappingProxyType({
+        tag: MappingProxyType(dict(metrics)) for tag, metrics in variants.items()
+    })
 
 
 @dataclass(frozen=True)
