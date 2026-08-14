@@ -294,6 +294,50 @@
 >    `# NEGCHECK` 가 남은 것처럼 보인다. **끝난 뒤에 다시 볼 것**(중단시키면 실제로
 >    남는다). R32 는 10종 전건 rc=0 이며 잔여 변이 0건을 확인했다
 >
+> ### ⚠ R32 가 실제로 걸린 파급 지점 — **조항을 건드리면 여기가 함께 움직인다**
+>
+> 조항 하나를 쪼개는 데 **문서 셋과 검사 다섯**이 따라왔다. 다음 사람이 같은 일을
+> 할 때 순서를 몰라 게이트를 하나씩 밟지 않도록 좌표를 적는다.
+>
+> | 무엇을 바꾸면 | 함께 고쳐야 하는 곳 | 안 고치면 |
+> |---|---|---|
+> | **수용기준을 쪼개거나 신설** | ① `rslt/task-…md` 의 **인용**(`- 수용기준:` 줄) ② 테스트 마커 ③ spec 머리말 판본·수용기준 총수 ④ 작업 목록 머리말 판본 | `check_task_mapping` **차단**(R31 이 올렸다). R32 에 「실재하지 않는 인용 1 + 미인용 Must-have 7」로 실제로 빨간불이었다 |
+> | **편익 클래스 신설** | ① `core/valuestream/__init__.py`(import·`__all__`) ② `docs/exclusion-rules.yaml` ③ `tests/acceptance/test_phase1_dod.py` 의 `_create_valuestream_for_tag()` **분기**와 `EXPECTED_RATIONALES` ④ `FR-401-AC2.<클래스명>` 조항 | DoD 6 가 규칙표 전건을 순회하며 인스턴스를 만들므로 **`ValueError: 지원하지 않는 편익 태그`** 로 죽는다 |
+> | **배타 규칙 추가** | `tests/contract/test_exclusion_rules_contract.py` 의 **건수 단언**(지금 7) | 규칙이 조용히 사라지는 것을 막으려고 못 박아 둔 자리다 |
+> | **조립기 추가** | `tests/valuestream/test_settlement.py` 의 `len(assembled)`(지금 **6**) · `NOT_YET_ASSEMBLED` 에서 제거 | 두 표의 합집합이 일곱이어야 하는 래칫이 잡는다 |
+>
+> **★ 마커 어휘 — `req()` 에 넣을 수 있는 것은 「수용기준 ID」뿐이다.**
+> R32 가 셋을 틀렸고 `gen_traceability` 가 **매달린 참조**로 잡았다:
+> `DV-6`(대장 규칙은 AC 가 아니다 — 독스트링에 적고 마커는 이웃 `NFR-303-M1`) ·
+> `FR-703-AC1`(**`.npv`/`.bcr`** 로 쪼개져 있다) · `FR-801`(요구사항이지 AC 가 아니다).
+>
+> **★ 계약구조 키 일곱** (spec v0.16 · 저자 부여 리터럴이며 구조명에서 파생하지 않는다):
+> `FR-205-AC1.HouseholdDirect` · `.ManagerEntity` · `.DistrictDirectTrade` ·
+> `.NetMetering` · `.SurplusDirectSale` · `.AggregatedPPA` · `.VPP`(Phase 2).
+>
+> **★ 변이 하네스는 `.orch/mutate.py` 다** — `.orch/` 는 git 추적 밖이고 **R24 에서
+> 멈춘 오케스트레이션 이력**이지만 **이 도구는 여전히 유효하다**(R32 가 16건에 썼다):
+> ```
+> printf '%s' '<옛 문면>' > /tmp/o ; printf '%s' '<새 문면>' > /tmp/n
+> PYTHONUTF8=1 ~/miniconda3/python.exe .orch/mutate.py "<라벨>" <대상파일> /tmp/o /tmp/n <pytest 대상...>
+> ```
+> 문면을 **파일로** 넘긴다(인자로 넘기면 셸이 따옴표를 건드려 「대상 문면이 없다」가
+> 나고 그것이 미성립인지 깨짐인지 구분되지 않는다). **못 찾으면 rc=2** 이며 통과로
+> 읽지 않는다. `<파일>.mutbak` 가 남았으면 원복이 건너뛰어진 것이다.
+> **`.orch/` 가 없어졌으면 하네스를 다시 만들 것** — 인수 조건이 *「보고를 믿지 않고
+> 변이를 직접 심는다」* 이고, R32 의 결함 셋은 **전부 변이로만 드러났다.**
+>
+> **★ 커밋 전에 PATH 를 맞춘다** — 훅의 `ruff` 가 `python -m ruff` 라 PATH 의 첫
+> `python` 을 잡는다: `export PATH="$HOME/miniconda3:$HOME/miniconda3/Scripts:$PATH"`
+> (**절대 경로를 적지 말 것** — `check_disclosure` 가 SC-3 위반으로 커밋을 막는다.
+> R32 가 이 줄에서 실제로 막혔다).
+> 훅이 막으면 **`.pre-commit-config.yaml` 을 고치지 말 것**(실행할 수 없을 때 통과시키지
+> 않는 것이 이 저장소의 규칙이다). 커밋 메시지는 `git commit -F - <<'EOF'` 로 쓴다.
+>
+> **★ 커밋 뒤 두 검사는 기준 ref 를 요구한다** — `check_coverage_inputs` ·
+> `check_test_accompaniment` 는 `--base HEAD~2`(본체+인계 두 커밋일 때)로 돌린다.
+> 커밋 전에는 변경 0건으로 보여 rc=2 이며 그것이 옳다.
+>
 > <sub>이하 R31 종료 시점 문면 (이력)</sub>
 
 > # ⏹ 2026-08-14 R31 종료 · **결정 아홉을 정하고 그 아홉을 전부 구현했다**
