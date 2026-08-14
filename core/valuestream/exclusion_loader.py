@@ -22,7 +22,11 @@ from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
-from core.contracts.valuestream import ExclusionRule, ExclusionType
+from core.contracts.valuestream import (
+    CONTRACT_STRUCTURES,
+    ExclusionRule,
+    ExclusionType,
+)
 
 #: 배타 규칙 정본. `docs/` 에 두는 이유는 요금표·전제 대장과 같은 성격이기
 #: 때문이다 — 제도 데이터이며 코드가 아니다.
@@ -117,12 +121,30 @@ def _build_rule(
     if profile is not None and not isinstance(profile, str):
         raise ExclusionRulesError(f"{where}: `applies_to_profile` 은 문자열이어야 합니다")
 
+    structure = entry.get("applies_to_structure")
+    if structure is not None:
+        if not isinstance(structure, str):
+            raise ExclusionRulesError(
+                f"{where}: `applies_to_structure` 은 문자열이어야 합니다"
+            )
+        # ★ **기동 시점에 계약과 대조한다.** 오타 난 구조 이름은 어느 케이스에도
+        # 매치되지 않고, 그러면 그 규칙이 **조용히 꺼진 채** 규칙표에 남는다 —
+        # 읽는 사람은 금지가 걸려 있다고 믿는다. `payer_by_structure` 의 키를
+        # `__init_subclass__` 가 기동 시점에 대조하는 것과 같은 근거다.
+        if structure not in CONTRACT_STRUCTURES:
+            raise ExclusionRulesError(
+                f"{where}: spec FR-205-AC1 이 열거하지 않은 계약구조입니다: "
+                f"{structure!r}. 허용: {', '.join(CONTRACT_STRUCTURES)}. "
+                "오타는 어느 케이스에도 매치되지 않아 규칙이 조용히 꺼집니다"
+            )
+
     return ExclusionRule(
         benefit_a=benefit_a,
         benefit_b=benefit_b,
         exclusion_type=exclusion_type,
         rationale=_require_text(entry, "rationale", where=where),
         applies_to_profile=profile,
+        applies_to_structure=structure,
     )
 
 

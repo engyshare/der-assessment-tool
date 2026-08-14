@@ -49,9 +49,13 @@ class DistributedBenefit(ValueStream):
     payer = Payer.SOCIETY
 
     def __init__(
-        self, *, sub_items: DistributedSubItems | None = None, enabled: bool = True
+        self,
+        *,
+        sub_items: DistributedSubItems | None = None,
+        enabled: bool = True,
+        structure: str | None = None,
     ) -> None:
-        super().__init__(name="분산편익 크레딧", enabled=enabled)
+        super().__init__(name="분산편익 크레딧", enabled=enabled, structure=structure)
         self._items = sub_items or DistributedSubItems()
 
     def annual_value(self, dispatch: DispatchResult, *, year: int) -> Money:

@@ -96,6 +96,19 @@ class ExclusionRule:
     rationale: str
     #: ``None`` 은 «모든 프로파일에 적용». 제도 한정 규칙은 프로파일 이름을 둔다
     applies_to_profile: str | None = None
+    #: ``None`` 은 «모든 계약구조에 적용». 구조 한정 규칙은 구조 이름을 둔다
+    #: (`CONTRACT_STRUCTURES` 의 리터럴 — 로더가 기동 시점에 대조한다).
+    #:
+    #: **왜 프로파일과 별도 축인가 (R31 결정 §2-4).** `ContractConfig.structure`
+    #: (`FR-205`)와 `RegulationProfile`(`FR-504`)은 **완전히 독립된 두 축**이라,
+    #: 사용자가 「상계거래」를 고르고도 다른 규제 프로파일을 선택하면 상계 한정
+    #: 규칙이 **조용히 걸리지 않는다** — 설계서가 지적한 REC 이중 계상 위험이 그것이다.
+    #:
+    #: 구조 선택이 프로파일을 자동 강제하는 안을 택하지 않은 이유: 두 축을 묶으면
+    #: **새 구조·새 프로파일 조합마다 매핑 코드를 고치게 된다.** 금지 여부를 이
+    #: 규칙표에 두면 코드가 아니라 **데이터가 늘고**, 거부는 이미 실행 경로에
+    #: 배선된 `assert_no_exclusions()` 가 그대로 담당한다 (R27).
+    applies_to_structure: str | None = None
 
 
 class ValueStream(ABC):

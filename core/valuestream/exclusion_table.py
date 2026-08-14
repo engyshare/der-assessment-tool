@@ -50,11 +50,30 @@ def rules_for_profile(
     ``profile=None`` 이면 «모든 프로파일에 적용»(``applies_to_profile=None``)
     규칙만 돌아간다 — 프로파일을 모르는 상태에서 제도 한정 규칙을 끄는 것은
     보수적 판정이다 (Q4 «확인 못 했으면 보수적으로 배타», 도메인 원칙 부록 A).
+
+    ⚠ **계약구조 축은 여기서 걸러지지 않는다.** 구조는 편익 인스턴스가 들고
+    있으므로(`ValueStream.structure`) 판정이 활성 편익에서 직접 읽는다 —
+    `collect_exclusions` 를 보라. 이 함수에 구조 인자를 더하면 **호출부마다
+    구조를 다시 넘겨야 하고**, 넘기지 않은 호출부에서 구조 규칙이 조용히 꺼진다.
     """
     return tuple(
         r for r in rules
         if r.applies_to_profile is None or r.applies_to_profile == profile
     )
+
+
+def _structure_applies(rule: ExclusionRule, structures: frozenset[str]) -> bool:
+    """구조 한정 규칙이 이 조합에 걸리는가.
+
+    **활성 편익이 선언한 구조**를 본다. 구조를 모르는 편익만 있으면 구조 한정
+    규칙은 걸리지 않는다 — 프로파일에서와 같은 판단이며, 「구조를 모른다」를
+    「어느 구조든 아니다」로 읽는 것이다.
+
+    ⚠ **반대로 읽으면 위험하다.** 「구조를 모르면 전부 적용」으로 두면 구조를
+    지정하지 않은 기존 케이스가 갑자기 거부되고, 그것은 `FR-402-AC1`(정당한
+    동시 계상을 막지 말 것)을 어긴다.
+    """
+    return rule.applies_to_structure is None or rule.applies_to_structure in structures
 
 
 def find_rule(
@@ -82,10 +101,19 @@ def collect_exclusions(
     이 목록에 **들어 있지 않은** 쌍은 그대로 둔다. **오탐 0 이 차단 100%
     만큼 중요**하다 (FR-402-AC1).
     """
-    active_tags = {type(s).tag for s in streams if s.enabled}
+    active = [s for s in streams if s.enabled]
+    active_tags = {type(s).tag for s in active}
+    # ★ **구조를 인자로 받지 않고 편익에서 읽는다 (R31).** 인자로 두면 호출부마다
+    # 다시 넘겨야 하고, 넘기지 않은 호출부에서 구조 규칙이 조용히 꺼진다 —
+    # 이미 배선된 `assert_no_exclusions()` 호출 둘이 그 자리가 될 것이었다.
+    active_structures = frozenset(
+        s.structure for s in active if s.structure is not None
+    )
     out: list[tuple[str, str, ExclusionType, str]] = []
     seen: set[tuple[str, str]] = set()
     for r in rules:
+        if not _structure_applies(r, active_structures):
+            continue
         if r.benefit_a in active_tags and r.benefit_b in active_tags:
             key = (r.benefit_a, r.benefit_b)
             rev = (r.benefit_b, r.benefit_a)

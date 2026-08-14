@@ -24,8 +24,9 @@ class REC(ValueStream):
         weight: float,
         rec_price_won_per_unit: float,
         enabled: bool = True,
+        structure: str | None = None,
     ) -> None:
-        super().__init__(name="REC 수익", enabled=enabled)
+        super().__init__(name="REC 수익", enabled=enabled, structure=structure)
         if weight < 0:
             raise ValueError(
                 f"REC 가중치는 음수일 수 없습니다: {weight}. "

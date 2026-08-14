@@ -54,7 +54,10 @@ def test_the_table_comes_from_the_data_file() -> None:
     """정본은 `docs/exclusion-rules.yaml` 이다 — 상수가 그것을 읽은 결과다."""
     from_file = load_exclusion_rules()
     assert from_file == DEFAULT_EXCLUSION_RULES
-    assert len(from_file) == 4
+    # **건수를 못 박는다** — 규칙이 조용히 사라지는 것을 잡는다. 규칙을 더했으면
+    # 이 수를 함께 고치는 것이 맞고, 고치지 않고 지나갈 수 없게 하는 것이 요점이다.
+    # (R31 이 계약구조 축 규칙 하나를 더해 4 → 5 가 됐다.)
+    assert len(from_file) == 5
 
 
 @pytest.mark.contract

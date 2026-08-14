@@ -303,8 +303,16 @@ def test_dod5_influence_ranking_and_formula_representation() -> None:
     assert "대입값: 450 = 1200 - 750" in pdf_content["formulas"]
 
 
-def _create_valuestream_for_tag(tag: str, assumptions: AssumptionSet) -> ValueStream:
-    """tags 로부터 ValueStream 객체를 정본 파라미터 기반으로 생성을 보조하는 헬퍼."""
+def _create_valuestream_for_tag(
+    tag: str, assumptions: AssumptionSet, *, structure: str | None = None
+) -> ValueStream:
+    """tags 로부터 ValueStream 객체를 정본 파라미터 기반으로 생성을 보조하는 헬퍼.
+
+    `structure` 를 받는 이유: 구조 한정 배타 규칙(`applies_to_structure`)은 참여
+    편익이 그 구조를 선언해야 발동한다. 싣지 못하면 그 규칙은 **선언돼 있으나
+    어느 케이스에도 걸리지 않는** 상태가 되고, 규칙표를 읽는 사람은 금지가
+    걸려 있다고 믿는다.
+    """
     if tag == "SelfConsumption":
         bill_item = assumptions.get("load.household.annual")
         tariff_item = assumptions.get("tariff.hv_single_contract.avg")
@@ -321,6 +329,7 @@ def _create_valuestream_for_tag(tag: str, assumptions: AssumptionSet) -> ValueSt
         return SelfConsumption(
             baseline_annual_bill_won=annual_kwh * rate,
             new_annual_bill_won=annual_kwh * rate * 0.4,
+            structure=structure,
         )
     elif tag == "SurplusSale":
         tariff_item = assumptions.get("tariff.hv_single_contract.avg")
@@ -329,7 +338,7 @@ def _create_valuestream_for_tag(tag: str, assumptions: AssumptionSet) -> ValueSt
             if tariff_item and tariff_item.value is not None
             else 150.0
         )
-        return SurplusSale(sale_price_won_per_kwh=rate)
+        return SurplusSale(sale_price_won_per_kwh=rate, structure=structure)
     elif tag == "DirectTrade":
         tariff_item = assumptions.get("tariff.hv_single_contract.avg")
         fee_item = assumptions.get("fee.direct_trade_support")
@@ -348,16 +357,18 @@ def _create_valuestream_for_tag(tag: str, assumptions: AssumptionSet) -> ValueSt
             trade_price_won_per_kwh=t_rate * 0.8,
             trade_volume_kwh=1000.0,
             support_fee_won=f_rate,
+            structure=structure,
         )
     elif tag == "DistributedBenefit":
         return DistributedBenefit(
             sub_items=DistributedSubItems(
                 transmission_avoidance_won=10000.0,
                 loss_reduction_won=5000.0,
-            )
+            ),
+            structure=structure,
         )
     elif tag == "REC":
-        return REC(weight=1.0, rec_price_won_per_unit=50000.0)
+        return REC(weight=1.0, rec_price_won_per_unit=50000.0, structure=structure)
     else:
         raise ValueError(f"지원하지 않는 편익 태그입니다: {tag}")
 
@@ -376,6 +387,15 @@ EXPECTED_RATIONALES: dict[tuple[str, str], str] = {
     ),
     ("REC", "SurplusSale"): (
         "상계거래 참여 설비의 REC 발급 제한 (제도 한정)"
+    ),
+    # ↓ R31 — **계약구조 축**으로 걸리는 첫 규칙 (결정 §2-4). 위 규칙은
+    # `applies_to_profile: net_metering` 으로만 걸리는데, 구조와 프로파일은 독립
+    # 축이라 사용자가 상계거래를 고르고도 다른 프로파일을 선택하면 조용히 통과한다.
+    ("REC", "DistributedBenefit"): (
+        "상계거래 구조에서는 REC 발급이 제한되므로, REC 를 켠 채 분산편익 크레딧까지 "
+        "계상하면 제도가 인정하지 않는 두 수익이 함께 잡힌다. **프로파일이 아니라 "
+        "구조로 걸린다** — 두 축이 독립이라 프로파일만으로는 조용히 통과한다 "
+        "(R31 결정 §2-4)"
     ),
 }
 
@@ -401,8 +421,15 @@ def test_dod6_benefit_breakdown_and_exclusion_enforcement() -> None:
 
     # 등록된 배타 규칙 전건 자동 검사 (양성/음성 쌍 및 독립 근거 단언)
     for rule in DEFAULT_EXCLUSION_RULES:
-        stream_a = _create_valuestream_for_tag(rule.benefit_a, assumptions)
-        stream_b = _create_valuestream_for_tag(rule.benefit_b, assumptions)
+        # ★ **구조 한정 규칙이면 그 구조를 실어 준다 (R31).** 싣지 않으면 그
+        # 규칙은 발동하지 않고 아래 양성 검증이 빨간불이 된다 — 즉 이 순회는
+        # **구조 축을 쓰는 규칙이 실제로 발동 가능한지**까지 함께 붙든다.
+        stream_a = _create_valuestream_for_tag(
+            rule.benefit_a, assumptions, structure=rule.applies_to_structure
+        )
+        stream_b = _create_valuestream_for_tag(
+            rule.benefit_b, assumptions, structure=rule.applies_to_structure
+        )
         streams = [stream_a, stream_b]
 
         active_rules = rules_for_profile(
