@@ -109,19 +109,24 @@
 
 ## 한 줄 요약
 
-3-File System **Step 3(exe-tasks) 진행 중**. spec **v0.14** + 작업 목록 **v2.6**.
+3-File System **Step 3(exe-tasks) 진행 중**. spec **v0.16** + 작업 목록 **v2.8**.
 
 **Phase 1 Must-have 미매핑 0건.** 남은 미매핑 8건은 전부 Phase 2·3 이다.
-**1,417 passed / 3 skipped / 1 xfailed · 커버리지 94%** · 게이트 전건 `rc=0`
-(`ruff` 0건 · `mypy` **102파일** 무결 · `lint-imports` **4계약 kept 0 broken** ·
+**수집 1,452건 · `pytest` rc=0 · 커버리지 94%**(실측 `TOTAL 7119/322/1728/203`) ·
+게이트 전건 `rc=0`
+(`ruff` 0건 · `mypy` **103파일** 무결 · `lint-imports` **4계약 kept 0 broken** ·
 `check_marker_substance` 0건 · `check_file_size --code-strict` 0건 ·
-`check_disclosure` 0건 · `check_assumptions` 통과 ·
-**`check_task_mapping` 0건 — R31 에 처음 rc=0 이 되어 CI 차단으로 승격했다**).
-**요구사항 105건 / 수용기준 314건 / 자동 284 / 수동 8 / 수동 스텁 4.**
-spec **v0.15** · 작업 목록 **v2.7**(하위 158건).
+`check_hardcoded_params` 0건 · `check_source_rules` 0건 ·
+`check_partition_assignment` 0건 · `check_disclosure` 0건 · `check_assumptions` 통과 ·
+`check_precommit_installed` 통과 ·
+**`check_task_mapping` 0건 — R31 에 CI 차단으로 승격했고 R32 의 조항 전개에서
+실제로 빨간불을 냈다**(실재하지 않는 인용 1 + 미인용 Must-have 7)).
+**요구사항 105건 / 수용기준 321건 / 자동 291 / 수동 8 / 수동 스텁 4.**
+**배타 규칙 7건**(`docs/exclusion-rules.yaml`) · **Python 3.11(CI 버전)에서도 rc=0**.
 
-> **결정 아홉은 `docs/decisions-2026-08-14-R31.md` 가 정본이다** — 이 파일에
-> 옮겨 적지 않는다(같은 사실이 두 곳에 있으면 한쪽만 고쳐진다).
+> **R32 결정·판정은 `docs/decisions-2026-08-14-R32.md`, R31 은
+> `docs/decisions-2026-08-14-R31.md` 가 정본이다** — 이 파일에 옮겨 적지 않는다
+> (같은 사실이 두 곳에 있으면 한쪽만 고쳐진다).
 
 > **이 수치는 R31 종료 시 실제로 명령을 돌려 받은 값이다.** 베끼지 말고 다시
 > 돌릴 것 — **이 자리가 R17 실측인 채로 열세 라운드를 지났고**, 그동안 여기
@@ -219,6 +224,77 @@ spec **v0.15** · 작업 목록 **v2.7**(하위 158건).
 ---
 
 ## 지금 할 일 (우선순위 순)
+
+> # ⏹ 2026-08-14 R32 종료 · **R32 표 1~5 를 완주하고 사용자 몫을 잠정 확정했다**
+>
+> 사용자가 *「모든 작업에 우선순위를 정하고 그 순위대로 완료하라」* 와
+> *「사용자가 판단해야 하는 부분은 합리적으로 판단하고 추후 검토 과정에서 변경될 수
+> 있음을 기재하라」* 고 지시했다. **R32 표의 1~5 를 순서대로 전건 완료했고**, R31 이
+> 「사업 판단·자료 공백」으로 갈라 두었던 것을 판정해
+> **`docs/decisions-2026-08-14-R32.md`** 에 근거·**「무엇이 오면 바뀌나」**와 함께 적었다.
+>
+> | # | 무엇을 했나 | 어디에 |
+> |---|---|---|
+> | **1** | **변형 생산자를 실행 경로에 배선**(`FR-607-AC1`) — `CaseOutcome` 신설, 진입점이 **인자 없이 항상** 변형을 산출한다(깃발로 두면 R21 이 없앤 `is_baseline` 형태가 된다) | `core/casegrid/{models,execution,e2e_runner}.py` · `tests/casegrid/test_variant_production_wiring.py` |
+> | **2** | **「단일계약+관리주체 경유」 조립** — 요금엔진(`bill_scenario`)이 두 요금을 내고, 수수료(`Q-14`)는 **비용 행**(`fee_row`) | `core/valuestream/settlement.py` · `core/cba/proforma.py` · `tests/valuestream/test_settlement_manager_structure.py` |
+> | **3** | **「개별 세대 직접계약」** — 정산 대상을 **잉여·판매 주체 가구**로 결정하고 **조항에 적었다**(spec v0.16) | `settlement.py::_household_direct_contract` · `surplus_sale.py` · `tests/valuestream/test_settlement_household_contract.py` |
+> | **4** | **「집합 PPA」 편익 클래스 신설** + `FR-401-AC2.AggregatedPPA` 조항 신설 + 배타 2행 | `core/valuestream/aggregated_ppa.py` · `docs/exclusion-rules.yaml` · `tests/valuestream/test_aggregated_ppa.py` |
+> | **5** | **`FR-205-AC1` 을 구조 7건으로 전개** — 수용기준 314 → **321**, **미매핑은 8건 그대로** | spec `FR-205` · 작업 목록 7.3·8.1 · 마커 49곳 |
+> | 6 | `LoadedSeeds` 이동은 **하지 않았다** — 소비자가 0곳이라 옮기면 호출자 없는 제품 모듈이 생긴다(R32 표가 지시한 그대로) | — |
+>
+> ### ★★★ R32 가 찾은 것 — **셋 다 「선언·계산은 있는데 읽는 쪽이 없다」**
+>
+> | 무엇 | 어떻게 드러났나 |
+> |---|---|
+> | **비용 행이 NPV 를 늘리고 있었다** | 수수료를 비용으로 넣자 **수수료율을 올릴수록 NPV 가 커졌다.** `CashFlowRow` 는 부호 규약이 없고 `npv()` 는 부호 있는 합을 보는데 진입점이 비용을 그대로 넘겼다 — **고정 O&M 이 편익으로 더해지고 있었다.** 비용 항목이 O&M 둘뿐일 때는 아무도 밟지 않았다 |
+> | **`CaseVariant.overrides()` 소비자 0곳** | 순회가 `baseline` 깃발만 봤다. 변형이 둘일 때는 두 기계가 같은 답을 내고 **셋째에서 갈린다** — 보조율 15% 변형이 입력 지원안과 **똑같은 NPV** 를 낸다 |
+> | **편익 `exclusions()` 소비자 0곳** | 클래스 선언에서 자가소비 배타를 **지우는 변이가 전건 초록불**이었다. 정본은 YAML 이므로 선언이 그것과 어긋나지 못하게 래칫을 세웠다 |
+>
+> **인수 변이 16건을 직접 심었고 전건 빨간불**이며, **각 변이가 서로 다른 검사에
+> 잡혔다**(같은 한 줄에서만 잡히면 경로를 따로 붙들지 않는다는 뜻이다).
+>
+> # ▶ R33 에 할 일 — 번호 순서대로
+>
+> | # | 할 일 | 왜 이 순서인가 · 무엇을 조심할 것인가 |
+> |---|---|---|
+> | **1** | **「읽는 배포 코드가 있는가」를 기계로 묻는 검사** | ⚠⚠ **R32 가 이 형태를 셋 더 찾았고 전부 변이로만 드러났다.** 지금은 사람이 `grep -rn "\.exclusions()" core app infra` 를 해야 알 수 있다. 계약이 제공하는 훅(`overrides`·`exclusions`)과 자료형 필드 중 **배포 코드가 한 번도 읽지 않는 것**을 `ast` 로 열거한다. ★ 독스트링을 빼고 세는 것을 **먼저** 넣을 것(이 저장소가 여덟 번 만난 함정) · ★ `ast.Assert` 도 함께 셀 것(R24) |
+> | **2** | **`FR-401-AC2.AggregatedPPA` 를 실행 경로에 태운다** | 조립기는 섰으나 **`run_single_case_e2e` 는 `annual_generation_kwh` 를 받을 통로가 없다**(구조를 주면 조립기까지 가지만 발전량은 `SettlementInputs` 로만 온다). 즉 **케이스 그리드에서 집합 PPA 케이스를 돌릴 수 없다** — R32 가 조립 층까지만 닫았고 그 사실을 여기 적는다. 파이프라인이 디스패치 전량을 알므로 그것을 넘길지, 사용자 입력으로 둘지가 판단이다(전량은 `DispatchResult` 에서 복원되지 않는다 — `aggregated_ppa.py` 독스트링) |
+> | **3** | **`MC-1` 수행** | **`planned_at: 2026-09-11` 로 잠정 기입했다**(결정 §5). 수행하면 Phase 1 DoD 가 「판정불가」에서 벗어난다. ⚠ `status` 를 손으로 「수행」으로 바꾸지 말 것 — 수행 기록 없이 바꾸면 판정 체계가 무의미해진다 |
+> | **4** | **「VPP 경유」** | `FR-401-AC2.VPPMarket`(Phase 2)이 선행이다. **자료가 아니라 순서 문제**이며 `AC1.VPP` 가 `[Phase 2]` 를 들고 있다 |
+> | **5** | **닫기 라운드** — 마커 전수 재대조 | 정규식은 `\b(?<!N)FR-` (R21 이 `NFR-402-AC1` 오염으로 배웠다). R32 가 마커 49곳을 옮겼으므로 그 자리가 특히 볼 곳이다 |
+> | 6 | `LoadedSeeds` 를 제품 경로로 | **지금 하지 말 것** — 소비자 0곳. 소비자가 생길 때 함께 옮긴다 |
+>
+> ### 코드로 닫을 수 없는 것 — **판정을 적어 두었다**
+>
+> | 무엇 | 판정 (근거는 결정 문서) |
+> |---|---|
+> | `FR-204-AC3` COP 곡선 | **가정값을 등재하지 않는다**(§6) — 곡선은 함수이므로 가정이 **민감도로 드러나지 않는다.** 제조사 성능표가 오면 YAML 만 채운다 |
+> | `NFR-104` 외부 근거(`Q-4`·`Q-5`) | **가정할 수 없다**(§7) — 조항 자신이 「외부 근거」를 요구하므로 가정하면 **자기충족 검증**이 된다. 대체 경로가 없다 |
+> | `Q-14`~`Q-16` 회신 | R31 이 가정값으로 등재해 개발은 막히지 않는다. 회신 시 값만 교체 |
+> | **`MC-1` 일정** | **잠정 기입했다**(§5). 실제 담당자·일자가 정해지면 두 칸을 교체한다 |
+>
+> ### 초기화된 세션이 첫 30분에 할 일
+>
+> 1. `git status -sb`(비어 있어야 한다) · `gh run list --limit 4`
+>    (`tests`·`source-rules` **둘 다** `success`)
+> 2. **★ 의존성이 설치된 인터프리터는 `~/miniconda3/python.exe` 다** (2026-08-14 실측).
+>    저장소 `.venv` 와 `C:\Python313` 에는 `pytest` 조차 없다 —
+>    `PYTHONUTF8=1 ~/miniconda3/python.exe -m pytest` 로 돈다.
+>    `lint-imports` 는 `~/miniconda3/Scripts/lint-imports.exe`
+> 3. **CI(3.11) 대조용 환경이 이미 있다: `~/miniconda3/envs/r31py311`.**
+>    구조를 바꾸는 커밋 전에 `PYTHONUTF8=1 ~/miniconda3/envs/r31py311/python.exe -m pytest -q`
+>    (R32 도 돌렸고 rc=0 이었다). 새로 만들지 말 것 — 만드는 데 20분이 든다
+> 4. **`docs/decisions-2026-08-14-R32.md` 를 읽는다** — 잠정 판정 일곱과
+>    **「무엇이 오면 바뀌나 · 고칠 자리」**가 절마다 있다. **되돌리려면 근거를
+>    먼저 반박해야 한다**
+> 5. ⚠ **`pytest` 요약 줄을 `tail` 로 찾지 말 것** — 리포터가 `N passed` 를 내지
+>    않는다. 세려면
+>    `python -m pytest --collect-only -q | awk -F': ' '/^tests\/.*: [0-9]+$/{s+=$NF} END{print s}'`
+> 6. ⚠ **음성 스위트가 실물 소스를 변이시킨다** — 돌는 중에 `git status` 를 보면
+>    `# NEGCHECK` 가 남은 것처럼 보인다. **끝난 뒤에 다시 볼 것**(중단시키면 실제로
+>    남는다). R32 는 10종 전건 rc=0 이며 잔여 변이 0건을 확인했다
+>
+> <sub>이하 R31 종료 시점 문면 (이력)</sub>
 
 > # ⏹ 2026-08-14 R31 종료 · **결정 아홉을 정하고 그 아홉을 전부 구현했다**
 >
