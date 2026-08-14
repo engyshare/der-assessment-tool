@@ -174,6 +174,40 @@ def _freeze_variants(
 
 
 @dataclass(frozen=True)
+class CaseOutcome:
+    """케이스 러너 하나의 산출 — 지표 **와 변형별 지표** (`FR-607-AC1` / R32).
+
+    ## 왜 자료형을 하나 더 두는가
+
+    `CaseRunner` 의 반환형이 `Mapping[str, float]` 하나였다. 그래서 R31 이
+    `CaseResult.variants` 를 만들어도 **러너가 그것을 채울 통로가 없었고**,
+    실제로 `variants=` 를 쓰는 배포 코드가 0곳이었다(채우는 것은 테스트뿐).
+    소비자(`core/report/variant_report.py`)는 있고 생산자가 없었다.
+
+    통로를 `run_cases()` 의 **선택 인자**(`variant_runner=…`)로 두는 안을 버렸다.
+    안 넘기면 변형이 그냥 없고 **빠졌을 때 나는 증상이 없다** — R21 이
+    `build_capex_cashflows(..., is_baseline=True)` 에서 없앤 깃발과 같은 형태다
+    (`core/contracts/casevariant.py` 머리말).
+
+    ⚠ **`run_cases()` 는 지표 사전만 돌려주는 러너도 계속 받는다.** 그것이
+    깃발의 부활이 아닌 이유: `run_cases` 는 케이스 목록을 도는 **범용 기반**이고
+    「변형 없는 실행」(민감도 스윕·성능 측정)은 정당한 상태다. `FR-607-AC1` 이
+    말하는 「모든 실행」은 **평가 파이프라인**이며 그 진입점
+    (`core/casegrid/e2e_runner.py::run_single_case_e2e`)은 이 자료형을 **항상**
+    돌려준다 — 거기에는 켜고 끄는 인자가 없다.
+    """
+
+    metrics: Mapping[str, float]
+    #: 변형 tag → 그 변형의 지표. `run_order()` 의 변형 **전부**가 들어 있어야
+    #: 하며, 그 확인은 표시 층(`build_variant_table`)이 거부로 한다.
+    variants: Mapping[str, Mapping[str, float]]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metrics", MappingProxyType(dict(self.metrics)))
+        object.__setattr__(self, "variants", _freeze_variants(self.variants))
+
+
+@dataclass(frozen=True)
 class RunPlan:
     case_count: int
     threshold: int

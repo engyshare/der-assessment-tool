@@ -90,6 +90,55 @@ def fixed_om_row(
     return CashFlowRow(label=f"{tag} 고정 O&M", tag=tag, amounts=amounts)
 
 
+def fee_row(
+    tag: str,
+    start_year: int,
+    end_year: int,
+    annual_amount_won: int,
+) -> CashFlowRow:
+    """정산 수수료 — **비용 행** (`FR-205-AC1` / R32).
+
+    ## 왜 편익에서 빼지 않는가
+
+    「단일계약+관리주체 경유」의 관리 수수료(`Q-14`)를 `SelfConsumption` 의
+    차감항으로 넣는 안을 버렸다. 수수료는 **비용**이고 편익에서 빼면
+    **관점별 NPV 에서 그 비용이 사라진다** — 편익 계정만 줄어들 뿐 비용 계정에는
+    한 줄도 남지 않으므로, 정부·사회 관점에서 그 지출이 아예 없는 사업이 된다.
+    B/C 의 분모도 그만큼 작아져 비율이 좋아진다(같은 사업이 수수료를 편익 차감으로
+    적으면 유리해지는 형태 — 도메인 원칙 「중복」의 부호 반대 판이다).
+
+    ## 왜 `fixed_om_row` 를 쓰지 않는가
+
+    라벨이 「고정 O&M」이 되어 리포트에서 **설비 유지비**로 읽힌다. 프로포마는
+    사람이 행을 보고 더해 보는 문서이므로(`won_sum` 독스트링) 항목 이름이 뜻을
+    나른다. 에스컬레이션도 두지 않았다 — 이 수수료는 요금 대비 **비율**이라
+    요금이 오르면 저절로 따라 오르고, 여기서 또 올리면 이중 상승이 된다.
+    """
+    if start_year < 1:
+        raise ValidationError(
+            field="proforma.fee_start_year",
+            reason=f"분석 연도는 1부터 셉니다: {start_year}",
+            action="start_year 를 1 이상으로 지정하십시오",
+        )
+    if annual_amount_won < 0:
+        raise ValidationError(
+            field="proforma.fee_annual_amount_won",
+            reason=f"수수료가 음수입니다: {annual_amount_won}",
+            action=(
+                "수수료는 비용이므로 양수로 지정하십시오. 음수 수수료는 "
+                "「수수료를 돌려받는 사업」이 되어 경제성이 과대 계상됩니다"
+            ),
+        )
+    return CashFlowRow(
+        label=f"{tag} 정산 수수료",
+        tag=tag,
+        amounts={
+            year: Decimal(annual_amount_won)
+            for year in range(start_year, end_year + 1)
+        },
+    )
+
+
 def replacement_row(
     tag: str,
     replacement_years: list[int],

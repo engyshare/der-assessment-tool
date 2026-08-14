@@ -29,6 +29,7 @@ import pytest
 
 from core.casegrid import e2e_runner
 from core.casegrid.e2e_runner import run_single_case_e2e
+from core.casegrid.variants import run_order
 from core.contracts.validation import ValidationError
 from core.valuestream import SelfConsumption
 
@@ -62,10 +63,10 @@ def test_normal_case_still_runs_end_to_end() -> None:
     거부만 검사하면 **무엇이든 거부하는** 구현도 통과한다. FR-402-AC1 은
     정당한 동시 계상을 막지 말라고 명시로 요구하므로 이쪽을 함께 둔다.
     """
-    metrics = run_single_case_e2e({}, level_map=LEVEL_MAP, horizon_years=_PROBE_HORIZON)
+    outcome = run_single_case_e2e({}, level_map=LEVEL_MAP, horizon_years=_PROBE_HORIZON)
 
-    assert "npv" in metrics
-    assert "payback_years" in metrics
+    assert "npv" in outcome.metrics
+    assert "payback_years" in outcome.metrics
 
 
 @pytest.mark.req("FR-402-AC2.A")
@@ -119,7 +120,10 @@ def test_the_refusal_happens_before_the_cba_runs(
     # 먼저 정상 조합으로 이 계수기가 실제로 센다는 것을 보인다 — 세지 않는
     # 계수기로 「0회」를 단언하면 그 단언은 아무것도 붙들지 않는다
     run_single_case_e2e({}, level_map=LEVEL_MAP, horizon_years=_PROBE_HORIZON)
-    assert len(calls) == 1, "계수기가 정상 경로에서 세지 않는다 — 단언이 무의미해진다"
+    # 케이스 지표 한 번 + **등록된 변형마다 한 번** (R32 — FR-607-AC1 배선)
+    assert len(calls) == 1 + len(run_order()), (
+        "계수기가 정상 경로에서 세지 않는다 — 단언이 무의미해진다"
+    )
 
     calls.clear()
     with pytest.raises(ValidationError):

@@ -22,6 +22,7 @@ import yaml
 from core.assumption.provider import AssumptionSet
 from core.casegrid import feasible_region, quick_preset_grid, run_cases
 from core.casegrid.e2e_runner import run_single_case_e2e
+from core.report.variant_report import build_variant_table
 
 THRESHOLD_SECONDS = 90.0
 
@@ -135,6 +136,14 @@ def test_dod2_e2e_27cases_within_90s_with_environment() -> None:
     for r in results:
         assert "npv" in r.metrics, (
             f"케이스 {r.case_index}: 파이프라인이 NPV를 반환하지 않았습니다"
+        )
+        # ★ **변형 표가 실제 실행 결과로 선다 (FR-607-AC1 · R32).** 여기가 이
+        # 저장소의 실제 종단 실행 경로이므로, 「모든 실행에서 자동 포함」은 이
+        # 27건에서 성립해야 한다. R31 까지는 이 자리에서 표를 부르면
+        # `ValidationError`(변형별 결과가 없습니다)가 났다 — 기계는 옳게
+        # 거부하는데 아무도 부르지 않는 상태였다.
+        assert build_variant_table(r).baseline_row.baseline is True, (
+            f"케이스 {r.case_index}: 변형 표의 맨 위가 기준선이 아닙니다"
         )
 
     # 히트맵 셀 매트릭스 생성 검증

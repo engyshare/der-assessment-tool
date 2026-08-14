@@ -127,7 +127,7 @@ def test_streams_without_a_structure_do_not_trigger_structure_rules() -> None:
 
 # ── ③ 프로파일과 독립으로 걸린다 (설계서가 지적한 구멍) ───────────────
 
-@pytest.mark.req("FR-402-AC4", "FR-205-AC1")
+@pytest.mark.req("FR-402-AC4", "FR-205-AC1.NetMetering")
 def test_the_structure_axis_fires_regardless_of_the_regulation_profile() -> None:
     """★★★ **구조 규칙이 프로파일과 독립으로 걸린다** — 그 구멍이 이 축의 존재 이유다.
 
@@ -151,7 +151,7 @@ def test_the_structure_axis_fires_regardless_of_the_regulation_profile() -> None
     )
 
 
-@pytest.mark.req("FR-402-AC4", "FR-205-AC1")
+@pytest.mark.req("FR-402-AC4", "FR-205-AC1.NetMetering")
 def test_the_real_table_has_a_structure_scoped_rule() -> None:
     """실물 규칙표가 구조 축을 **실제로 쓴다**.
 
@@ -169,7 +169,7 @@ def test_the_real_table_has_a_structure_scoped_rule() -> None:
 
 # ── ④ 오타 난 구조 이름은 기동 시점에 터진다 ─────────────────────────
 
-@pytest.mark.req("FR-402-AC4", "FR-205-AC1")
+@pytest.mark.req("FR-402-AC4", "FR-205-AC1.NetMetering")
 def test_a_misspelled_structure_name_is_refused_at_load_time() -> None:
     """★★ 열거 밖의 구조 이름은 **로드 시점에** 거부된다.
 

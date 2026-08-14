@@ -25,10 +25,13 @@ R21 에 `core/incentive/calculator.py` 가 `run_order()` 를 직접 import 해�
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Literal, NamedTuple
+from types import MappingProxyType
+from typing import Any, Literal, NamedTuple
 
 from core.casegrid.variants import run_order
+from core.contracts.casevariant import CaseVariant
 from core.contracts.schemas import CashFlowRow
+from core.contracts.validation import ValidationError
 from core.incentive.calculator import (
     build_baseline_capex_cashflows,
     build_capex_cashflows,
@@ -36,6 +39,18 @@ from core.incentive.calculator import (
 from core.incentive.schemas import IncentiveScheme
 
 Viewpoint = Literal["OWNER", "PARTICIPANT", "GOV", "SOCIAL"]
+
+#: 변형이 `overrides()` 로 덮어쓰는 키 → `IncentiveScheme` 필드 이름.
+#:
+#: **두 이름이 다른 것이 요점이다.** 변형은 사용자 입력의 낱말로 말하고
+#: (`subsidy_fixed_won` — 단위가 이름에 있다) 스킴은 재무 필드로 말한다
+#: (`subsidy_fixed` — `Decimal`). 이 표가 없으면 그 번역이 변형마다 따로
+#: 생기고, 오타 하나가 **조용히 무시되어** 그 변형이 기준안과 같은 수를 낸다.
+_OVERRIDE_TO_SCHEME_FIELD = MappingProxyType({
+    "subsidy_rate": "subsidy_rate",
+    "subsidy_fixed_won": "subsidy_fixed",
+    "loan_rate": "loan_rate",
+})
 
 
 class CaseCapexCashflows(NamedTuple):
@@ -72,12 +87,95 @@ def build_capex_cashflows_for_all_cases(
 
     results: list[CaseCapexCashflows] = []
     for variant_cls in order:
+        variant_scheme = _scheme_for_variant(variant_cls, scheme)
         rows = (
-            build_baseline_capex_cashflows(scheme, capex, viewpoint)
+            build_baseline_capex_cashflows(variant_scheme, capex, viewpoint)
             if variant_cls.baseline
-            else build_capex_cashflows(scheme, capex, viewpoint)
+            else build_capex_cashflows(variant_scheme, capex, viewpoint)
         )
         results.append(
             CaseCapexCashflows(variant_cls.tag, variant_cls.label, tuple(rows))
         )
     return tuple(results)
+
+
+def _scheme_for_variant(
+    variant_cls: type[CaseVariant], scheme: IncentiveScheme | None
+) -> IncentiveScheme | None:
+    """변형이 덮어쓰는 값을 스킴에 적용한다 — **`overrides()` 의 소비자** (R32).
+
+    ## 왜 이것이 필요한가 — `overrides()` 를 읽는 배포 코드가 0곳이었다
+
+    `CaseVariant.overrides()` 는 **추상 메서드**라 변형 전부가 구현하고 계약
+    테스트가 그 반환값을 붙들고 있었다. 그런데 **그것을 읽는 배포 코드가 한 줄도
+    없었다** — 이 함수 이전의 순회는 `variant_cls.baseline` 하나만 보고 기준선이면
+    「무지원」, 아니면 「입력 스킴 그대로」로 갈랐다.
+
+    변형이 둘일 때는 두 기계가 같은 답을 낸다(`Unsupported` 는 지원을 0으로,
+    `AsPlanned` 는 아무것도 덮어쓰지 않으므로). **셋째 변형에서 갈린다** —
+    `FR-608`(최소 지원 수준 역산)처럼 「보조율 30%」를 덮어쓰는 변형을 파일 하나로
+    더하면, `baseline` 만 보는 순회는 그것을 **입력 지원안과 똑같이** 계산하고
+    **아무 예외도 내지 않는다.** 확장점 문서(`casevariant.py`)가 *「필요한 것은
+    파일 하나이며 파이프라인은 바뀌지 않는다」* 고 약속하는데, 그 약속이 숫자
+    수준에서는 지켜지지 않는 상태였다.
+
+    ## 모르는 키는 거부한다
+
+    통과시키면 오타(`subsidy_ratio`)가 **조용히 무시되고** 그 변형은 기준안과 같은
+    수를 낸다 — 표에는 행이 둘 있고 값이 같으니 「효과 없는 지원안」처럼 보인다.
+
+    ## 기준선은 그 뒤에 `FR-607-AC3` 이 다시 판정한다
+
+    적용 순서가 뒤가 아니라 **앞**이다. `build_baseline_capex_cashflows()` 가
+    「타 사업 **확정** 지원분은 기준선에 포함된 소여, **예정**분은 제외」를 판정하며
+    (`FR-607-AC3`·`AC4`), 그 판정이 나중에 오므로 변형의 덮어쓰기가 그것을
+    뒤집을 수 없다.
+    """
+    overrides = variant_cls().overrides(_base_params(scheme))
+    if not overrides:
+        return scheme
+
+    unknown = sorted(set(overrides) - set(_OVERRIDE_TO_SCHEME_FIELD))
+    if unknown:
+        raise ValidationError(
+            field="casegrid.variant_overrides",
+            reason=(
+                f"변형 {variant_cls.tag!r} 이 지원 조건에 없는 키를 덮어씁니다: "
+                f"{', '.join(unknown)}"
+            ),
+            action=(
+                "`IncentiveScheme` 에 대응하는 키로 고치거나, 그 값이 지원 조건이 "
+                "아니라면 변형에서 빼십시오. 모르는 키를 조용히 무시하면 그 변형이 "
+                "입력 지원안과 같은 수를 내면서 표에는 별개 행으로 남습니다"
+            ),
+        )
+
+    update: dict[str, Any] = {}
+    for key, value in overrides.items():
+        field = _OVERRIDE_TO_SCHEME_FIELD[key]
+        if field == "subsidy_fixed":
+            update[field] = None if value is None else Decimal(str(value))
+        else:
+            update[field] = value
+
+    base = scheme if scheme is not None else IncentiveScheme.create_baseline()
+    # `model_copy(update=…)` 는 **검증기를 다시 돌리지 않는다** — 정액·정률 동시
+    # 지정 금지(`_validate_subsidy`)를 지나쳐 버린다. 그래서 다시 짓는다.
+    return base.model_validate({**base.model_dump(), **update})
+
+
+def _base_params(scheme: IncentiveScheme | None) -> dict[str, Any]:
+    """`overrides(base)` 에 넘기는 기준 입력 — **변형이 쓰는 낱말로** 짓는다.
+
+    변형은 「기준 입력에 있는 키만 덮어쓴다」는 계약을 지고 있고
+    (`test_variants_return_only_what_they_change`), 그 계약을 확인할 수 있으려면
+    기준 입력이 실물이어야 한다. 빈 사전을 넘기면 계약이 무의미해진다.
+    """
+    base = scheme if scheme is not None else IncentiveScheme.create_baseline()
+    return {
+        "subsidy_rate": base.subsidy_rate,
+        "subsidy_fixed_won": (
+            None if base.subsidy_fixed is None else int(base.subsidy_fixed)
+        ),
+        "loan_rate": base.loan_rate,
+    }

@@ -14,16 +14,30 @@ hardcoded in this module (NFR-202).
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from decimal import Decimal
 
+from core.casegrid.incentive_cases import (
+    Viewpoint,
+    build_capex_cashflows_for_all_cases,
+)
+from core.casegrid.models import CaseOutcome
 from core.cba.metrics import npv, payback_discounted
-from core.cba.proforma import benefit_row, check_analysis_period, fixed_om_row
+from core.cba.proforma import (
+    benefit_row,
+    check_analysis_period,
+    fee_row,
+    fixed_om_row,
+)
 from core.contracts.assumptions import AssumptionProvider
 from core.contracts.der import DispatchContext, DispatchResult
+from core.contracts.schemas import CashFlowRow
 from core.contracts.units import Money, Year
 from core.contracts.valuestream import ValueStream
 from core.der.ess import ESS, ESSOperatingMode
 from core.der.pv import PV, OperatingMode
 from core.engine.rule_based import RuleBasedEngine
+from core.incentive.schemas import IncentiveScheme
+from core.regulation.tariff import TariffEngine
 from core.valuestream import PeakShaving, SurplusSale
 from core.valuestream.exclusion_table import assert_no_exclusions
 from core.valuestream.settlement import SettlementInputs, assemble
@@ -69,7 +83,10 @@ def run_single_case_e2e(
     structure: str | None = None,
     provider: AssumptionProvider | None = None,
     settlement_inputs: SettlementInputs | None = None,
-) -> dict[str, float]:
+    tariff_engine: TariffEngine | None = None,
+    scheme: IncentiveScheme | None = None,
+    viewpoint: Viewpoint = "OWNER",
+) -> CaseOutcome:
     """Execute the full DER → Engine → Benefit → CBA pipeline for one case.
 
     *level_map* maps each case-grid variable name (e.g. ``"pv_unit_cost"``)
@@ -121,6 +138,33 @@ def run_single_case_e2e(
     `provider.analysis_years()` 로 읽어 넘긴다. **기본값을 두지 않은 것이
     요점이다** — 두면 대장을 고쳐도 이 구획이 옛 값을 쓰고, 그 어긋남은
     NPV 를 바꾸면서 아무 예외도 내지 않는다.
+
+    ★★ **변형별 지표를 이 경로가 산출한다 (`FR-607-AC1` · R32).**
+    ----------------------------------------------------------------
+    R31 이 담을 자리(`CaseResult.variants`)와 표시 층
+    (`core/report/variant_report.py`)을 만들었으나 **그 필드를 채우는 배포 코드가
+    0곳**이었다 — 소비자는 있고 생산자가 없었다. 그래서
+    `build_variant_table()` 을 실제 실행 결과에 부르면 「변형별 결과가 없습니다」로
+    거부됐다: **기계는 옳게 거부하는데 아무도 그것을 부르지 않는 상태.**
+
+    ⚠ **켜고 끄는 인자를 두지 않았다.** `with_variants=True` 로 두면 안 넘긴
+    실행에 기준선이 없고, 조항 문면이 **「모든 실행에서 자동 포함」**이다. 그것이
+    R21 이 `is_baseline` 깃발에서 없앤 형태다. 그래서 반환형이 바뀌었다 —
+    `dict[str, float]` → `CaseOutcome`. **호출자가 컴파일 단계에서 알게 되는 것이
+    요점이다**(조용히 빈 변형을 받는 것보다 낫다).
+
+    `scheme` 을 주지 않으면 지원 조건이 없는 사업이므로 **변형 둘의 지표가 같다**
+    — 그것이 정당한 상태다(지원이 0이면 무지원 기준선과 입력 지원안이 같은
+    사업이다). 값이 갈리는 것을 보려면 스킴을 주어야 하고,
+    `tests/casegrid/test_variant_production_wiring.py` 가 그것을 붙든다.
+
+    ★ **초기투자 규약을 케이스 지표와 같게 맞췄다.** 케이스 지표의 NPV 는
+    총사업비를 `t=0` 에 두고 뺀다(`npv(initial_investment, …)`). 변형별 지표도
+    같은 규약으로 **그 변형의 실제 초기 지출**을 `t=0` 에 둔다 — 지원 현금흐름
+    행(`{1: -자부담}`)을 운영 행에 섞으면 같은 이름(`npv`)의 두 수가 **할인
+    시점이 달라** 비교 표에서 조용히 어긋난다. 그 규약이 같으므로 **무지원
+    기준선의 NPV 는 케이스 지표의 NPV 와 일치해야 하고**, 그 일치가 규약이
+    갈렸는지를 재는 검사가 된다.
     """
     pv_capex = _resolve(
         case_values.get("pv_unit_cost", "base"), "pv_unit_cost", level_map
@@ -195,11 +239,21 @@ def run_single_case_e2e(
                 "않으려면 structure 를 넘기지 마십시오"
             )
         plan = assemble(
-            structure, provider=provider, inputs=settlement_inputs
+            structure,
+            provider=provider,
+            inputs=settlement_inputs,
+            tariff_engine=tariff_engine,
         )
         settlement_streams: tuple[ValueStream, ...] = plan.streams
+        # ★ **구조가 만드는 비용을 비용으로 나른다 (R32).** 조립기가 편익에서
+        # 빼 주는 것이 아니라 여기서 프로포마 행이 된다 — 근거는
+        # `core/cba/proforma.py::fee_row`. `core.cba` 가 `core.valuestream` 보다
+        # 위 계층이라 조립기가 행을 지을 수 없고(`NFR-208-AC1`), 그 경계를
+        # `SettlementCost` 가 건넌다.
+        settlement_costs = tuple(plan.costs)
     else:
         settlement_streams = (SurplusSale(sale_price_won_per_kwh=120.0),)
+        settlement_costs = ()
 
     peak = PeakShaving(
         monthly_peak_reduction_kw=[ess.reducible_peak_kw(year=1)] * 12,
@@ -239,14 +293,103 @@ def run_single_case_e2e(
             end_year=horizon_years,
             annual_amount_won=int(ess.fixed_om(year=1)),
         ),
+        *(
+            fee_row(
+                cost.tag,
+                start_year=1,
+                end_year=horizon_years,
+                annual_amount_won=int(cost.annual_amount_won),
+            )
+            for cost in settlement_costs
+        ),
     ]
-    all_rows = list(benefit_rows) + list(cost_rows)
-    project_npv = npv(initial_investment, all_rows, discount_rate=discount_rate)
-    discounted_payback = payback_discounted(
-        initial_investment, all_rows, discount_rate=discount_rate
+    all_rows = net_operating_flows(benefit_rows, cost_rows)
+
+    # 5. 변형별 지표 — **등록된 변형 전부** (FR-607-AC1). 위 독스트링 참조.
+    variants = {
+        case_flows.tag: _metrics_for(
+            _initial_outlay(case_flows.rows), all_rows, discount_rate
+        )
+        for case_flows in build_capex_cashflows_for_all_cases(
+            scheme, initial_investment, viewpoint
+        )
+    }
+
+    return CaseOutcome(
+        metrics=_metrics_for(initial_investment, all_rows, discount_rate),
+        variants=variants,
     )
 
+
+def net_operating_flows(
+    benefit_rows: Sequence[CashFlowRow],
+    cost_rows: Sequence[CashFlowRow],
+) -> list[CashFlowRow]:
+    """편익·비용 행을 `npv()` 가 받는 **순현금흐름**으로 만든다 — 비용의 부호를
+    여기서 **한 번만** 뒤집는다 (R32).
+
+    ## ★★ 이것이 없어서 비용이 NPV 를 늘리고 있었다
+
+    `CashFlowRow` 는 **부호 규약을 갖지 않는다** — 「비용은 양수, 편익도 양수」이며
+    가르는 것은 소비자다(`capex_row` 독스트링). `bcr()` 은 그래서 편익 목록과 비용
+    목록을 **따로** 받는다. 그런데 `npv()` 는 목록 하나를 받아 `_pv()` 로 **부호
+    있는 합**을 낸다. 즉 그 하나는 순현금흐름이어야 한다.
+
+    종전 이 파일은 `benefit_rows + cost_rows` 를 **그대로** 넘겼다. 고정 O&M 이
+    양수이므로 **비용이 편익으로 더해졌고**, NPV 는 O&M 현가의 두 배만큼 과대
+    계상됐다. 아무 예외도 나지 않고, 두 배 오차는 「그럴듯한 큰 수」로 보인다.
+
+    R32 가 관리 수수료를 비용 행으로 넣자 **수수료율을 올릴수록 NPV 가 커져서**
+    드러났다 — 새 항목이 기존 결함을 밟은 형태이며, 그 결함은 비용 항목이
+    O&M 둘뿐일 때는 아무도 밟지 않았다.
+
+    ⚠ **`fee_row`·`fixed_om_row` 를 음수로 바꾸는 것으로 고치지 않았다.** 그러면
+    프로포마 표시와 `bcr()` 의 분모가 함께 뒤집힌다 — 부호를 뒤집을 자리는 **순
+    현금흐름을 만드는 이 경계 하나**여야 하고, 두 곳에서 뒤집으면 다시 양수가 된다.
+    """
+    negated = [
+        CashFlowRow(
+            label=row.label,
+            tag=row.tag,
+            amounts={year: -amount for year, amount in row.amounts.items()},
+            assumption_refs=row.assumption_refs,
+        )
+        for row in cost_rows
+    ]
+    return [*benefit_rows, *negated]
+
+
+def _metrics_for(
+    initial_investment: Money,
+    operating: list[CashFlowRow],
+    discount_rate: float,
+) -> dict[str, float]:
+    """지표 사전 하나 — **케이스와 변형이 같은 함수를 쓴다.**
+
+    갈라 두면 한쪽에 지표가 추가될 때 다른 쪽이 따라오지 않고, 그 상태에서
+    `build_variant_table()` 은 「변형마다 지표가 다릅니다」로 거부한다 —
+    즉 증상이 **표시 층에서** 나타나 원인을 여기까지 되짚어야 한다.
+    """
     return {
-        "npv": float(project_npv),
-        "payback_years": discounted_payback,
+        "npv": float(npv(initial_investment, operating, discount_rate=discount_rate)),
+        "payback_years": payback_discounted(
+            initial_investment, operating, discount_rate=discount_rate
+        ),
     }
+
+
+def _initial_outlay(rows: Sequence[CashFlowRow]) -> Money:
+    """지원 현금흐름 행을 **`t=0` 초기투자 한 수로** 접는다.
+
+    행의 금액은 유출이므로 음수다(`{1: -자부담}`). `npv()` 의 첫 인자는 *「t=0 에
+    나가는 비용(양수)」* 이라 부호를 뒤집는다.
+
+    ⚠ **행이 비어 있으면 0원이다.** 그것은 「지출이 없는 사업」이 아니라
+    `FR-611-AC4` 의 **「해당 설비를 제외한 케이스」**다 — 지원 예정(미확정)분이
+    무산됐을 때의 병기 케이스이며, 그 경우 설비가 없으므로 CAPEX 행도 없다
+    (`build_baseline_capex_cashflows` 가 그렇게 판정한다).
+    """
+    total = sum(
+        (amount for row in rows for amount in row.amounts.values()), Decimal(0)
+    )
+    return Money(-total)

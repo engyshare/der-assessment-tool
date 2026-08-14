@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from types import MappingProxyType
 
 import pytest
@@ -27,7 +28,15 @@ from core.assumption.provider import AssumptionSet
 from core.casegrid.e2e_runner import run_single_case_e2e
 from core.contracts.assumptions import AssumptionProvider, PriceBasis
 from core.contracts.validation import ValidationError
+from core.regulation.tariff import (
+    MeterPoint,
+    ResidentialBlock,
+    ResidentialTariffTable,
+    TariffCatalog,
+    TariffEngine,
+)
 from core.valuestream.settlement import (
+    MANAGER_FEE_KEY,
     NOT_YET_ASSEMBLED,
     TARIFF_KEY,
     TRADE_FEE_KEY,
@@ -61,21 +70,69 @@ def _provider() -> AssumptionProvider:
     )
 
 
-@pytest.mark.req("FR-205-AC1")
+#: 「단일계약+관리주체 경유」 — R32 에 조립기가 섰다. 여기서는 **수수료가
+#: 프로포마에 닿는가**만 본다(조립 자체는
+#: `tests/valuestream/test_settlement_manager_structure.py`).
+_MANAGER_STRUCTURE = "단일계약+관리주체 경유"
+_ENERGY_KEY = "manager.energy"
+_BASIC_KEY = "manager.basic"
+
+
+def _manager_provider(fee_pct: float = 3.0) -> AssumptionProvider:
+    def item(key: str, value: float, unit: str) -> AssumptionItem:
+        return AssumptionItem(
+            key=key, value=value, value_unit=unit, base_year="2026",
+            applicable_scope="검사용", derivation_method="검사용",
+            source=None, verified_at=None, confidence=ConfidenceLevel.ASSUMED,
+        )
+
+    return AssumptionSet(
+        name="검사", version="1",
+        items={
+            MANAGER_FEE_KEY: item(MANAGER_FEE_KEY, fee_pct, "%"),
+            _ENERGY_KEY: item(_ENERGY_KEY, 100.0, "원/kWh"),
+            _BASIC_KEY: item(_BASIC_KEY, 1_000.0, "원/월"),
+        },
+        price_basis=PriceBasis.NOMINAL,
+    )
+
+
+def _manager_engine() -> TariffEngine:
+    table = ResidentialTariffTable(
+        name="manager-2026",
+        valid_from=date(2026, 1, 1),
+        valid_to=None,
+        blocks=(ResidentialBlock(None, _ENERGY_KEY, _BASIC_KEY),),
+    )
+    return TariffEngine(
+        assumptions=_manager_provider(),
+        catalog=TariffCatalog(residential=(table,), tou=(), direct_trade=()),
+    )
+
+
+def _manager_inputs() -> SettlementInputs:
+    return SettlementInputs(
+        baseline_meters=(MeterPoint.residential("101", 1_000.0),),
+        new_meters=(MeterPoint.residential("101", 600.0),),
+        billing_date=date(2026, 6, 1),
+    )
+
+
+@pytest.mark.req("FR-205-AC1.NetMetering")
 def test_a_case_without_a_structure_still_runs() -> None:
     """양성 — 계약구조 없는 케이스는 종전대로 NPV 를 낸다.
 
     `ModelConfig.contract` 가 `| None` 이므로 「계약구조 없는 모델」은 정당한
     상태다. 거부만 검사하면 **무엇이든 거부하는** 구현도 통과한다.
     """
-    metrics = run_single_case_e2e(
+    outcome = run_single_case_e2e(
         {}, level_map=LEVEL_MAP, horizon_years=_PROBE_HORIZON
     )
 
-    assert "npv" in metrics
+    assert "npv" in outcome.metrics
 
 
-@pytest.mark.req("FR-205-AC1")
+@pytest.mark.req("FR-205-AC1.NetMetering")
 def test_the_structure_changes_the_npv_through_the_entry_point() -> None:
     """★★ **구조가 계산을 바꾼다** — 조립이 검사 전용이 아니다.
 
@@ -99,13 +156,13 @@ def test_the_structure_changes_the_npv_through_the_entry_point() -> None:
         provider=_provider(),
     )
 
-    assert plain["npv"] != net_metered["npv"], (
+    assert plain.metrics["npv"] != net_metered.metrics["npv"], (
         "계약구조를 주었는데 NPV 가 같습니다 — 조립 결과가 계산에 들어가지 "
         "않고 버려지고 있습니다"
     )
 
 
-@pytest.mark.req("FR-205-AC1")
+@pytest.mark.req("FR-205-AC1.DistrictDirectTrade")
 def test_direct_trade_reaches_the_calculation_with_its_negotiated_inputs() -> None:
     """직접거래도 진입점을 지나며, 계약단가가 결과를 바꾼다.
 
@@ -127,13 +184,59 @@ def test_direct_trade_reaches_the_calculation_with_its_negotiated_inputs() -> No
         ),
     )
 
-    assert cheap["npv"] != dear["npv"], (
+    assert cheap.metrics["npv"] != dear.metrics["npv"], (
         "계약단가를 바꿨는데 NPV 가 같습니다 — `SettlementInputs` 가 조립기에 "
         "닿지 않고 있습니다"
     )
 
 
-@pytest.mark.req("FR-205-AC1")
+@pytest.mark.req("FR-205-AC1.ManagerEntity")
+def test_the_manager_fee_reaches_the_proforma_as_a_cost() -> None:
+    """★★ 관리 수수료가 **비용으로 프로포마에 닿는다** (R32 — `Q-14`).
+
+    조립기가 수수료를 `SettlementCost` 로 내는 것과 **그것이 프로포마 행이 되는
+    것**은 다른 층이다. 진입점이 `plan.costs` 를 버리면 조립기 단위 테스트는 전부
+    초록불이고, 수수료는 어디에도 없는 채로 사업이 그만큼 유리해진다 —
+    R26 이 형태 하나로 모은 「함수 층은 있는데 실행 경로가 부르지 않는다」다.
+
+    수수료율만 0 → 8% 로 올리면 **NPV 가 작아져야** 한다. 방향까지 보는 이유:
+    부호가 뒤집혀 수수료가 편익으로 들어가도 「달라진다」는 통과한다.
+    """
+    free = run_single_case_e2e(
+        {}, level_map=LEVEL_MAP, horizon_years=_PROBE_HORIZON,
+        structure=_MANAGER_STRUCTURE, provider=_manager_provider(fee_pct=0.0),
+        settlement_inputs=_manager_inputs(), tariff_engine=_manager_engine(),
+    )
+    dear = run_single_case_e2e(
+        {}, level_map=LEVEL_MAP, horizon_years=_PROBE_HORIZON,
+        structure=_MANAGER_STRUCTURE, provider=_manager_provider(fee_pct=8.0),
+        settlement_inputs=_manager_inputs(), tariff_engine=_manager_engine(),
+    )
+
+    assert dear.metrics["npv"] < free.metrics["npv"], (
+        "수수료율을 8% 로 올렸는데 NPV 가 줄지 않았습니다 — `plan.costs` 가 "
+        "프로포마에 닿지 않고 버려지고 있거나, 부호가 뒤집혀 편익으로 들어갔습니다"
+    )
+
+
+@pytest.mark.req("FR-205-AC1.ManagerEntity", "NFR-202-M1")
+def test_the_manager_structure_is_refused_without_a_tariff_engine() -> None:
+    """★ 요금엔진 없이 그 구조를 진입점에 넣으면 **거부**된다.
+
+    조립기만 거부하고 진입점이 그것을 잡아 기본 경로로 내려가면, 그 케이스는
+    「요금엔진을 안 쓴 단일계약」으로 그럴듯하게 계산된다.
+    """
+    with pytest.raises(ValidationError) as caught:
+        run_single_case_e2e(
+            {}, level_map=LEVEL_MAP, horizon_years=_PROBE_HORIZON,
+            structure=_MANAGER_STRUCTURE, provider=_manager_provider(),
+            settlement_inputs=_manager_inputs(),
+        )
+
+    assert caught.value.field == "model.contract.tariff_engine"
+
+
+@pytest.mark.req("FR-205-AC1.VPP")
 @pytest.mark.parametrize("structure", sorted(NOT_YET_ASSEMBLED))
 def test_an_unassembled_structure_is_refused_by_the_execution_path(
     structure: str,
@@ -153,7 +256,7 @@ def test_an_unassembled_structure_is_refused_by_the_execution_path(
     assert structure in caught.value.reason
 
 
-@pytest.mark.req("FR-205-AC1", "NFR-202-M1")
+@pytest.mark.req("FR-205-AC1.NetMetering", "NFR-202-M1")
 def test_a_structure_without_a_ledger_is_refused() -> None:
     """★ 대장 없이 구조를 주면 거부한다 — 단가를 지어내지 않는다.
 

@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+from core.valuestream.aggregated_ppa import AggregatedPPA
 from core.valuestream.direct_trade import DirectTrade
 from core.valuestream.distributed_benefit import (
     DistributedBenefit,
@@ -23,6 +24,7 @@ from core.valuestream.surplus_sale import SurplusSale
 
 __all__ = (
     "REC",
+    "AggregatedPPA",
     "DirectTrade",
     "DistributedBenefit",
     "DistributedSubItems",

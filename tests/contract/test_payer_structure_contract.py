@@ -48,7 +48,7 @@ class _StructureBound(ValueStream):
 
 
 @pytest.mark.contract
-@pytest.mark.req("FR-205-AC1")
+@pytest.mark.req("FR-205-AC1.NetMetering")
 def test_same_benefit_different_structure_different_payer() -> None:
     """★ 같은 편익이 구조에 따라 다른 지갑을 가리킨다."""
     assert _StructureBound(structure="상계거래").effective_payer is Payer.RESIDENT
@@ -101,7 +101,15 @@ def test_the_four_question_gate_reads_the_resolved_payer() -> None:
 
 
 @pytest.mark.contract
-@pytest.mark.req("FR-205-AC1")
+@pytest.mark.req(
+    "FR-205-AC1.HouseholdDirect",
+    "FR-205-AC1.ManagerEntity",
+    "FR-205-AC1.DistrictDirectTrade",
+    "FR-205-AC1.NetMetering",
+    "FR-205-AC1.SurplusDirectSale",
+    "FR-205-AC1.AggregatedPPA",
+    "FR-205-AC1.VPP",
+)
 def test_unknown_structure_in_the_table_fails_at_class_definition() -> None:
     """★ 오타는 **기동 시점에** 터진다.
 
@@ -120,7 +128,15 @@ def test_unknown_structure_in_the_table_fails_at_class_definition() -> None:
 
 
 @pytest.mark.contract
-@pytest.mark.req("FR-205-AC1")
+@pytest.mark.req(
+    "FR-205-AC1.HouseholdDirect",
+    "FR-205-AC1.ManagerEntity",
+    "FR-205-AC1.DistrictDirectTrade",
+    "FR-205-AC1.NetMetering",
+    "FR-205-AC1.SurplusDirectSale",
+    "FR-205-AC1.AggregatedPPA",
+    "FR-205-AC1.VPP",
+)
 def test_structure_vocabulary_is_the_spec_literal() -> None:
     """구조 이름은 spec `FR-205-AC1` 이 적은 리터럴 일곱이다."""
     assert len(CONTRACT_STRUCTURES) == 7
@@ -152,7 +168,15 @@ def _string_constants_excluding_docstrings(source: Path) -> set[str]:
 
 
 @pytest.mark.contract
-@pytest.mark.req("FR-205-AC1")
+@pytest.mark.req(
+    "FR-205-AC1.HouseholdDirect",
+    "FR-205-AC1.ManagerEntity",
+    "FR-205-AC1.DistrictDirectTrade",
+    "FR-205-AC1.NetMetering",
+    "FR-205-AC1.SurplusDirectSale",
+    "FR-205-AC1.AggregatedPPA",
+    "FR-205-AC1.VPP",
+)
 def test_structure_vocabulary_has_exactly_one_owner() -> None:
     """★ **구조 이름의 사본이 배포 코드에 없다** — R31 이 사본 하나를 없앴다.
 

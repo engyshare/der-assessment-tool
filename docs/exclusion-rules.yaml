@@ -70,3 +70,22 @@ rules:
       구조로 걸린다** — 두 축이 독립이라 프로파일만으로는 조용히 통과한다
       (R31 결정 §2-4)
     applies_to_structure: 상계거래
+
+  # ── R32 신설 — **집합 PPA 는 전량 판매다** ──────────────────────────
+  #
+  # `AggregatedPPA` 는 발전량 **전량**을 팔고, `SurplusSale` 은 계통 역송분(잉여)
+  # 만 본다. 그러므로 PPA 를 켠 채 잉여판매를 켜면 이미 넘긴 kWh 를 한 번 더 파는
+  # 것이고, 자가소비 절감을 켜면 넘긴 kWh 를 집에서 또 쓴 것으로 계상된다.
+  #
+  # ⚠ **둘을 다 적는 것이 요점이다.** 잉여판매만 막으면 **자가소비와 PPA 를 동시에
+  # 켤 수 있고**, 그 조합의 결과는 아무 예외 없이 그럴듯하다 — 편익이 커진 쪽으로
+  # 틀리므로 필요 지원 규모가 과소 산정된다(원칙 2-1 이 막으려는 방향).
+  - benefit_a: AggregatedPPA
+    benefit_b: SurplusSale
+    type: A
+    rationale: 집합 PPA 는 발전량 전량을 팔았으므로 같은 kWh 를 잉여로 다시 팔 수 없다
+
+  - benefit_a: AggregatedPPA
+    benefit_b: SelfConsumption
+    type: A
+    rationale: 집합 PPA 로 넘긴 kWh 는 자가소비가 아니다 — 동일 물리량 이중 계상

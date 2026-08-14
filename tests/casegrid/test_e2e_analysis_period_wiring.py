@@ -35,6 +35,7 @@ import pytest
 
 from core.casegrid import e2e_runner
 from core.casegrid.e2e_runner import run_single_case_e2e
+from core.casegrid.variants import run_order
 from core.contracts.validation import ValidationError
 
 #: 배선을 보는 데 쓰는 **탐침값**이다 — 기본값도 대장값도 아니다.
@@ -94,12 +95,12 @@ def test_a_plain_horizon_still_runs_end_to_end() -> None:
     거부만 검사하면 **무엇이든 거부하는** 구현도 통과한다. 그리고 이 배선이
     기존 케이스그리드 실행을 막지 않는다는 것 자체가 확인 대상이다.
     """
-    metrics = run_single_case_e2e(
+    outcome = run_single_case_e2e(
         {}, level_map=LEVEL_MAP, horizon_years=_PROBE_HORIZON
     )
 
-    assert "npv" in metrics
-    assert "payback_years" in metrics
+    assert "npv" in outcome.metrics
+    assert "payback_years" in outcome.metrics
 
 
 @pytest.mark.req("NFR-303-M1")
@@ -113,13 +114,13 @@ def test_exactly_double_the_longest_lifetime_is_accepted_through_the_entry_point
     ceiling = _ceiling_years()
 
     try:
-        metrics = run_single_case_e2e(
+        outcome = run_single_case_e2e(
             {}, level_map=LEVEL_MAP, horizon_years=ceiling
         )
     except ValidationError as exc:
         pytest.fail(f"경계값(정확히 2배) {ceiling}년이 거부됐다: {exc.as_dict()}")
 
-    assert "npv" in metrics
+    assert "npv" in outcome.metrics
 
 
 @pytest.mark.req("NFR-303-M1")
@@ -169,7 +170,12 @@ def test_the_refusal_happens_before_the_cba_runs(
     # 먼저 정상 조합으로 이 계수기가 실제로 센다는 것을 보인다 — 세지 않는
     # 계수기로 「0회」를 단언하면 그 단언은 아무것도 붙들지 않는다
     run_single_case_e2e({}, level_map=LEVEL_MAP, horizon_years=_PROBE_HORIZON)
-    assert len(calls) == 1, "계수기가 정상 경로에서 세지 않는다 — 단언이 무의미해진다"
+    # 케이스 지표 한 번 + **등록된 변형마다 한 번** (R32 — FR-607-AC1 배선).
+    # 상수 1 로 두면 변형이 하나 늘 때 이 단언이 빨간불이 되고, 그것은 결함이
+    # 아니라 확장점이 쓰인 것이다 — 세는 근거를 목록에서 가져온다.
+    assert len(calls) == 1 + len(run_order()), (
+        "계수기가 정상 경로에서 세지 않는다 — 단언이 무의미해진다"
+    )
 
     calls.clear()
     with pytest.raises(ValidationError):
@@ -198,7 +204,7 @@ def test_the_horizon_argument_also_drives_the_cashflow_not_just_the_check() -> N
         {}, level_map=LEVEL_MAP, horizon_years=_PROBE_HORIZON // 2
     )
 
-    assert full["npv"] != half["npv"], (
+    assert full.metrics["npv"] != half.metrics["npv"], (
         "분석기간을 절반으로 줄였는데 NPV 가 같습니다 — "
         "`horizon_years` 가 검사에만 쓰이고 계산은 상수를 보고 있습니다"
     )

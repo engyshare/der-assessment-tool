@@ -31,6 +31,7 @@ from core.report.pdf import generate_pdf
 from core.report.sensitivity import rank_influences
 from core.valuestream import (
     REC,
+    AggregatedPPA,
     DirectTrade,
     DistributedBenefit,
     DistributedSubItems,
@@ -369,6 +370,27 @@ def _create_valuestream_for_tag(
         )
     elif tag == "REC":
         return REC(weight=1.0, rec_price_won_per_unit=50000.0, structure=structure)
+    elif tag == "AggregatedPPA":
+        # R32 신설. 단가는 **약관요금 × 비율**이며 절대 단가가 대장에 없다 —
+        # 비율을 못 읽으면 여기서 지어내지 않고 대장 기본 가정(0.85)과 같은 수를
+        # 쓰되, 이 테스트가 보는 것은 금액이 아니라 **배타 판정**이다.
+        tariff_item = assumptions.get("tariff.hv_single_contract.avg")
+        ratio_item = assumptions.get("tariff.aggregated_ppa.ratio")
+        t_rate = (
+            float(tariff_item.value)
+            if tariff_item and tariff_item.value is not None
+            else 150.0
+        )
+        ratio = (
+            float(ratio_item.value)
+            if ratio_item and ratio_item.value is not None
+            else 0.85
+        )
+        return AggregatedPPA(
+            ppa_price_won_per_kwh=t_rate * ratio,
+            annual_generation_kwh=10_000.0,
+            structure=structure,
+        )
     else:
         raise ValueError(f"지원하지 않는 편익 태그입니다: {tag}")
 
@@ -396,6 +418,14 @@ EXPECTED_RATIONALES: dict[tuple[str, str], str] = {
         "계상하면 제도가 인정하지 않는 두 수익이 함께 잡힌다. **프로파일이 아니라 "
         "구조로 걸린다** — 두 축이 독립이라 프로파일만으로는 조용히 통과한다 "
         "(R31 결정 §2-4)"
+    ),
+    # ↓ R32 — 집합 PPA 는 **전량 판매**다. 둘을 다 적는 것이 요점이며, 잉여판매만
+    # 막으면 자가소비와 PPA 를 동시에 켤 수 있다(넘긴 kWh 를 집에서 또 쓴 셈).
+    ("AggregatedPPA", "SurplusSale"): (
+        "집합 PPA 는 발전량 전량을 팔았으므로 같은 kWh 를 잉여로 다시 팔 수 없다"
+    ),
+    ("AggregatedPPA", "SelfConsumption"): (
+        "집합 PPA 로 넘긴 kWh 는 자가소비가 아니다 — 동일 물리량 이중 계상"
     ),
 }
 

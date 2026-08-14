@@ -75,7 +75,7 @@ def _dispatch(surplus_kwh: float) -> DispatchResult:
 
 # ── ① 구조가 편익을 고른다 ───────────────────────────────────────────
 
-@pytest.mark.req("FR-205-AC1")
+@pytest.mark.req("FR-205-AC1.NetMetering", "FR-205-AC1.DistrictDirectTrade")
 def test_each_structure_activates_a_different_benefit() -> None:
     """★ **구조가 서로 다른 편익을 켠다** — 그것이 「정산 로직에 반영」의 실질이다.
 
@@ -99,7 +99,7 @@ def test_each_structure_activates_a_different_benefit() -> None:
 
 # ── ② 인자가 대장에서 온다 ───────────────────────────────────────────
 
-@pytest.mark.req("FR-205-AC1", "NFR-202-M1")
+@pytest.mark.req("FR-205-AC1.NetMetering", "NFR-202-M1")
 def test_net_metering_uses_the_ledger_tariff_as_the_offset_price() -> None:
     """상계 차감단가가 **대장의 약관요금**이다 — 손계산으로 확인한다.
 
@@ -117,7 +117,7 @@ def test_net_metering_uses_the_ledger_tariff_as_the_offset_price() -> None:
     assert plan.assumption_keys == (TARIFF_KEY,)
 
 
-@pytest.mark.req("FR-205-AC1", "NFR-202-M1")
+@pytest.mark.req("FR-205-AC1.DistrictDirectTrade", "NFR-202-M1")
 def test_direct_trade_spread_and_fee_come_from_the_ledger() -> None:
     """직접거래 차익 = (약관요금 − 계약단가) × 거래량 − 수수료.
 
@@ -139,7 +139,7 @@ def test_direct_trade_spread_and_fee_come_from_the_ledger() -> None:
     assert plan.assumption_keys == (TARIFF_KEY, TRADE_FEE_KEY)
 
 
-@pytest.mark.req("FR-205-AC1")
+@pytest.mark.req("FR-205-AC1.DistrictDirectTrade")
 def test_direct_trade_without_the_negotiated_inputs_is_refused() -> None:
     """★ 계약단가·거래량이 없으면 거부한다 — 0 으로 메우지 않는다.
 
@@ -161,7 +161,7 @@ def test_direct_trade_without_the_negotiated_inputs_is_refused() -> None:
 
 # ── ③ 지불 주체가 구조에 따라 갈린다 ─────────────────────────────────
 
-@pytest.mark.req("FR-205-AC1", "FR-402-AC5")
+@pytest.mark.req("FR-205-AC1.NetMetering", "FR-205-AC1.DistrictDirectTrade", "FR-402-AC5")
 def test_the_payer_follows_the_structure() -> None:
     """★★ **같은 `SurplusSale` 이 구조에 따라 다른 지갑을 가리킨다.**
 
@@ -190,7 +190,7 @@ def test_the_payer_follows_the_structure() -> None:
 
 # ── ④ 미구현 구조를 빈 목록으로 내지 않는다 ──────────────────────────
 
-@pytest.mark.req("FR-205-AC1")
+@pytest.mark.req("FR-205-AC1.VPP")
 @pytest.mark.parametrize("structure", sorted(NOT_YET_ASSEMBLED))
 def test_a_structure_without_an_assembler_is_refused_with_a_reason(
     structure: str,
@@ -211,7 +211,15 @@ def test_a_structure_without_an_assembler_is_refused_with_a_reason(
     assert NOT_YET_ASSEMBLED[structure] in caught.value.reason
 
 
-@pytest.mark.req("FR-205-AC1")
+@pytest.mark.req(
+    "FR-205-AC1.HouseholdDirect",
+    "FR-205-AC1.ManagerEntity",
+    "FR-205-AC1.DistrictDirectTrade",
+    "FR-205-AC1.NetMetering",
+    "FR-205-AC1.SurplusDirectSale",
+    "FR-205-AC1.AggregatedPPA",
+    "FR-205-AC1.VPP",
+)
 def test_the_seven_structures_are_partitioned_with_no_gap_and_no_overlap() -> None:
     """★★ **일곱이 「조립된다」와 「아직」으로 정확히 갈린다.**
 
@@ -234,10 +242,18 @@ def test_the_seven_structures_are_partitioned_with_no_gap_and_no_overlap() -> No
     )
     # 조립되는 구조 수를 적어 둔다 — 늘면 이 수를 함께 고치게 되고, 그때
     # `NOT_YET_ASSEMBLED` 에서 무엇이 빠졌는지 위 합집합 단언이 함께 말한다
-    assert len(assembled) == 3
+    assert len(assembled) == 6
 
 
-@pytest.mark.req("FR-205-AC1")
+@pytest.mark.req(
+    "FR-205-AC1.HouseholdDirect",
+    "FR-205-AC1.ManagerEntity",
+    "FR-205-AC1.DistrictDirectTrade",
+    "FR-205-AC1.NetMetering",
+    "FR-205-AC1.SurplusDirectSale",
+    "FR-205-AC1.AggregatedPPA",
+    "FR-205-AC1.VPP",
+)
 def test_an_unknown_structure_is_refused_before_the_lookup() -> None:
     """열거 밖의 이름은 조립 전에 거부된다.
 
@@ -253,7 +269,7 @@ def test_an_unknown_structure_is_refused_before_the_lookup() -> None:
 
 # ── ⑤ 조립 결과가 배타 규칙을 지난다 ─────────────────────────────────
 
-@pytest.mark.req("FR-205-AC1", "FR-402-AC2.A")
+@pytest.mark.req("FR-205-AC1.NetMetering", "FR-402-AC2.A")
 def test_the_assembler_checks_its_own_output_against_the_exclusion_table(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -270,7 +286,11 @@ def test_the_assembler_checks_its_own_output_against_the_exclusion_table(
     from core.valuestream import SelfConsumption, SurplusSale
     from core.valuestream.settlement import SettlementPlan
 
-    def _both(provider: AssumptionProvider, inputs: SettlementInputs) -> SettlementPlan:
+    def _both(
+        provider: AssumptionProvider,
+        inputs: SettlementInputs,
+        engine: object | None = None,
+    ) -> SettlementPlan:
         return SettlementPlan(
             structure="상계거래",
             streams=(
@@ -292,7 +312,7 @@ def test_the_assembler_checks_its_own_output_against_the_exclusion_table(
     assert caught.value.rule == "DV-12"
 
 
-@pytest.mark.req("FR-205-AC1", "NFR-202-M1")
+@pytest.mark.req("FR-205-AC1.NetMetering", "FR-205-AC1.SurplusDirectSale", "NFR-202-M1")
 def test_surplus_direct_sale_uses_a_different_price_than_net_metering() -> None:
     """★★ **같은 산식, 다른 단가** — 그것이 두 구조를 가르는 전부다.
 

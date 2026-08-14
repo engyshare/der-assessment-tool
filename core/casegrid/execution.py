@@ -5,14 +5,17 @@ from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import Executor, Future, ProcessPoolExecutor, as_completed
 from typing import TypeAlias, cast
 
-from core.casegrid.models import Case, CaseResult, Progress, RunPlan
+from core.casegrid.models import Case, CaseOutcome, CaseResult, Progress, RunPlan
 from core.contracts.validation import ValidationError
 
 DEFAULT_CONFIRMATION_THRESHOLD = 500
 DEFAULT_SECONDS_PER_CASE = 3.0
 DEFAULT_BACKGROUND_THRESHOLD_SECONDS = 60.0
 
-CaseRunner: TypeAlias = Callable[[Case], Mapping[str, float]]
+#: 러너는 지표 사전을 돌려주거나, 변형별 지표까지 실은 `CaseOutcome` 을 돌려준다
+#: (`FR-607-AC1` / R32). 후자를 받으면 `CaseResult.variants` 가 채워진다 —
+#: **그 통로가 없어서** R31 까지 변형을 채우는 배포 코드가 0곳이었다.
+CaseRunner: TypeAlias = Callable[[Case], Mapping[str, float] | CaseOutcome]
 ProgressCallback: TypeAlias = Callable[[Progress], None]
 StopPredicate: TypeAlias = Callable[[], bool]
 ExecutorFactory: TypeAlias = Callable[[int | None], Executor]
@@ -140,7 +143,26 @@ def _process_pool(max_workers: int | None) -> ProcessPoolExecutor:
 
 
 def _execute_case(runner: CaseRunner, case: Case) -> CaseResult:
-    return CaseResult(case_index=case.index, values=case.values, metrics=dict(runner(case)))
+    """러너를 한 번 돌려 케이스 결과를 만든다.
+
+    ★ **변형별 지표를 여기서 나른다 (`FR-607-AC1` / R32).** 러너가 `CaseOutcome`
+    을 돌려주면 그 변형을 결과에 싣는다. 지표 사전만 돌려주면 `variants` 는
+    비어 있고, 그것은 「변형을 산출하지 않은 실행」이라는 정당한 상태다
+    (`CaseOutcome` 독스트링 — 그 구별을 두는 근거가 거기 있다).
+
+    ⚠ **`isinstance` 로 갈랐다.** `hasattr(outcome, "variants")` 로 가르면 우연히
+    같은 이름의 속성을 가진 사전형이 변형으로 읽히고, 그 오독은 아무 예외도
+    내지 않는다.
+    """
+    outcome = runner(case)
+    if isinstance(outcome, CaseOutcome):
+        return CaseResult(
+            case_index=case.index,
+            values=case.values,
+            metrics=dict(outcome.metrics),
+            variants={tag: dict(m) for tag, m in outcome.variants.items()},
+        )
+    return CaseResult(case_index=case.index, values=case.values, metrics=dict(outcome))
 
 
 def _emit_progress(

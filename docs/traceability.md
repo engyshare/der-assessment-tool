@@ -11,8 +11,8 @@
 |---|---|
 | 요구사항 | 105 |
 | 그중 Must-have | 79 |
-| 수용기준 총계 | 314 |
-| 자동 검증 매핑 | 284 |
+| 수용기준 총계 | 321 |
+| 자동 검증 매핑 | 291 |
 | 수동 검증 매핑 | 4 |
 | **Must-have 미매핑** | **8** |
 | 우선순위 미지정 요구사항 | 0 |
@@ -104,7 +104,13 @@
 | `FR-204` | Must-have | 1 | `FR-204-AC1` | Phase 1: 에너지자립가구 모델 — PV + 히트펌프 + EV/V2G + ESS, 10~20가구, 기존주택형/모듈러주택형 2 변형 | 자동 | test_phase1_dod.py, test_templates.py |
 |  |  | 2 | `FR-204-AC2` | 마을단위 분산특구 6개 모델, 아파트 마이크로그리드 모델 | 자동 | test_templates.py |
 |  |  | 1 | `FR-204-AC3` | 템플릿 로드 시 모든 파라미터에 기본값과 출처가 채워진다 | 자동 | test_phase1_dod.py, test_templates.py |
-| `FR-205` | Must-have | 1 | `FR-205-AC1` | 다음이 정산 로직에 반영된다 — 개별 세대 직접계약 / 단일계약+관리주체 경유 / 분산특구 직접거래 / 상계거래 / 잉여 직거래 / 집합 PPA / VPP 경유 | 자동 | test_e2e_settlement_wiring.py 5건, test_payer_structure_contract.py 4건, test_exclusion_structure_axis.py 3건, test_settlement.py 10건 |
+| `FR-205` | Must-have | 1 | `FR-205-AC1.HouseholdDirect` | 개별 세대 직접계약 — 가구가 구매자와 직접 계약한다. 정산 대상은 계통 역송 전력(잉여) 이고 판매 주체는 가구다(v0.16 결정 — 아래 주석). 계약단가는… | 자동 | test_payer_structure_contract.py 3건, test_settlement.py 2건, test_settlement_household_contract.py 6건 |
+|  |  | 1 | `FR-205-AC1.ManagerEntity` | 단일계약+관리주체 경유 — 관리주체 명의의 단일계약. 편익은 기존 요금 − 신규 요금(FR-401-AC2.SelfConsumption)이며 두 요금은 요금엔진이… | 자동 | test_e2e_settlement_wiring.py 2건, test_payer_structure_contract.py 3건, test_settlement.py 2건, test_settlement_manager_structure.py 8건 |
+|  |  | 1 | `FR-205-AC1.DistrictDirectTrade` | 분산특구 직접거래 — (약관요금 − 계약단가) × 거래량 − 거래지원수수료(FR-401-AC2.DirectTrade). 계약단가·거래량은 협상값이며 없으면 거부… | 자동 | test_e2e_settlement_wiring.py, test_payer_structure_contract.py 3건, test_settlement.py 6건 |
+|  |  | 1 | `FR-205-AC1.NetMetering` | 상계거래 — 잉여를 판매하지 않고 요금에서 차감한다. 차감단가는 약관요금(실효단가)이며 판매단가(SMP)가 아니다 — SMP 는 도매가라 회피한 요금보다 적게 … | 자동 | test_e2e_settlement_wiring.py 3건, test_payer_structure_contract.py 4건, test_exclusion_structure_axis.py 3건, test_settlement.py 7건 |
+|  |  | 1 | `FR-205-AC1.SurplusDirectSale` | 잉여 직거래 — 상계와 같은 산식, 다른 단가(Q-16, 도매 정산단가 계열). 같은 단가를 쓰면 두 구조가 수치까지 같아지고 FR-202 비교표에 같은 줄이 … | 자동 | test_payer_structure_contract.py 3건, test_settlement.py 3건 |
+|  |  | 1 | `FR-205-AC1.AggregatedPPA` | 집합 PPA — 발전량 전량 × PPA 계약단가(FR-401-AC2.AggregatedPPA). 잉여판매로 대신하면 자가소비분이 빠져 편익이 조용히 작아진다 | 자동 | test_payer_structure_contract.py 3건, test_aggregated_ppa.py 2건, test_settlement.py 2건 |
+|  |  | 2 | `FR-205-AC1.VPP` | VPP 경유 — VPP 사업자를 경유한 시장참여 정산. FR-401-AC2.VPPMarket 이 선행이다 | 자동 | test_e2e_settlement_wiring.py, test_payer_structure_contract.py 3건, test_settlement.py 3건 |
 | `FR-301` | Must-have | 1 | `FR-301-AC1` | 매 스텝 자원별 충·방전·발전·소비량과 계통 수·송전량을 산출 | 자동 | test_ess.py, test_ev_v2g.py, test_rule_based.py |
 |  |  | 1 | `FR-301-AC2` | 전력·열 수지 균형식이 모든 스텝에서 오차 < 1e-6 kWh | 자동 | test_ess.py, test_thermal_load.py 2건, test_rule_based.py |
 |  |  | 1 | `FR-301-AC3` | 시계열 행수 불일치 시 명확한 오류로 중단 | 자동 | test_der_contract.py 3건, test_leap_year_policy.py, test_heatpump.py, test_pv_validation.py, test_thermal_load.py 2건, test_rule_based.py 2건 |
@@ -120,25 +126,26 @@
 |  |  | - | `FR-303-AC4` | Infeasible 시 어떤 제약이 충돌했고 어느 편익이 원인인지 진단 (FR-403 연계) | **미매핑** | — |
 | `FR-304` | Nice-to-have | 3 | `FR-304-AC1` | PV·ESS 용량을 결정변수로 NPV 최대화 조합 산출. 연간 손익과 자본비의 시간 스케일 정합을 위해 연금 환산 계수를 적용한다 (부록 C.3 B-2) | **미매핑** | — |
 | `FR-305` | Nice-to-have | 3 | `FR-305-AC1` | 임의 시점 N시간 정전 시 부하 지속 시간 산출, EENS 화폐가치를 편익 계상 | **미매핑** | — |
-| `FR-401` | Must-have | 1 | `FR-401-AC1` | 편익 1종 = 독립 클래스 1개로 구현되고, 각 편익은 활성화 여부를 개별 토글할 수 있다. 편익을 추가하거나 비활성화해도 코어 엔진(core/engine/·c… | 자동 | test_der_contract.py 2건, test_formulas.py |
+| `FR-401` | Must-have | 1 | `FR-401-AC1` | 편익 1종 = 독립 클래스 1개로 구현되고, 각 편익은 활성화 여부를 개별 토글할 수 있다. 편익을 추가하거나 비활성화해도 코어 엔진(core/engine/·c… | 자동 | test_der_contract.py 2건, test_aggregated_ppa.py, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.SelfConsumption` | SelfConsumption 자가소비 전기요금 절감 — (기존요금 − 신규요금), 누진·TOU 구조 반영 | 자동 | test_pv.py, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.SurplusSale` | SurplusSale 잉여전력 판매 — 잉여량 × 판매단가(직거래/상계/SMP) | 자동 | test_pv.py 2건, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.REC` | REC REC 수익 — 발전량 × 가중치 × REC 단가 | 자동 | test_pv.py 2건, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.DirectTrade` | DirectTrade 분산특구 직접거래 차익 — (약관요금 − 직접거래단가) × 거래량 − 거래지원수수료 | 자동 | test_formulas.py |
 |  |  | 1 | `FR-401-AC2.PeakShaving` | PeakShaving 기본요금(피크) 절감 — 월 최대수요 저감분 × 기본요금 단가 | 자동 | test_ess.py, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.HeatCostSaving` | HeatCostSaving 열 비용 절감 (히트펌프) — (기존 열원 연료비 − 히트펌프 전력비) | 자동 | test_heatpump.py 2건, test_formulas.py |
+|  |  | 1 | `FR-401-AC2.AggregatedPPA` | AggregatedPPA 집합 PPA 수익 — 발전량 전량 × PPA 계약단가(약관요금 × 비율) (v0.16 신설) | 자동 | test_aggregated_ppa.py 5건 |
 |  |  | 2 | `FR-401-AC2.DemandResponse` | DemandResponse 수요반응 정산금 — 감축량 × 정산단가 (중복·배타 규칙 반영) | **미매핑** | — |
 |  |  | 2 | `FR-401-AC2.VPPMarket` | VPPMarket VPP 시장참여 수익 — 시장정산 − 운영수수료 | **미매핑** | — |
 |  |  | 3 | `FR-401-AC2.Resilience` | Resilience 정전 회피 편익 — EENS × VoLL | **미매핑** | — |
 |  |  | 3 | `FR-401-AC2.DistributedBenefit` | DistributedBenefit 분산편익 크레딧 — 송배전 회피 + 손실 감소 + 계통서비스 + 온실가스 + 회복력 (기본 0, FR-404) | 자동 | test_formulas.py |
 |  |  | 3 | `FR-401-AC2.CarbonCredit` | CarbonCredit 배출권 수익 — 감축량(tCO2) × KAU 단가 | **미매핑** | — |
-| `FR-402` | Must-have | 1 | `FR-402-AC1` | 동시 발생 효과는 중복이 아니다 — 지불 주체가 다르거나 물리량이 다르면 정상 계상한다. 중복은 같은 화폐 흐름을 두 번 세는 것으로 한정한다. 시스템은 자가소… | 자동 | test_phase1_dod.py, test_exclusion_rules_contract.py, test_exclusion.py, test_exclusion_reject_wp28b.py, test_exclusion_structure_axis.py 2건 |
-|  |  | 1 | `FR-402-AC2.A` | 동일 물리량 이중 판매 — 같은 1 kWh를 자가소비 절감과 잉여판매로 동시 계상하거나 같은 시각 ESS 방전을 피크저감과 DR로 동시 계상하는 조합은 선언적 … | 자동 | test_phase1_dod.py, test_e2e_exclusion_wiring.py 3건, test_exclusion_rules_contract.py, test_pv.py, test_pv_validation.py, test_exclusion.py 2건, test_exclusion_reject_wp28b.py, test_settlement.py |
+| `FR-402` | Must-have | 1 | `FR-402-AC1` | 동시 발생 효과는 중복이 아니다 — 지불 주체가 다르거나 물리량이 다르면 정상 계상한다. 중복은 같은 화폐 흐름을 두 번 세는 것으로 한정한다. 시스템은 자가소… | 자동 | test_phase1_dod.py, test_exclusion_rules_contract.py, test_exclusion.py, test_exclusion_reject_wp28b.py, test_exclusion_structure_axis.py 2건, test_settlement_manager_structure.py |
+|  |  | 1 | `FR-402-AC2.A` | 동일 물리량 이중 판매 — 같은 1 kWh를 자가소비 절감과 잉여판매로 동시 계상하거나 같은 시각 ESS 방전을 피크저감과 DR로 동시 계상하는 조합은 선언적 … | 자동 | test_phase1_dod.py, test_e2e_exclusion_wiring.py 3건, test_exclusion_rules_contract.py, test_pv.py, test_pv_validation.py, test_aggregated_ppa.py, test_exclusion.py 2건, test_exclusion_reject_wp28b.py, test_settlement.py, test_settlement_household_contract.py |
 |  |  | 1 | `FR-402-AC2.B` | 인과 하류 편익이 상류에 이미 포함 — 배전망 회피 편익 ↔ 전기요금 절감처럼 망 비용이 이미 망이용요금으로 회수된 경우, 하류 편익은 요금에 미반영된 증분만 … | 자동 | test_exclusion.py |
 |  |  | 1 | `FR-402-AC2.C` | 동일 효과의 이중 화폐화 — 같은 tCO2에 배출권 수익(사업자 현금)과 사회적 탄소비용(사회 편익)을 동시 계상하지 않는다. 관점당 하나의 화폐화 방법만 허용… | 자동 | test_exclusion.py |
 |  |  | 1 | `FR-402-AC2.D` | 제도적 배타 — 상계거래 참여 시 REC 발급 제한, DR 정산금과 요금 인센티브 중복 수취 금지 등은 규제 프로파일에 종속된 배타 규칙으로 관리하고 제도 개정… | 자동 | test_exclusion.py, test_exclusion_reject_wp28b.py |
-|  |  | 1 | `FR-402-AC4` | 배타 규칙은 코드가 아닌 선언적 규칙 테이블로 관리한다. 각 규칙은 (편익A, 편익B, 배타유형 A~D, 근거, 적용 규제 프로파일) 을 보유한다 | 자동 | test_exclusion_rules_contract.py 4건, test_exclusion_structure_axis.py 6건, test_mapping_requirements.py |
-|  |  | 1 | `FR-402-AC5` | 편익을 활성화할 때 시스템은 분산자원 경제성 평가 원칙 「부록 A. 편익 항목 추가 시 실무 적용 절차」 의 4문항 판정을 통과했는지 확인하고, 지불 주체가 특… | 자동 | test_payer_structure_contract.py 3건, test_mapping_requirements.py, test_settlement.py |
+|  |  | 1 | `FR-402-AC4` | 배타 규칙은 코드가 아닌 선언적 규칙 테이블로 관리한다. 각 규칙은 (편익A, 편익B, 배타유형 A~D, 근거, 적용 규제 프로파일) 을 보유한다 | 자동 | test_exclusion_declaration_matches_table.py, test_exclusion_rules_contract.py 4건, test_exclusion_structure_axis.py 6건, test_mapping_requirements.py |
+|  |  | 1 | `FR-402-AC5` | 편익을 활성화할 때 시스템은 분산자원 경제성 평가 원칙 「부록 A. 편익 항목 추가 시 실무 적용 절차」 의 4문항 판정을 통과했는지 확인하고, 지불 주체가 특… | 자동 | test_payer_structure_contract.py 3건, test_mapping_requirements.py, test_settlement.py, test_settlement_household_contract.py |
 |  |  | 1 | `FR-402-AC6` | 리포트에 "편익 계상 내역" 을 표시한다: 계상된 편익 / 배타로 제외된 편익 / 증분만 계상된 편익(유형 B) / 미화폐화로 0 처리된 편익 | 자동 | test_phase1_dod.py, test_benefit_breakdown_sheet.py 5건, test_mapping_requirements.py |
 |  |  | 1 | `FR-402-AC7` | 관점별(FR-704) 편익 집합이 서로 다름을 리포트에 명시하고, 보조금은 사회 관점에서 이전지출로 처리하여 편익에 포함하지 않는다 | 자동 | test_transfer.py |
 | `FR-403` | Must-have | 1 | `FR-403-AC1` | 편익별 제약을 개별 제약으로 쌓지 않고, 제약 유형별 단일 시계열로 min/max 합성한다 | 자동 | test_conflict.py 3건 |
@@ -207,7 +214,7 @@
 | `FR-605` | Must-have | 1 | `FR-605-AC1` | 자원 유형별 상이한 조건이 한 시나리오에서 동시 적용되고 프로포마에 분리 표시된다 | 자동 | test_incentive.py |
 | `FR-606` | Must-have | 1 | `FR-606-AC1` | 거치기간 중 이자만, 상환기간 중 원리금 상환 스케줄 생성 | 자동 | test_casevariant_contract.py, test_incentive.py |
 |  |  | 1 | `FR-606-AC2` | 상환 스케줄이 프로포마 독립 행으로 표시되고 총 이자비용이 별도 집계된다 | 자동 | test_incentive.py |
-| `FR-607` | Must-have | 1 | `FR-607-AC1` | 모든 실행에서 지원 0 케이스가 자동 포함되어 결과 상단에 표시된다 | 자동 | test_phase1_dod.py, test_incentive_cases.py 4건, test_casevariant_contract.py 4건, test_incentive.py, test_variant_report.py 9건 |
+| `FR-607` | Must-have | 1 | `FR-607-AC1` | 모든 실행에서 지원 0 케이스가 자동 포함되어 결과 상단에 표시된다 | 자동 | test_phase1_dod.py, test_incentive_cases.py 4건, test_variant_production_wiring.py 8건, test_casevariant_contract.py 4건, test_incentive.py, test_variant_report.py 9건 |
 |  |  | 1 | `FR-607-AC2` | "무지원 시 회수기간 XX년 / 목표 대비 부족분 YY년" 형태로 격차를 명시한다 | 자동 | test_incentive.py |
 |  |  | 1 | `FR-607-AC3` | 기준선의 정의 (v0.5 추가): 지원 0은 본 사업의 지원이 0을 뜻한다. 타 사업으로 확정 지원된 설비는 기준선에 포함하고, 지원 예정(미확정)은 제외한다.… | 자동 | test_casevariant_contract.py, test_incentive.py |
 | `FR-608` | Must-have | 1 | `FR-608-AC1` | 목표 지정: "할인 회수기간 ≤ 10년" / "NPV ≥ 0" / "IRR ≥ 5%" 중 택일 또는 복수 | 자동 | test_phase1_dod.py, test_incentive.py 4건 |
@@ -235,7 +242,7 @@
 |  |  | 2 | `FR-702-AC2` | O&M 비용은 별도 처리 — 운전량이 아니라 설비 보유에 비례하므로 보간이 아닌 전후 채움 후 일괄 물가 적용 | **미매핑** | — |
 |  |  | 2 | `FR-702-AC3` | 자원 수명 종료로 구성이 바뀌는 해는 자동으로 시뮬레이션 대상에 추가된다 | **미매핑** | — |
 |  |  | 2 | `FR-702-AC4` | 보간으로 계산된 연도는 리포트에서 실계산 연도와 구분 표기된다 | **미매핑** | — |
-| `FR-703` | Must-have | 1 | `FR-703-AC1.npv` | NPV 할인 순현재가치 — 할인율 파라미터화 (공공 4.5~5.5% 기본). 오라클 §13.0.2 순위 1 / 원 단위 완전 일치 | 자동 | test_metrics.py |
+| `FR-703` | Must-have | 1 | `FR-703-AC1.npv` | NPV 할인 순현재가치 — 할인율 파라미터화 (공공 4.5~5.5% 기본). 오라클 §13.0.2 순위 1 / 원 단위 완전 일치 | 자동 | test_e2e_cost_sign.py 3건, test_metrics.py |
 |  |  | 1 | `FR-703-AC1.irr` | IRR 내부수익률 — 오라클 §13.0.2 순위 2 / 0.01%. FR-704-AC2(사업자 관점)가 이 조항만 인용한다 | 자동 | test_metrics.py |
 |  |  | 1 | `FR-703-AC1.mirr-value` | MIRR 수정내부수익률 (값) — 오라클 §13.0.2 순위 2 / 0.01% | 자동 | test_metrics.py |
 |  |  | 1 | `FR-703-AC1.mirr-order` | MIRR 우선 표시 규칙 — 현금흐름의 부호변경이 다수일 때 MIRR을 IRR보다 우선 표시한다. 값이 아니라 조건부 표시 규칙이므로 AC1.mirr-value… | 자동 | test_indicators.py |
@@ -256,7 +263,7 @@
 |  |  | 1 | `FR-704-AC6` | 타 사업 기지원 설비(FR-611)의 관점별 계상 (v0.5 추가): 정부 관점 재정효율 지표의 분모(투입 국비)에는 본 사업 국비만 포함한다. 타 사업 국비는… | 자동 | test_transfer.py |
 |  |  | 1 | `FR-704-AC7` | 관점 전환 시 어떤 항목이 왜 포함/제외되었는지를 리포트에 표시한다 (관점 섞기가 가장 흔한 중복 오류 — 도메인 원칙 2-3) | 자동 | test_transfer.py, test_perspective_report.py |
 | `FR-705` | Must-have | 1 | `FR-705-AC1` | "설비 미설치 시 전기·열 비용"을 기준선으로 계산하고 모든 편익을 증분으로 산출. 기준선 자체 비용도 리포트에 표시 | 자동 | test_baseline.py, test_heatpump.py |
-| `FR-801` | Must-have | 1 | `FR-801-AC1` | 임의 파라미터를 "탐색 변수"로 지정하고 값 목록(예: [저, 중, 고] 또는 [100, 150, 200])을 부여 | 자동 | test_casegrid.py |
+| `FR-801` | Must-have | 1 | `FR-801-AC1` | 임의 파라미터를 "탐색 변수"로 지정하고 값 목록(예: [저, 중, 고] 또는 [100, 150, 200])을 부여 | 자동 | test_casegrid.py, test_variant_production_wiring.py |
 |  |  | 1 | `FR-801-AC2` | 탐색 변수로 지정 가능한 대상에는 스칼라 파라미터뿐 아니라 자원 운전 방법(FR-105), 규제 프로파일(FR-504), 시계열 데이터셋(FR-905) 도 포함… | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-801-AC3` | 시스템이 전조합(Cartesian product)을 생성하고 일괄 실행한다 | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-801-AC4` | 케이스 수를 실행 전에 표시하고, 임계치(기본 500) 초과 시 경고 후 확인을 요구한다 | 자동 | test_casegrid.py, test_dv9_dv10.py 3건 |
@@ -273,7 +280,7 @@
 |  |  | 1 | `FR-803-AC2` | 1변수 토네이도: 각 변수가 지표에 미치는 영향도 순위 | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-803-AC3` | 케이스 테이블에서 목표 달성/미달 케이스를 필터링 | 자동 | test_casegrid.py |
 | `FR-804` | Should-have | - | `FR-804-AC1` | 주요 변수별로 NPV=0이 되는 임계값을 표로 제시 | **미매핑** | — |
-| `FR-805` | Should-have | - | `FR-805-AC1` | 실행 중 완료 케이스 수·예상 잔여 시간 표시, 중단 가능 | 자동 | test_casegrid.py, test_variant_report.py |
+| `FR-805` | Should-have | - | `FR-805-AC1` | 실행 중 완료 케이스 수·예상 잔여 시간 표시, 중단 가능 | 자동 | test_casegrid.py, test_variant_production_wiring.py, test_variant_report.py |
 | `FR-901` | Must-have | 1 | `FR-901-AC1` | 회원가입, 로그인, 비밀번호 재설정, 세션 만료(기본 24시간) | 자동 | test_auth.py 8건 |
 | `FR-902` | Must-have | 1 | `FR-902-AC1` | 이름·설명·태그·최종수정일시 부여 | 자동 | test_scenarios.py 2건 |
 |  |  | 1 | `FR-902-AC2` | 저장 시 버전 이력이 남아 이전 버전 복원 가능 | 자동 | test_scenarios.py 2건 |
@@ -329,7 +336,7 @@
 |  |  | 1 | `NFR-107-AC5` | 수동 검증 분류의 정본은 docs/manual-checks.yaml이다. spec은 어느 수용기준이 수동인지 열거하지 않는다. 대장의 전건에 대해 ⓐ crite… | 자동 | test_traceability_gate.py |
 |  |  | 1 | `NFR-107-M1` | CI가 spec 수용기준 목록과 마커·YAML을 대조하여 미매핑 0건 확인. 구현: scripts/gen_traceability.py (Wave 0 산출물 0.… | 자동 | test_17_9_dod9.py, test_marker_substance.py 11건, test_traceability_gate.py 4건 |
 | `NFR-201` | Must-have | 1 | `NFR-201-M1` | 신규 자원 추가 PR에서 core/engine/, core/cba/ diff 0줄 | 자동 | test_phase1_measurements.py |
-| `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | 자동 | test_e2e_settlement_wiring.py, test_ci_gates.py, test_der_contract.py 2건, test_tariff.py, test_settlement.py 3건 |
+| `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | 자동 | test_e2e_settlement_wiring.py 2건, test_ci_gates.py, test_der_contract.py 2건, test_tariff.py, test_aggregated_ppa.py, test_settlement.py 3건, test_settlement_household_contract.py, test_settlement_manager_structure.py |
 | `NFR-203` | Should-have | 1 | `NFR-203-M1` | pytest-cov CI 게이트 | 자동 | test_ci_gates.py |
 | `NFR-204` | Should-have | 1 | `NFR-204-M1` | mypy strict 통과 | 자동 | test_ci_gates.py |
 | `NFR-205` | Must-have | 1 | `NFR-205-M1` | 코드 리뷰 + lint 규칙. 근거: DER-VET Params.py의 클래스 변수 전역 상태는 동시 실행·테스트 격리를 불가능하게 만든다 (부록 C.5) | 자동 | test_ci_gates.py 2건, test_ess.py |
@@ -345,7 +352,7 @@
 |  |  | 1 | `NFR-208-M1` | import-linter 계약(layers + independence)을 CI에서 강제. 위반 0건 | 자동 | test_17_10_dod10.py, test_import_boundaries.py 2건 |
 | `NFR-301` | Should-have | 1 | `NFR-301-M1` | 사용자 5명 태스크 수행 테스트 | 수동 | test_manual_stubs.py (스텁) + MC-2 (미수행) |
 | `NFR-302` | Should-have | 1 | `NFR-302-M1` | UI 검수 체크리스트 | 자동 | test_dashboard.py 2건 |
-| `NFR-303` | Should-have | 1 | `NFR-303-M1` | 오류 메시지 리뷰 체크리스트 | 자동 | test_analysis_period.py 5건, test_price_basis.py 6건, test_dv9_dv10.py 2건, test_e2e_analysis_period_wiring.py 6건, test_e2e_exclusion_wiring.py, test_feasible_region_slice.py 3건, test_structured_errors.py 22건, test_proforma.py 4건, test_chart_contract.py, test_dv_catalogue_matches_spec.py 3건, test_dv_rule_enforcement.py 10건, test_leap_year_policy.py 3건, test_validation_contract.py 5건, test_ess.py 6건, test_ev_v2g.py 8건, test_heatpump.py 15건, test_load.py 17건, test_pv_validation.py 9건, test_thermal_load.py 15건, test_incentive.py 3건, test_tsstore.py 4건, test_tariff_fallback.py 7건, test_charts_feasible_region.py, test_charts_wp28a.py 3건, test_dashboard.py |
+| `NFR-303` | Should-have | 1 | `NFR-303-M1` | 오류 메시지 리뷰 체크리스트 | 자동 | test_analysis_period.py 5건, test_price_basis.py 6건, test_dv9_dv10.py 2건, test_e2e_analysis_period_wiring.py 6건, test_e2e_exclusion_wiring.py, test_feasible_region_slice.py 3건, test_structured_errors.py 22건, test_variant_production_wiring.py, test_proforma.py 4건, test_chart_contract.py, test_dv_catalogue_matches_spec.py 3건, test_dv_rule_enforcement.py 10건, test_leap_year_policy.py 3건, test_validation_contract.py 5건, test_ess.py 6건, test_ev_v2g.py 8건, test_heatpump.py 15건, test_load.py 17건, test_pv_validation.py 9건, test_thermal_load.py 15건, test_incentive.py 3건, test_tsstore.py 4건, test_tariff_fallback.py 7건, test_charts_feasible_region.py, test_charts_wp28a.py 3건, test_aggregated_ppa.py 2건, test_settlement_household_contract.py, test_settlement_manager_structure.py 2건, test_dashboard.py |
 | `NFR-304` | Nice-to-have | 1 | `NFR-304-AC1` | 주요 화면은 1366×768 이상에서 가로 스크롤 없이 표시되어야 한다 | 수동 | test_manual_stubs.py (스텁) + MC-5 (미수행) |
 | `NFR-401` | Must-have | 1 | `NFR-401-AC1` | 비밀번호는 Argon2id 또는 bcrypt(cost≥12)로 해싱 저장 | 자동 | test_hashing.py 2건 |
 | `NFR-402` | Must-have | 1 | `NFR-402-AC1` | 모든 통신은 TLS 1.2 이상 | 자동 | test_phase1_measurements.py |
