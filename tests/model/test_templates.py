@@ -1,6 +1,10 @@
 import pytest
 
-from core.contracts.assumptions import AssumptionProvider, AssumptionValue
+from core.contracts.assumptions import (
+    AssumptionProvider,
+    AssumptionValue,
+    PriceBasis,
+)
 from core.model.templates import create_energy_independent_house
 
 
@@ -12,6 +16,11 @@ class _MockAssumptions(AssumptionProvider):
     @property
     def set_version(self) -> str:
         return "v1"
+
+    @property
+    def price_basis(self) -> PriceBasis:
+        """DV-7 — 스텁도 기준을 **선언해야** 한다. 그것이 강제의 실질이다."""
+        return PriceBasis.NOMINAL
 
     def get(self, key: str) -> AssumptionValue | None:
         values = {

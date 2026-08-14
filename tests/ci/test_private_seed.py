@@ -32,6 +32,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 #: 같으면 어느 파일을 읽었는지 판정할 수 없다.
 _INJECTED_SEED_YAML = """\
 version: "private-2026.1"
+price_basis: "명목"
 assumptions:
   - key: "capex.pv"
     value: 1450000

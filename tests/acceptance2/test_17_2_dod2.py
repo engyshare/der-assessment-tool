@@ -19,6 +19,7 @@ from types import MappingProxyType
 import pytest
 import yaml
 
+from core.assumption.provider import AssumptionSet
 from core.casegrid import feasible_region, quick_preset_grid, run_cases
 from core.casegrid.e2e_runner import run_single_case_e2e
 
@@ -111,11 +112,20 @@ def test_dod2_e2e_27cases_within_90s_with_environment() -> None:
     level_map = _build_level_map()
     cpu_count = os.cpu_count() or 1
 
+    # ★ **분석기간을 대장에서 읽는다 (R31).** 종전에는 러너의 모듈 상수
+    # `HORIZON_YEARS = 20` 이 이 값이었는데, §7.1 O-1 은 소유자를
+    # `AssumptionSet` 으로 못 박고 있었다 — 소유자는 정해져 있고 값만 다른 층에
+    # 있던 상태다. 여기서 대장을 지나게 하는 것이 그 배선의 실물 확인이다.
+    horizon_years = AssumptionSet.load_from_yaml(str(_ASSUMPTIONS_YAML)).analysis_years()
+    assert horizon_years >= 1
+
     start_time = time.perf_counter()
 
     results = run_cases(
         cases,
-        lambda case: run_single_case_e2e(case.values, level_map=level_map),
+        lambda case: run_single_case_e2e(
+            case.values, level_map=level_map, horizon_years=horizon_years
+        ),
     )
 
     elapsed = time.perf_counter() - start_time

@@ -40,6 +40,11 @@ LEVEL_MAP = {
     "discount_rate": MappingProxyType({"base": 0.045}),
 }
 
+#: 분석기간 **탐침값** — 이 파일이 보는 것은 배타 규칙 배선이고 분석기간이
+#: 아니다. 대장값과 같을 필요가 없으므로 일부러 다른 수를 쓴다(사본을 만들면
+#: 대장이 바뀔 때 여기가 따라오지 않아도 아무 일이 없다).
+_PROBE_HORIZON = 18
+
 #: `SurplusSale` 과 유형 A 인 편익 — `docs/exclusion-rules.yaml` 첫 행이다
 #: (*「같은 1 kWh 를 자가소비 절감과 잉여판매로 동시 계상할 수 없다」*).
 #: 규칙표가 정본이므로 여기서 유형을 다시 적지 않는다.
@@ -57,7 +62,7 @@ def test_normal_case_still_runs_end_to_end() -> None:
     거부만 검사하면 **무엇이든 거부하는** 구현도 통과한다. FR-402-AC1 은
     정당한 동시 계상을 막지 말라고 명시로 요구하므로 이쪽을 함께 둔다.
     """
-    metrics = run_single_case_e2e({}, level_map=LEVEL_MAP)
+    metrics = run_single_case_e2e({}, level_map=LEVEL_MAP, horizon_years=_PROBE_HORIZON)
 
     assert "npv" in metrics
     assert "payback_years" in metrics
@@ -74,7 +79,10 @@ def test_type_a_combination_is_refused_by_the_execution_path() -> None:
     """
     with pytest.raises(ValidationError) as caught:
         run_single_case_e2e(
-            {}, level_map=LEVEL_MAP, extra_value_streams=[_self_consumption()]
+            {},
+            level_map=LEVEL_MAP,
+            horizon_years=_PROBE_HORIZON,
+            extra_value_streams=[_self_consumption()],
         )
 
     parts = caught.value.as_dict()
@@ -110,13 +118,16 @@ def test_the_refusal_happens_before_the_cba_runs(
 
     # 먼저 정상 조합으로 이 계수기가 실제로 센다는 것을 보인다 — 세지 않는
     # 계수기로 「0회」를 단언하면 그 단언은 아무것도 붙들지 않는다
-    run_single_case_e2e({}, level_map=LEVEL_MAP)
+    run_single_case_e2e({}, level_map=LEVEL_MAP, horizon_years=_PROBE_HORIZON)
     assert len(calls) == 1, "계수기가 정상 경로에서 세지 않는다 — 단언이 무의미해진다"
 
     calls.clear()
     with pytest.raises(ValidationError):
         run_single_case_e2e(
-            {}, level_map=LEVEL_MAP, extra_value_streams=[_self_consumption()]
+            {},
+            level_map=LEVEL_MAP,
+            horizon_years=_PROBE_HORIZON,
+            extra_value_streams=[_self_consumption()],
         )
 
     assert calls == [], "위반 조합인데 CBA 가 돌았습니다 — 거부가 계산 뒤에 있습니다"

@@ -23,6 +23,7 @@ from core.contracts.assumptions import (
     AssumptionProvider,
     AssumptionValue,
     MissingAssumption,
+    PriceBasis,
 )
 
 #: 계약이 import 해서는 안 되는 뿌리 패키지 (`NFR-208-AC3`).
@@ -113,6 +114,11 @@ class _Stub(AssumptionProvider):
     @property
     def set_version(self) -> str:
         return "1"
+
+    @property
+    def price_basis(self) -> PriceBasis:
+        """DV-7 — 스텁도 기준을 **선언해야** 한다. 그것이 강제의 실질이다."""
+        return PriceBasis.NOMINAL
 
     def get(self, key: str) -> AssumptionValue | None:
         if key not in self._items:

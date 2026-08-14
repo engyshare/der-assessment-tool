@@ -21,8 +21,20 @@ class AssumptionSet(Base, PkMixin, TimestampMixin):
     """분석 전제 집합 (1급 객체) — §7.2. FR-202 전제 동일성의 단위."""
 
     __tablename__ = "assumption_sets"
+    __table_args__ = (
+        # DV-7 — 실질/명목은 이 수준에서 1회 선언된다. CHECK 로 고정하는 이유는
+        # `confidence` 와 같다: 잘못된 값이 DB 에 들어가면 스키마로는 잡히지
+        # 않고, 그 뒤로는 어느 기준으로 계산했는지 결과만 보고 알 수 없다.
+        CheckConstraint("price_basis IN ('실질', '명목')", name="price_basis_enum"),
+    )
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # ── DV-7 (R31 추가) ────────────────────────────────────────────
+    # **nullable=False 이고 기본값이 없다.** 두면 「선언하지 않았다」가 「명목
+    # 이라고 선언했다」와 구별되지 않는다 — 그것이 계약(`PriceBasis` 에 기본값을
+    # 두지 않은 것)과 같은 판단이며, 저장 층에서 무르게 두면 계약의 강제가
+    # 왕복(save→load)에서 사라진다.
+    price_basis: Mapped[str] = mapped_column(String(8), nullable=False)
     # 버전은 문자열이다 — SemVer 를 강제하지 않는다. FR-601-AC8 의 diff 뷰는
     # 두 버전 문자열을 비교하는 것이지 정렬이 아니다.
     version: Mapped[str] = mapped_column(String(64), nullable=False)

@@ -28,13 +28,20 @@
 
 from __future__ import annotations
 
+import inspect
 from types import MappingProxyType
 
 import pytest
 
 from core.casegrid import e2e_runner
-from core.casegrid.e2e_runner import HORIZON_YEARS, run_single_case_e2e
+from core.casegrid.e2e_runner import run_single_case_e2e
 from core.contracts.validation import ValidationError
+
+#: 배선을 보는 데 쓰는 **탐침값**이다 — 기본값도 대장값도 아니다.
+#: 일부러 대장의 20 과 다른 수를 쓴다: 같은 수를 쓰면 이 파일이 대장의 사본을
+#: 하나 갖게 되고, 대장이 바뀔 때 여기가 따라오지 않아도 아무 일이 없다.
+#: **분석기간을 누가 갖는가**는 `tests/assumption/test_analysis_period.py` 가 본다.
+_PROBE_HORIZON = 18
 
 #: 대장을 읽지 않는다 — 이 파일이 보는 것은 금액이 아니라 **배선**이다.
 #: 실물 대장으로 도는 것은 `tests/acceptance2/test_17_2_dod2.py` 가 이미 한다.
@@ -81,13 +88,15 @@ def _ceiling_years() -> int:
 
 
 @pytest.mark.req("NFR-303-M1")
-def test_default_horizon_still_runs_end_to_end() -> None:
-    """양성 — 기본 분석기간(종전 상수)은 그대로 NPV 를 낸다.
+def test_a_plain_horizon_still_runs_end_to_end() -> None:
+    """양성 — 평범한 분석기간은 그대로 NPV 를 낸다.
 
     거부만 검사하면 **무엇이든 거부하는** 구현도 통과한다. 그리고 이 배선이
     기존 케이스그리드 실행을 막지 않는다는 것 자체가 확인 대상이다.
     """
-    metrics = run_single_case_e2e({}, level_map=LEVEL_MAP)
+    metrics = run_single_case_e2e(
+        {}, level_map=LEVEL_MAP, horizon_years=_PROBE_HORIZON
+    )
 
     assert "npv" in metrics
     assert "payback_years" in metrics
@@ -159,7 +168,7 @@ def test_the_refusal_happens_before_the_cba_runs(
 
     # 먼저 정상 조합으로 이 계수기가 실제로 센다는 것을 보인다 — 세지 않는
     # 계수기로 「0회」를 단언하면 그 단언은 아무것도 붙들지 않는다
-    run_single_case_e2e({}, level_map=LEVEL_MAP)
+    run_single_case_e2e({}, level_map=LEVEL_MAP, horizon_years=_PROBE_HORIZON)
     assert len(calls) == 1, "계수기가 정상 경로에서 세지 않는다 — 단언이 무의미해진다"
 
     calls.clear()
@@ -184,10 +193,35 @@ def test_the_horizon_argument_also_drives_the_cashflow_not_just_the_check() -> N
     「달라진다」를 본다** — 부호는 단가·할인율에 달려 있고 이 파일은 금액을
     붙드는 자리가 아니다(그것은 `tests/cba/` 의 몫이다).
     """
-    full = run_single_case_e2e({}, level_map=LEVEL_MAP, horizon_years=HORIZON_YEARS)
-    half = run_single_case_e2e({}, level_map=LEVEL_MAP, horizon_years=HORIZON_YEARS // 2)
+    full = run_single_case_e2e({}, level_map=LEVEL_MAP, horizon_years=_PROBE_HORIZON)
+    half = run_single_case_e2e(
+        {}, level_map=LEVEL_MAP, horizon_years=_PROBE_HORIZON // 2
+    )
 
     assert full["npv"] != half["npv"], (
         "분석기간을 절반으로 줄였는데 NPV 가 같습니다 — "
         "`horizon_years` 가 검사에만 쓰이고 계산은 상수를 보고 있습니다"
+    )
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_the_runner_declares_no_default_horizon() -> None:
+    """★★ **러너가 분석기간의 기본값을 갖지 않는다 (R31).**
+
+    종전에는 `HORIZON_YEARS = 20` 모듈 상수가 기본값이었다. 그런데 §7.1 O-1 은
+    분석기간의 소유자를 `AssumptionSet` 으로 못 박고 `infra/orm/scenario.py` 가
+    그것을 금지 필드로 열거한다 — **소유자는 정해져 있었고 값만 다른 층에
+    있었다.**
+
+    기본값이 되살아나면 대장을 고쳐도 이 구획이 옛 값을 쓴다. 그 어긋남은
+    **NPV 를 바꾸면서 아무 예외도 내지 않으므로** 어느 검사도 잡지 못한다 —
+    위 넷은 전부 초록불인 채다. 그래서 시그니처를 직접 붙든다
+    (`test_leap_year_policy` 가 `steps_per_year` 에 쓴 것과 같은 형태).
+    """
+    parameter = inspect.signature(run_single_case_e2e).parameters["horizon_years"]
+
+    assert parameter.default is inspect.Parameter.empty, (
+        f"`horizon_years` 에 기본값 {parameter.default!r} 이 생겼습니다. "
+        "분석기간의 소유자는 `AssumptionSet` 입니다(§7.1 O-1) — 호출측이 "
+        "`provider.analysis_years()` 로 읽어 넘기십시오"
     )

@@ -315,9 +315,19 @@ def summarize(items: list) -> None:
 
     high = [i for i in items if i.get("impact") in ("최상", "높음")]
     if high:
-        print(f"· 영향도 최상·높음 {len(high)}건 — 회신을 먼저 받아야 할 항목")
+        # **`q_ref` 를 `get` 으로 읽는다 (R31 수정).** `track: fixed` 항목은
+        # 외부 입력이 아니므로 Q 번호가 없는 것이 정상이고, `i["q_ref"]` 는
+        # 그런 항목이 영향도 높음으로 등재되는 순간 `KeyError` 로 죽었다 —
+        # 실제로 `analysis.period_years` 를 넣자 검사기 전체가 멈췄다.
+        # 아래 「회신을 먼저 받아야 할 항목」이라는 문면도 Q 없는 항목에는
+        # 맞지 않으므로 갈라 적는다.
+        print(f"· 영향도 최상·높음 {len(high)}건")
         for i in high:
-            print(f"    {i['q_ref']:6} {i.get('key',''):<38.38} {i.get('impact','')}")
+            origin = i.get("q_ref") or "(내부)"
+            print(f"    {origin:6} {i.get('key', ''):<38.38} {i.get('impact', '')}")
+        awaiting = [i for i in high if i.get("q_ref")]
+        if awaiting:
+            print(f"  그중 {len(awaiting)}건은 회신을 먼저 받아야 한다")
 
     blocked = [i for i in items if i.get("track") == "blocked"]
     if blocked:

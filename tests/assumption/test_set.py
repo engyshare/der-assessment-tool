@@ -4,6 +4,7 @@ import pytest
 
 from core.assumption.item import AssumptionItem, ConfidenceLevel
 from core.assumption.provider import AssumptionSet
+from core.contracts.assumptions import PriceBasis
 
 
 def _item(key: str, value: float, **overrides: Any) -> AssumptionItem:
@@ -33,6 +34,7 @@ def test_assumption_set_version_and_diff() -> None:
     aset = AssumptionSet(
         name="TestSet", version="v1",
         items={"test.key": _item("test.key", 10.0)},
+        price_basis=PriceBasis.NOMINAL,
     )
     assert aset.set_name == "TestSet"
     assert aset.set_version == "v1"
@@ -47,6 +49,7 @@ def test_assumption_set_version_and_diff() -> None:
             "test.key": _item("test.key", 20.0),
             "new.key": _item("new.key", 1.0, value_unit="원"),
         },
+        price_basis=PriceBasis.NOMINAL,
     )
 
     diff = aset2.diff(aset)
@@ -72,6 +75,7 @@ def test_assumption_set_override() -> None:
             "base.key": _item("base.key", 1.0),
             "untouched.key": _item("untouched.key", 9.0),
         },
+        price_basis=PriceBasis.NOMINAL,
     )
 
     # ── AC1: 시나리오 수준에서 특정 항목만 덮어쓸 수 있다 ──────────────

@@ -61,7 +61,7 @@ def _seed_one_assumption_set(session: Session) -> int:
     session.add(project)
     session.flush()
 
-    aset = AssumptionSet(name="전제 v1", version="1")
+    aset = AssumptionSet(name="전제 v1", version="1", price_basis="명목")
     session.add(aset)
     session.flush()
 

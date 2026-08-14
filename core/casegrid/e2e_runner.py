@@ -26,10 +26,20 @@ from core.engine.rule_based import RuleBasedEngine
 from core.valuestream import PeakShaving, SurplusSale
 from core.valuestream.exclusion_table import assert_no_exclusions
 
-#: 분석기간 기본값(년). **`DV-5` 문면의 「기본 20년」이 이 상수다.**
-#: 상한(최장 자원 수명 × 2)은 이 값이 아니라 `check_analysis_period()` 가 잰다 —
-#: 기본값과 상한을 한 상수에 겹쳐 두면 자원 수명이 바뀌어도 아무 일이 없다.
-HORIZON_YEARS = 20
+# ⚠ **`HORIZON_YEARS = 20` 상수가 여기 있었다. R31 이 지웠다.**
+#
+# `DV-5` 문면의 「기본 20년」이 그 상수였는데, **분석기간의 소유자는 이 구획이
+# 아니다** — `infra/orm/scenario.py` 가 `analysis_years` 를 `Scenario` 금지
+# 필드로 열거하며 *「전제 분류에 해당 값은 `AssumptionSet` 에 넣는다」* 고 적고
+# 있었다(§7.1 O-1 · `DV-11`). 즉 소유자는 정해져 있었고 **값만 다른 층에
+# 있었다.** 그 상태에서는 사용자가 분석기간을 고를 통로가 없다 — 케이스
+# 러너의 모듈 상수를 고치는 것이 유일한 방법이었다.
+#
+# 지금 값은 대장 항목 `analysis.period_years` 이고, 호출측이
+# `provider.analysis_years()` 로 읽어 `horizon_years` 로 넘긴다.
+# **기본값을 다시 두지 말 것** — 두면 대장을 고쳐도 이 구획이 옛 값을 쓰고,
+# 그 어긋남은 NPV 를 바꾸면서 아무 예외도 내지 않는다.
+# `tests/casegrid/test_e2e_analysis_period_wiring.py` 가 시그니처를 붙든다.
 STEPS_PER_DAY = 24
 SECONDS_PER_HOUR = 3_600
 DAYS_PER_YEAR = 365
@@ -53,7 +63,7 @@ def run_single_case_e2e(
     *,
     level_map: Mapping[str, Mapping[str, float]],
     extra_value_streams: Sequence[ValueStream] = (),
-    horizon_years: int = HORIZON_YEARS,
+    horizon_years: int,
 ) -> dict[str, float]:
     """Execute the full DER → Engine → Benefit → CBA pipeline for one case.
 
@@ -87,17 +97,25 @@ def run_single_case_e2e(
 
     `horizon_years` 를 인자로 둔 이유도 `extra_value_streams` 와 같다:
     **상한을 넘는 케이스를 진입점으로 넣어 볼 방법이 없으면** 이 호출이 실제로
-    무언가를 막는지 아무도 확인할 수 없다. 기본값은 종전 상수 그대로이므로
-    호출측 동작은 바뀌지 않는다.
+    무언가를 막는지 아무도 확인할 수 없다.
 
     ⚠ **이 인자는 검사 전용이 아니다** — 프로포마 행의 연도 범위도 이 값을
     쓴다. 검사만 하고 계산이 상수를 계속 쓰면 **재는 것과 쓰는 것이 갈리고**,
     그때 이 검사는 아무도 쓰지 않는 수를 지키게 된다.
 
-    ⚠ **분석기간의 「소유자」를 정한 것이 아니다.** 사용자가 고르는 분석기간이
-    어느 층에 사는가는 여전히 미결이다(`Scenario` 는 `DV-11` 이 금지). 여기서
-    닫은 것은 *「케이스 실행이 상한을 지난다」* 이지 *「값을 누가 갖는가」* 가
-    아니다.
+    ★ **`horizon_years` 에 기본값이 없다 (R31).**
+    ------------------------------------------------
+    종전에는 `HORIZON_YEARS = 20` 모듈 상수가 기본값이었고, 그래서 R30 은
+    *「분석기간의 소유자를 정한 것이 아니다」* 라고 적어 두었다. **그런데
+    소유자는 이미 정해져 있었다** — `infra/orm/scenario.py` 가 `analysis_years`
+    를 `Scenario` 금지 필드로 열거하며 *「전제 분류에 해당 값은 `AssumptionSet`
+    에 넣는다」* 고 적는다(§7.1 O-1). 열려 있던 것은 「어느 층인가」가 아니라
+    **「그 층에 아직 값이 없다」** 였다.
+
+    이제 값은 대장 항목 `analysis.period_years` 이고 호출측이
+    `provider.analysis_years()` 로 읽어 넘긴다. **기본값을 두지 않은 것이
+    요점이다** — 두면 대장을 고쳐도 이 구획이 옛 값을 쓰고, 그 어긋남은
+    NPV 를 바꾸면서 아무 예외도 내지 않는다.
     """
     pv_capex = _resolve(
         case_values.get("pv_unit_cost", "base"), "pv_unit_cost", level_map

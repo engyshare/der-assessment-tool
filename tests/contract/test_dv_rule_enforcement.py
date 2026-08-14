@@ -130,22 +130,34 @@ THROWN_BY_REAL_CODE: dict[str, str] = {
     # 「물가 조정」 절반이 여기서 구조로 던지므로 THROWN 이 맞다) — WP-34C.
     "DV-8": "tests/assumption/test_catalog.py::"
             "test_escalate_with_detail_rejects_unparseable_base_year",
+    # ↓ R31 — 원문은 선언 자리를 **`AssumptionSet` 수준**으로 못 박고 **전 항목에
+    # 강제**하라고 한다. 둘 다 실제로 던진다: 대장에 최상위 `price_basis` 선언이
+    # 없으면 `load_from_yaml` 이 거부하고(1회 선언), 항목의 `value_unit` 이
+    # 실질/명목을 다시 말하면 집합 생성이 거부한다(전 항목에 강제).
+    #
+    # ⚠ **값이 집합 선언과 같아도 거부한다.** 같은 사실이 두 곳에 있으면 집합
+    # 선언을 바꿀 때 항목 문면이 따라오지 않고, 바꾼 사람은 성공했다고 믿는다 —
+    # R31 이 실제로 그 사본 하나를 대장에서 지웠다
+    # (`escalation.electricity_tariff` 의 `value_unit` 이 「%/년 (명목)」이었다).
+    "DV-7": "tests/assumption/test_price_basis.py::"
+            "test_an_item_that_redeclares_the_basis_is_refused",
 }
 
 #: 대장에 있으나 **아직 구조로 던지는 코드가 없는** 규칙.
 #: 줄어들면 위 표에 옮긴다. `NOT_YET` 이 비는 날 이 상수를 지운다.
 NOT_YET_THROWN: frozenset[str] = frozenset({
+    # ★ **`DV-7` 이 여기 있었다. R31 이 옮겼다 — 그리고 이 파일이 그것을
+    # 스스로 잡았다.** R22 가 놓은 `ast` 대조(배포 코드의 `rule=` 상수를 뽑아
+    # 이 표와 맞춘다)가 `price_basis` 강제를 배선한 순간 빨간불을 냈다 —
+    # 분류가 뒤처지는 방향을 붙드는 것이 그 검사의 목적이었고, 실제로 그렇게
+    # 동작했다. R22 가 *「래칫이 자기가 막으려던 드리프트를 못 잡았다」* 를
+    # 고친 값이 여기서 나왔다.
+    #
+    # R24 가 남긴 판정(「발동시킬 사건이 없는 것이 아니라 강제가 아직 없다」)은
+    # 정확했다. 없던 것은 **선언할 자리**였고, R31 이 그것을 만들었다 —
+    # 계약의 `PriceBasis`(기본값 없음) · `AssumptionSet.price_basis` ·
+    # ORM 컬럼(NOT NULL + CHECK) · 대장 최상위 `price_basis: 명목`.
     "DV-6",
-    # ↓ R24 인수 정정. `DV-7` 은 R24 파견 중 `ENFORCED_WITHOUT_A_THROW` 로
-    # 갔으나 **그 판정은 절단된 사본을 근거로 한 것이라 틀렸다.** 사본은
-    # 「실질/명목 구분을 1회 선언」까지였고, spec 원문은 그 선언 자리를
-    # **`AssumptionSet` 수준**으로 못 박고 **전 항목에 강제**하라고 한다.
-    # `infra/orm/assumption.py` 의 `AssumptionSet` 필드는 `name`·`version`·
-    # `parent_version_id`·`notes` 넷뿐이고, 저장소 전체에 실질/명목을 선언하는
-    # 필드가 없다(`real_or_nominal`·`is_nominal`·`price_basis` 전건 0건).
-    # 강제되는 것은 「금액이 정수 원」쪽(`Money` + `to_won`)**뿐**이다 —
-    # 즉 **발동시킬 사건이 없는 것이 아니라 강제가 아직 없다.**
-    "DV-7",
 })
 
 #: ★★ **던지지 않지만 이미 강제되는** 규칙 — R24 가 신설한 세 번째 분류.

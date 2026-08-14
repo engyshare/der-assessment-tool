@@ -4,7 +4,11 @@ from decimal import Decimal
 import openpyxl
 import pytest
 
-from core.contracts.assumptions import AssumptionProvider, AssumptionValue
+from core.contracts.assumptions import (
+    AssumptionProvider,
+    AssumptionValue,
+    PriceBasis,
+)
 from core.model.model import Model
 from core.model.schemas import DERConfig, ModelConfig
 from core.report.charts import render_charts
@@ -194,6 +198,11 @@ class _StubAssumptions(AssumptionProvider):
     @property
     def set_version(self) -> str:
         return "1.0"
+
+    @property
+    def price_basis(self) -> PriceBasis:
+        """DV-7 — 스텁도 기준을 **선언해야** 한다. 그것이 강제의 실질이다."""
+        return PriceBasis.NOMINAL
 
     def get(self, key: str) -> AssumptionValue | None:
         if key == "tax.vat_rate":

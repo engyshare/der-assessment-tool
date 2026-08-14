@@ -333,7 +333,7 @@ def _seed_assumption_data(db_path: Path, suffix: str = "x") -> set[int]:
         session.add(project)
         session.flush()
 
-        aset = AssumptionSet(name=f"전제-{suffix}", version="1")
+        aset = AssumptionSet(name=f"전제-{suffix}", version="1", price_basis="명목")
         session.add(aset)
         session.flush()
 

@@ -8,7 +8,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from core.contracts.assumptions import AssumptionProvider, AssumptionValue
+from core.contracts.assumptions import (
+    AssumptionProvider,
+    AssumptionValue,
+    PriceBasis,
+)
 from core.contracts.units import Money
 from core.regulation.tariff import (
     DirectTradeTariffTable,
@@ -92,6 +96,11 @@ class _Assumptions(AssumptionProvider):
     @property
     def set_version(self) -> str:
         return "1"
+
+    @property
+    def price_basis(self) -> PriceBasis:
+        """DV-7 — 스텁도 기준을 **선언해야** 한다. 그것이 강제의 실질이다."""
+        return PriceBasis.NOMINAL
 
     def get(self, key: str) -> AssumptionValue | None:
         if key not in self._items:

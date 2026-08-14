@@ -7,10 +7,23 @@ from typing import Any
 import yaml  # type: ignore
 
 from core.assumption.item import AssumptionItem, ConfidenceLevel
-from core.contracts.assumptions import AssumptionProvider, AssumptionValue
+from core.contracts.assumptions import (
+    AssumptionProvider,
+    AssumptionValue,
+    PriceBasis,
+    assert_basis_is_declared_once,
+)
+from core.contracts.validation import ValidationError
 
 
 class AssumptionSet(AssumptionProvider):
+    """전제 대장 1판.
+
+    **`price_basis` 는 위치인자 뒤에 오지만 기본값이 없다** (`DV-7`). 기본값을
+    주면 아무도 선언하지 않은 상태가 유효한 상태가 되고, 그때 실질과 명목이
+    같은 수치로 섞여 들어간다 — 수치는 같고 뜻이 정반대에 가깝다.
+    """
+
     def __init__(
         self,
         name: str,
@@ -18,6 +31,8 @@ class AssumptionSet(AssumptionProvider):
         items: Mapping[str, AssumptionItem],
         overrides: Mapping[str, Any] | None = None,
         reasons: Mapping[str, str] | None = None,
+        *,
+        price_basis: PriceBasis,
     ):
         self._name = name
         self._version = version
@@ -25,6 +40,14 @@ class AssumptionSet(AssumptionProvider):
         self._overrides = overrides or {}
         #: 오버라이드 사유 — 권장 필드 (FR-602-AC3). 값이 없어도 된다.
         self._reasons = reasons or {}
+        self._price_basis = price_basis
+        # ★ **「전 항목에 강제」를 여기서 강제한다** (DV-7). 집합이 서는 순간
+        # 보아야 한다 — 나중에 보면 그 사이에 이미 계산이 돌 수 있고, 그때는
+        # 어느 기준으로 계산했는지 결과만 보고는 알 수 없다.
+        assert_basis_is_declared_once(
+            price_basis=price_basis,
+            items=[(key, item.value_unit) for key, item in items.items()],
+        )
 
     @classmethod
     def load_from_yaml(cls, filepath: str) -> "AssumptionSet":
@@ -33,6 +56,34 @@ class AssumptionSet(AssumptionProvider):
 
         version = str(data.get("version", "unknown"))
         name = os.path.basename(filepath)
+        # ★ **대장이 기준을 선언하지 않으면 멈춘다** (DV-7). 기본값으로 메우면
+        # 「선언하지 않았다」가 「명목이라고 선언했다」와 구별되지 않는다 —
+        # `MissingAssumption` 이 값에 대해 하는 것과 같은 판단이다.
+        declared = data.get("price_basis")
+        if declared is None:
+            raise ValidationError(
+                field="assumption_set.price_basis",
+                reason=(
+                    f"대장 {name} 에 최상위 `price_basis` 선언이 없습니다. "
+                    "DV-7 은 실질/명목 구분을 AssumptionSet 수준에서 1회 "
+                    "선언하라고 요구합니다"
+                ),
+                action=(
+                    "대장 최상위에 `price_basis: 명목` 또는 `price_basis: 실질` 을 "
+                    "적으십시오 — 기본값을 두지 않는 이유는 선언하지 않은 상태와 "
+                    "명목이라고 선언한 상태를 구별해야 하기 때문입니다"
+                ),
+                rule="DV-7",
+            )
+        try:
+            price_basis = PriceBasis(str(declared))
+        except ValueError:
+            raise ValidationError(
+                field="assumption_set.price_basis",
+                reason=f"알 수 없는 가격 기준입니다: {declared!r}",
+                action="`실질` 또는 `명목` 중 하나로 적으십시오",
+                rule="DV-7",
+            ) from None
         items = {}
 
         for item_data in data.get("assumptions", []):
@@ -62,7 +113,9 @@ class AssumptionSet(AssumptionProvider):
                 usage_terms=item_data.get("usage_terms"),
             )
 
-        return cls(name=name, version=version, items=items)
+        return cls(
+            name=name, version=version, items=items, price_basis=price_basis
+        )
 
     @property
     def set_name(self) -> str:
@@ -71,6 +124,11 @@ class AssumptionSet(AssumptionProvider):
     @property
     def set_version(self) -> str:
         return self._version
+
+    @property
+    def price_basis(self) -> PriceBasis:
+        """집합이 1회 선언한 가격 기준 (`DV-7`)."""
+        return self._price_basis
 
     def get(self, key: str) -> AssumptionValue | None:
         if key not in self._items:
@@ -141,6 +199,10 @@ class AssumptionSet(AssumptionProvider):
             items=self._items,
             overrides=new_overrides,
             reasons=new_reasons,
+            # ★ **오버라이드는 가격 기준을 바꾸지 않는다.** 기준은 규약이고
+            # 오버라이드는 값이다 — 시나리오가 기준을 바꿀 수 있으면 두 시나리오의
+            # 금액이 서로 다른 뜻을 갖게 되고, FR-202(같은 전제 위 비교)가 깨진다.
+            price_basis=self._price_basis,
         )
 
     def get_overrides(self) -> Mapping[str, Any]:

@@ -27,15 +27,97 @@ v1.1 에서 정확히 같은 형태를 이미 한 번 만났다. ESS 하나가 `
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
+from enum import StrEnum
 from typing import Literal
 
 from core.contracts.schemas import AssumptionRef
+from core.contracts.validation import ValidationError
 
 #: 근거 표기 기준 2절 축 2. `미확인` 은 축 1 전용이므로 여기 없다 —
 #: 같은 토큰을 두 축에 쓰면 어느 뜻인지 판정할 수 없다 (spec v0.5 어휘 정정).
 Confidence = Literal["확정", "추정", "가정"]
+
+
+class PriceBasis(StrEnum):
+    """가격 기준 — 실질(불변가격) 대 명목(경상가격).
+
+    `DV-7` 원문: *「모든 금액은 명목 원(KRW), **실질/명목 구분을 `AssumptionSet`
+    수준에서 1회 선언하고 전 항목에 강제**」*
+
+    **왜 항목이 아니라 집합이 갖는가.** 같은 2.5 가 실질이면 물가 위의 실질
+    상승이고 명목이면 물가를 포함한 상승이다 — **수치는 같고 뜻이 정반대에
+    가깝다.** 항목마다 선언하게 두면 ⓐ 새 항목을 넣을 때 선언을 잊을 수 있고
+    ⓑ 잊은 것과 「명목이라고 선언한 것」이 구별되지 않는다. 집합이 1회 선언하면
+    잊을 자리가 없다.
+
+    **기본값을 두지 않는다.** 두면 **아무도 선언하지 않은 상태가 유효한 상태**가
+    되고, `DV-7` 이 요구하는 것은 값이 아니라 선언이다.
+    """
+
+    REAL = "실질"
+    NOMINAL = "명목"
+
+
+#: 분석기간을 담는 대장 키. **`DV-5` 문면의 「기본 20년」이 이 항목의 값이다.**
+#:
+#: **왜 전용 필드가 아니라 대장 항목인가.** 분석기간은 규약이 아니라 **사용자가
+#: 고르는 값**이다(`PriceBasis` 와 반대다). 대장 항목으로 두면 ⓐ 부기 7종이
+#: 따라붙어 「20년의 근거」를 리포트가 말할 수 있고 ⓑ `ScenarioOverride` 로
+#: 시나리오가 바꿀 수 있으며 ⓒ 민감도 분석이 그것을 축으로 쓸 수 있다.
+#: 전용 필드로 두면 셋 다 따로 지어야 한다.
+#:
+#: §7.1 O-1 이 소유자를 `AssumptionSet` 으로 못 박고(`Scenario` 는 `analysis_years`
+#: 필드를 가질 수 없다 — `DV-11`), `infra/orm/scenario.py` 가 그것을 금지 필드로
+#: 열거한다. **열려 있던 것은 「어느 층인가」가 아니라 「그 층에 아직 없다」였다.**
+ANALYSIS_PERIOD_KEY = "analysis.period_years"
+
+#: 항목이 자기 가격 기준을 다시 선언했는지 볼 때 찾는 토큰.
+#: `PriceBasis` 의 값에서 파생시킨다 — 따로 적으면 열거형을 늘릴 때 갈린다.
+_BASIS_TOKENS: tuple[str, ...] = tuple(basis.value for basis in PriceBasis)
+
+
+def assert_basis_is_declared_once(
+    *, price_basis: PriceBasis, items: Iterable[tuple[str, str | None]]
+) -> None:
+    """`DV-7` 의 「1회 선언하고 **전 항목에 강제**」를 강제한다.
+
+    `items` 는 `(key, value_unit)` 쌍이다. **항목의 단위 문면이 실질/명목을 다시
+    말하면 거부한다** — 그 자리가 집합 선언과 갈릴 수 있는 유일한 자리이고,
+    갈리면 어느 쪽이 계산에 쓰였는지 결과만 보고는 알 수 없다.
+
+    ⚠ **값이 집합 선언과 같아도 거부한다.** 같은 사실이 두 곳에 있으면 한쪽만
+    고쳐진 상태를 아무도 보지 않는다 — 이 저장소가 반복해서 만난 형태다.
+    집합 선언을 바꿀 때 항목 문면이 따라오지 않으면, 바꾼 사람은 성공했다고
+    믿고 대장은 두 기준을 담게 된다.
+
+    **규칙을 계약이 갖고 구현이 부르는 이유**: `AssumptionProvider` 구현이 둘
+    이상 생기면 각자 이 판정을 지어내고, v1.1 에서 여섯 자원이 `capex_vat()` 를
+    각자 지어낸 것과 같은 일이 일어난다.
+    """
+    offenders = [
+        (key, unit)
+        for key, unit in items
+        if unit and any(token in unit for token in _BASIS_TOKENS)
+    ]
+    if not offenders:
+        return
+    listed = ", ".join(f"{key}({unit!r})" for key, unit in offenders)
+    raise ValidationError(
+        field="assumption_set.price_basis",
+        reason=(
+            f"대장 항목이 가격 기준을 다시 선언했습니다: {listed}. "
+            f"집합 선언은 «{price_basis.value}» 이며 DV-7 은 그것을 "
+            "「1회 선언하고 전 항목에 강제」하라고 요구합니다"
+        ),
+        action=(
+            "항목의 `value_unit` 에서 실질/명목 표기를 지우십시오 — 기준은 "
+            "집합이 갖습니다. 그 항목만 기준이 달라야 한다면 대장을 나누십시오"
+        ),
+        rule="DV-7",
+    )
 
 
 class MissingAssumption(LookupError):
@@ -159,6 +241,17 @@ class AssumptionProvider(ABC):
     def set_version(self) -> str:
         """전제 집합 판. **같은 이름의 다른 판은 다른 결과를 낳는다.**"""
 
+    @property
+    @abstractmethod
+    def price_basis(self) -> PriceBasis:
+        """실질/명목 — **집합이 1회 선언한다** (`DV-7`).
+
+        **추상으로 두고 기본값을 주지 않는 이유.** 기본값을 주면 아무도 선언하지
+        않은 상태가 유효한 상태가 되고, `DV-7` 이 요구하는 것은 값이 아니라
+        선언이다. 구현이 하나 늘 때마다 이 자리에서 한 번 답해야 한다 —
+        그 강제가 규칙의 실질이다.
+        """
+
     @abstractmethod
     def get(self, key: str) -> AssumptionValue | None:
         """없으면 `None`.
@@ -187,3 +280,31 @@ class AssumptionProvider(ABC):
     def require_float(self, key: str) -> float:
         """수치 전제를 꺼내는 통로. 없거나 문자열이면 멈춘다."""
         return self.require(key).as_float()
+
+    def analysis_years(self) -> int:
+        """분석기간(년) — **대장이 소유한다** (§7.1 O-1 · `DV-5` 「기본 20년」).
+
+        **키 문자열을 여기서 한 번만 적는 이유.** 호출부마다
+        `require_float("analysis.period_years")` 를 쓰면 그 문자열이 사본이 되고,
+        키를 고칠 때 한 곳이 남는다 — 남은 곳은 `MissingAssumption` 으로 죽으므로
+        시끄럽게 드러나지만, **오타로 다른 키를 읽으면 조용히 다른 값을 쓴다.**
+
+        ⚠ **상한은 여기서 재지 않는다.** 상한(최장 자원 수명 × 2)은
+        `core/cba/proforma.py::check_analysis_period()` 가 재며, 그것은 **자원
+        수명을 알아야 하는 계산**이므로 전제 층보다 위에 산다(계층 규칙상
+        `core.assumption` 은 `core.cba` 를 import 할 수 없다). 여기서 보는 것은
+        **값 자체가 분석기간일 수 있는가**(양의 정수)뿐이다.
+        """
+        raw = self.require(ANALYSIS_PERIOD_KEY).as_float()
+        years = int(raw)
+        if years != raw or years < 1:
+            raise ValidationError(
+                field="assumption_set.analysis_years",
+                reason=(
+                    f"분석기간이 양의 정수가 아닙니다: {raw!r} "
+                    f"(대장 `{ANALYSIS_PERIOD_KEY}`)"
+                ),
+                action="분석기간을 1 이상의 정수(년)로 등재하십시오",
+                rule="DV-5",
+            )
+        return years

@@ -22,7 +22,11 @@ from pathlib import Path
 import pytest
 
 import core.der
-from core.contracts.assumptions import AssumptionProvider, AssumptionValue
+from core.contracts.assumptions import (
+    AssumptionProvider,
+    AssumptionValue,
+    PriceBasis,
+)
 from core.contracts.der import DER
 from core.contracts.registry import discover
 from core.contracts.validation import ValidationError
@@ -49,6 +53,11 @@ class _Assumptions(AssumptionProvider):
     @property
     def set_version(self) -> str:
         return "1.0"
+
+    @property
+    def price_basis(self) -> PriceBasis:
+        """DV-7 — 스텁도 기준을 **선언해야** 한다. 그것이 강제의 실질이다."""
+        return PriceBasis.NOMINAL
 
     def get(self, key: str) -> AssumptionValue | None:
         if key != "tax.vat_rate":

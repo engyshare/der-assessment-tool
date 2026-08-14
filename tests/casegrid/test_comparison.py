@@ -22,6 +22,7 @@ from core.casegrid.comparison import (
     ComparisonTable,
     compare_models,
 )
+from core.contracts.assumptions import PriceBasis
 from core.der.ess import ESSOperatingMode
 from core.der.pv import OperatingMode
 from core.model.model import Model
@@ -137,6 +138,7 @@ def test_a_model_built_on_a_different_assumption_set_is_refused() -> None:
         name="다른대장.yaml",
         version="9.9",
         items=dict(provider.items()),
+        price_basis=PriceBasis.NOMINAL,
     )
     mixed = (_variant("A", ess_capex_won_per_kwh=500_000.0, provider=provider),
              _variant("B", ess_capex_won_per_kwh=500_000.0, provider=other))

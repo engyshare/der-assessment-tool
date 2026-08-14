@@ -3,6 +3,7 @@ import os
 import pytest
 
 from core.assumption.provider import AssumptionSet
+from core.contracts.assumptions import PriceBasis
 
 
 @pytest.mark.req("FR-601-AC3", "FR-601-AC4")
@@ -23,7 +24,14 @@ def test_assumption_set_load_yaml() -> None:
     # 4.8 전기요금 인상률을 물가상승률과 별도 항목으로 분리 (FR-601-AC3)
     escalation_electricity = aset.get("escalation.electricity_tariff")
     assert escalation_electricity is not None
-    assert escalation_electricity.value_unit == "%/년 (명목)"
+    # ⚠ **「(명목)」이 여기 있었다. R31 이 지웠다.** 가격 기준은 대장 최상위
+    # `price_basis` 가 1회 선언하며(DV-7 「전 항목에 강제」), 항목이 다시 적으면
+    # 정본이 둘 생겨 한쪽만 고쳐진 상태를 아무도 보지 않는다.
+    assert escalation_electricity.value_unit == "%/년"
+    assert aset.price_basis is PriceBasis.NOMINAL, (
+        "대장이 명목을 선언하지 않으면 이 항목의 2.5%/년 이 실질 상승으로 "
+        "읽힌다 — 수치는 같고 20년 누계가 크게 달라진다"
+    )
     # FR-601-AC4: 부기 7종 전체 보유 검증 - escalation_electricity
     # verified_at가 없는 경우가 있음 - 대장 값 확인
     assert escalation_electricity.base_year is not None

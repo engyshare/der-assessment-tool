@@ -13,7 +13,11 @@ from core.casegrid import (
     run_cases,
 )
 from core.casegrid.incentive_cases import build_capex_cashflows_for_all_cases
-from core.contracts.assumptions import AssumptionProvider, AssumptionValue
+from core.contracts.assumptions import (
+    AssumptionProvider,
+    AssumptionValue,
+    PriceBasis,
+)
 from core.contracts.der import DispatchResult
 from core.contracts.units import Money, to_won
 from core.contracts.validation import ValidationError
@@ -49,6 +53,11 @@ class _AcceptanceMockAssumptions(AssumptionProvider):
     @property
     def set_version(self) -> str:
         return "v1"
+
+    @property
+    def price_basis(self) -> PriceBasis:
+        """DV-7 — 스텁도 기준을 **선언해야** 한다. 그것이 강제의 실질이다."""
+        return PriceBasis.NOMINAL
 
     def get(self, key: str) -> AssumptionValue | None:
         values = {
@@ -491,4 +500,3 @@ def test_dod6_benefit_breakdown_and_exclusion_enforcement() -> None:
     non_ex_lines = {line.tag: line for line in non_ex_report.all_lines()}
     assert non_ex_lines["SelfConsumption"].state in ("계상됨", "미화폐화0")
     assert non_ex_lines["REC"].state in ("계상됨", "미화폐화0")
-
