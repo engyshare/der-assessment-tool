@@ -209,7 +209,9 @@ def test_rc_all_c1_capex() -> None:
     assert pv.capex(year=2) == Money(0)
 
 
-@pytest.mark.req("FR-101-AC2")
+# ↓ v0.15 이관 — 이 검사가 보는 것은 메서드의 **존재**(AC2)가 아니라
+# **산식**(§13.2.2 C-1~C-3)이다. AC5 가 없던 동안 AC2 를 빌려 인용했다.
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c1_vat_is_a_separate_line() -> None:
     """부가세는 CAPEX 본체에 섞지 않는다 (§13.2.2 C-1) — 섞으면 프로포마에서
     세액을 분리 표시할 수 없고, 환급·면세 시나리오에서 본체 단가를 역산해야 한다.
@@ -220,7 +222,9 @@ def test_rc_all_c1_vat_is_a_separate_line() -> None:
     assert pv.capex_vat(year=2) == Money(0)
 
 
-@pytest.mark.req("FR-101-AC2")
+# ↓ v0.15 이관 — 이 검사가 보는 것은 메서드의 **존재**(AC2)가 아니라
+# **산식**(§13.2.2 C-1~C-3)이다. AC5 가 없던 동안 AC2 를 빌려 인용했다.
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c1_includes_balance_of_system_cost() -> None:
     """부대비는 CAPEX 본체에 더한다 (§13.2.2 C-1 산식의 `+ 부대비`)."""
     pv = make_pv_3kw(bos_capex_won=500_000)
@@ -250,7 +254,9 @@ def test_rc_all_c2_year_by_year_sum_matches_closed_form() -> None:
     assert pv.fixed_om(year=2) == Money(102_000)
 
 
-@pytest.mark.req("FR-101-AC2")
+# ↓ v0.15 이관 — 이 검사가 보는 것은 메서드의 **존재**(AC2)가 아니라
+# **산식**(§13.2.2 C-1~C-3)이다. AC5 가 없던 동안 AC2 를 빌려 인용했다.
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c3_variable_om() -> None:
     """`RC-ALL-C3` 오라클(§13.2.2): 발전 1,314 kWh × 5원 = **6,570원/년**.
 

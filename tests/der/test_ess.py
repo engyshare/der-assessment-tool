@@ -491,7 +491,9 @@ def test_rc_all_c1_capex() -> None:
     assert ess.capex(year=2) == 0
 
 
-@pytest.mark.req("FR-101-AC2")
+# ↓ v0.15 이관 — 이 검사가 보는 것은 메서드의 **존재**(AC2)가 아니라
+# **산식**(§13.2.2 C-1~C-3)이다. AC5 가 없던 동안 AC2 를 빌려 인용했다.
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c1_vat_is_separated_from_the_body() -> None:
     """`RC-ALL-C1` 부가세 분리 — **이 자원은 세액 자체가 없었다.**
 

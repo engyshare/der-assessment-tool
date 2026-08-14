@@ -236,7 +236,10 @@ class DERContractTests:
 
     # ── 부분 창 규약 (v1.1 계약 개정 ①) ─────────────────────────────
     @pytest.mark.contract
-    @pytest.mark.req("FR-301-AC3")
+    # ↓ v0.15 이관 — 이 검사가 보는 것은 「행수 불일치 시 오류」(AC3)가 아니라
+    # **해상도가 달라도 겹치는 구간이 일치한다**(AC5)다. AC5 가 없던 동안 AC3 을
+    # 빌려 인용했고, 매핑표는 그것을 AC3 이 검증된 것으로 셌다.
+    @pytest.mark.req("FR-301-AC5")
     def test_dispatch_partial_window_is_a_prefix_of_the_year(self) -> None:
         """`steps=24` 는 **연초부터 24스텝**이다 — 짧은 창은 긴 창의 앞부분이다.
 
@@ -664,7 +667,8 @@ def test_dispatch_context_rejects_windows_longer_than_a_year() -> None:
 
 
 @pytest.mark.contract
-@pytest.mark.req("FR-301-AC3")
+# ↓ v0.15 이관 — 스텝 길이에서 파생되는 안분 계수는 해상도 정합성(AC5)이다.
+@pytest.mark.req("FR-301-AC5")
 def test_year_fraction_is_the_only_proration_coefficient() -> None:
     """연간 총량을 부분 창에 실을 때 곱하는 계수는 `year_fraction` 하나다.
 
@@ -792,7 +796,9 @@ def test_all_implementations_default_to_replace_at_end_of_life() -> None:
 # ── v1.2 ⑥ 가격 신호는 계약이 나른다 ─────────────────────────────────
 
 @pytest.mark.contract
-@pytest.mark.req("FR-301-AC1")
+# ↓ v0.15 이관 — 가격 신호 경로는 AC6 의 전제다. **양성(여기)과 음성(아래)을
+# 함께 둔다** — 음성만 두면 「무엇이든 거부하는」 구현도 통과한다.
+@pytest.mark.req("FR-301-AC6")
 def test_price_signal_rides_on_the_context() -> None:
     """요금·연료 단가는 **자원이 아니라 컨텍스트**가 나른다 (계약 v1.2 ⑥).
 
@@ -819,7 +825,8 @@ def test_price_signal_rides_on_the_context() -> None:
 
 
 @pytest.mark.contract
-@pytest.mark.req("FR-301-AC1")
+# ↓ v0.15 이관 — 「0원 대체 없이 오류」가 AC6 의 문면 그대로다.
+@pytest.mark.req("FR-301-AC6")
 def test_missing_price_signal_stops_instead_of_defaulting_to_zero() -> None:
     """신호가 없으면 **멈춘다.** 0원으로 메우지 않는다 (계약 v1.2 ⑥).
 

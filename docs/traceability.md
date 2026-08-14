@@ -11,8 +11,8 @@
 |---|---|
 | 요구사항 | 105 |
 | 그중 Must-have | 79 |
-| 수용기준 총계 | 308 |
-| 자동 검증 매핑 | 278 |
+| 수용기준 총계 | 314 |
+| 자동 검증 매핑 | 284 |
 | 수동 검증 매핑 | 4 |
 | **Must-have 미매핑** | **8** |
 | 우선순위 미지정 요구사항 | 0 |
@@ -58,9 +58,10 @@
 | 요구사항 | 우선순위 | Phase | 수용기준 | 내용 | 검증 | 위치 |
 |---|---|---|---|---|---|---|
 | `FR-101` | Must-have | 1 | `FR-101-AC1` | 속성: name, tag, dt, carries_electric, carries_heat, carries_cool, consumes_fuel, lifetime,… | 자동 | test_der_contract.py 6건, test_ess.py, test_heatpump.py |
-|  |  | 1 | `FR-101-AC2` | 메서드: capex(), fixed_om(), variable_om(), replacement_schedule(), salvage_value(), dispatc… | 자동 | test_der_contract.py 5건, test_ess.py 5건, test_ev_v2g.py 3건, test_heatpump.py 5건, test_load.py 4건, test_pv.py 8건, test_thermal_load.py 3건 |
+|  |  | 1 | `FR-101-AC2` | 메서드: capex(), fixed_om(), variable_om(), replacement_schedule(), salvage_value(), dispatc… | 자동 | test_der_contract.py 5건, test_ess.py 4건, test_ev_v2g.py 3건, test_heatpump.py 3건, test_load.py, test_pv.py 5건, test_thermal_load.py 3건 |
 |  |  | 1 | `FR-101-AC3` | 신규 자원 클래스가 위 인터페이스만 구현하면 코어 엔진 수정 없이 동작 (단위 테스트로 실증) | 자동 | test_der_contract.py, test_smoke_wave0.py |
 |  |  | 1 | `FR-101-AC4` | 매체 플래그에 따라 엔진이 전기·열·냉 수지를 자동으로 분리 집계한다 | 자동 | test_der_contract.py 3건, test_heatpump.py 3건, test_pv.py 2건, test_rule_based.py |
+|  |  | 1 | `FR-101-AC5` | (v0.15 신설) capex()·fixed_om()·variable_om() 의 **산식은 | 자동 | test_ess.py, test_heatpump.py 2건, test_load.py 3건, test_pv.py 3건 |
 | `FR-102` | Must-have | 1 | `FR-102-AC1.PV` | PV 태양광 (옥상/벽면 BIPV 구분) — 용량(kW), 이용률(%) 또는 8760 발전 시계열, 방위·경사, 연간 열화율, 인버터 수명 | 자동 | test_pv.py 9건, test_pv_validation.py 2건 |
 |  |  | 1 | `FR-102-AC1.ESS` | ESS 배터리 (신품/사용후배터리) — 정격용량(kWh), 정격출력(kW), RTE(%), SOC 상하한, 사이클수명, 달력수명, EOL 잔존율 | 자동 | test_ess.py 6건 |
 |  |  | 1 | `FR-102-AC1.EV_V2G` | EV_V2G 전기차 + 양방향 충전기 — 대수, 배터리(kWh), 최대 충방전(kW), 접속가능시간대, 참여율, 열화 보상단가 | 자동 | test_ev_v2g.py 18건 |
@@ -89,7 +90,8 @@
 |  |  | 1 | `FR-106-AC4` | 연간 운영비(라이선스·클라우드·유지보수·관제 인건비)를 fixed_om()으로 계상하고 물가상승률을 적용한다 | 자동 | test_common_asset.py 3건 |
 |  |  | 1 | `FR-106-AC5` | 안분 규칙을 선언적으로 지정한다: 가구 균등 배분 / 설비용량 비례 / 안분하지 않고 단지 총계로만 표시. 선택한 규칙이 리포트에 명시된다 | 자동 | test_common_asset.py 10건 |
 |  |  | 1 | `FR-106-AC6` | 가구 단위 경제성 산출 시 안분된 공통비용이 별도 행으로 표시되어, 가구 자체 설비 비용과 구분된다 | 자동 | test_common_asset.py 3건 |
-|  |  | 1 | `FR-106-AC7` | CommonAsset이 없는 모델(단독주택 등)도 정상 동작한다 (기본값 없음) | 자동 | test_common_asset.py 4건 |
+|  |  | 1 | `FR-106-AC7` | CommonAsset이 없는 모델(단독주택 등)도 정상 동작한다 (기본값 없음) | 자동 | test_common_asset.py 3건 |
+|  |  | 1 | `FR-106-AC8` | (v0.15 신설) 안분 대상 목록의 이름은 유일하다 — 겹치면 즉시 오류다 | 자동 | test_common_asset.py |
 | `FR-201` | Must-have | 1 | `FR-201-AC1` | GUI에서 자원 추가/삭제/복제로 구성 가능하며, 구성 변경 시 엔진 코드 변경이 발생하지 않는다 | 자동 | test_model_composition_router.py 4건, test_composition.py 7건, test_model_composer_view.py 5건 |
 |  |  | 1 | `FR-201-AC2` | 모델 정의 전체가 단일 JSON 문서로 export/import 된다 | 자동 | test_model.py |
 | `FR-202` | Must-have | 1 | `FR-202-AC1` | 하나의 AssumptionSet을 참조하는 여러 모델을 일괄 실행한다 | 자동 | test_comparison.py 3건 |
@@ -103,10 +105,12 @@
 |  |  | 2 | `FR-204-AC2` | 마을단위 분산특구 6개 모델, 아파트 마이크로그리드 모델 | 자동 | test_templates.py |
 |  |  | 1 | `FR-204-AC3` | 템플릿 로드 시 모든 파라미터에 기본값과 출처가 채워진다 | 자동 | test_phase1_dod.py, test_templates.py |
 | `FR-205` | Must-have | 1 | `FR-205-AC1` | 다음이 정산 로직에 반영된다 — 개별 세대 직접계약 / 단일계약+관리주체 경유 / 분산특구 직접거래 / 상계거래 / 잉여 직거래 / 집합 PPA / VPP 경유 | 자동 | test_e2e_settlement_wiring.py 5건, test_payer_structure_contract.py 4건, test_exclusion_structure_axis.py 3건, test_settlement.py 10건 |
-| `FR-301` | Must-have | 1 | `FR-301-AC1` | 매 스텝 자원별 충·방전·발전·소비량과 계통 수·송전량을 산출 | 자동 | test_der_contract.py 2건, test_ess.py, test_ev_v2g.py, test_rule_based.py |
+| `FR-301` | Must-have | 1 | `FR-301-AC1` | 매 스텝 자원별 충·방전·발전·소비량과 계통 수·송전량을 산출 | 자동 | test_ess.py, test_ev_v2g.py, test_rule_based.py |
 |  |  | 1 | `FR-301-AC2` | 전력·열 수지 균형식이 모든 스텝에서 오차 < 1e-6 kWh | 자동 | test_ess.py, test_thermal_load.py 2건, test_rule_based.py |
-|  |  | 1 | `FR-301-AC3` | 시계열 행수 불일치 시 명확한 오류로 중단 | 자동 | test_der_contract.py 5건, test_leap_year_policy.py, test_heatpump.py, test_pv_validation.py, test_thermal_load.py 2건, test_rule_based.py 2건 |
+|  |  | 1 | `FR-301-AC3` | 시계열 행수 불일치 시 명확한 오류로 중단 | 자동 | test_der_contract.py 3건, test_leap_year_policy.py, test_heatpump.py, test_pv_validation.py, test_thermal_load.py 2건, test_rule_based.py 2건 |
 |  |  | 1 | `FR-301-AC4` | (v0.14 신설) 계통 연계 용량 상한을 초과하는 운전 계획은 명확한 | 자동 | test_ess.py, test_pv_validation.py |
+|  |  | 1 | `FR-301-AC5` | (v0.15 신설) 해상도를 바꿔도 겹치는 구간의 결과가 일치한다 — | 자동 | test_der_contract.py 2건, test_money_boundary.py |
+|  |  | 1 | `FR-301-AC6` | (v0.15 신설) **가격 신호가 없으면 0원으로 대체하지 않고 오류로 | 자동 | test_der_contract.py 2건 |
 | `FR-302` | Must-have | 1 | `FR-302-AC1` | 다음 우선순위를 설정 가능한 순서로 적용 | 자동 | test_rule_based.py |
 |  |  | 1 | `FR-302-AC2` | TOU 하 경부하 충전 / 최대부하 방전 차익거래 규칙을 옵션 활성화 | 자동 | test_ess.py, test_rule_based.py |
 |  |  | 1 | `FR-302-AC3` | 규칙 순서·활성화를 UI에서 변경 가능하며 효과가 결과에 반영된다 | 자동 | test_rule_based.py |
@@ -331,7 +335,9 @@
 | `NFR-205` | Must-have | 1 | `NFR-205-M1` | 코드 리뷰 + lint 규칙. 근거: DER-VET Params.py의 클래스 변수 전역 상태는 동시 실행·테스트 격리를 불가능하게 만든다 (부록 C.5) | 자동 | test_ci_gates.py 2건, test_ess.py |
 | `NFR-206` | Should-have | 1 | `NFR-206-M1` | lint 경고. 근거: DER-VET Params.py 1,830줄의 유지보수 실패 사례 | 자동 | test_17_12_scale.py 2건, test_phase1_measurements.py 2건, test_load.py, test_thermal_load.py |
 | `NFR-207` | Must-have | 1 | `NFR-207-AC1` | 등록은 패키지 디렉터리 스캔 또는 데코레이터 자동 수집으로 수행한다. 신규 자원 추가 시 core/der/__init__.py, REGISTRY = [...] … | 자동 | test_router_collection.py, test_chart_contract.py, test_registry.py 6건 |
-|  |  | 1 | `NFR-207-AC2` | 등록 충돌(동일 tag 중복)은 기동 시점에 명확한 오류로 검출된다 | 자동 | test_registry.py 3건 |
+|  |  | 1 | `NFR-207-AC2` | 등록 충돌(동일 tag 중복)은 기동 시점에 명확한 오류로 검출된다 | 자동 | test_registry.py |
+|  |  | 1 | `NFR-207-AC3` | (v0.15 신설) tag 미선언도 기동 시점 오류다 — 건너뛰면 그 자원이 | 자동 | test_registry.py |
+|  |  | 1 | `NFR-207-AC4` | (v0.15 신설) 스캔 결과가 0건이면 오류다 — 스캔이 성립하지 않은 | 자동 | test_registry.py |
 |  |  | 1 | `NFR-207-M1` | 신규 자원 추가 PR의 diff에 §16.4 공유 파일 목록의 변경 0줄 | 자동 | test_17_10_dod10.py, test_registry.py 2건 |
 | `NFR-208` | Must-have | 1 | `NFR-208-AC1` | 상위 계층은 하위 계층을 import할 수 있으나 역방향 import는 금지한다 (예: core/der/ → core/engine/ 금지) | 자동 | test_import_boundaries.py |
 |  |  | 1 | `NFR-208-AC2` | 동일 계층의 형제 구획 간 직접 import를 금지한다 (예: core/valuestream/ → core/regulation/ 직접 참조 금지, core/co… | 자동 | test_import_boundaries.py, test_thermal_load.py |

@@ -255,7 +255,9 @@ def test_dispatch_rejects_mismatched_resolution_and_oversized_window() -> None:
 
 # ── RC-ALL-C1 CAPEX (§13.2.2) ────────────────────────────────────────
 
-@pytest.mark.req("FR-101-AC2")
+# ↓ v0.15 이관 — 이 검사가 보는 것은 메서드의 **존재**(AC2)가 아니라
+# **산식**(§13.2.2 C-1~C-3)이다. AC5 가 없던 동안 AC2 를 빌려 인용했다.
+@pytest.mark.req("FR-101-AC5")
 def test_capex_unit_times_capacity_plus_incidental_with_vat_separated() -> None:
     """C-1: `단가 × 용량 + 부대비`, 부가세는 **별도 항목**.
 
@@ -292,7 +294,9 @@ def test_zero_cost_load_returns_money_zero_for_all_five() -> None:
 
 # ── RC-ALL-C2 고정 O&M ───────────────────────────────────────────────
 
-@pytest.mark.req("FR-101-AC2")
+# ↓ v0.15 이관 — 이 검사가 보는 것은 메서드의 **존재**(AC2)가 아니라
+# **산식**(§13.2.2 C-1~C-3)이다. AC5 가 없던 동안 AC2 를 빌려 인용했다.
+@pytest.mark.req("FR-101-AC5")
 def test_fixed_om_20y_total_matches_geometric_series() -> None:
     """C-2: `A × ((1+i)^n − 1)/i`. A=100,000 i=0.02 n=20 → **2,429,737원**.
 
@@ -311,7 +315,9 @@ def test_fixed_om_20y_total_matches_geometric_series() -> None:
 
 # ── RC-ALL-C3 변동 O&M ───────────────────────────────────────────────
 
-@pytest.mark.req("FR-101-AC2")
+# ↓ v0.15 이관 — 이 검사가 보는 것은 메서드의 **존재**(AC2)가 아니라
+# **산식**(§13.2.2 C-1~C-3)이다. AC5 가 없던 동안 AC2 를 빌려 인용했다.
+@pytest.mark.req("FR-101-AC5")
 def test_variable_om_is_throughput_times_unit_price() -> None:
     """C-3: `처리량 × 단가`. 부하의 처리량은 **연간 소비 kWh** 다."""
     load = make_load(variable_om_won_per_kwh=5.0)

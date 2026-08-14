@@ -269,7 +269,9 @@ def test_duplicate_tag_is_detected_at_startup(tmp_path: Path) -> None:
 
 
 @pytest.mark.contract
-@pytest.mark.req("NFR-207-AC2")
+# ↓ v0.15 이관 — AC2 는 「동일 tag 중복」이고 이 검사는 **미선언**이다(AC3).
+# 같은 등록 기계의 다른 실패 유형이며, AC3 이 없던 동안 AC2 를 빌려 인용했다.
+@pytest.mark.req("NFR-207-AC3")
 def test_missing_tag_is_an_error_not_a_silent_skip(tmp_path: Path) -> None:
     """`tag` 미선언은 **오류**다 — 조용히 건너뛰지 않는다.
 
@@ -293,7 +295,8 @@ def test_missing_tag_is_an_error_not_a_silent_skip(tmp_path: Path) -> None:
 
 
 @pytest.mark.contract
-@pytest.mark.req("NFR-207-AC2")
+# ↓ v0.15 이관 — **빈 스캔**은 AC4 다.
+@pytest.mark.req("NFR-207-AC4")
 def test_empty_scan_is_an_error_not_an_empty_registry(tmp_path: Path) -> None:
     """구현을 하나도 못 찾으면 오류다.
 

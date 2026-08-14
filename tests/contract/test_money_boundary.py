@@ -170,7 +170,9 @@ def test_year_is_one_based_and_rejects_zero() -> None:
         Year(0)
 
 
-@pytest.mark.req("NFR-103-M1")
+# ↓ v0.15 — `FR-301-AC5`(해상도 정합성)를 함께 인용한다. `NFR-103-M1`(단위
+# 경계)도 유지한다: 이 검사는 **허용 해상도**와 **단위 상수** 둘을 함께 본다.
+@pytest.mark.req("NFR-103-M1", "FR-301-AC5")
 def test_only_supported_time_resolutions() -> None:
     """임의 해상도를 허용하면 행수 불일치가 "그런 해상도인가 보다"로 통과한다."""
     assert steps_per_year(3600) == 8760

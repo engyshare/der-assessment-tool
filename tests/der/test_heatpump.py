@@ -401,7 +401,9 @@ def test_rc_hp_x1_aux_heater_covers_shortfall() -> None:
 
 # ── RC-ALL-C1 CAPEX ──────────────────────────────────────────────────
 
-@pytest.mark.req("FR-101-AC2")
+# ↓ v0.15 이관 — 이 검사가 보는 것은 메서드의 **존재**(AC2)가 아니라
+# **산식**(§13.2.2 C-1~C-3)이다. AC5 가 없던 동안 AC2 를 빌려 인용했다.
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c1_capex_with_vat_separated() -> None:
     """`단가 × 용량 + 부대비`, **부가세는 별도 항목**으로 분리 (§13.2.2 C-1).
 
@@ -446,7 +448,9 @@ def test_rc_all_c2_fixed_om_20year_geometric_sum() -> None:
 
 # ── RC-ALL-C3 변동 O&M ───────────────────────────────────────────────
 
-@pytest.mark.req("FR-101-AC2")
+# ↓ v0.15 이관 — 이 검사가 보는 것은 메서드의 **존재**(AC2)가 아니라
+# **산식**(§13.2.2 C-1~C-3)이다. AC5 가 없던 동안 AC2 를 빌려 인용했다.
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c3_variable_om_on_heat_supplied() -> None:
     """`처리량 × 단가`. HeatPump의 처리량은 **열공급 kWh** (§13.2.2 C-3)."""
     hp = make_hp()

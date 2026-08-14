@@ -468,7 +468,9 @@ def test_annual_cost_includes_replacement_year() -> None:
     assert annual_cost(make_cems(), year=6, horizon=HORIZON) == Money(30_110_408)
 
 
-@pytest.mark.req("FR-106-AC7")
+# ↓ v0.15 이관 — AC7 은 「공통설비가 없는 모델도 동작」이고 이 검사는 **안분
+# 목록의 이름 유일성**이다(AC8). 구현이 인용한 `(FR-103)` 은 어느 AC 에도 없었다.
+@pytest.mark.req("FR-106-AC8")
 def test_allocate_assets_rejects_duplicate_names() -> None:
     """이름이 겹치면 한쪽 안분 결과가 조용히 덮인다 — 즉시 오류로 잡는다."""
     with pytest.raises(ValueError, match="이름"):
