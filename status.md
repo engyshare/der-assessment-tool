@@ -250,6 +250,25 @@ spec **v0.15** · 작업 목록 **v2.7**(하위 158건).
 >
 > 1. `git status -sb` (비어 있어야 한다) · `gh run list --limit 2`
 >    (`tests`·`source-rules` 둘 다 `success`)
+> 2-b. ⚠⚠ **로컬 초록불이 CI 초록불을 뜻하지 않는다 — 로컬은 3.13, CI 는 3.11 이다**
+>    (`pyproject.toml` 의 `requires-python = ">=3.11"` 이 정본이므로 **3.11 이 기준**).
+>    R31 이 실제로 걸렸다: `MappingProxyType({})` 를 dataclass 기본값으로 두었더니
+>    **3.12+ 는 허용하고 3.11 은 `ValueError: mutable default … use default_factory`
+>    로 거부**해 CI 수집이 통째로 죽었다(31건). **로컬 전건 초록불이었다.**
+>    `ruff` 도 잡지 못한다(RUF008 의 가변 목록에 `mappingproxy` 가 없다).
+>
+>    **구조를 바꾸는 커밋 전에는 3.11 로 한 번 돌린다:**
+>    ```bash
+>    conda create -y -n py311 python=3.11
+>    groups=$(python -c "import tomllib;print(','.join(tomllib.load(open('pyproject.toml','rb'))['project']['optional-dependencies']))")
+>    ~/miniconda3/envs/py311/python.exe -m pip install -e ".[$groups]"
+>    PYTHONUTF8=1 ~/miniconda3/envs/py311/python.exe -m pytest -q
+>    ```
+>    ⚠ **`[dev]` 만 깔면 `sqlalchemy`·`fastapi`·`argon2` 가 없어 16건이 수집 실패한다** —
+>    그것은 저장소 결함이 아니라 **내 환경의 결손**이다. CI 는 `pyproject.toml` 의
+>    엑스트라 **전부**를 읽어 설치하므로 위 `groups` 를 그대로 쓴다. R31 이 이
+>    구별을 한 번 틀렸다(가짜 결함 16건을 실제 결함으로 볼 뻔했다)
+>
 > 2. **`PYTHONUTF8=1` 을 켜고 의존성이 설치된 인터프리터를 확인한다** —
 >    `where lint-imports` · `python -c "import argon2, sqlalchemy"`.
 >    저장소의 `.venv` 에는 의존성이 없고, 기본 `python` 도 아닐 수 있다

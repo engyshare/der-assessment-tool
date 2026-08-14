@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 
 from core.contracts.validation import ValidationError
@@ -117,7 +117,15 @@ class CaseResult:
     values: Mapping[str, object]
     metrics: Mapping[str, float]
     #: 변형 tag → 그 변형의 지표. 비어 있으면 「변형을 산출하지 않은 실행」이다.
-    variants: Mapping[str, Mapping[str, float]] = MappingProxyType({})
+    #:
+    #: ⚠⚠ **`default_factory` 여야 한다 — `MappingProxyType({})` 를 직접 기본값으로
+    #: 두면 Python 3.11 이 거부한다** (`ValueError: mutable default <class
+    #: 'mappingproxy'> … use default_factory`). **3.12 부터는 허용하므로 3.13 로컬에서는
+    #: 보이지 않고 CI(3.11)에서만 수집 오류가 난다** — R31 이 실제로 그렇게 겪었고,
+    #: `pyproject.toml` 의 `requires-python = ">=3.11"` 이 정본이므로 3.11 이 기준이다.
+    variants: Mapping[str, Mapping[str, float]] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "values", MappingProxyType(dict(self.values)))
