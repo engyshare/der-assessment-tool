@@ -110,18 +110,18 @@ THROWN_BY_REAL_CODE: dict[str, str] = {
     # 상한(최장 자원 수명의 2배)을 실제로 던진다. 신설 검사(그전에는 이 자리에
     # 강제 코드 자체가 없었다) — WP-34C.
     #
-    # ⚠ **R24 인수 기록 — 이 규칙은 배포 코드가 던지지만 「아무도 부르지
-    # 않는다」.** `check_analysis_period` 를 호출하는 배포 코드가 0곳이다
-    # (`grep -rn check_analysis_period core app web infra` → 정의 한 줄뿐).
-    # 즉 사용자가 200년 분석기간을 넣어도 이 함수를 지나지 않으면 아무도
-    # 막지 않는다. **이 칸의 뜻은 「강제된다」가 아니라 「던지는 코드가
-    # 있다」이므로 분류 자체는 맞다** — 그러나 추적표를 읽는 사람이 그것을
-    # 「강제된다」로 읽지 않도록 여기에 적는다.
+    # ✔ **R30 — 배선됐다. R24 가 적어 둔 「아무도 부르지 않는다」는 이제 틀렸다.**
+    # `core/casegrid/e2e_runner.py::run_single_case_e2e` 가 자원을 세운 직후,
+    # **디스패치·편익·CBA 어느 것도 돌기 전에** 이 함수를 부른다. 배선을 붙드는
+    # 것은 `tests/casegrid/test_e2e_analysis_period_wiring.py` 다 — 함수 층만
+    # 검사하면 배선이 되돌아가도 전건 초록불이기 때문이다(R27 이 `DV-12` 에서
+    # 만난 형태이며 이것이 같은 자리의 둘째다).
     #
-    # 배선하지 못한 이유는 **분석기간의 소유자가 아직 없다**는 것이다. 값이
-    # 함수 인자(`analysis_end_year`)로만 떠다니고, 자연스러운 자리인
-    # `Scenario` 는 **`DV-11` 이 명시적으로 금지한다.** 어느 층이 갖는지는
-    # 사용자 판단이며 `status.md` 「미해결」에 올렸다.
+    # ⚠ **그래도 「강제된다」로 다 읽지 말 것.** 닫힌 것은 *「케이스 실행이
+    # 상한을 지난다」* 이고, **사용자가 고르는 분석기간이 어느 층에 사는가는
+    # 여전히 미결**이다(자연스러운 자리인 `Scenario` 를 `DV-11` 이 명시적으로
+    # 금지한다). 그 결정이 나면 그 층에서도 이 함수를 지나야 한다 —
+    # `status.md` 「미해결」에 남아 있다.
     "DV-5": "tests/cba/test_proforma.py::"
             "test_check_analysis_period_rejects_over_double_the_longest_lifetime",
     # ↓ R24 — `core/assumption/catalog.py` 의 `escalate_with_detail()` 이
