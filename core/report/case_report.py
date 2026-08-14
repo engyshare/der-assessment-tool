@@ -69,6 +69,14 @@ from core.incentive.schemas import IncentiveScheme
 from core.report.manifest import create_manifest
 from core.report.sensitivity import rank_influences
 
+#: 저장소 뿌리 — 리포트에 **저장소 상대 경로**만 싣기 위한 기준이다.
+#:
+#: ⚠ **절대 경로를 리포트에 싣지 않는다.** 검토자에게 나가는 문서에 개발
+#: 기계의 경로가 박히면 ⓐ `SC-3`(비공개 정보 유입) 검사가 커밋을 막고
+#: ⓑ 무엇보다 **다른 기계에서 같은 리포트를 다시 뽑을 수 없다** — 재현
+#: 정보로서 쓸모가 없어진다.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
 #: 주 지표 — 표시되는 결론이다 (`FR-1002-AC1`).
 HEADLINE_METRIC = "payback_years"
 #: 전환 판정에 쓰는 축. 위 독스트링 「결론 지표를 NPV 로 잡은 이유」 참조.
@@ -198,6 +206,15 @@ class CaseReport:
     def recovers_within_horizon(self) -> bool:
         """분석기간 안에 회수되는가 — 리포트의 결론 한 줄."""
         return self.metrics[CONCLUSION_METRIC] >= 0.0
+
+
+def _repo_relative(path: Path) -> str:
+    """저장소 상대 경로. 밖에 있으면 **파일 이름만** 남긴다 (위 `_REPO_ROOT`)."""
+    resolved = path.resolve()
+    try:
+        return resolved.relative_to(_REPO_ROOT).as_posix()
+    except ValueError:
+        return resolved.name
 
 
 def _load_scenario(path: Path) -> dict[str, Any]:
@@ -455,7 +472,7 @@ def build_case_report(
 
     return CaseReport(
         scenario_name=str(scenario.get("scenario", scenario_path.stem)),
-        scenario_path=scenario_path.as_posix(),
+        scenario_path=_repo_relative(scenario_path),
         subsidy_rate=subsidy_rate,
         assumption_set_name=provider.set_name,
         assumption_set_version=provider.set_version,

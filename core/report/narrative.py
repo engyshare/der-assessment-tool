@@ -54,7 +54,9 @@ def _num(value: float) -> str:
     """
     if abs(value) >= 1000.0:
         return f"{value:,.0f}"
-    return f"{value:g}"
+    # 1 미만 값에 여섯 자리를 찍으면 **없는 정밀도를 주장하게 된다** —
+    # `0.0344389` 는 이진탐색의 수렴 자리이지 그만큼 아는 값이 아니다.
+    return f"{value:.4g}"
 
 
 def _years(value: float) -> str:

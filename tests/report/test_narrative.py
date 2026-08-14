@@ -72,6 +72,23 @@ def test_no_scientific_notation_reaches_the_reviewer() -> None:
     assert not offenders, f"지수 표기가 리포트에 남았다: {offenders[:5]}"
 
 
+def test_no_machine_local_path_reaches_the_reviewer() -> None:
+    """★ **절대 경로가 리포트에 새지 않는다.**
+
+    검토자에게 나가는 문서에 개발 기계의 경로(`D:/...` · `/home/...`)가 박히면
+    ⓐ `SC-3` 비공개 정보 유입이고 ⓑ 무엇보다 **다른 기계에서 같은 리포트를
+    다시 뽑을 수 없다** — 재현 정보로서 쓸모가 없어진다.
+
+    실물을 처음 뽑았을 때 실제로 새어 있었고, 변이를 심어 보니 **이 검사가
+    없으면 아무것도 붙들지 않았다.** `req()` 마커는 달지 않았다 — `SC` 표의
+    행은 수용기준 파서가 읽는 형식이 아니라 인용하면 매달린 참조가 된다
+    (`status-human.md` 7단계의 승격 판단 대기 항목).
+    """
+    text = _markdown()
+    offenders = re.findall(r"(?:[A-Za-z]:[\\/]|/(?:home|Users|mnt)/)\S*", text)
+    assert not offenders, f"기계 지역 경로가 리포트에 남았다: {offenders[:3]}"
+
+
 @pytest.mark.req("FR-1001-AC4")
 def test_every_ranked_factor_carries_its_provenance_in_the_same_row() -> None:
     """출처·기준연도·신뢰도가 **같은 행**에 있다.
