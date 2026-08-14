@@ -133,3 +133,51 @@ def test_no_flip_when_range_safe() -> None:
     row = ranked[0]
 
     assert row["flips_conclusion"] is False
+
+
+# ---------------------------------------------------------------------------
+# 13.1 [T] 인자의 **크기**가 임계값 탐색을 갈랐다 (R33)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.req("FR-1002-AC4")
+def test_threshold_search_works_on_a_narrow_ranged_factor() -> None:
+    """★ **구간이 좁은 인자에서도 임계값을 실제로 찾는다.**
+
+    종전 `_find_flip_threshold` 의 기본 허용오차는 **절대 `0.5`** 였다. 위
+    `test_threshold_sign_flip_detection` 은 구간이 `0~200` 이라 잘 돌았지만,
+    **할인율처럼 구간 폭이 `0.03` 인 인자에서는 첫 줄에서 곧바로
+    `hi - lo < tol` 이 성립해 이진탐색이 한 번도 돌지 않았다.** 그때 함수는
+    실패를 알리지 않고 **구간의 중점**을 임계값으로 돌려준다 — 계산과 아무
+    관계가 없는 수인데 `flips_conclusion` 은 참이므로, 리포트는 그 값을
+    *「여기서 결론이 뒤집힌다」* 로 싣는다.
+
+    **인자의 크기가 검사 결과를 갈랐고 아무도 그 크기를 보고 있지 않았다.**
+    그래서 이 파일에 크기가 다른 인자를 하나 더 둔다.
+
+    손계산 근거 — metric_fn(x) = x - 0.0344 는 x = 0.0344 에서 부호가 바뀐다.
+    base=0.045(양수) · low=0.03(음수) 이므로 [low, base] 구간에 임계값이 있다.
+    중점 `(0.03 + 0.045) / 2 = 0.0375` 와 **다른 값**이 나와야 탐색이 돈 것이다.
+    """
+    flip_point = 0.0344
+
+    def flip_fn(x: float) -> float:
+        return x - flip_point
+
+    variables: dict[str, dict[str, Any]] = {
+        "discount_rate": {"base": 0.045, "low": 0.030, "high": 0.060},
+    }
+    row = rank_influences(variables, metric_fn=flip_fn)[0]
+
+    assert row["flips_conclusion"] is True
+    threshold = row["threshold"]
+    assert math.isfinite(threshold)
+    assert abs(threshold - flip_point) <= 1e-4, (
+        f"임계값은 ≈{flip_point} 여야 하는데 {threshold:.6f} 가 나왔다"
+    )
+    # ★ 구간 중점이면 이진탐색이 돌지 않은 것이다 — 그 상태에서도 위 단언 하나만
+    #   두면 우연히 통과할 수 있으므로 중점을 명시적으로 배제한다.
+    midpoint = (0.030 + 0.045) / 2.0
+    assert abs(threshold - midpoint) > 1e-6, (
+        f"임계값이 구간 중점({midpoint})이다 — 이진탐색이 한 번도 돌지 않았다"
+    )
