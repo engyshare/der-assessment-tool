@@ -163,24 +163,57 @@ def test_structure_vocabulary_has_exactly_one_owner() -> None:
 
     ⚠ **`__init_subclass__` 의 기동 시점 대조가 이것을 잡지 못했다** — 그것은
     편익 클래스의 **표**만 보고 정산엔진의 목록은 보지 않는다. 그래서 여기에
-    따로 둔다: 계약 파일 밖에서 구조 이름을 리터럴로 적으면 빨간불이다.
+    따로 둔다: 기계 검사가 지키지 않는 자리에서 구조 이름을 리터럴로 적으면
+    빨간불이다.
+
+    ## ⚠ 이 검사의 초판이 조항이 요구하는 자리를 금지했다 (R31 실측)
+
+    초판은 계약 파일 **밖 전부**를 금지했다. 그런데 `FR-205-AC1` 이 요구하는
+    조립기는 **구조를 키로 하는 선언표**이므로 이름을 적을 수밖에 없다 — 규칙이
+    조항과 부딪친 것이고, 조립기를 놓자마자 빨간불이 됐다.
+
+    **규칙을 느슨하게 하지 않고 정밀하게 고쳤다.** 금지의 근거는 「이름이 두 곳에
+    있다」가 아니라 **「갈려도 아무도 모른다」**다. 그러므로 **갈리는 것을 기계가
+    보는 자리는 허용**하고, 아래 표가 **어느 검사가 그것을 지키는지**를 함께
+    적는다. 검사 이름을 적을 수 없는 자리는 허용 대상이 아니다.
     """
     root = Path(__file__).resolve().parents[2]
-    owner = root / "core/contracts/valuestream.py"
+
+    #: 구조 이름을 적어도 되는 자리 → **갈리는 것을 무엇이 보는가.**
+    #: 값(검사 이름)을 적을 수 없으면 그 자리는 여기 들 수 없다.
+    guarded: dict[str, str] = {
+        "core/contracts/valuestream.py": "정본 그 자체 (`CONTRACT_STRUCTURES`)",
+        # `payer_by_structure` 의 키는 `ValueStream.__init_subclass__` 가 **기동
+        # 시점에** `CONTRACT_STRUCTURES` 와 대조한다 — 오타는 import 에서 터진다.
+        # 위 `test_unknown_structure_in_the_table_fails_at_class_definition` 이
+        # 그 대조의 실재를 붙든다.
+        "core/valuestream/surplus_sale.py": "ValueStream.__init_subclass__",
+        # 조립기의 두 표(`ASSEMBLERS`·`NOT_YET_ASSEMBLED`)는 **합집합이 일곱과
+        # 같고 서로 겹치지 않는지**를 검사받는다 — 여덟 번째가 들어오면 두 표
+        # 어느 쪽에도 없어 빨간불이다.
+        "core/valuestream/settlement.py":
+            "tests/valuestream/test_settlement.py::"
+            "test_the_seven_structures_are_partitioned_with_no_gap_and_no_overlap",
+    }
+    for path in guarded:
+        assert (root / path).exists(), f"허용 표가 없는 파일을 가리킵니다: {path}"
 
     offenders: dict[str, set[str]] = {}
     for package in ("core", "app", "infra"):
         for source in sorted((root / package).rglob("*.py")):
-            if source == owner:
+            relative = source.relative_to(root).as_posix()
+            if relative in guarded:
                 continue
             found = _string_constants_excluding_docstrings(source) & set(CONTRACT_STRUCTURES)
             if found:
-                offenders[str(source.relative_to(root))] = found
+                offenders[relative] = found
 
     assert not offenders, (
-        "구조 이름이 계약 밖에 리터럴로 적혀 있습니다: "
+        "구조 이름이 **지켜지지 않는 자리**에 리터럴로 적혀 있습니다: "
         + "; ".join(f"{path} → {sorted(names)}" for path, names in offenders.items())
-        + ". `CONTRACT_STRUCTURES` 를 읽으십시오 — 사본을 두면 여덟 번째 구조가 "
-        "생길 때 한쪽만 고쳐지고, 그 상태에서 편익의 지불 주체가 조용히 "
-        "기본값으로 떨어집니다"
+        + ". `CONTRACT_STRUCTURES` 를 읽으십시오. 이름을 적어야 하는 자리라면 "
+        "**갈리는 것을 보는 검사를 먼저 만들고** 이 파일의 `guarded` 표에 그 "
+        "검사 이름과 함께 등재하십시오 — 사본을 두면 여덟 번째 구조가 생길 때 "
+        "한쪽만 고쳐지고, 그 상태에서 편익의 지불 주체가 조용히 기본값으로 "
+        "떨어집니다"
     )

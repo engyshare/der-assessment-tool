@@ -30,8 +30,11 @@ class SelfConsumption(ValueStream):
         baseline_annual_bill_won: float,
         new_annual_bill_won: float,
         enabled: bool = True,
+        structure: str | None = None,
     ) -> None:
-        super().__init__(name="자가소비 전기요금 절감", enabled=enabled)
+        super().__init__(
+            name="자가소비 전기요금 절감", enabled=enabled, structure=structure
+        )
         self._baseline = baseline_annual_bill_won
         self._new = new_annual_bill_won
 

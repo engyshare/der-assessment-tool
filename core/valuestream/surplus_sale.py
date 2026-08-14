@@ -7,6 +7,9 @@
 """
 from __future__ import annotations
 
+from types import MappingProxyType
+from typing import ClassVar
+
 from core.contracts.der import DispatchResult
 from core.contracts.units import Money, to_won
 from core.contracts.valuestream import ExclusionType, Payer, ValueStream
@@ -21,11 +24,30 @@ class SurplusSale(ValueStream):
 
     tag = "SurplusSale"
     payer = Payer.OPERATOR
+    #: **`docs/domain-rules.md` 관점 분리표의 「계약구조에 따름」 칸을 채운다.**
+    #: 그 표는 *잉여판매·직접거래 수익*의 참여 주민 칸을 「계약구조에 따름」으로
+    #: 두었고, 기본값(사업자)만으로는 그것을 표현할 수 없었다.
+    #:
+    #: **상계거래에서 주민인 근거**: 상계(net metering)는 판매가 아니라 **가구
+    #: 계량점의 요금 차감**이다. 차감은 그 계량점 명의자에게 귀속되므로 수익이
+    #: 사업자를 거치지 않는다. 사업자로 두면 관점별 NPV 에서 주민 편익이
+    #: 통째로 사라지고, 그 어긋남은 합계가 맞아 드러나지 않는다.
+    #:
+    #: ⚠ **나머지 다섯 구조의 칸은 비어 있다** — 갈래 B·C 이며 단가·수수료
+    #: 근거가 `docs/assumptions.yaml` 에 등재된 뒤에 채운다. 지금 채우면
+    #: 도메인 규칙 발명이 된다.
+    payer_by_structure: ClassVar[MappingProxyType[str, Payer]] = MappingProxyType({
+        "상계거래": Payer.RESIDENT,
+    })
 
     def __init__(
-        self, *, sale_price_won_per_kwh: float, enabled: bool = True
+        self,
+        *,
+        sale_price_won_per_kwh: float,
+        enabled: bool = True,
+        structure: str | None = None,
     ) -> None:
-        super().__init__(name="잉여전력 판매", enabled=enabled)
+        super().__init__(name="잉여전력 판매", enabled=enabled, structure=structure)
         if sale_price_won_per_kwh < 0:
             raise ValueError(
                 f"판매단가는 음수일 수 없습니다: {sale_price_won_per_kwh}. "

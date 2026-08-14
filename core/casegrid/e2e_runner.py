@@ -17,6 +17,7 @@ from collections.abc import Mapping, Sequence
 
 from core.cba.metrics import npv, payback_discounted
 from core.cba.proforma import benefit_row, check_analysis_period, fixed_om_row
+from core.contracts.assumptions import AssumptionProvider
 from core.contracts.der import DispatchContext, DispatchResult
 from core.contracts.units import Money, Year
 from core.contracts.valuestream import ValueStream
@@ -25,6 +26,7 @@ from core.der.pv import PV, OperatingMode
 from core.engine.rule_based import RuleBasedEngine
 from core.valuestream import PeakShaving, SurplusSale
 from core.valuestream.exclusion_table import assert_no_exclusions
+from core.valuestream.settlement import SettlementInputs, assemble
 
 # ⚠ **`HORIZON_YEARS = 20` 상수가 여기 있었다. R31 이 지웠다.**
 #
@@ -64,6 +66,9 @@ def run_single_case_e2e(
     level_map: Mapping[str, Mapping[str, float]],
     extra_value_streams: Sequence[ValueStream] = (),
     horizon_years: int,
+    structure: str | None = None,
+    provider: AssumptionProvider | None = None,
+    settlement_inputs: SettlementInputs | None = None,
 ) -> dict[str, float]:
     """Execute the full DER → Engine → Benefit → CBA pipeline for one case.
 
@@ -174,7 +179,28 @@ def run_single_case_e2e(
         cool=[0.0] * ctx.steps,
         fuel=[0.0] * ctx.steps,
     )
-    surplus = SurplusSale(sale_price_won_per_kwh=120.0)
+    # ★ **계약구조가 주어지면 그것이 잉여 화폐화 편익을 고른다 (FR-205-AC1).**
+    #
+    # 배타 규칙표가 `SelfConsumption`·`SurplusSale`·`DirectTrade` 를 서로 유형 A
+    # 로 두므로 그 셋은 **같은 잉여를 화폐화하는 세 갈래**이고 동시에 켤 수 없다.
+    # 무엇이 그 하나를 고르는가가 비어 있었고, 답이 계약구조다.
+    #
+    # 구조를 주지 않으면 종전 그대로 잉여판매를 쓴다 — `ModelConfig.contract` 가
+    # `| None` 이므로 「계약구조 없는 모델」은 정당한 상태다.
+    if structure is not None:
+        if provider is None:
+            raise ValueError(
+                "계약구조를 주면서 전제 대장(provider)을 주지 않았습니다 — "
+                "정산 조립은 단가를 대장에서 읽습니다(NFR-202). 구조를 쓰지 "
+                "않으려면 structure 를 넘기지 마십시오"
+            )
+        plan = assemble(
+            structure, provider=provider, inputs=settlement_inputs
+        )
+        settlement_streams: tuple[ValueStream, ...] = plan.streams
+    else:
+        settlement_streams = (SurplusSale(sale_price_won_per_kwh=120.0),)
+
     peak = PeakShaving(
         monthly_peak_reduction_kw=[ess.reducible_peak_kw(year=1)] * 12,
         demand_charge_won_per_kw_month=8_320.0,
@@ -182,11 +208,14 @@ def run_single_case_e2e(
 
     # ★ **CBA 에 닿기 전에 거부한다.** 계산한 뒤에 막으면 「예외는 나지만 이미
     # 다 돌린 뒤」가 되고, 무엇보다 **위반 조합의 NPV 가 한 번은 만들어진다.**
-    assert_no_exclusions([surplus, peak, *extra_value_streams])
+    assert_no_exclusions([*settlement_streams, peak, *extra_value_streams])
 
-    surplus_per_day = surplus.annual_value(grid_export_result, year=1)
+    settlement_per_day = sum(
+        int(stream.annual_value(grid_export_result, year=1))
+        for stream in settlement_streams
+    )
     peak_per_day = peak.annual_value(grid_export_result, year=1)
-    annual_benefit = int(surplus_per_day * DAYS_PER_YEAR + peak_per_day)
+    annual_benefit = int(settlement_per_day * DAYS_PER_YEAR + peak_per_day)
 
     # 4. Proforma → NPV
     initial_investment = Money(pv.capex(year=1) + ess.capex(year=1))

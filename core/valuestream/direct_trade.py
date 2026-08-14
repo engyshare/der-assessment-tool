@@ -29,8 +29,11 @@ class DirectTrade(ValueStream):
         trade_volume_kwh: float,
         support_fee_won: float = 0.0,
         enabled: bool = True,
+        structure: str | None = None,
     ) -> None:
-        super().__init__(name="분산특구 직접거래 차익", enabled=enabled)
+        super().__init__(
+            name="분산특구 직접거래 차익", enabled=enabled, structure=structure
+        )
         if trade_volume_kwh < 0:
             raise ValueError(
                 f"거래량은 음수일 수 없습니다: {trade_volume_kwh}"
