@@ -251,3 +251,33 @@ def full_preset_grid() -> CaseGrid:
             ),
         ),
     )
+
+
+def coupled_variable_sets() -> Mapping[str, tuple[str, ...]]:
+    """프리셋이 선언한 **결합 집합 전건** — 「무엇이 함께 움직이는가」의 정본.
+
+    ## 왜 밖으로 내놓는가 (R33 검토 「1차 의견」 1)
+
+    검토 의견이 물었다 — *「ESS, PV 단가가 같이 움직여도 동일한 결과가 나오는가」*.
+    나오지 않는다. 그런데 **저장소는 이미 그 답을 갖고 있었다**: 두 프리셋이
+    설비단가 넷을 `equipment_cost_bundle` 로 묶어 한 축으로 흔든다(§FR-801
+    구성표). 즉 케이스 그리드는 결합으로 보는데 **리포트의 민감도만 인자별로
+    독립**이었고, 그래서 *「PV 가 18% · ESS 가 17% 각각 내려가야 한다」* 로
+    읽혔다 — 함께 내려가면 훨씬 앞에서 뒤집힌다.
+
+    결합을 리포트 쪽에 다시 적으면 **사본**이 되고, 그러면 여기서 묶음을 바꿔도
+    리포트는 옛 묶음을 그린다. 그래서 선언을 여기서 내놓고 리포트가 읽어 간다.
+
+    ⚠ **두 프리셋의 합집합이다.** 빠른 탐색에만 있는 묶음, 전체 탐색에만 있는
+    묶음이 따로 있으므로 하나만 읽으면 조용히 빠진다. 같은 이름의 묶음이 두
+    프리셋에서 다른 변수를 들면 **합쳐서** 돌려준다 — 어느 한쪽을 이겼다고
+    적으면 그 판단이 여기 숨는다.
+    """
+    merged: dict[str, tuple[str, ...]] = {}
+    for grid in (quick_preset_grid(), full_preset_grid()):
+        for coupled in grid.coupled_sets:
+            seen = merged.get(coupled.name, ())
+            merged[coupled.name] = seen + tuple(
+                name for name in coupled.variable_names if name not in seen
+            )
+    return merged

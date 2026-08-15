@@ -12,7 +12,8 @@
     2. 평가 개요             ← 대상 · 사업 조건 · 전제(할인율·분석기간)
     3. 평가 방법             ← 계산 절차 · 규약 · 관점 · 하지 않은 것
     4. 평가 결과             ← 지표 · 지원 유무 비교 · 자원별 수지
-    5. 결론을 좌우하는 요인   ← 5.1 불확실 인자 / 5.2 정책 설정값 (갈라 싣는다)
+    5. 결론을 좌우하는 요인   ← 5.1 불확실 인자(단독 기여 + 결합 시나리오) /
+                               5.2 정책 설정값 (갈라 싣는다)
     6. 종합 판단 및 건의
     【붙임】
     1. 전제 대장 전건 (신뢰도별)   2. 영향도 산출 상세 (판단용/감사용)
@@ -54,6 +55,7 @@ from core.report.case_report import (
     HEADLINE_METRIC,
     CaseReport,
 )
+from core.report.combined import MOVED_LEVELS, CombinedPoint, CoupledSweep
 from core.report.method_sections import (
     cost_benefit_section,
     method_section,
@@ -80,10 +82,13 @@ def _flip_section(report: CaseReport) -> list[str]:
     lines = ["### 5.1 불확실 인자 — 값이 틀릴 수 있는 것", ""]
     if not report.flipping:
         lines += [
-            "검토한 변동 범위 안에서 결론을 뒤집는 인자는 **없다.** 붙임 2 의",
-            "범위(대장 `sensitivity` 의 low~high)를 벗어나면 달라질 수 있다.",
+            "검토한 변동 범위 안에서 **인자 하나만 움직여서는** 결론을 뒤집는",
+            "인자가 **없다.** 붙임 2 의 범위(대장 `sensitivity` 의 low~high)를",
+            "벗어나면 달라질 수 있으며, **여럿이 함께 움직이는 경우는 아래",
+            "「함께 움직일 때」에서 따로 본다.**",
             "",
         ]
+        lines += _combined_lines(report)
         return lines
     lines += [
         "아래 인자는 **대장이 스스로 밝힌 변동 범위 안에서** 결론을 뒤집는다.",
@@ -101,7 +106,15 @@ def _flip_section(report: CaseReport) -> list[str]:
             f"| {entry.variable} | {_num(entry.used_value)} | {threshold} | "
             f"{margin} | {entry.confidence} |"
         )
-    lines.append("")
+    lines += [
+        "",
+        "> **이 표는 「단독 기여」다.** 각 줄은 **그 인자 하나만** 움직이고 나머지를",
+        "> 사용값에 둔 결과다(1변수 스윕 · `FR-1002-AC2`). 따라서 「결론이 뒤집히는",
+        "> 값」은 *다른 인자가 지금 값 그대로일 때* 그 인자 혼자 도달해야 하는",
+        "> 값이며, **각각을 달성해야 하는 조건이 아니다.** 함께 움직이는 인자는",
+        "> 바로 아래에서 함께 흔들어 본다.",
+        "",
+    ]
     if report.provisional_warning:
         names = " · ".join(e.variable for e in report.provisional_warning)
         lines += [
@@ -109,6 +122,112 @@ def _flip_section(report: CaseReport) -> list[str]:
             "> `가정` 이다 — 회신·실측으로 값이 바뀌면 결론 자체가 바뀐다",
             "> (`FR-1002-AC5`). 「영향도가 낮은 가정」과 달리 이것은 결과를",
             "> 좌우하므로, 확보 우선순위가 여기서 정해진다.",
+            "",
+        ]
+    lines += _combined_lines(report)
+    return lines
+
+
+def _combined_lines(report: CaseReport) -> list[str]:
+    """5.1 — **함께 움직이는 인자를 함께 흔든 표** (검토 「1차 의견」 1).
+
+    ## 왜 단독 기여 표만으로는 사업에 불리하게 틀리는가
+
+    설비단가가 둘이면 단독 기여 표에는 *「PV 가 18% 내려가야 한다」* 와
+    *「ESS 가 17% 내려가야 한다」* 가 따로 실린다. 읽는 사람은 각각을
+    달성해야 하는 조건으로 읽지만, 설비단가는 함께 떨어진다 — **함께 내려가면
+    훨씬 앞에서 뒤집힌다.** 즉 단독 표만 실은 리포트는 사업을 실제보다 어렵게
+    그린다.
+
+    묶음은 **여기서 정하지 않는다.** `core/casegrid/grid.py` 의 프리셋이 이미
+    선언한 것을 읽어 온다 — 케이스 그리드는 결합으로 흔드는데 리포트만 독립인
+    상태가 이 절이 생긴 이유이므로, 리포트가 묶음을 따로 적으면 같은 어긋남이
+    반대 방향으로 다시 생긴다.
+    """
+    if not report.coupled_sweeps:
+        return []
+    # ⚠ **단위를 열 머리에 넣는다.** 이 표는 서로 다른 단위의 단가를 **나란히**
+    # 싣는 첫 자리다(원/kW 와 원/kWh). 숫자만 두면 검토자는 1,600,000 과
+    # 500,000 을 같은 자로 견주게 되고, 그 오독은 표가 깨끗해 보일수록 깊어진다.
+    units = {entry.variable: entry.value_unit for entry in report.influences}
+    lines: list[str] = ["#### 함께 움직일 때 — 결합 시나리오", ""]
+    for sweep in report.coupled_sweeps:
+        names = " · ".join(sweep.variables)
+        heads = [
+            f"{name} ({_unit_head(units[name])})" if units.get(name) else name
+            for name in sweep.variables
+        ]
+        lines += [
+            f"**{sweep.bundle}** — {names} 는 케이스 그리드가 **한 축으로 묶어**",
+            "흔드는 인자다(`FR-801` 구성표). 따로 움직이는 값이 아니므로 함께",
+            "움직였을 때를 함께 본다.",
+            "",
+            f"수준 `{MOVED_LEVELS[0]}`·`{MOVED_LEVELS[1]}` 는 **대장이 스스로 밝힌 "
+            "변동 범위**이며 붙임 2 의 범위와 같다 — 여기서 따로 고른 폭이 아니다.",
+            "",
+            "| 시나리오 | " + " | ".join(heads) + " | 순현재가치 | 기준 대비 | 회수 |",
+            "|---|" + "---|" * (len(sweep.variables) + 3),
+        ]
+        for point in sweep.points:
+            values = " | ".join(
+                _num(point.values[name]) for name in sweep.variables
+            )
+            delta = NO_VALUE if point.is_base else _won(point.delta_won)
+            lines.append(
+                f"| {_point_label(point)} | {values} | {_won(point.npv)} | "
+                f"{delta} | {'**회수**' if point.recovers else '미회수'} |"
+            )
+        lines.append("")
+        lines += _combined_note(sweep)
+    return lines
+
+
+def _point_label(point: CombinedPoint) -> str:
+    if point.is_base:
+        return "**기준** (지금 값)"
+    level = "하락" if point.level == "low" else "상승"
+    if point.is_combined:
+        return f"**동반 {level}** (전건 `{point.level}`)"
+    return f"{point.moved[0]} 단독 {level}"
+
+
+def _combined_note(sweep: CoupledSweep) -> list[str]:
+    """표 아래 부기 — **잰 것만 적는다.**
+
+    상호작용 잔차가 0 인 것은 지금 구성에서 설비단가가 `t=0` CAPEX 로만 들어가
+    서로 곱해지지 않기 때문이며, **모형의 일반 성질이 아니다.** 그래서 「더해
+    진다」를 적을 때 그것이 *측정 결과*임과 *언제 깨지는가*를 함께 적는다 —
+    적지 않으면 요금 인상률이 배선된 뒤에도 검토자는 더해도 된다고 읽는다.
+    """
+    lines: list[str] = []
+    if sweep.additive:
+        lines += [
+            "> **지금 구성에서 두 인자의 효과는 정확히 더해진다** (결합 실행에서",
+            "> 단독 효과의 합을 뺀 잔차 0원 — 계산해 확인한 값이다). 두 단가가",
+            "> **초기투자에만** 들어가 서로 곱해지지 않기 때문이며, **모형의 일반",
+            "> 성질이 아니다.** 요금 인상률이 편익 시계열에 반영되면(3.4 · 5.2",
+            "> 참조) 단가와 편익이 함께 움직여 이 성질은 깨진다 — 그때는 이 표를",
+            "> 다시 뽑아야 하고, 더한 값으로 갈음할 수 없다.",
+            "",
+        ]
+    else:
+        residual = " · ".join(
+            f"`{level}` {_won(value)}"
+            for level, value in sorted(sweep.interaction_won.items())
+        )
+        lines += [
+            "> **단독 효과를 더한 값과 함께 움직인 값이 다르다** (잔차: "
+            f"{residual}).",
+            "> 인자들이 서로 곱해진다는 뜻이므로, **단독 기여를 더해 결합 효과를",
+            "> 추정하지 말 것** — 위 표의 「동반」 줄을 직접 읽어야 한다.",
+            "",
+        ]
+    flips = sweep.flips_only_when_combined
+    if flips:
+        lines += [
+            "> ⚠ **함께 움직일 때만 결론이 뒤집힌다.** 위 단독 기여 표에서는 어느",
+            "> 인자도 혼자 결론을 뒤집지 못하지만, 함께 움직이면 뒤집힌다. 단독",
+            "> 표만 읽으면 **사업을 실제보다 어렵게** 판단하게 된다.",
             "",
         ]
     return lines
@@ -221,8 +340,10 @@ def _summary_section(report: CaseReport) -> list[str]:
             )
     else:
         lines.append(
-            "- 검토한 변동 범위 안에서 결론을 뒤집는 불확실 인자는 **없다.**"
+            "- 검토한 변동 범위 안에서 **인자 하나만으로** 결론을 뒤집는 불확실 "
+            "인자는 **없다.**"
         )
+    lines += _summary_combined_lines(report)
     lines.append("")
 
     lines += ["### 이 결과를 읽을 때", ""]
@@ -246,6 +367,37 @@ def _summary_section(report: CaseReport) -> list[str]:
             "(영향폭 정확히 0원). 「영향이 없다」로 읽지 말 것 — 5.1 참조."
         )
     lines.append("")
+    return lines
+
+
+def _summary_combined_lines(report: CaseReport) -> list[str]:
+    """1절 — **함께 움직이면 어디서 뒤집히는가**를 한 줄로 (검토 「1차 의견」 1).
+
+    ⚠ **여기서 새 수를 만들지 않는다.** 5.1 의 결합 표가 이미 낸 행을 그대로
+    가리킨다. 요약이 스스로 계산하면 두 절의 수가 갈라지고, 그 어긋남은
+    검토자가 두 표를 대조할 때에야 드러난다.
+
+    요약에 이 줄이 필요한 이유는 심의위원이 1절만 읽고 판단의 뼈대를 잡기
+    때문이다. 단독 기여만 요약에 실으면 *「PV 와 ESS 가 각각 18%·17% 내려가야
+    한다」* 로 읽히고, 그것은 **사업을 실제보다 어렵게** 그린다.
+    """
+    lines: list[str] = []
+    for sweep in report.coupled_sweeps:
+        recovering = [
+            point
+            for point in sweep.points
+            if point.is_combined and point.recovers
+        ]
+        if not recovering:
+            continue
+        names = " · ".join(sweep.variables)
+        for point in recovering:
+            lines.append(
+                f"- **{names} 가 함께 `{point.level}` 수준으로 움직이면** "
+                f"순현재가치 {_won(point.npv)} 으로 **회수된다** — 위 인자들은 "
+                "케이스 그리드가 한 축으로 묶어 흔드는 값이며, 각각 따로 "
+                "달성해야 하는 조건이 아니다 (5.1 참조)."
+            )
     return lines
 
 

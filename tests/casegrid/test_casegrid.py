@@ -13,6 +13,7 @@ from core.casegrid import (
     CoupledSet,
     EnvironmentProfile,
     compare_metric,
+    coupled_variable_sets,
     execution_plan,
     feasible_region,
     filter_results,
@@ -264,3 +265,32 @@ def test_parallel_execution_determinism_across_10_runs() -> None:
             first_run_indexes = ordered_indexes
         assert ordered_indexes == first_run_indexes
         assert ordered_indexes == tuple(range(27))
+
+
+@pytest.mark.req("FR-801-AC7.quick", "FR-801-AC7.full")
+def test_coupled_variable_sets_merge_both_presets() -> None:
+    """결합 선언을 **밖으로 내놓는 통로**가 두 프리셋을 모두 읽는가.
+
+    리포트가 「함께 움직이는 인자」를 이 함수에서 읽어 간다
+    (`core/report/combined.py`). 한 프리셋만 읽으면 전체 탐색에만 있는
+    `trade_price_bundle` 이 조용히 빠지고, **리포트는 빠진 줄을 그리지 않으므로
+    아무도 모른다** — 빠진 표는 틀린 표와 달리 스스로 드러나지 않는다.
+    """
+    merged = coupled_variable_sets()
+
+    assert set(merged) == {"equipment_cost_bundle", "trade_price_bundle"}, (
+        f"두 프리셋의 결합 집합 합집합과 다릅니다: {sorted(merged)}"
+    )
+    assert merged["equipment_cost_bundle"] == (
+        "pv_unit_cost",
+        "ess_unit_cost",
+        "heat_pump_unit_cost",
+        "construction_cost",
+    ), "설비단가 묶음이 §FR-801 구성표(넷)와 다릅니다"
+    assert merged["trade_price_bundle"] == ("direct_trade_price", "smp_price"), (
+        "직접거래·PPA 단가 묶음은 전체 탐색에만 있다 — 빠지면 quick 만 읽은 것이다"
+    )
+    for name, members in merged.items():
+        assert len(set(members)) == len(members), (
+            f"{name}: 두 프리셋을 합치며 변수가 중복됐습니다"
+        )

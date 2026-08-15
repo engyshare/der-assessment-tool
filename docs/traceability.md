@@ -269,8 +269,8 @@
 |  |  | 1 | `FR-801-AC4` | 케이스 수를 실행 전에 표시하고, 임계치(기본 500) 초과 시 경고 후 확인을 요구한다 | 자동 | test_casegrid.py, test_dv9_dv10.py 3건 |
 |  |  | 1 | `FR-801-AC5` | 결과를 단일 테이블(케이스 × 지표)로 집계하고 CSV/XLSX 내보내기 가능 | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-801-AC6` | 기본 탐색 변수 프리셋 — 2단계 제공 (v0.5 정정): 사용자가 백지에서 시작하지 않도록 기본 세트를 제시하되, 기본 선택은 빠른 탐색 으로 한다 | 자동 | test_casegrid.py |
-|  |  | 1 | `FR-801-AC7.quick` | 빠른 탐색 (기본값) — 결합 집합 1(설비단가·시공비) 3수준 × 할인율 3 × 전기요금 인상률 3 = 27 케이스, 예상 실행시간 81초(1 vCPU, NF… | 자동 | test_phase1_dod.py, test_17_2_dod2.py, test_casegrid.py |
-|  |  | 1 | `FR-801-AC7.full` | 전체 탐색 (명시 선택) — 아래 6변수 전건 = 729 케이스, 예상 실행시간 2,187초(36.5분). DV-10 경고 후 백그라운드 실행으로 전환된다 (N… | 자동 | test_casegrid.py |
+|  |  | 1 | `FR-801-AC7.quick` | 빠른 탐색 (기본값) — 결합 집합 1(설비단가·시공비) 3수준 × 할인율 3 × 전기요금 인상률 3 = 27 케이스, 예상 실행시간 81초(1 vCPU, NF… | 자동 | test_phase1_dod.py, test_17_2_dod2.py, test_casegrid.py 2건, test_combined_scenarios.py |
+|  |  | 1 | `FR-801-AC7.full` | 전체 탐색 (명시 선택) — 아래 6변수 전건 = 729 케이스, 예상 실행시간 2,187초(36.5분). DV-10 경고 후 백그라운드 실행으로 전환된다 (N… | 자동 | test_casegrid.py 2건 |
 | `FR-802` | Must-have | 1 | `FR-802-AC1` | 여러 변수를 하나의 결합 집합으로 선언할 수 있다 | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-802-AC2` | 결합 집합 내 변수들은 동일 인덱스끼리만 조합된다. 예: {PV단가, ESS단가, 시공비}를 결합하고 각각 3수준을 주면 27개가 아닌 3개 케이스(저/저/저,… | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-802-AC3` | 결합 집합 내 값 목록의 길이가 다르면 명확한 오류로 거부한다 | 자동 | test_casegrid.py, test_dv9_dv10.py 2건 |
@@ -301,9 +301,9 @@
 |  |  | 1 | `FR-1001-AC4` | (라) 출처 동반 — 산식에 등장하는 모든 입력값에 출처·기준연도·신뢰도가 함께 표시된다 | 자동 | test_case_report.py, test_narrative.py, test_report.py |
 |  |  | 1 | `FR-1001-AC5` | (마) 판정 기준 — 비개발자 검토자가 리포트만 보고 "이 회수기간이 왜 이 값인지"와 "어떤 가정이 바뀌면 결론이 달라지는지"를 설명할 수 있다. 측정: 심의… | 수동 | test_report.py (스텁) + MC-1 (미수행) |
 | `FR-1002` | Must-have | 1 | `FR-1002-AC1` | 영향도 순 정렬이 1순위: 리포트 첫 화면은 주 지표(할인 회수기간)에 대한 인자별 영향도 순위로 시작한다. 입력 순·분류 순 나열은 부록으로 보낸다 | 자동 | test_phase1_dod.py, test_case_report.py, test_narrative.py 2건, test_report.py, test_sensitivity_real.py, test_dashboard.py |
-|  |  | 1 | `FR-1002-AC2` | 영향도 산출 방식: 각 인자를 합리적 변동 범위(전제의 신뢰구간, 없으면 기본 ±20%)에서 변동시켜 주 지표가 움직인 폭으로 측정한다. 케이스 그리드를 실행하… | 자동 | test_case_report.py 2건, test_report.py, test_sensitivity_real.py |
+|  |  | 1 | `FR-1002-AC2` | 영향도 산출 방식: 각 인자를 합리적 변동 범위(전제의 신뢰구간, 없으면 기본 ±20%)에서 변동시켜 주 지표가 움직인 폭으로 측정한다. 케이스 그리드를 실행하… | 자동 | test_case_report.py 2건, test_combined_scenarios.py 4건, test_report.py, test_sensitivity_real.py |
 |  |  | 1 | `FR-1002-AC3` | 각 인자마다 함께 표시: 사용값 / 단위 / 기준연도 / 출처 / 신뢰도 / 최종확인일 / 지표 변동폭 / 결론이 뒤집히는 임계값 존재 여부 | 자동 | test_case_report.py 3건, test_narrative.py, test_report.py |
-|  |  | 1 | `FR-1002-AC4` | 결론 전환 강조: 합리적 변동 범위 안에서 목표 달성 여부가 뒤바뀌는 인자는 최상단에 별도 강조한다. 이것이 정책 판단에서 가장 중요한 정보다 | 자동 | test_case_report.py, test_narrative.py, test_report.py, test_sensitivity_real.py 3건 |
+|  |  | 1 | `FR-1002-AC4` | 결론 전환 강조: 합리적 변동 범위 안에서 목표 달성 여부가 뒤바뀌는 인자는 최상단에 별도 강조한다. 이것이 정책 판단에서 가장 중요한 정보다 | 자동 | test_case_report.py, test_combined_scenarios.py 3건, test_narrative.py, test_report.py, test_sensitivity_real.py 3건 |
 |  |  | 1 | `FR-1002-AC5` | 가정 값 결합 표시 (v0.5 어휘 정정): 신뢰도 가정 인자는 영향도와 함께 표시하여, "영향도 낮은 가정"과 "영향도 높은 가정"을 구분할 수 있게 한다. … | 자동 | test_case_report.py, test_report.py 2건 |
 |  |  | 1 | `FR-1002-AC6` | 전체 가정 목록: 영향도 순위와 별개로 전 가정 목록을 부록 시트로 제공한다 (재현·검증용) | 자동 | test_case_report.py, test_report.py 2건 |
 | `FR-1003` | Must-have | 1 | `FR-1003-AC1` | XLSX: 엑셀에서 검산 가능한 형태 — 입력·프로포마·시계열·결과 시트를 분리하고, 주요 계산은 값이 아닌 셀 수식으로 출력하여 기존 엑셀 검토 방식과 병행 … | 자동 | test_benefit_breakdown_sheet.py 3건, test_report.py 3건 |

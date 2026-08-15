@@ -14,6 +14,7 @@ from core.casegrid.execution import (
 from core.casegrid.export import ResultTable, result_table
 from core.casegrid.grid import (
     CaseGrid,
+    coupled_variable_sets,
     full_preset_grid,
     quick_preset_grid,
 )
@@ -49,6 +50,7 @@ __all__ = (
     "RunPlan",
     "TornadoInfluence",
     "compare_metric",
+    "coupled_variable_sets",
     "detect_environment",
     "execution_plan",
     "feasible_region",

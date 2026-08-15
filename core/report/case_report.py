@@ -67,6 +67,7 @@ from core.casegrid.models import CaseBasis
 from core.casegrid.variants import run_order
 from core.contracts.assumptions import AssumptionValue
 from core.incentive.schemas import IncentiveScheme
+from core.report.combined import CoupledSweep, build_coupled_sweeps
 from core.report.manifest import create_manifest
 from core.report.sensitivity import rank_influences
 
@@ -185,8 +186,11 @@ class CaseReport:
     variant_labels: tuple[tuple[str, str], ...]
     variants: Mapping[str, Mapping[str, float]]
     basis: CaseBasis
-    #: 영향도 내림차순 (`FR-1002-AC1`).
+    #: 영향도 내림차순 (`FR-1002-AC1`). **한 인자만 움직인 단독 기여**다.
     influences: tuple[InfluenceEntry, ...]
+    #: 함께 움직이는 인자를 함께 흔든 결과 (`core/report/combined.py`).
+    #: 저장소가 이미 결합으로 선언한 묶음만 나온다 — 여기서 새로 묶지 않는다.
+    coupled_sweeps: tuple[CoupledSweep, ...]
     formulas: tuple[Formula, ...]
     assumptions: tuple[AssumptionRow, ...]
     manifest_hash: str
@@ -304,17 +308,28 @@ class _Sweeper:
         self._level_map = level_map
         self._horizon_years = horizon_years
         self._scheme = scheme
-        self._memo: dict[tuple[str, float], float] = {}
+        self._memo: dict[tuple[tuple[str, float], ...], float] = {}
 
     def conclusion_at(self, variable: str, value: float) -> float:
         """그 변수를 `value` 로 두었을 때의 결론 축(NPV, 원)."""
-        cached = self._memo.get((variable, value))
+        return self.conclusion_at_many({variable: value})
+
+    def conclusion_at_many(self, assignment: Mapping[str, float]) -> float:
+        """**여럿을 함께** 옮겼을 때의 결론 축 (`core/report/combined.py`).
+
+        1변수 스윕은 이것의 특수한 경우다. 갈라 두면 결합 쪽만 변형을
+        (`PLAN_VARIANT`) 읽지 않는 어긋남이 생기고, 그때 두 표가 서로 다른
+        사업을 그리면서 아무 검사도 걸리지 않는다.
+        """
+        key = tuple(sorted(assignment.items()))
+        cached = self._memo.get(key)
         if cached is not None:
             return cached
         probe = {
             name: dict(levels) for name, levels in self._level_map.items()
         }
-        probe[variable] = {**probe[variable], "base": value}
+        for variable, value in assignment.items():
+            probe[variable] = {**probe[variable], "base": value}
         outcome = run_single_case_e2e(
             {},
             level_map=probe,
@@ -322,7 +337,7 @@ class _Sweeper:
             scheme=self._scheme,
         )
         result = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
-        self._memo[(variable, value)] = result
+        self._memo[key] = result
         return result
 
 
@@ -503,6 +518,12 @@ def build_case_report(
     influences = _influences(
         sweeper=sweeper, level_map=level_map, provider=provider
     )
+    coupled_sweeps = build_coupled_sweeps(
+        level_map=level_map,
+        probe=sweeper.conclusion_at_many,
+        scales=ledger_unit_scales(),
+        base_npv=float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC]),
+    )
 
     manifest = create_manifest({
         "scenario": scenario.get("scenario", scenario_path.stem),
@@ -534,6 +555,7 @@ def build_case_report(
         variants=outcome.variants,
         basis=outcome.basis,
         influences=influences,
+        coupled_sweeps=coupled_sweeps,
         formulas=_formulas(outcome.basis, outcome.variants[PLAN_VARIANT]),
         assumptions=_appendix(provider),
         manifest_hash=manifest.hash,
