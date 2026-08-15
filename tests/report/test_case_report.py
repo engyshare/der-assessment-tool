@@ -232,3 +232,39 @@ def test_a_variable_the_pipeline_never_reads_is_surfaced_not_ranked_last() -> No
         assert not entry.flips_conclusion, (
             f"{entry.variable}: 결론을 뒤집는데 변동폭이 0일 수는 없다"
         )
+
+
+@pytest.mark.req("FR-1002-AC3")
+def test_displayed_values_are_in_the_units_the_report_prints() -> None:
+    """★ **값과 단위가 어긋나지 않는다.**
+
+    `tariff_escalation` 은 대장에 `2.5 %/년` 으로 있고 계산에는 비율 `0.025` 로
+    들어간다. 리포트가 **계산값과 대장 단위를 같은 행에** 실으면 「0.025 %/년」이
+    나가고, 이것은 실제의 **100분의 1** 로 조용히 읽힌다 — 예외도 나지 않고
+    표도 그럴듯하다.
+
+    실물을 뽑아 보고서야 드러났다. 여기서 붙드는 것은 표시값이 **대장 값과 같은
+    자리에 있는가**이며, 기대값을 이 파일에 적지 않고 **대장을 다시 읽어**
+    대조한다(적으면 사본이 되고 대장이 바뀔 때 따라오지 않는다).
+    """
+    report = _report()
+    ledger = {
+        item["key"]: item
+        for item in yaml.safe_load(_ASSUMPTIONS.read_text(encoding="utf-8"))[
+            "assumptions"
+        ]
+    }
+
+    checked = 0
+    for entry in report.influences:
+        if entry.ledger_key is None:
+            continue
+        checked += 1
+        sensitivity = ledger[entry.ledger_key]["sensitivity"]
+        assert entry.used_value == pytest.approx(float(sensitivity["base"])), (
+            f"{entry.variable}: 표시값 {entry.used_value} 가 대장 값 "
+            f"{sensitivity['base']} 와 다르다 — 단위 환산이 표시까지 새어 나왔다"
+        )
+        assert entry.low == pytest.approx(float(sensitivity["low"]))
+        assert entry.high == pytest.approx(float(sensitivity["high"]))
+    assert checked, "대장에서 오는 인자가 하나도 없다"

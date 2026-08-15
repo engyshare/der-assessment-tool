@@ -45,10 +45,10 @@ def test_report_endpoint_is_collected_and_returns_a_report(client: TestClient) -
 
     body = response.text
     for heading in (
-        "## 0. 무엇을 평가했는가",
-        "## 1. 어떻게 계산했는가",
-        "## 3. 결론을 뒤집는 인자",
-        "## 부록 B. 재현 절차",
+        "## 2. 평가 개요",
+        "## 3. 평가 방법",
+        "### 5.1 불확실 인자",
+        "## 붙임 5. 재현 절차",
     ):
         assert heading in body, f"리포트에 «{heading}» 절이 없다"
 

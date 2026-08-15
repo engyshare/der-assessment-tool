@@ -61,6 +61,7 @@ from core.casegrid.e2e_runner import run_single_case_e2e
 from core.casegrid.ledger_levels import (
     build_level_map,
     ledger_backed_variables,
+    ledger_unit_scales,
 )
 from core.casegrid.models import CaseBasis
 from core.casegrid.variants import run_order
@@ -114,6 +115,10 @@ class InfluenceEntry:
 
     variable: str
     ledger_key: str | None
+    #: ⚠ **대장 단위로 되돌린 값이다** (`ledger_unit_scales`). 계산에 쓰이는
+    #: 값은 환산된 것이지만, 리포트는 `value_unit` 과 같은 행에 이 값을
+    #: 싣는다 — 환산값을 대장 단위와 나란히 두면 「0.025 %/년」처럼 값과
+    #: 단위가 어긋나고, 그것은 실제의 100분의 1로 조용히 읽힌다.
     used_value: float
     low: float
     high: float
@@ -369,6 +374,7 @@ def _influences(
     (`FR-1002-AC2`·`AC4` 등)에 매여 있고, 합치는 일은 호출부의 몫이다.
     """
     ledger_keys = ledger_backed_variables()
+    scales = ledger_unit_scales()
     entries: list[InfluenceEntry] = []
 
     for variable, levels in level_map.items():
@@ -379,16 +385,18 @@ def _influences(
         ledger_key = ledger_keys.get(variable)
         note = _provenance(provider.get(ledger_key) if ledger_key else None)
         flips = bool(ranked["flips_conclusion"])
+        # 표시값을 **대장 단위로 되돌린다** — 위 `used_value` 독스트링 참조.
+        scale = scales.get(variable, 1.0) or 1.0
         entries.append(
             InfluenceEntry(
                 variable=variable,
                 ledger_key=ledger_key,
-                used_value=float(levels["base"]),
-                low=float(levels["low"]),
-                high=float(levels["high"]),
+                used_value=float(levels["base"]) / scale,
+                low=float(levels["low"]) / scale,
+                high=float(levels["high"]) / scale,
                 delta_won=float(ranked["delta"]),
                 flips_conclusion=flips,
-                threshold=float(ranked["threshold"]) if flips else None,
+                threshold=float(ranked["threshold"]) / scale if flips else None,
                 margin_pct=float(ranked["margin_pct"]) if flips else None,
                 unread_by_pipeline=(
                     float(ranked["delta"]) == 0.0

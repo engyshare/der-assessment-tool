@@ -62,6 +62,22 @@ def ledger_backed_variables() -> Mapping[str, str]:
     return MappingProxyType({name: key for name, key, _ in _LEDGER_VARS})
 
 
+def ledger_unit_scales() -> Mapping[str, float]:
+    """케이스 변수 → **대장 값에 곱한 배율**.
+
+    ## 왜 밖으로 내놓는가 (R33 검토 반영)
+
+    리포트가 인자의 사용값과 **대장의 단위 문면**을 같은 행에 싣는데, 값은
+    여기서 환산된 것이고 단위는 대장 것이다. 그대로 두면
+    **「0.025 %/년」** 처럼 값과 단위가 어긋난 표시가 나간다 — 실제 2.5%/년의
+    100분의 1로 읽히는, 조용하고 치명적인 오독이다.
+
+    배율을 리포트 쪽에 다시 적으면 사본이 되므로 **여기서 내놓는다.** 리포트는
+    나눠서 대장 단위로 되돌려 표시하고, 계산에는 환산된 값이 그대로 쓰인다.
+    """
+    return MappingProxyType({name: scale for name, _, scale in _LEDGER_VARS})
+
+
 def _index_by_key(path: Path) -> dict[str, dict[str, Any]]:
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return {item["key"]: item for item in data.get("assumptions", [])}

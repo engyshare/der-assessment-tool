@@ -47,7 +47,9 @@ def model_section(report: CaseReport) -> list[str]:
     basis = report.basis
     total_capex = sum(line.capex_won for line in basis.resources)
     lines = [
-        "## 0. 무엇을 평가했는가",
+        "## 2. 평가 개요",
+        "",
+        "### 2.1 평가 대상",
         "",
         "단지 한 곳에 아래 설비를 함께 놓았을 때의 **사업 경제성**을 본다.",
         "",
@@ -58,9 +60,20 @@ def model_section(report: CaseReport) -> list[str]:
     lines += [
         "",
         f"- **총 초기투자 {_won(total_capex)}** (부가세 별도 · 지원 반영 전)",
+        "",
+        "### 2.2 사업 조건",
+        "",
         f"- 지원 조건: **보조율 {report.subsidy_rate:.0%}** — 그 외 융자·세액공제는 없다",
-        f"- 분석기간 **{basis.horizon_years}년** · 할인율 **{basis.discount_rate:.1%}** · "
-        f"가격 기준 **{report.price_basis}**",
+        f"- 시나리오 정의: `{report.scenario_path}`",
+        "",
+        "### 2.3 평가 전제",
+        "",
+        f"- 분석기간 **{basis.horizon_years}년** (`analysis.period_years`)",
+        f"- 할인율 **{basis.discount_rate:.1%}** — 모형 파라미터이며 전제 대장 "
+        "항목이 아니다. 이 선택이 결론에 미치는 영향은 5.2 에 있다",
+        f"- 가격 기준 **{report.price_basis}** — 전 항목에 같은 기준을 강제한다",
+        f"- 전제 대장 `{report.assumption_set_name}` 판 "
+        f"{report.assumption_set_version} — 전건은 붙임 1",
         "",
         "> ⚠ **이 구성은 대표 사례이지 실제 단지 설계가 아니다.** 용량·이용률·",
         "> 운전 방식은 파이프라인이 세운 기준 구성이며, 실제 단지의 부하·지붕",
@@ -80,9 +93,9 @@ def method_section(report: CaseReport) -> list[str]:
     """
     basis = report.basis
     return [
-        "## 1. 어떻게 계산했는가",
+        "## 3. 평가 방법",
         "",
-        "### 계산 사슬",
+        "### 3.1 계산 절차",
         "",
         "```",
         "① 자원 구성   PV·ESS 를 위 제원으로 세운다",
@@ -91,10 +104,10 @@ def method_section(report: CaseReport) -> list[str]:
         "③ 편익 화폐화 송전량·첨두를 편익 갈래별 단가로 금액화한다 (2절)",
         "④ 프로포마    편익 행 - 비용 행 = 연도별 순현금흐름",
         f"⑤ 지표        순현금흐름을 {basis.discount_rate:.1%} 로 할인해",
-        "              순현재가치·할인 회수기간을 낸다 (7절 산식)",
+        "              순현재가치·할인 회수기간을 낸다 (붙임 3 산식)",
         "```",
         "",
-        "### 이 계산이 서 있는 규약",
+        "### 3.2 이 계산이 서 있는 규약",
         "",
         f"- **시간 해상도** — {basis.dispatch_note}",
         "- **부호 규약** — 비용은 순현금흐름을 만들 때 **한 번만** 부호를 뒤집는다.",
@@ -105,14 +118,21 @@ def method_section(report: CaseReport) -> list[str]:
         "- **비용 구성** — 프로포마의 비용 행은 **고정 운영비뿐**이다. 변동 O&M ·",
         "  교체 · 잔존가치는 들어 있지 않다 (아래 참조).",
         "",
-        "### 이 분석이 하지 않은 것",
+        "### 3.3 평가 관점",
+        "",
+        "**사업주(설비 소유·운영 주체) 관점**이다. 편익은 사업주에게 실제로",
+        "귀속되는 현금흐름(잉여 전력 판매 수입 · 요금 절감)만 세고, 사회적 편익",
+        "(온실가스 감축 · 계통 혼잡 완화 등)은 세지 않는다. 관점을 바꾸면 편익",
+        "항목이 늘고 결론도 달라진다 — 여기서 관점을 먼저 밝히는 이유다.",
+        "",
+        "### 3.4 이 평가가 하지 않은 것",
         "",
         "**결과를 읽을 때 함께 읽어야 한다.** 하지 않은 것을 적지 않으면 검토자는",
         "다 했다고 읽는다.",
         "",
         *_lifetime_caveat(basis),
         "- **계절·요일 변동을 반영하지 않았다.** 대표일 하나를 365배 했다.",
-        "- **요금 인상률이 계산에 들어가지 않았다** — 4절의 「미반영 의심」 참조.",
+        "- **요금 인상률이 계산에 들어가지 않았다** — 5.1 의 「미반영 의심」 참조.",
         "- **자가소비를 계상하지 않았다**(PV 자가소비율 0%). 전량 판매 전제이므로",
         "  실제로 단지가 자가소비하면 편익 구조가 달라진다.",
         "- **불확실성을 확률로 다루지 않았다.** 3수준 스윕이며 몬테카를로가 아니다.",
@@ -158,10 +178,15 @@ def _lifetime_caveat(basis: CaseBasis) -> list[str]:
 
 
 def _benefit_row(line: BenefitLine, total: int) -> str:
+    """본문 4.3 의 한 행. **산식은 싣지 않는다** — 붙임 4 로 내렸다.
+
+    양식이 본문을 4~5쪽으로 제한하는데 산식 열이 표를 화면 밖으로 밀어냈다.
+    *「본문에서 한 줄로 말한 것의 근거는 붙임에」* 가 그 규칙이다.
+    """
     share = f"{line.annual_won / total:.0%}" if total else "—"
     return (
         f"| {line.label} | {line.from_resource} | {_won(line.annual_won)} | "
-        f"{share} | {line.formula} |"
+        f"{share} |"
     )
 
 
@@ -183,18 +208,20 @@ def cost_benefit_section(basis: CaseBasis) -> list[str]:
     """
     total_benefit = sum(line.annual_won for line in basis.benefits)
     lines = [
-        "## 2. 자원마다 얼마를 넣고 얼마를 버는가",
+        "### 4.3 자원별 수지 — 얼마를 넣고 얼마를 버는가",
         "",
-        "### 편익 갈래",
+        "#### 편익 갈래",
         "",
-        "| 편익 | 만든 자원 | 연 금액 | 비중 | 산식 (대입값) |",
-        "|---|---|---|---|---|",
+        "| 편익 | 만든 자원 | 연 금액 | 비중 |",
+        "|---|---|---|---|",
     ]
     lines += [_benefit_row(line, total_benefit) for line in basis.benefits]
     lines += [
-        f"| **합계** | | **{_won(total_benefit)}** | 100% | |",
+        f"| **합계** | | **{_won(total_benefit)}** | 100% |",
         "",
-        "### 자원별 수지",
+        "각 편익의 **산식과 대입값은 붙임 4** 에 있다.",
+        "",
+        "#### 자원별 수지",
         "",
         "| 자원 | 초기투자 | 연 운영비 | 연 편익 | 연 순편익 | 단순 회수 |",
         "|---|---|---|---|---|---|",
@@ -217,13 +244,59 @@ def cost_benefit_section(basis: CaseBasis) -> list[str]:
     lines += [
         "",
         "> **「단순 회수」는 할인하지 않은 참고값이다** — 초기투자 ÷ 연 순편익이며,",
-        "> 결론에 쓰는 지표는 7절의 **할인** 회수기간이다. 여기서 갈라 보는 이유는",
+        "> 결론에 쓰는 지표는 4.1 의 **할인** 회수기간이다. 여기서 갈라 보는 이유는",
         "> *어느 설비가 제 몫을 하는가*를 보기 위해서다.",
         ">",
         "> ⚠ **편익 귀속이 언제나 이렇게 깨끗하지는 않다.** 이 구성은 PV→잉여판매,",
         "> ESS→첨두절감으로 하나씩 대응한다. 자원이 서로의 편익을 바꾸는 구성",
         "> (PV 자가소비 + ESS 차익거래 등)에서는 자원별로 가를 수 없으며, 그때는",
         "> 이 표 대신 편익 갈래 표만 유효하다.",
+        "",
+    ]
+    return lines
+
+
+def resource_detail_section(basis: CaseBasis) -> list[str]:
+    """붙임 4 — 평가 대상 제원 상세.
+
+    본문 2.1 은 **요약표**다. 심의위원이 표 하나로 대상을 잡을 수 있어야 하므로
+    거기서는 칸을 늘리지 않고, 자원마다 무엇을 만들고 어떤 산식으로 금액이
+    되는지는 여기로 내린다 — 양식이 *「본문에서 한 줄로 말한 것의 근거를 붙임에」*
+    로 정한 그대로다.
+    """
+    lines = ["## 붙임 4. 평가 대상 제원 상세", ""]
+    for resource in basis.resources:
+        produced = [line for line in basis.benefits if line.tag in resource.produces]
+        lines += [
+            f"### {resource.kind} — `{resource.name}`",
+            "",
+            "| 항목 | 값 |",
+            "|---|---|",
+            f"| 용량·성능 | {resource.capacity} |",
+            f"| 운전 방식 | {resource.operating_mode} |",
+            f"| 수명 | {resource.lifetime_years}년 |",
+            f"| 단가 | {resource.unit_capex} |",
+            f"| 초기투자 | {_won(resource.capex_won)} |",
+            f"| 고정 운영비 | {_won(resource.fixed_om_won_per_year)}/년 |",
+            "",
+        ]
+        if produced:
+            lines += ["**만드는 편익**", ""]
+            lines += [
+                f"- {line.label} — {_won(line.annual_won)}/년 · `{line.formula}`"
+                for line in produced
+            ]
+        else:
+            lines += [
+                "**만드는 편익 없음** — 이 자원은 비용만 낸다. 다른 자원의 편익을",
+                "가능하게 하는 역할이라면 그 관계를 본문 3.1 이 밝혀야 한다.",
+            ]
+        lines.append("")
+    lines += [
+        "> 제원의 소유자는 `core/casegrid/e2e_runner.py` 의 모듈 상수다 —",
+        "> 전제 대장이 아니다(설비 제원은 금액이 아니기 때문이다). 단가·분석기간만",
+        "> 대장에서 온다. 실제 사업의 설비 구성이 확정되면 그 자리를 고쳐 다시",
+        "> 산출한다.",
         "",
     ]
     return lines

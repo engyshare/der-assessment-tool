@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from core.report.case_report import build_case_report
+from core.report.case_report import CONCLUSION_METRIC, build_case_report
 from core.report.narrative import render_markdown
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -35,20 +35,23 @@ def _markdown(name: str = "scenario_unsubsidized") -> str:
 def test_influence_ranking_comes_before_the_assumption_list() -> None:
     """입력 나열이 위로 올라오면 조항 위반이다."""
     text = _markdown()
-    ranking = text.index("## 4. 영향도 순위")
-    appendix = text.index("## 부록 A. 전 가정 목록")
-    assert ranking < appendix, (
+    # 조항이 말하는 「영향도 순위」는 **본문**의 것이다. 붙임끼리의 앞뒤는
+    # 양식(`docs/report-form-심의보고서.md`)이 정하며 조항 소관이 아니다.
+    ranking = text.index("## 5. 결론을 좌우하는 요인")
+    listing = text.index("## 붙임 1. 전제 대장 전건")
+    assert ranking < listing, (
         "가정 목록이 영향도 순위보다 앞에 있다 — FR-1002-AC1 은 나열을 "
-        "부록으로 보내라고 한다"
+        "붙임으로 보내라고 한다"
     )
+    assert text.index("# 붙임") < listing, "전 가정 목록이 본문에 있다"
 
 
 @pytest.mark.req("FR-1002-AC4")
 def test_flipping_factors_are_the_first_section() -> None:
     """결론을 뒤집는 인자가 **맨 앞**이다."""
     text = _markdown()
-    flip = text.index("## 3. 결론을 뒤집는 인자")
-    ranking = text.index("## 4. 영향도 순위")
+    flip = text.index("### 5.1 불확실 인자")
+    ranking = text.index("## 붙임 2. 영향도 산출 상세")
     assert flip < ranking
 
 
@@ -100,7 +103,7 @@ def test_every_ranked_factor_carries_its_provenance_in_the_same_row() -> None:
         _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
     )
     text = render_markdown(report)
-    section = text[text.index("## 4. 영향도 순위") : text.index("## 5.")]
+    section = text[text.index("## 붙임 2. 영향도 산출 상세") : text.index("## 붙임 3.")]
     for entry in report.uncertain_influences:
         row = next(
             line for line in section.splitlines() if line.startswith(f"| {entry.variable} ")
@@ -124,8 +127,8 @@ def test_policy_parameters_are_not_ranked_with_the_uncertain_ones() -> None:
         _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
     )
     text = render_markdown(report)
-    ranking = text[text.index("## 4. 영향도 순위") : text.index("## 5.")]
-    policy = text[text.index("## 5. 정책 설정값") : text.index("## 6.")]
+    ranking = text[text.index("## 붙임 2. 영향도 산출 상세") : text.index("## 붙임 3.")]
+    policy = text[text.index("### 5.2 정책 설정값") : text.index("## 6. 종합 판단")]
 
     assert report.policy_influences, "정책 설정값이 하나도 없다 — 전제가 바뀌었다"
     for entry in report.policy_influences:
@@ -149,7 +152,7 @@ def test_reproduction_appendix_carries_what_another_agent_needs() -> None:
         _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
     )
     text = render_markdown(report)
-    appendix = text[text.index("## 부록 B. 재현 절차") :]
+    appendix = text[text.index("## 붙임 5. 재현 절차") :]
 
     assert "app.run.report_cli" in appendix, "재현 명령이 없다"
     assert report.scenario_name_slug in appendix, "어느 시나리오인지 없다"
@@ -171,7 +174,7 @@ def test_the_report_says_what_it_evaluated_and_how() -> None:
         _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
     )
     text = render_markdown(report)
-    model = text[text.index("## 0. 무엇을 평가했는가") : text.index("## 1.")]
+    model = text[text.index("## 2. 평가 개요") : text.index("## 3. 평가 방법")]
 
     assert report.basis.resources, "평가 대상 자원이 비어 있다"
     for resource in report.basis.resources:
@@ -179,8 +182,8 @@ def test_the_report_says_what_it_evaluated_and_how() -> None:
         assert resource.capacity in model, f"{resource.kind}: 용량이 없다"
         assert f"{resource.lifetime_years}년" in model, f"{resource.kind}: 수명이 없다"
 
-    method = text[text.index("## 1. 어떻게 계산했는가") : text.index("## 2.")]
-    assert "이 분석이 하지 않은 것" in method, "한계를 밝히지 않는다"
+    method = text[text.index("## 3. 평가 방법") : text.index("## 4. 평가 결과")]
+    assert "이 평가가 하지 않은 것" in method, "한계를 밝히지 않는다"
     assert report.basis.dispatch_note in method, "시간 해상도 규약이 없다"
 
 
@@ -195,13 +198,16 @@ def test_each_resource_shows_what_it_cost_and_what_it_earns() -> None:
         _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
     )
     text = render_markdown(report)
-    section = text[text.index("## 2. 자원마다") : text.index("## 3.")]
+    section = text[text.index("### 4.3 자원별 수지") : text.index("## 5. 결론을 좌우하는 요인")]
+    detail = text[text.index("## 붙임 4.") : text.index("## 붙임 5.")]
 
     assert report.basis.benefits, "편익 갈래가 비어 있다"
     for line in report.basis.benefits:
         assert line.label in section, f"{line.tag}: 편익 갈래가 표에 없다"
         assert f"{line.annual_won:,}원" in section, f"{line.tag}: 금액이 없다"
-        assert line.formula in section, f"{line.tag}: 산식이 없다"
+        # 산식은 붙임 4 로 내렸다 — 본문 표가 화면 밖으로 넘쳤기 때문이다.
+        # **버린 것이 아니라 옮긴 것**이므로 붙임에 있는지 본다.
+        assert line.formula in detail, f"{line.tag}: 산식이 붙임 4 에도 없다"
     for resource in report.basis.resources:
         assert f"{resource.capex_won:,}원" in section, (
             f"{resource.kind}: 초기투자가 수지표에 없다"
@@ -229,7 +235,7 @@ def test_baseline_is_the_first_row_of_the_variant_table() -> None:
         _GOLDEN / "scenario_subsidy_80.yaml", assumptions_path=_ASSUMPTIONS
     )
     text = render_markdown(report)
-    section = text[text.index("## 6. 지원 유무 비교") : text.index("## 7.")]
+    section = text[text.index("### 4.2 지원 유무 비교") : text.index("### 4.3")]
     # 머리행(`| 변형 | …`)에도 「무지원 대비 증분」때문에 「원」이 들어 있다.
     # 그래서 문자열 포함이 아니라 **금액 칸이 있는 행**을 고른다.
     rows = [
@@ -268,7 +274,7 @@ def test_resources_outliving_the_horizon_are_flagged_as_uncosted() -> None:
         _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
     )
     text = render_markdown(report)
-    limits = text[text.index("### 이 분석이 하지 않은 것") : text.index("## 2.")]
+    limits = text[text.index("### 3.4 이 평가가 하지 않은 것") : text.index("## 4. 평가 결과")]
 
     basis = report.basis
     short = [r for r in basis.resources if r.lifetime_years < basis.horizon_years]
@@ -284,3 +290,52 @@ def test_resources_outliving_the_horizon_are_flagged_as_uncosted() -> None:
         assert "영향이 없다" in limits, (
             "수명이 넉넉한데도 「교체비 미계상」을 경고처럼 적고 있다"
         )
+
+
+def test_summary_section_stands_alone_for_the_committee() -> None:
+    """★ **1절 요약만 읽고도 판단의 뼈대가 잡히는가.**
+
+    양식(`docs/report-form-심의보고서.md`)이 요구하는 셋이 다 있어야 한다 —
+    결론 한 문장 · 결론을 좌우하는 요인 · 읽을 때의 유의사항. 심의위원이 본문
+    전체를 읽지 않는다는 전제가 그 양식의 근거이며, 요약이 비면 **뒤 절이
+    아무리 충실해도 그 전제가 무너진다.**
+
+    ⚠ `req()` 마커는 달지 않았다 — 양식은 이 저장소의 서식 규정이지 spec 조항이
+    아니다. `FR-1003` 에 「사람이 읽는 문서」 형식이 신설되면 그때 단다
+    (`status-human.md` 7단계).
+    """
+    report = build_case_report(
+        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    text = render_markdown(report)
+    assert "## 1. 요약" in text, "요약 절이 없다"
+    summary = text[text.index("## 1. 요약") : text.index("## 2. 평가 개요")]
+
+    # ① 결론 한 문장 — 본문의 결론과 **같은 수**여야 한다
+    assert str(report.basis.horizon_years) in summary, "요약에 분석기간이 없다"
+    if report.recovers_within_horizon:
+        assert "회수된다" in summary
+    else:
+        assert "회수되지 않는다" in summary
+        assert f"{report.metrics[CONCLUSION_METRIC]:,.0f}원" in summary, (
+            "요약의 결론 수치가 본문과 다르다"
+        )
+
+    # ② 결론을 좌우하는 요인
+    assert "결론을 좌우하는 요인" in summary
+    for entry in report.flipping:
+        assert entry.variable in summary, f"{entry.variable} 이 요약에 없다"
+
+    # ③ 유의사항 — 있는 것만 적되, 있으면 반드시 적는다
+    assert "이 결과를 읽을 때" in summary
+    if report.provisional_warning:
+        assert "잠정" in summary, "잠정성 경고가 요약에 없다"
+    if report.unread_variables:
+        assert "반영되지 않은" in summary, "미반영 경고가 요약에 없다"
+    short = [
+        r
+        for r in report.basis.resources
+        if r.lifetime_years < report.basis.horizon_years
+    ]
+    if short:
+        assert "교체비" in summary, "교체비 미계상 경고가 요약에 없다"
