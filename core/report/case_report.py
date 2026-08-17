@@ -105,6 +105,29 @@ PLAN_VARIANT = "as_planned"
 BASELINE_VARIANT = "unsupported"
 
 
+def break_even_subsidy_rate(
+    *, subsidy_rate: float, npv_won: float, total_project_cost_won: float
+) -> float:
+    """결론 축을 0 으로 만드는 지원율 — **환산 한 곳**.
+
+    `CaseReport.break_even_subsidy_rate`(본문 5.1 이 싣는 값)와 붙임 3 의 산식
+    대입값이 **같은 함수**를 쓴다. 갈라 두면 본문과 붙임이 서로 다른 수를 싣게
+    되고, 그 어긋남은 검토자가 두 자리를 대조할 때에야 드러난다 — 이 저장소가
+    「사본을 만들지 않는다」로 반복해 막아 온 형태다.
+
+    규약과 근거는 `CaseReport.break_even_subsidy_rate` 독스트링에 있다.
+    """
+    if total_project_cost_won <= 0.0:
+        # 0 으로 나누어 `inf` 를 싣지 않는다. 총사업비가 0 인 실행은 「지원할
+        # 대상이 없다」이며, 그 상태를 비율로 적으면 검토자는 그것을 달성
+        # 불가능한 지원율로 읽는다.
+        raise ValueError(
+            "총사업비가 0 이어서 전환 지원율을 환산할 수 없습니다 — "
+            "무지원 기준선의 초기지출이 0 인 실행입니다"
+        )
+    return subsidy_rate - npv_won / total_project_cost_won
+
+
 @dataclass(frozen=True)
 class Formula:
     """3중 표기 한 건 — 자연어 + 수식 + 대입값 (`FR-1001-AC3`)."""
@@ -135,6 +158,13 @@ class InfluenceEntry:
     high: float
     #: 결론 축(NPV, 원)이 low~high 에서 움직인 폭.
     delta_won: float
+    #: ★ **두 끝에서의 결론 축 값**(원). 변동폭과 함께 나르는 이유는 폭만으로는
+    #: 본문이 답할 수 없는 물음이 둘 남기 때문이다 — *「어느 끝으로 밀어야
+    #: 결론에 가까워지는가」* 와 *「끝까지 밀어도 얼마가 남는가」*. 전환 인자가
+    #: 0건인 리포트에서 5.1 이 지는 물음이 바로 그 둘이다(R35 가 「없음」 한 줄만
+    #: 실었고, 그러면 검토자는 *얼마나 부족한가*를 본문에서 읽을 수 없다).
+    npv_low: float
+    npv_high: float
     flips_conclusion: bool
     #: 결론이 뒤집히는 인자 값. 뒤집히지 않으면 `None`.
     threshold: float | None
@@ -281,6 +311,51 @@ class CaseReport:
     def recovers_within_horizon(self) -> bool:
         """분석기간 안에 회수되는가 — 리포트의 결론 한 줄."""
         return self.metrics[CONCLUSION_METRIC] >= 0.0
+
+    @property
+    def total_project_cost_won(self) -> float:
+        """총사업비 — **무지원 기준선의 초기지출**이다.
+
+        지원을 받은 변형의 `initial_outlay_won` 은 지원을 뺀 뒤의 금액이므로
+        총사업비가 아니다. 기준선은 `FR-607-AC1` 이 「모든 실행에 자동 포함」을
+        요구하므로 **어느 시나리오에서도 이 값이 있다** — 시나리오마다 다른
+        분모를 쓰면 같은 사업의 결손 비율이 지원율에 따라 달라진다.
+        """
+        return float(self.baseline_metrics["initial_outlay_won"])
+
+    @property
+    def conclusion_gap_won(self) -> float:
+        """결론 축이 **0 에서 떨어진 거리**(원).
+
+        판정하지 않는다 — 부호가 어느 쪽인지는 `recovers_within_horizon` 이
+        말한다(미회수면 결손, 회수면 여유). 거리만 재는 이유는 두 방향에서
+        같은 물음이기 때문이다: *「0 선까지 얼마인가」*.
+        """
+        return abs(float(self.metrics[CONCLUSION_METRIC]))
+
+    @property
+    def break_even_subsidy_rate(self) -> float:
+        """결론 축을 **0 으로 만드는 지원율**.
+
+        ## ★ 왜 이것이 「비율」이 아니라 **환산**인가
+
+        지원은 `t=0` 초기지출 감액이고 순현재가치 산식은 초기투자를 할인하지
+        않는다(`NPV = Σ CF_t/(1+r)^t − I₀`). 그래서 **지원 1원은 결론 축을
+        정확히 1원 올린다** — 근사도 회귀도 아니다. 총사업비로 나누면 그 금액이
+        지원율 단위로 서고, 4.2 가 나란히 싣는 두 변형과 같은 축이 된다.
+
+        ## ★ 이 값이 두 시나리오에서 **같아야** 한다
+
+        무보조(`0%`)와 보조 `80%` 는 서로 다른 결론 축 값을 갖지만, 위 규약이
+        옳다면 둘이 내는 전환 지원율은 **같은 수**다. 그 일치가 검사이며
+        (`tests/report/test_conclusion_gap.py`), 어긋나면 지원이 `t=0` 감액이
+        아닌 다른 경로로 들어왔다는 뜻이다 — 그때는 이 환산을 쓸 수 없다.
+        """
+        return break_even_subsidy_rate(
+            subsidy_rate=self.subsidy_rate,
+            npv_won=float(self.metrics[CONCLUSION_METRIC]),
+            total_project_cost_won=self.total_project_cost_won,
+        )
 
 
 def _repo_relative(path: Path) -> str:
@@ -445,6 +520,12 @@ def _influences(
                 low=float(levels["low"]) / scale,
                 high=float(levels["high"]) / scale,
                 delta_won=float(ranked["delta"]),
+                # 스윕은 **값으로 memo** 한다(`_Sweeper`). 순위 엔진이 이미 두
+                # 끝을 물었으므로 여기서 다시 묻는 것은 파이프라인 실행이 아니라
+                # 사전 조회다 — 끝값을 순위 엔진의 반환에 태우려면 그 함수가
+                # 조항 넷에 매인 자기 계약을 넓혀야 한다(위 독스트링).
+                npv_low=sweeper.conclusion_at(variable, float(levels["low"])),
+                npv_high=sweeper.conclusion_at(variable, float(levels["high"])),
                 flips_conclusion=flips,
                 threshold=float(ranked["threshold"]) / scale if flips else None,
                 margin_pct=float(ranked["margin_pct"]) if flips else None,
@@ -460,7 +541,13 @@ def _influences(
     return tuple(entries)
 
 
-def _formulas(basis: CaseBasis, metrics: Mapping[str, float]) -> tuple[Formula, ...]:
+def _formulas(
+    basis: CaseBasis,
+    metrics: Mapping[str, float],
+    *,
+    subsidy_rate: float,
+    total_project_cost_won: float,
+) -> tuple[Formula, ...]:
     """주 지표와 결론 축의 3중 표기 (`FR-1001-AC2`·`AC3`).
 
     ⚠ `I₀` 는 `CaseBasis` 의 총사업비가 아니라 **그 변형이 실제로 낸 초기지출**
@@ -472,6 +559,11 @@ def _formulas(basis: CaseBasis, metrics: Mapping[str, float]) -> tuple[Formula, 
         f"{payback:.2f}년" if payback != float("inf") else "분석기간 내 미회수"
     )
     outlay = int(metrics["initial_outlay_won"])
+    flip_rate = break_even_subsidy_rate(
+        subsidy_rate=subsidy_rate,
+        npv_won=float(metrics[CONCLUSION_METRIC]),
+        total_project_cost_won=total_project_cost_won,
+    )
     net = basis.annual_benefit_won - basis.annual_cost_won
     return (
         Formula(
@@ -505,6 +597,23 @@ def _formulas(basis: CaseBasis, metrics: Mapping[str, float]) -> tuple[Formula, 
             substituted=(
                 f"{payback_text} — I₀ = {outlay:,}원 · "
                 f"r = {basis.discount_rate:.1%} · T = {basis.horizon_years}년"
+            ),
+        ),
+        # ★ **본문 5.1 의 「전환 지원율」이 여기서 감사된다.** 본문은 환산값만
+        # 싣고, 그 값이 어디서 왔는지는 이 산식이 대입값으로 말한다 — 붙임 없이
+        # 본문에만 두면 검토자가 52.6% 를 따라갈 자리가 없다(`MC-1` 의 첫 물음).
+        Formula(
+            label="결론 전환 지원율",
+            natural=(
+                "결론 전환 지원율 = 현 지원율 - 순현재가치 ÷ 총사업비. "
+                "지원은 t=0 초기지출 감액이고 순현재가치 산식은 초기투자를 "
+                "할인하지 않으므로, 지원 1원이 결론 축을 정확히 1원 올린다"
+            ),
+            expression="s* = s - NPV / I_total",
+            substituted=(
+                f"{flip_rate:.1%} = {subsidy_rate:.1%} - "
+                f"({metrics[CONCLUSION_METRIC]:,.0f}원) "
+                f"÷ {total_project_cost_won:,.0f}원"
             ),
         ),
     )
@@ -687,7 +796,18 @@ def build_case_report(
         basis=outcome.basis,
         influences=influences,
         coupled_sweeps=coupled_sweeps,
-        formulas=_formulas(outcome.basis, outcome.variants[PLAN_VARIANT]),
+        formulas=_formulas(
+            outcome.basis,
+            outcome.variants[PLAN_VARIANT],
+            subsidy_rate=subsidy_rate,
+            # 총사업비는 **기준선의 초기지출**이다 (`total_project_cost_won`).
+            # 여기서 `basis` 의 총사업비를 쓰지 않는 이유는 그 값이 지원 반영
+            # 전인지 후인지를 이 자리에서 다시 판단하게 되기 때문이다 —
+            # 변형의 지표에서 읽으면 판단할 것이 없다.
+            total_project_cost_won=float(
+                outcome.variants[BASELINE_VARIANT]["initial_outlay_won"]
+            ),
+        ),
         assumptions=_appendix(provider),
         manifest_hash=manifest.hash,
         # ★ 엔진 규칙과 운전 결과를 **실행이 내놓은 것에서** 읽는다 (의견 2·3).

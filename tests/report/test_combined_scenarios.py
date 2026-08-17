@@ -41,6 +41,25 @@ def _report(name: str = "scenario_unsubsidized", assumptions: Path | None = None
     )
 
 
+#: 5.1 의 인자 행이 `산출` 열에 쓸 수 있는 라벨 **전부**.
+#:
+#: 종전 이 검사는 `SOLO_SWEEP` 하나만 허용했다. 5.1 이 「전환까지 남는 거리」
+#: 표를 싣게 되며(2026-08-17) 그 표의 **미반영 인자 행**은 붙임 2 와 같은
+#: 라벨(`UNREAD_BY_PIPELINE`)을 쓰므로 목록으로 넓혔다 — 그 라벨이 「1변수
+#: 스윕이 아니다」를 뜻하는 것은 아니고, **끝에서 끝까지 흔들었는데 0원이었다**
+#: 는 관측을 함께 나른다.
+#:
+#: ⚠ **「무엇이든 있으면 통과」로 넓히지 않았다.** 라벨을 지우는 변이는 여전히
+#: 빨간불이어야 하고, 그것이 이 검사가 지키는 것이다.
+_METHOD_LABELS = (SOLO_SWEEP, UNREAD_BY_PIPELINE)
+
+
+def _assert_method_label(row: str) -> None:
+    assert any(label in row for label in _METHOD_LABELS), (
+        f"산출 방법이 행에 없다 — 「단독 기여」임이 표에서 사라졌다: {row}"
+    )
+
+
 @pytest.mark.req("FR-801-AC7.quick", "FR-1002-AC2")
 def test_bundles_come_from_the_case_grid_declaration() -> None:
     """묶음은 **케이스 그리드가 선언한 것**이며 리포트가 만들지 않는다.
@@ -213,9 +232,7 @@ def test_body_marks_the_single_variable_table_as_a_solo_sweep() -> None:
         if line.startswith("| `")
     ]
     for row in solo_rows:
-        assert SOLO_SWEEP in row, (
-            f"산출 방법이 행에 없다 — 「단독 기여」임이 표에서 사라졌다: {row}"
-        )
+        _assert_method_label(row)
     # 「더해진다」는 **잰 결과**로만 적는다. 잔차 줄이 사라지면 판정을 하지
     # 않고 넘어간 것이다.
     assert "상호작용 잔차" in text[combined:policy]
@@ -252,9 +269,7 @@ def test_solo_rows_still_carry_the_label_when_the_table_is_not_empty(
         "통과한다. `conftest.py` 의 탐침 범위를 넓힐 것"
     )
     for row in solo_rows:
-        assert SOLO_SWEEP in row, (
-            f"산출 방법이 행에 없다 — 「단독 기여」임이 표에서 사라졌다: {row}"
-        )
+        _assert_method_label(row)
 
 
 @pytest.mark.req("FR-1002-AC4")

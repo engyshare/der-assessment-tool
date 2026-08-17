@@ -52,6 +52,7 @@ from __future__ import annotations
 
 from core.report._format import NO_VALUE, _num, _recovery, _unit_head, _won, _years
 from core.report.appendix_sections import (
+    UNREAD_BY_PIPELINE,
     appendix_section,
     formula_section,
     glossary_section,
@@ -68,6 +69,7 @@ from core.report.case_report import (
     CONCLUSION_METRIC,
     HEADLINE_METRIC,
     CaseReport,
+    InfluenceEntry,
 )
 from core.report.combined import MOVED_LEVELS, CombinedPoint, CoupledSweep
 from core.report.dispatch_sections import (
@@ -94,6 +96,14 @@ COUPLED_SWEEP = "결합 스윕"
 #: 「찾았으나 없다」 — **검토 범위 안에서** 없다는 뜻이다. 요약 칸과 6.2 표가
 #: 같은 문면을 써야 두 자리가 같은 사실을 말하는 것으로 읽힌다.
 NONE_IN_RANGE = "없음 (검토 범위 내)"
+
+#: 결론 축이 0 선에서 떨어진 **방향** 두 라벨 (5.1 · `_gap_lines`).
+#:
+#: 거리는 절대값 하나이고 방향은 회수 여부가 정한다. 라벨을 두 자리에서 각각
+#: 적으면 「결손」과 「부족액」처럼 갈리고, 표를 훑는 눈은 그것을 서로 다른
+#: 값으로 읽는다.
+GAP_SHORTFALL = "결손"
+GAP_MARGIN = "여유"
 
 
 def _summary_section(report: CaseReport) -> list[str]:
@@ -166,7 +176,25 @@ def _provisional_cell(report: CaseReport) -> str:
 
 
 def _flip_section(report: CaseReport) -> list[str]:
-    """`FR-1002-AC4` — 결론이 뒤집히는 인자를 **최상단에 별도로**."""
+    """`FR-1002-AC4` — 결론이 뒤집히는 인자를 **최상단에 별도로**.
+
+    ## ★★ 전환 인자가 **0건일 때도 본문이 답한다** (2026-08-17)
+
+    종전 이 절은 전환 인자가 없으면 *「단독 전환 인자 — 없음」* 한 줄이었다.
+    그 한 줄은 참이지만 **검토자가 묻는 것에 답하지 않는다** — 「없음」은
+    *「조금 모자란다」* 와 *「두 배 모자란다」* 를 같은 글자로 적는다. 5.1 이
+    양식에서 지는 물음이 *「무엇이 얼마가 되면 뒤집히는가」* 이므로, 뒤집히는
+    인자가 없을 때 그 물음은 **「그럼 얼마나 모자란가」** 로 남는다.
+
+    그래서 셋을 싣는다 — 어느 것도 새 판정이 아니라 **환산과 관측**이다.
+
+        결론까지 남은 거리      결론 축의 절대값 (총사업비 대비 비율 병기)
+        결론 전환 지원율        그 거리를 t=0 지원으로 환산한 값 (붙임 3 이 산식)
+        전환까지 남는 거리 표   인자를 검토 범위 끝까지 밀었을 때 남는 거리
+
+    ⚠ **「없음」 줄을 지우지 않았다.** 거리가 실렸다고 전환 인자의 존부가
+    말해지는 것은 아니며, 1절 요약이 그 사실을 같은 문면으로 이미 싣는다.
+    """
     lines = ["### 5.1 불확실 인자 — 값이 틀릴 수 있는 것", ""]
     if not report.flipping:
         lines += [
@@ -194,8 +222,92 @@ def _flip_section(report: CaseReport) -> list[str]:
                 f"{margin} | {entry.confidence} | {SOLO_SWEEP} |"
             )
         lines.append("")
+    # ★ 거리는 **전환 표 다음**이다. `FR-1002-AC4` 가 「뒤집히는 인자를 최상단에
+    # 별도 강조」라고 못 박으므로, 거리 두 줄을 위에 두면 강조가 한 칸 밀린다.
+    # 읽는 순서도 그쪽이 맞다 — *「뒤집히는가」* 다음에 *「얼마나 모자란가」* 다.
+    lines += _gap_lines(report)
+    lines += _remaining_gap_table(report)
     lines += _combined_lines(report)
     return lines
+
+
+def _gap_lines(report: CaseReport) -> list[str]:
+    """결론 축이 0 선에서 얼마나 떨어져 있는가 — **거리와 그 지원율 환산**.
+
+    ⚠ **판정어를 쓰지 않는다.** 「부족하다」·「가깝다」는 작성자의 말이므로,
+    거리의 방향은 `결손`·`여유` 라벨 한 칸이 지고 크기는 수가 진다.
+    """
+    # 환산을 **먼저** 부른다 — 총사업비가 0 이면 여기서 멈춘다(그 함수가
+    # 사유를 말한다). 비율을 먼저 계산하면 같은 상태에서 `ZeroDivisionError`
+    # 가 나고, 그 예외는 검토자에게 무엇이 잘못됐는지 말하지 않는다.
+    flip_rate = report.break_even_subsidy_rate
+    gap = report.conclusion_gap_won
+    total = report.total_project_cost_won
+    direction = GAP_MARGIN if report.recovers_within_horizon else GAP_SHORTFALL
+    return [
+        f"- 결론까지 남은 거리 — **{_won(gap)}** ({direction} · 총사업비 "
+        f"{_won(total)}의 {gap / total:.1%})",
+        f"- 결론 전환 지원율 — **{flip_rate:.1%}** (현 지원율 "
+        f"{report.subsidy_rate:.1%} · 산출: t=0 일시 지원 환산 · 산식은 붙임 3)",
+        "",
+    ]
+
+
+def _remaining_gap_table(report: CaseReport) -> list[str]:
+    """전환하지 못한 인자마다 **끝까지 밀었을 때 남는 거리**.
+
+    붙임 2 의 `변동폭` 과 다른 것을 재는 표다. 변동폭은 *「이 인자가 결론 축을
+    얼마나 흔드는가」* 이고 이 표는 *「그 흔들림을 최대한 좋은 쪽으로 써도
+    0 선까지 얼마가 남는가」* 다. 둘은 같은 순위를 만들지 않는다 — 변동폭이
+    커도 반대 끝에서 시작하면 남는 거리가 더 클 수 있다.
+
+    ⚠ **전환 인자를 이 표에 넣지 않는다.** 그쪽은 남는 거리가 0 인 지점
+    (임계값)이 존재하므로 위 표의 `결론 전환값`·`여유` 열이 답이고, 여기 함께
+    실으면 같은 인자가 두 표에서 다른 물음에 답하는 것처럼 읽힌다.
+    """
+    rows = [
+        entry for entry in report.uncertain_influences if not entry.flips_conclusion
+    ]
+    if not rows:
+        return []
+    lines = [
+        "#### 전환까지 남는 거리 — 검토 범위 끝까지 밀었을 때",
+        "",
+        "| 인자 | 사용값 | 단위 | 전환 방향 끝 | 그 끝의 남은 거리 | 신뢰도 | 산출 |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for entry in rows:
+        end_value, end_npv = _flip_direction_end(
+            entry, recovers=report.recovers_within_horizon
+        )
+        # ⚠ **두 끝의 결론 축이 같으면 「전환 방향」이 없다.** 그때 어느 끝을
+        # 적어도 *그쪽으로 밀면 0 선에 가까워진다* 를 함의하게 되는데, 그 인자는
+        # 어느 쪽으로도 결론을 움직이지 않는다 — 방향 칸은 `NO_VALUE` 로 두고
+        # 사실은 `산출` 열의 미반영 라벨이 나른다. 거리는 어느 끝이든 같다.
+        moved = NO_VALUE if entry.npv_low == entry.npv_high else _num(end_value)
+        method = UNREAD_BY_PIPELINE if entry.unread_by_pipeline else SOLO_SWEEP
+        lines.append(
+            f"| `{entry.variable}` | {_num(entry.used_value)} | "
+            f"{_unit_head(entry.value_unit) or NO_VALUE} | {moved} | "
+            f"{_won(abs(end_npv))} | {entry.confidence} | {method} |"
+        )
+    lines.append("")
+    return lines
+
+
+def _flip_direction_end(
+    entry: InfluenceEntry, *, recovers: bool
+) -> tuple[float, float]:
+    """**결론이 뒤집히는 쪽** 끝의 (인자 값, 결론 축).
+
+    방향을 결론에서 읽는다 — 미회수면 결론 축이 큰 끝, 회수면 작은 끝이 0 선에
+    가깝다. 인자마다 부호를 적어 두는 안은 버렸다: 그 표는 편익·비용 인자가
+    늘 때마다 낡고, 낡은 부호는 **반대 끝을 「가까운 끝」으로 싣는다.**
+    """
+    ends = ((entry.low, entry.npv_low), (entry.high, entry.npv_high))
+    return min(ends, key=lambda end: end[1]) if recovers else max(
+        ends, key=lambda end: end[1]
+    )
 
 
 def _combined_lines(report: CaseReport) -> list[str]:
