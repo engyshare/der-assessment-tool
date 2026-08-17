@@ -249,6 +249,27 @@ jobs:
       - name: 확장점 감지 능력 확인 (음성 10종)
         run: python scripts/negtest_extension_points.py
 
+      # 「읽는 배포 코드가 있는가」 — 계약이 내놓은 훅·필드 중 **제품이 한
+      # 번도 읽지 않는 것**을 `ast` 로 열거한다 (R33 신설).
+      #
+      # 이 저장소가 **다섯 번** 만난 형태이고 전부 사람이 변이를 심어서야
+      # 드러났다 — `CaseVariant.overrides()` · `ValueStream.exclusions()` ·
+      # 비용 행 부호 규약 · `build_dispatch_notes()` · `replacement_schedule()`.
+      # 공통점은 **매핑표가 초록불이었다**는 것이다: 단위 테스트가 그 함수를
+      # 직접 부르므로 조항은 검증된 것으로 세어지는데, *제품이 그것을 쓰는가* 는
+      # 아무도 묻지 않았다.
+      #
+      # **차단이다.** 부채 목록과 실측이 어긋나면 빨간불이며, 늘어도 줄어도
+      # 잡는다 — 고인 항목은 래칫을 조용히 느슨하게 만든다.
+      - name: 확장점 소비 검사 (읽는 배포 코드가 있는가)
+        run: python scripts/check_unread_extension_points.py
+
+      - name: 도구 감지 능력 확인 (음성 2 + 양성 1)
+        # 「읽는가」를 문자열 포함으로 검사하면 *"`stream.exclusions()` 를 예로
+        # 들면"* 이라고 적은 주석이 소비자로 세어져 **게이트가 조용히 초록불**이
+        # 된다(6.7·2.6 이 그 형태였다). 그래서 양성 쪽도 함께 고정한다.
+        run: python scripts/negtest_unread_extension_points.py
+
       - name: import-linter — 구획 경계 4계약 (NFR-208)
         # `python -m importlinter.cli lint` 로 부르지 **않는다.** 그 모듈에는
         # `__main__` 가드가 없어 import만 되고 끝나며 **종료 코드 0**을 낸다 —
