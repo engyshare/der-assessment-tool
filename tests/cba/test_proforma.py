@@ -21,7 +21,7 @@ from core.cba import (
     replacement_row,
     total_row,
 )
-from core.cba.proforma import check_analysis_period
+from core.cba.proforma import check_analysis_period, energy_purchase_row
 from core.contracts.schemas import CashFlowRow
 from core.contracts.units import Money
 from core.contracts.validation import ValidationError
@@ -345,3 +345,61 @@ def test_check_analysis_period_rejects_empty_lifetime_list() -> None:
     """
     with pytest.raises(ValueError, match="비었습니다"):
         check_analysis_period(analysis_years=20, asset_lifetimes_years=[])
+
+
+@pytest.mark.req("FR-701-AC1")
+def test_the_energy_purchase_row_is_a_cost_of_a_measured_quantity() -> None:
+    """★ 계통 전력 구매 행 — **라벨이 뜻을 나른다** (R34 · §13.2.2 C-3).
+
+    `fixed_om_row`·`fee_row` 를 쓰지 않은 판단을 붙든다. 「고정 O&M」이면 설비
+    유지비로, 「정산 수수료」면 거래 비용으로 읽히는데 이것은 **사 온 물건의
+    값**이다 — 운전이 바뀌면 수량이 바뀐다. 같은 행에 섞으면 그 사실이
+    프로포마에서 보이지 않는다.
+
+    ⚠ **에스컬레이션이 없는 것이 지금은 옳다.** 요금 인상률은 잉여 판매 수익도
+    올리는데 그쪽이 아직 배선되지 않았다 — 비용만 올리면 사업에 불리한 쪽으로
+    틀린다(NSPM 대칭성). 배선되는 날 **양쪽이 함께** 움직여야 하므로, 여기서
+    금액이 연도마다 같은 것을 못 박아 둔다.
+    """
+    row = energy_purchase_row(
+        "GridPurchase", start_year=1, end_year=3, annual_amount_won=271_073
+    )
+
+    assert row.tag == "GridPurchase"
+    assert "전력 구매" in row.label, (
+        f"라벨이 「전력 구매」를 말하지 않는다 — {row.label!r}. 고정비·수수료와 "
+        "같은 이름으로 실리면 운전이 바꾸는 비용이라는 사실이 사라진다"
+    )
+    assert row.amounts == {
+        1: Decimal(271_073), 2: Decimal(271_073), 3: Decimal(271_073)
+    }, "연도 범위 전건에 같은 금액이 실려야 한다 (에스컬레이션 없음)"
+
+
+@pytest.mark.req("FR-701-AC1")
+def test_a_negative_purchase_is_refused() -> None:
+    """★★ 음수 구매 비용을 거부한다 — **「전력을 사면 돈을 받는 사업」**.
+
+    통과시키면 부호가 뒤집힌 채로 프로포마에 실리고, 그 순간 저장장치를 키울수록
+    경제성이 좋아진다 — R34 가 방금 없앤 *공짜로 받아 파는 기계*가 부호만 바꿔
+    되돌아온 형태다. 값이 아니라 **방향**이 틀리므로 검토자 눈에 띄지 않는다.
+    """
+    with pytest.raises(ValidationError) as caught:
+        energy_purchase_row(
+            "GridPurchase", start_year=1, end_year=3, annual_amount_won=-1
+        )
+
+    assert caught.value.field == "proforma.purchase_annual_amount_won"
+
+
+@pytest.mark.req("FR-701-AC2")
+def test_the_purchase_row_counts_years_from_one() -> None:
+    """분석 연도는 1부터 센다 — 0년차 행은 초기투자(`capex_row`)의 자리다.
+
+    허용하면 같은 비용이 `t=0` 에 실려 **할인되지 않고** 전액 현가가 된다.
+    """
+    with pytest.raises(ValidationError) as caught:
+        energy_purchase_row(
+            "GridPurchase", start_year=0, end_year=3, annual_amount_won=100
+        )
+
+    assert caught.value.field == "proforma.purchase_start_year"
