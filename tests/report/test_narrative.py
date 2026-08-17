@@ -16,8 +16,11 @@ from pathlib import Path
 
 import pytest
 
+from core.report._format import _recovery
+from core.report.appendix_sections import UNREAD_BY_PIPELINE
 from core.report.case_report import CONCLUSION_METRIC, build_case_report
 from core.report.narrative import render_markdown
+from core.report.unreflected import DIRECTION_ADVERSE, build_unreflected
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -106,7 +109,9 @@ def test_every_ranked_factor_carries_its_provenance_in_the_same_row() -> None:
     section = text[text.index("## 붙임 2. 영향도 산출 상세") : text.index("## 붙임 3.")]
     for entry in report.uncertain_influences:
         row = next(
-            line for line in section.splitlines() if line.startswith(f"| {entry.variable} ")
+            line
+            for line in section.splitlines()
+            if line.startswith(f"| `{entry.variable}` ")
         )
         assert entry.confidence in row, f"{entry.variable}: 신뢰도가 행에 없다"
         assert entry.source in row, f"{entry.variable}: 출처가 행에 없다"
@@ -128,14 +133,14 @@ def test_policy_parameters_are_not_ranked_with_the_uncertain_ones() -> None:
     )
     text = render_markdown(report)
     ranking = text[text.index("## 붙임 2. 영향도 산출 상세") : text.index("## 붙임 3.")]
-    policy = text[text.index("### 5.2 정책 설정값") : text.index("## 6. 종합 판단")]
+    policy = text[text.index("### 5.2 정책 설정값") : text.index("## 6. 종합")]
 
     assert report.policy_influences, "정책 설정값이 하나도 없다 — 전제가 바뀌었다"
     for entry in report.policy_influences:
-        assert f"| {entry.variable} " not in ranking, (
+        assert f"`{entry.variable}`" not in ranking, (
             f"{entry.variable} 은 정해 놓고 쓰는 값인데 영향도 순위에 섞였다"
         )
-        assert f"| {entry.variable} " in policy, (
+        assert f"| `{entry.variable}` " in policy, (
             f"{entry.variable} 이 5절에도 없다 — 빼는 것과 버리는 것은 다르다"
         )
 
@@ -203,11 +208,16 @@ def test_each_resource_shows_what_it_cost_and_what_it_earns() -> None:
 
     assert report.basis.benefits, "편익 갈래가 비어 있다"
     for line in report.basis.benefits:
-        assert line.label in section, f"{line.tag}: 편익 갈래가 표에 없다"
-        assert f"{line.annual_won:,}원" in section, f"{line.tag}: 금액이 없다"
-        # 산식은 붙임 4 로 내렸다 — 본문 표가 화면 밖으로 넘쳤기 때문이다.
-        # **버린 것이 아니라 옮긴 것**이므로 붙임에 있는지 본다.
+        # 편익 갈래 표·산식은 **붙임 4 로 내렸다** — 본문 4.4(적정 용량)가
+        # 들어오며 본문이 양식의 분량 규정을 넘었기 때문이다. **버린 것이
+        # 아니라 옮긴 것**이므로 붙임에 있는지 본다. 본문이 지는 것은
+        # 「자원마다 얼마를 넣고 얼마를 버는가」의 대조표 하나다.
+        assert line.label in detail, f"{line.tag}: 편익 갈래가 붙임 4 에 없다"
+        assert f"{line.annual_won:,}원" in detail, f"{line.tag}: 금액이 없다"
         assert line.formula in detail, f"{line.tag}: 산식이 붙임 4 에도 없다"
+        assert f"{line.annual_won:,}원" in section, (
+            f"{line.tag}: 자원별 수지표가 그 자원의 연 편익을 싣지 않는다"
+        )
     for resource in report.basis.resources:
         assert f"{resource.capex_won:,}원" in section, (
             f"{resource.kind}: 초기투자가 수지표에 없다"
@@ -216,15 +226,32 @@ def test_each_resource_shows_what_it_cost_and_what_it_earns() -> None:
 
 @pytest.mark.req("FR-1002-AC3")
 def test_unread_variable_is_called_out_in_the_body() -> None:
-    """변동폭 0 을 **본문이 말한다** — 표의 마지막 줄로 흘려보내지 않는다."""
+    """변동폭 0 을 **「영향 최하위」로 흘려보내지 않는다.**
+
+    ⚠ 종전 이 검사는 *「계산이 이 인자를 읽지 않고 있을 가능성이 크다」* 라는
+    **경고 문장**을 찾았다. 양식 0절이 해설을 금지한 뒤로는 같은 사실을
+    `산출` 열의 라벨과 3.4 미반영 표가 나른다 — 문장이 아니라 **자리**를
+    본다.
+    """
     report = build_case_report(
         _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
     )
     text = render_markdown(report)
+    limits = text[text.index("### 3.4 이 평가가 하지 않은 것") : text.index("## 4. 평가 결과")]
+    ranking = text[text.index("## 붙임 2. 영향도 산출 상세") : text.index("## 붙임 3.")]
+
     for entry in report.unread_variables:
-        assert entry.variable in text
-        assert "계산이 이 인자를 읽지 않고 있을 가능성" in text, (
-            "미반영 의심을 본문이 말하지 않는다"
+        row = next(
+            line
+            for line in ranking.splitlines()
+            if line.startswith("| ") and f"`{entry.variable}`" in line
+        )
+        assert UNREAD_BY_PIPELINE in row, (
+            f"{entry.variable}: 변동폭 0 이 「영향 최하위」로만 실렸다 — "
+            "산출 열이 미반영을 말해야 한다"
+        )
+        assert entry.variable in limits, (
+            f"{entry.variable}: 미반영 인자가 본문 3.4 에 없다"
         )
 
 
@@ -277,18 +304,20 @@ def test_resources_outliving_the_horizon_are_flagged_as_uncosted() -> None:
     limits = text[text.index("### 3.4 이 평가가 하지 않은 것") : text.index("## 4. 평가 결과")]
 
     basis = report.basis
+    detail = text[text.index("## 붙임 8. 미반영 항목") : text.index("## 붙임 9.")]
     short = [r for r in basis.resources if r.lifetime_years < basis.horizon_years]
     if short:
-        assert "교체 비용을 계상하지 않았다" in limits, (
-            "분석기간 안에 수명이 끝나는 자원이 있는데 경고가 없다"
+        assert "| 교체비 |" in limits, (
+            "분석기간 안에 수명이 끝나는 자원이 있는데 3.4 에 교체비 행이 없다"
         )
+        assert DIRECTION_ADVERSE in limits, "교체비의 방향이 3.4 에 없다"
         for resource in short:
-            assert resource.kind in limits, (
-                f"{resource.kind}(수명 {resource.lifetime_years}년)이 경고에 없다"
+            assert resource.kind in detail, (
+                f"{resource.kind}(수명 {resource.lifetime_years}년)이 붙임 8 에 없다"
             )
     else:
-        assert "영향이 없다" in limits, (
-            "수명이 넉넉한데도 「교체비 미계상」을 경고처럼 적고 있다"
+        assert "| 교체비 |" not in limits, (
+            "수명이 넉넉한데도 「교체비 미계상」 행을 계속 인쇄한다"
         )
 
 
@@ -313,29 +342,28 @@ def test_summary_section_stands_alone_for_the_committee() -> None:
 
     # ① 결론 한 문장 — 본문의 결론과 **같은 수**여야 한다
     assert str(report.basis.horizon_years) in summary, "요약에 분석기간이 없다"
-    if report.recovers_within_horizon:
-        assert "회수된다" in summary
-    else:
-        assert "회수되지 않는다" in summary
-        assert f"{report.metrics[CONCLUSION_METRIC]:,.0f}원" in summary, (
-            "요약의 결론 수치가 본문과 다르다"
-        )
+    assert _recovery(report.recovers_within_horizon) in summary, "회수 판정이 없다"
+    assert f"{report.metrics[CONCLUSION_METRIC]:,.0f}원" in summary, (
+        "요약의 결론 수치가 본문과 다르다"
+    )
 
-    # ② 결론을 좌우하는 요인
-    assert "결론을 좌우하는 요인" in summary
+    # ② 결론을 좌우하는 요인 — 단독과 결합 **둘 다**
     for entry in report.flipping:
         assert entry.variable in summary, f"{entry.variable} 이 요약에 없다"
+    for sweep in report.coupled_sweeps:
+        recovering = [
+            p for p in sweep.points if p.is_combined and p.recovers
+        ]
+        if recovering:
+            assert sweep.bundle in summary, (
+                f"{sweep.bundle}: 결합에서 회수되는데 요약에 없다 — "
+                "단독만 실으면 사업을 실제보다 어렵게 그린다"
+            )
 
     # ③ 유의사항 — 있는 것만 적되, 있으면 반드시 적는다
-    assert "이 결과를 읽을 때" in summary
     if report.provisional_warning:
-        assert "잠정" in summary, "잠정성 경고가 요약에 없다"
-    if report.unread_variables:
-        assert "반영되지 않은" in summary, "미반영 경고가 요약에 없다"
-    short = [
-        r
-        for r in report.basis.resources
-        if r.lifetime_years < report.basis.horizon_years
-    ]
-    if short:
-        assert "교체비" in summary, "교체비 미계상 경고가 요약에 없다"
+        assert "가정" in summary, "전환 인자의 신뢰도가 요약에 없다"
+    unreflected = build_unreflected(report)
+    if unreflected:
+        assert str(len(unreflected)) in summary, "미반영 건수가 요약에 없다"
+        assert "붙임 8" in summary, "미반영 전문의 자리를 가리키지 않는다"

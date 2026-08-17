@@ -26,6 +26,7 @@ from core.casegrid.models import (
     CaseOutcome,
     ResourceLine,
 )
+from core.casegrid.profiles import DailyShapes
 from core.cba.metrics import npv, payback_discounted
 from core.cba.proforma import (
     benefit_row,
@@ -34,11 +35,12 @@ from core.cba.proforma import (
     fixed_om_row,
 )
 from core.contracts.assumptions import AssumptionProvider
-from core.contracts.der import DispatchContext, DispatchResult
+from core.contracts.der import DER, DispatchContext, DispatchResult
 from core.contracts.schemas import CashFlowRow
 from core.contracts.units import Money, Year
 from core.contracts.valuestream import ValueStream
 from core.der.ess import ESS, ESSOperatingMode
+from core.der.load import Load
 from core.der.pv import PV, OperatingMode
 from core.engine.rule_based import RuleBasedEngine
 from core.incentive.schemas import IncentiveScheme
@@ -65,6 +67,9 @@ STEPS_PER_DAY = 24
 SECONDS_PER_HOUR = 3_600
 DAYS_PER_YEAR = 365
 MONTHS_PER_YEAR = 12
+#: 대표일을 되풀이해 한 해를 덮는 스텝 수. `LEAP_YEAR_POLICY` 가 평년 고정을
+#: 선언하며(`DV-4`) 자원들이 8,760 을 요구한다.
+HOURS_PER_YEAR = DAYS_PER_YEAR * STEPS_PER_DAY
 
 # ── 평가 대상 모델의 제원 ────────────────────────────────────────────────
 #
@@ -79,13 +84,20 @@ MONTHS_PER_YEAR = 12
 #
 # ⚠ 금액이 아니라 **설비 제원**이다. 단가·할인율은 대장에서 오며(`NFR-202`)
 # 여기 없다 — `level_map` 인자가 그 자리다.
-PV_CAPACITY_KW = 3.0
+# ⚠ **용량은 여기 없다** — `pv_capacity_kw`·`ess_capacity_kwh` 는 **설계 변수**로
+# `core/casegrid/ledger_levels.py::_DESIGN_VARS` 가 소유하며 `level_map` 으로
+# 들어온다. 상수로 두는 동안 용량은 **어느 케이스 축에도 없었고**, 그래서 27
+# 케이스를 다 돌려도 3kW·10kWh 한 값이었다 — 리포트가 *「이 용량이 맞는가」*
+# 를 묻지도 답하지도 못한 이유다. 기본값을 여기 남기지 않는 것이 요점이다:
+# 남기면 수준표를 고쳐도 러너가 옛 용량을 쓰고 **NPV 만 조용히 달라진다**.
 PV_CAPACITY_FACTOR = 0.15
 PV_FIXED_OM_WON_PER_YEAR = 100_000
 PV_OM_ESCALATION = 0.02
 PV_SELF_CONSUMPTION_RATIO = 0.0
 
-ESS_CAPACITY_KWH = 10.0
+#: ESS **정격출력**(kW). 용량과 달리 설계 변수로 올리지 않았다 — 이 값이
+#: `reducible_peak_kw = min(power_kw, 가용량/방전창)` 의 **상한**이라, 고정해
+#: 두어야 용량 스윕이 *「용량을 키우면 어디서 출력에 막히는가」* 를 드러낸다.
 ESS_POWER_KW = 5.0
 ESS_RTE_PCT = 90.0
 ESS_SOC_MIN_PCT = 10.0
@@ -115,6 +127,38 @@ def _resolve(
     raise ValueError(f"Unknown level {key!r} for variable {var_name!r}")
 
 
+def _household_load(
+    daily_shapes: DailyShapes | None, annual_load_kwh: float | None
+) -> Load | None:
+    """가구 부하 자원 — **형상과 총량이 함께 와야** 세운다.
+
+    ## 왜 둘을 함께 요구하는가
+
+    형상만 오면 총량을 지어내야 하고, 총량만 오면 하루 안에서 **균등 배분**이
+    되어 지금 PV 가 겪는 것과 같은 형태가 된다(붙임 8 「일중 발전 프로파일」).
+    둘 중 하나만으로 부하를 세우면 *「부하를 반영했다」* 는 진술이 성립하는데
+    **그 부하는 실제로 아무 시간대도 갖지 않는다.**
+
+    ⚠ **부하는 편익을 만들지 않는다** (`RC-LD-B0`). `Load.value_streams()` 가
+    비어 있는 것이 정답이며, 부하가 만드는 절감은 그 절감을 일으킨 자원의
+    편익이다 — 부하에도 붙이면 같은 화폐 흐름이 두 번 계상된다
+    (`FR-402-AC2.C`). 그래서 이 자원을 더해도 편익 갈래는 늘지 않고 **운전만**
+    달라진다.
+    """
+    if daily_shapes is None and annual_load_kwh is None:
+        return None
+    if daily_shapes is None or annual_load_kwh is None:
+        raise ValueError(
+            "대표일 형상(daily_shapes)과 연간 부하(annual_load_kwh)는 함께 "
+            "주어야 합니다 — 하나만 주면 부하가 시간대를 갖지 못한 채 "
+            "「반영했다」가 성립합니다"
+        )
+    return Load(
+        name="e2e-load",
+        hourly_kwh=daily_shapes.load.spread(annual_load_kwh, days=DAYS_PER_YEAR),
+    )
+
+
 def run_single_case_e2e(
     case_values: dict[str, object],
     *,
@@ -123,6 +167,8 @@ def run_single_case_e2e(
     horizon_years: int,
     structure: str | None = None,
     provider: AssumptionProvider | None = None,
+    daily_shapes: DailyShapes | None = None,
+    annual_load_kwh: float | None = None,
     settlement_inputs: SettlementInputs | None = None,
     tariff_engine: TariffEngine | None = None,
     scheme: IncentiveScheme | None = None,
@@ -216,12 +262,30 @@ def run_single_case_e2e(
     discount_rate = _resolve(
         case_values.get("discount_rate", "base"), "discount_rate", level_map
     )
+    pv_capacity_kw = _resolve(
+        case_values.get("pv_capacity_kw", "base"), "pv_capacity_kw", level_map
+    )
+    ess_capacity_kwh = _resolve(
+        case_values.get("ess_capacity_kwh", "base"), "ess_capacity_kwh", level_map
+    )
 
     # 1. Resources
+    # ★ **형상이 오면 이용률 대신 시계열을 준다** (둘 다 주면 자원이 거부한다).
+    # 연간 발전량은 **그대로**이며 시간대만 옮겨간다 — 형상은 배분이지 값이
+    # 아니다. 이 통로가 없던 것이 아니라 쓰지 않았던 것이다(붙임 8).
+    generation_profile = (
+        daily_shapes.generation.spread(
+            pv_capacity_kw * PV_CAPACITY_FACTOR * HOURS_PER_YEAR,
+            days=DAYS_PER_YEAR,
+        )
+        if daily_shapes is not None
+        else None
+    )
     pv = PV(
         name="e2e-pv",
-        capacity_kw=PV_CAPACITY_KW,
-        capacity_factor=PV_CAPACITY_FACTOR,
+        capacity_kw=pv_capacity_kw,
+        capacity_factor=None if daily_shapes is not None else PV_CAPACITY_FACTOR,
+        generation_profile_kwh=generation_profile,
         unit_capex_won_per_kw=pv_capex,
         fixed_om_won_per_year=PV_FIXED_OM_WON_PER_YEAR,
         escalation_rate=PV_OM_ESCALATION,
@@ -230,7 +294,7 @@ def run_single_case_e2e(
     )
     ess = ESS(
         name="e2e-ess",
-        capacity_kwh=ESS_CAPACITY_KWH,
+        capacity_kwh=ess_capacity_kwh,
         power_kw=ESS_POWER_KW,
         rte_pct=ESS_RTE_PCT,
         soc_min_pct=ESS_SOC_MIN_PCT,
@@ -255,7 +319,14 @@ def run_single_case_e2e(
 
     # 2. Dispatch
     ctx = DispatchContext(steps=STEPS_PER_DAY, dt=SECONDS_PER_HOUR, year=Year(1))
-    dispatch = RuleBasedEngine().run([pv, ess], ctx)
+    engine = RuleBasedEngine()
+    # ★ **부하는 편익을 만들지 않는다** (`RC-LD-B0` · `Load.value_streams()` 는
+    # 비어 있다). 그래서 여기 더해도 편익 갈래는 늘지 않고 **운전만** 달라진다 —
+    # 계통 수전이 실제 수량으로 나온다. 화폐화(자가소비 절감·구매 비용)는 요금
+    # 엔진의 몫이며, 한쪽만 계상하면 사업에 불리한 쪽으로 틀린다(NSPM 대칭성).
+    household = _household_load(daily_shapes, annual_load_kwh)
+    resources: list[DER] = [pv, ess] if household is None else [pv, ess, household]
+    dispatch = engine.run(resources, ctx)
 
     # 3. Benefits (one day, annualised)
     grid_export_result = DispatchResult(
@@ -375,6 +446,15 @@ def run_single_case_e2e(
     return CaseOutcome(
         metrics=_metrics_for(initial_investment, all_rows, discount_rate),
         variants=variants,
+        # ★ 자원과 운전 결과를 **그대로** 넘긴다 — 리포트가 엔진 규칙과
+        # 시간대별 운전을 물을 대상이다(`CaseOutcome` 독스트링). 여기서 요약해
+        # 넘기면 무엇을 요약할지가 러너의 판단이 되고, 리포트가 다른 것을
+        # 물을 때마다 이 파일이 함께 바뀐다.
+        resources=(pv, ess),
+        dispatch=dispatch,
+        # 엔진 인스턴스가 실제로 쓴 순서다 — 기본 상수를 다시 읽지 않는다
+        # (`CaseOutcome.rule_order` 독스트링).
+        rule_order=engine.rule_order,
         basis=CaseBasis(
             initial_investment_won=int(initial_investment),
             annual_benefit_won=annual_benefit,
@@ -456,8 +536,11 @@ def _resource_lines(
         ResourceLine(
             name=pv.name,
             kind="태양광 (옥상 고정형)",
+            # ★ **세운 자원에서 읽는다.** 모듈 상수에서 읽으면 용량 스윕이
+            # 도는 동안에도 리포트가 기준 용량을 계속 인쇄한다 — 값이 바뀌어도
+            # 아무 예외가 나지 않는 형태다.
             capacity=(
-                f"{PV_CAPACITY_KW:g} kW · 이용률 {PV_CAPACITY_FACTOR:.0%} · "
+                f"{pv.capacity_kw:g} kW · 이용률 {PV_CAPACITY_FACTOR:.0%} · "
                 f"자가소비율 {PV_SELF_CONSUMPTION_RATIO:.0%}"
             ),
             operating_mode=str(pv.operating_mode),
@@ -471,7 +554,7 @@ def _resource_lines(
             name=ess.name,
             kind="에너지저장장치 (신품)",
             capacity=(
-                f"{ESS_CAPACITY_KWH:g} kWh / {ESS_POWER_KW:g} kW · "
+                f"{ess.capacity_kwh:g} kWh / {ess.power_kw:g} kW · "
                 f"왕복효율 {ESS_RTE_PCT:g}% · SOC {ESS_SOC_MIN_PCT:g}~"
                 f"{ESS_SOC_MAX_PCT:g}% · 수명종료 SOH {ESS_EOL_SOH_PCT:g}% · "
                 f"연 {ESS_CYCLES_PER_YEAR:g}사이클"

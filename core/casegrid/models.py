@@ -4,7 +4,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
+from core.contracts.der import DER
+from core.contracts.engine import SystemDispatch
 from core.contracts.validation import ValidationError
+from core.engine.rule_based import DispatchRule
 
 
 @dataclass(frozen=True)
@@ -300,6 +303,36 @@ class CaseOutcome:
     variants: Mapping[str, Mapping[str, float]]
     #: 산식의 대입값 — 위 `CaseBasis` 참조. 리포트가 근거를 그리는 재료다.
     basis: CaseBasis
+    #: ★ **이 케이스가 실제로 세운 자원 객체** (검토 「1차 의견」 2 · R33).
+    #:
+    #: 의견 원문은 *「규칙 기반 엔진이 적용되었다는데 규칙이 붙임에 기재되지
+    #: 않으면 내용을 이해할 수 없음」* 이었다. 그 규칙은 자원마다 다르고
+    #: (`rule_for()`), 무엇에 어떤 규칙이 붙었는지는 **자원 객체를 봐야**
+    #: 알 수 있다 — `ResourceLine` 은 사람이 읽는 제원이라 그 물음에 답하지
+    #: 못한다.
+    #:
+    #: ⚠ **리포트가 자원을 다시 세우게 두는 대신 넘긴다.** 표시 층이
+    #: `PV(...)` 를 한 번 더 만들면 사본이 되고, 러너가 운전 방법을 바꿔도
+    #: 리포트는 옛 규칙을 그럴듯하게 계속 인쇄한다(`ResourceLine` 독스트링과
+    #: 같은 이유이며, 거기서는 **제원**이 이 판단을 이미 한 번 받았다).
+    #: 계층은 어긋나지 않는다 — `DER` 은 `core.contracts` 소속이다.
+    resources: tuple[DER, ...]
+    #: ★ **대표일 운전 결과** (검토 「1차 의견」 3 · R33).
+    #:
+    #: 의견은 *「시간대별 디스패치 표」* 를 요구했다. 파이프라인은 24스텝을
+    #: 실제로 돌리는데 그 결과가 **경계를 넘지 않아** 리포트는 연간 합계만
+    #: 실었다 — 검토자는 「대표일 904,860원」이 어느 시간대에서 왔는지 물을
+    #: 자리가 없었다.
+    #:
+    #: ⚠ **여기가 `CaseBasis` 가 아닌 이유**: `CaseBasis` 는 *「무엇을
+    #: 넣었는가」* 를 담는다고 스스로 못 박고 있다. 운전 결과는 **나온 것**이다.
+    dispatch: SystemDispatch
+    #: 이 실행이 **실제로 적용한** 디스패치 규칙 순서 (`FR-302-AC1`·`AC3`).
+    #:
+    #: ⚠ 리포트가 `DEFAULT_RULE_ORDER` 를 다시 읽게 두지 않는다. 순서는 엔진
+    #: 인스턴스마다 다를 수 있고(조항이 「설정 가능」이다), 그때 리포트는
+    #: **기본 순서를 실행 순서로 인쇄한다** — 아무 예외도 나지 않는다.
+    rule_order: tuple[DispatchRule, ...]
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "metrics", MappingProxyType(dict(self.metrics)))

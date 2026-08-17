@@ -29,6 +29,7 @@ R32 가 세 번 만난 형태와 같다 — **선언·계산은 있는데 읽는
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -48,6 +49,35 @@ _MODELLING_VARS: tuple[tuple[str, tuple[tuple[str, float], ...]], ...] = (
     ("discount_rate", (("low", 0.030), ("base", 0.045), ("high", 0.060))),
 )
 
+#: **설계 변수** — 사업자가 *고르는* 설비 용량. 셋째 갈래이며 앞의 둘과 다르다.
+#:
+#:     대장 변수    시장에서 관측한다   → 틀릴 수 있다   → 확보 대상 (5.1)
+#:     모형 파라미터 평가자가 정한다     → 선택이다      → 확보 대상 아님 (5.2)
+#:     설계 변수    사업자가 고른다     → **설계다**    → 적정값을 묻는다 (4.4)
+#:
+#: ⚠ **여기 오기 전에는 `e2e_runner` 의 모듈 상수였다** — 즉 용량은 어느
+#: 케이스 축에도 없었고, 리포트는 *「3kW·10kWh 가 맞는가」* 를 **묻지도
+#: 답하지도 못했다.** 상수로 두면 27 케이스를 다 돌려도 용량은 한 값이다.
+#:
+#: 범위는 **탐색 구간**이지 불확실성이 아니다. 대장의 `sensitivity` 와 같은
+#: 이름(low·base·high)을 쓰되 뜻이 다르므로, 리포트가 이 변수를 5.1 의
+#: 불확실 인자와 **같은 표에 싣지 않는다** (`design_variables()` 로 가른다).
+#: (변수, 단위, 사람이 읽는 이름, 탐색 구간)
+_DESIGN_VARS: tuple[tuple[str, str, str, tuple[tuple[str, float], ...]], ...] = (
+    (
+        "pv_capacity_kw",
+        "kW",
+        "태양광 용량",
+        (("low", 1.0), ("base", 3.0), ("high", 9.0)),
+    ),
+    (
+        "ess_capacity_kwh",
+        "kWh",
+        "저장장치 용량",
+        (("low", 2.0), ("base", 10.0), ("high", 30.0)),
+    ),
+)
+
 #: 수준 이름. 대장의 `sensitivity` 가 이 셋을 갖지 않으면 거부한다.
 LEVEL_NAMES: tuple[str, str, str] = ("low", "base", "high")
 
@@ -55,6 +85,57 @@ LEVEL_NAMES: tuple[str, str, str] = ("low", "base", "high")
 def modelling_only_variables() -> tuple[str, ...]:
     """대장에서 오지 않는 변수 이름 — 검사가 이 목록을 읽는다."""
     return tuple(name for name, _ in _MODELLING_VARS)
+
+
+@dataclass(frozen=True)
+class DesignVariable:
+    """설계 변수 하나 — 리포트 4.4 의 한 행."""
+
+    name: str
+    unit: str
+    label: str
+    low: float
+    base: float
+    high: float
+
+
+def design_variables() -> tuple[DesignVariable, ...]:
+    """설계 변수와 탐색 구간. **리포트 4.4(적정 용량)가 이 목록을 읽는다.**
+
+    밖으로 내놓는 이유는 5.1(확보 대상)·5.2(평가자 선택)와 **갈라 실어야**
+    하기 때문이다. 셋을 한 표에 두면 *「단가를 더 알아보라」* 와 *「용량을 다시
+    골라라」* 가 같은 우선순위 표에서 경쟁하고, 그 둘은 받는 사람이 다르다.
+    """
+    return tuple(
+        DesignVariable(
+            name=name,
+            unit=unit,
+            label=label,
+            low=dict(levels)["low"],
+            base=dict(levels)["base"],
+            high=dict(levels)["high"],
+        )
+        for name, unit, label, levels in _DESIGN_VARS
+    )
+
+
+def design_levels() -> Mapping[str, Mapping[str, float]]:
+    """설계 변수만의 수준표 — `build_level_map()` 이 넣는 것과 **같은 것**.
+
+    ## 왜 따로 내놓는가
+
+    러너는 용량을 `level_map` 에서만 읽고 **기본값을 두지 않는다**(모듈 상수를
+    남기면 수준표를 고쳐도 옛 용량이 쓰이고 NPV 만 조용히 달라진다). 그래서
+    대장을 읽지 않고 배선만 보는 호출부도 용량을 넘겨야 한다. 그 호출부가
+    숫자를 **손으로 적으면 그것이 사본**이 되고, 탐색 구간을 옮기는 날 조용히
+    갈라진다 — 여기서 내놓아 한 곳만 고치면 되게 한다.
+    """
+    return MappingProxyType(
+        {
+            name: MappingProxyType(dict(levels))
+            for name, _unit, _label, levels in _DESIGN_VARS
+        }
+    )
 
 
 def ledger_backed_variables() -> Mapping[str, str]:
@@ -129,6 +210,9 @@ def build_level_map(assumptions_path: Path) -> Mapping[str, Mapping[str, float]]
         level_map[var_name] = _levels_of(item, ledger_key, scale)
 
     for var_name, levels in _MODELLING_VARS:
+        level_map[var_name] = MappingProxyType(dict(levels))
+
+    for var_name, _unit, _label, levels in _DESIGN_VARS:
         level_map[var_name] = MappingProxyType(dict(levels))
 
     return MappingProxyType(level_map)

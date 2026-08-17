@@ -26,6 +26,7 @@ import pytest
 from core.assumption.item import AssumptionItem, ConfidenceLevel
 from core.assumption.provider import AssumptionSet
 from core.casegrid.e2e_runner import run_single_case_e2e
+from core.casegrid.ledger_levels import design_levels
 from core.contracts.assumptions import AssumptionProvider, PriceBasis
 from core.contracts.validation import ValidationError
 from core.regulation.tariff import (
@@ -48,6 +49,9 @@ LEVEL_MAP = {
     "pv_unit_cost": MappingProxyType({"base": 1_600_000.0}),
     "ess_unit_cost": MappingProxyType({"base": 400_000.0}),
     "discount_rate": MappingProxyType({"base": 0.045}),
+    # 설계 변수(용량)는 이 파일의 관심이 아니지만 **러너가 요구한다** —
+    # 기본값을 두지 않는 것이 규칙이라 기본 탐색점을 그대로 받아 온다.
+    **design_levels(),
 }
 
 #: 분석기간 탐침값 — 소유자는 `AssumptionSet` 이고(§7.1 O-1) 이 파일의 관심이

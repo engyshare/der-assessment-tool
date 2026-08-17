@@ -37,5 +37,10 @@ def _unit_head(unit: str) -> str:
 def _years(value: float) -> str:
     return "분석기간 내 미회수" if value == float("inf") else f"{value:.2f}년"
 
+def _recovery(recovers: bool) -> str:
+    """회수 여부 라벨. **두 글자를 한 자리에서만 정한다** — 「회수됨」과
+    「회수」가 같은 문서에 섞이면 표를 훑는 눈이 다른 판정으로 읽는다."""
+    return "회수" if recovers else "미회수"
+
 def _date(value: object) -> str:
     return str(value) if value else NO_VALUE

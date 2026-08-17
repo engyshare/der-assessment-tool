@@ -21,13 +21,14 @@ import pytest
 from core.casegrid.e2e_runner import run_single_case_e2e
 from core.casegrid.grid import coupled_variable_sets
 from core.casegrid.ledger_levels import build_level_map
+from core.report.appendix_sections import UNREAD_BY_PIPELINE, influence_section
 from core.report.case_report import (
     CONCLUSION_METRIC,
     PLAN_VARIANT,
     build_case_report,
 )
 from core.report.combined import build_coupled_sweeps
-from core.report.narrative import render_markdown
+from core.report.narrative import SOLO_SWEEP, render_markdown
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -178,26 +179,36 @@ def test_interaction_is_measured_not_assumed() -> None:
 
 
 @pytest.mark.req("FR-1002-AC2", "FR-1002-AC4")
-def test_body_says_the_single_variable_table_is_a_solo_contribution() -> None:
-    """본문이 **단독 기여임을 말하고** 결합 표를 5.1 안에 싣는다.
+def test_body_marks_the_single_variable_table_as_a_solo_sweep() -> None:
+    """본문이 **산출 방법을 열로 적고** 결합 표를 5.1 안에 싣는다.
 
-    말하지 않으면 검토자는 임계값 두 줄을 *「각각 달성해야 하는 조건」* 으로
-    읽는다 — 그것이 이 의견이 지적한 오독이며, 표를 잘 그려서가 아니라
-    **문장으로** 막아야 한다.
+    ⚠ 종전 이 검사는 *「각각을 달성해야 하는 조건이 아니다」* 라는 **해설
+    문장**을 찾았다. 양식 0절이 해설을 금지한 뒤로는 같은 사실을 `산출` 열의
+    `1변수 스윕` 라벨과 **바로 아래 결합 표**가 나른다.
+
+    막으려는 오독은 그대로다 — 임계값 두 줄을 「각각 달성해야 하는 조건」으로
+    읽는 것. 막는 수단이 문장에서 **자리와 라벨**로 바뀌었을 뿐이다.
     """
     text = render_markdown(_report())
 
     flip = text.index("### 5.1 불확실 인자")
-    combined = text.index("#### 함께 움직일 때 — 결합 시나리오")
+    combined = text.index("#### 결합 시나리오 — ")
     policy = text.index("### 5.2 정책 설정값")
     assert flip < combined < policy, "결합 표가 5.1 안에 있지 않다"
-    assert "단독 기여" in text[flip:policy], (
-        "5.1 이 1변수 스윕을 「단독 기여」로 밝히지 않는다"
-    )
-    assert "각각을 달성해야 하는 조건이 아니다" in text[flip:policy]
-    # 「더해진다」는 **잰 결과**로만 적는다. 문면이 사라지면 부기가 판정을
-    # 하지 않고 넘어간 것이다.
-    assert "잔차" in text[combined:policy]
+
+    solo_rows = [
+        line
+        for line in text[flip:combined].splitlines()
+        if line.startswith("| `")
+    ]
+    assert solo_rows, "5.1 에 단독 인자 행이 없다"
+    for row in solo_rows:
+        assert SOLO_SWEEP in row, (
+            f"산출 방법이 행에 없다 — 「단독 기여」임이 표에서 사라졌다: {row}"
+        )
+    # 「더해진다」는 **잰 결과**로만 적는다. 잔차 줄이 사라지면 판정을 하지
+    # 않고 넘어간 것이다.
+    assert "상호작용 잔차" in text[combined:policy]
 
 
 @pytest.mark.req("FR-1002-AC4")
@@ -226,9 +237,44 @@ def test_summary_carries_the_combined_case_not_only_the_solo_ones() -> None:
         "이 시나리오는 동반 이동에서 회수되는 행을 가져야 한다 "
         "(전제가 바뀌었다면 갱신할 것)"
     )
-    assert "함께" in summary, "요약이 결합 결과를 말하지 않는다"
+    for sweep in report.coupled_sweeps:
+        if any(p.is_combined and p.recovers for p in sweep.points):
+            assert sweep.bundle in summary, (
+                f"{sweep.bundle}: 요약이 결합 결과를 말하지 않는다"
+            )
     for point in recovering:
         assert f"{point.npv:,.0f}원" in summary, (
             f"요약의 수가 5.1 결합 행({point.npv:,.0f}원)과 다르다 — 요약이 "
             "스스로 계산하고 있다"
         )
+
+
+@pytest.mark.req("FR-1002-AC2")
+def test_appendix_two_marks_every_row_with_its_sweep_method() -> None:
+    """붙임 2 의 모든 행이 **산출 방법**을 함께 싣는다.
+
+    붙임 2 는 인자별 변동폭을 한 열에 세로로 늘어놓는다 — 그 모양이 곧 합을
+    권하는 모양이다. 붙임을 먼저 펴는 검토자가 두 줄을 더해 「함께 움직이면
+    3,920,000원」으로 읽으면, 지금 구성에서는 그것이 **우연히 맞으므로**
+    스스로 드러나지도 않는다.
+
+    ⚠ 종전에는 *「더해서 쓰지 말 것」* 이라는 지시 문장으로 막았다. 지금은
+    행마다 `1변수 스윕` 을 적고 결합 결과의 자리(5.1)를 가리킨다.
+    """
+    lines = influence_section(_report())
+    text = "\n".join(lines)
+
+    # 「판단용」 표만 본다 — 산출 방법 열은 거기 있고, 「감사·추적용」 표는
+    # 부기(출처·신뢰도)를 나르므로 열 구성이 다르다.
+    judged = text[text.index("### 판단용") : text.index("### 감사·추적용")]
+    rows = [
+        line
+        for line in judged.splitlines()
+        if line.startswith("| ") and not line.startswith(("|---", "| 순위"))
+    ]
+    assert rows, "붙임 2 에 인자 행이 없다"
+    for row in rows:
+        assert SOLO_SWEEP in row or UNREAD_BY_PIPELINE in row, (
+            f"산출 방법이 없는 행이 있다: {row}"
+        )
+    assert "5.1" in text, "붙임 2 가 결합 표의 자리를 가리키지 않는다"

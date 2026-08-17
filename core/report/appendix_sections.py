@@ -8,12 +8,58 @@
 있는지 매번 찾아야 한다.
 
 ⚠ **순서의 소유자는 여전히 `narrative.py` 하나다.** 여기서는 붙임을 만들기만
-한다. 순서가 두 곳에서 정해지면 조항(`FR-1002-AC1`)이 어느 파일 소관인지 갈린다.
+한다.
+
+⚠ **해설을 싣지 않는다** (양식 0절 · 2026-08-15). 표와 「항목 — 값」 나열만
+낸다. 「이렇게 읽어야 한다」는 프로그램이 참임을 보증할 수 없는 진술이므로
+산출물에 두지 않는다.
 """
 from __future__ import annotations
 
 from core.report._format import NO_VALUE, _date, _num, _unit_head, _won
 from core.report.case_report import AssumptionRow, CaseReport
+
+#: 산출 방법 표기 — 「단독 기여」를 문장 대신 이 라벨이 말한다 (`FR-1002-AC2`).
+SOLO_SWEEP = "1변수 스윕"
+#: 인자를 끝에서 끝까지 흔들어도 결론 축이 0원 움직인 경우의 표기.
+#:
+#: ⚠ **「영향 없음」이 아니다.** 기계는 「진짜 무영향」과 「미배선」을 가를 수
+#: 없으므로 판정하지 않고 **관측한 것을 그대로** 적는다.
+UNREAD_BY_PIPELINE = "파이프라인 미반영 (변동폭 0원)"
+
+#: 전제 대장 키의 **접두어 → 주제** (검토 「1차 의견」 5 · 2026-08-15).
+#:
+#: 의견 원문은 *「전제를 주제별로 묶어 달라 — 설비단가/요금/제도/분석조건」*
+#: 이었다. 종전 붙임 1 은 **신뢰도별**로만 묶여 있어 *「설비단가를 어디서
+#: 보는가」* 에 답하지 못했다. 둘 다 필요하므로 **주제로 묶고 신뢰도를 열로**
+#: 옮겼다.
+#:
+#: ⚠ **대장 키의 접두어가 곧 주제축이다** — 대장이 이미 그렇게 묶여 있으므로
+#: 여기서 새 분류를 만들지 않는다. 접두어가 늘고 여기 없으면 「미분류」로
+#: **드러난다**(`_TOPIC_UNCLASSIFIED`). 조용히 기타로 흡수하면 새 주제가
+#: 생겼다는 사실이 보이지 않는다.
+TOPIC_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("설비 단가", ("capex.",)),
+    ("설비 성능 · 수요", ("capacity_factor.", "load.")),
+    ("요금 · 정산 단가", ("tariff.", "escalation.", "fee.")),
+    ("제도 · 세제", ("rule.", "tax.", "benefit.", "cost.")),
+    ("분석 조건 · 운영", ("analysis.", "ops.")),
+    ("검증 정박점", ("oracle.",)),
+)
+
+#: 어느 접두어에도 걸리지 않은 항목이 모이는 자리.
+_TOPIC_UNCLASSIFIED = "미분류"
+
+#: 신뢰도 표기 순서. 뒤로 갈수록 확인이 필요하다.
+_CONFIDENCE_ORDER: tuple[str, ...] = ("확정", "추정", "가정")
+
+
+def topic_of(key: str) -> str:
+    """대장 키의 주제. **선언에 없으면 `미분류`** — 위 `TOPIC_PREFIXES` 참조."""
+    for topic, prefixes in TOPIC_PREFIXES:
+        if any(key.startswith(prefix) for prefix in prefixes):
+            return topic
+    return _TOPIC_UNCLASSIFIED
 
 
 def influence_section(report: CaseReport) -> list[str]:
@@ -27,37 +73,29 @@ def influence_section(report: CaseReport) -> list[str]:
     있으면 「함께」는 성립하며, 읽히지 않는 표는 표시한 것이 아니다.
 
     그래서 **판단용**(순위·변동폭·전환)과 **감사·추적용**(대장 키·신뢰도·출처·
-    기준연도·최종확인)으로 가른다. 앞의 것은 심의위원이, 뒤의 것은 검증하는
-    사람이 읽는다.
+    기준연도·최종확인)으로 가른다.
     """
     lines = [
         "## 붙임 2. 영향도 산출 상세",
         "",
-        "각 인자를 **대장이 밝힌 변동 범위**에서 하나씩 움직여 파이프라인을 다시",
-        "돌리고, 결론이 움직인 폭으로 순위를 매겼다 (`FR-1002-AC2` 1변수 스윕).",
-        "",
-        "여기 있는 것은 **틀릴 수 있는 값**뿐이다 — 즉 이 표는 *「어느 자료를 먼저",
-        "확보해야 하는가」* 에 답한다. 평가자가 정하는 값(할인율 등)은 불확실성이",
-        "아니라 선택이므로 본문 5.2 에서 따로 본다.",
-        "",
-        "⚠ **「결론 변동폭」은 단독 기여다** — 그 인자 하나만 움직이고 나머지를",
-        "사용값에 둔 결과이므로 **더해서 쓰지 말 것.** 실제로 함께 움직이는 인자",
-        "(설비단가 등)는 본문 **5.1 의 결합 시나리오 표**가 함께 흔든 결과를 싣는다.",
+        f"- 산출 — {SOLO_SWEEP} (`FR-1002-AC2`) · 인자 하나를 대장 변동 범위에서 "
+        "움직이고 파이프라인 재실행",
+        "- 대상 — 전제 대장 항목만 (평가자가 정하는 값은 본문 5.2)",
+        "- 결합 이동 결과 — 본문 5.1 결합 시나리오 표",
         "",
         "### 판단용",
         "",
-        "| 순위 | 인자 | 사용값 | 단위 | 변동 범위 | 결론 변동폭 | 전환 |",
-        "|---|---|---|---|---|---|---|",
+        "| 순위 | 인자 | 사용값 | 단위 | 변동 범위 | 결론 변동폭 | 전환 | 산출 |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for rank, entry in enumerate(report.uncertain_influences, start=1):
-        flips = "**뒤집힘**" if entry.flips_conclusion else "—"
-        if entry.unread_by_pipeline:
-            flips = "⚠ 미반영 의심"
+        flips = "**뒤집힘**" if entry.flips_conclusion else NO_VALUE
+        method = UNREAD_BY_PIPELINE if entry.unread_by_pipeline else SOLO_SWEEP
         lines.append(
-            f"| {rank} | {entry.variable} | {_num(entry.used_value)} | "
+            f"| {rank} | `{entry.variable}` | {_num(entry.used_value)} | "
             f"{_unit_head(entry.value_unit) or NO_VALUE} | "
             f"{_num(entry.low)}~{_num(entry.high)} | {_won(entry.delta_won)} | "
-            f"{flips} |"
+            f"{flips} | {method} |"
         )
     lines += [
         "",
@@ -68,23 +106,19 @@ def influence_section(report: CaseReport) -> list[str]:
     ]
     for entry in report.uncertain_influences:
         lines.append(
-            f"| {entry.variable} | `{entry.ledger_key or NO_VALUE}` | "
+            f"| `{entry.variable}` | `{entry.ledger_key or NO_VALUE}` | "
             f"{entry.confidence} | {entry.source} | "
             f"{entry.base_year or NO_VALUE} | {_date(entry.verified_at)} | "
             f"{_first_sentence(entry.derivation_method)} |"
         )
-    lines.append("")
-    if report.unread_variables:
-        names = " · ".join(e.variable for e in report.unread_variables)
-        lines += [
-            f"> ⚠ **{names} 의 변동폭이 정확히 0원이다.** 범위를 끝에서 끝까지",
-            "> 흔들어도 결론이 한 원도 움직이지 않는 일은 경제적으로 일어나지",
-            "> 않는다 — **계산이 이 인자를 읽지 않고 있을 가능성이 크다.**",
-            "> 「영향이 없다」로 읽지 말 것. 확인 전까지 이 인자에 대한 판단은",
-            "> 이 보고서로 내릴 수 없다.",
-            "",
-        ]
+    lines += [
+        "",
+        f"- `{UNREAD_BY_PIPELINE}` — 범위를 끝에서 끝까지 흔들어도 결론 축이 "
+        "0원 움직인 인자. 미반영 항목으로 붙임 8 에 함께 실린다",
+        "",
+    ]
     return lines
+
 
 def _first_sentence(text: str) -> str:
     """산출 방법의 **첫 문장만** — 표 칸에 문단이 들어가면 표가 무너진다.
@@ -104,117 +138,140 @@ def _first_sentence(text: str) -> str:
             break
     return head if len(head) <= 70 else head[:67] + "…"
 
+
 def _appendix_row(row: AssumptionRow) -> str:
-    """붙임 1 의 한 행. **신뢰도 열이 없다** — 절 제목이 이미 말한다."""
+    """붙임 1 의 한 행. **신뢰도가 열로 들어온다** — 주제별로 묶기 때문이다."""
     return (
         f"| `{row.key}` | {row.value} | {row.value_unit or NO_VALUE} | "
-        f"{row.source} | {row.base_year or NO_VALUE} | "
+        f"{row.confidence} | {row.source} | {row.base_year or NO_VALUE} | "
         f"{_date(row.verified_at)} |"
     )
 
-def appendix_section(report: CaseReport) -> list[str]:
-    """붙임 1 — 전 가정 목록. **신뢰도별로 가른다** (`FR-1002-AC6`).
 
-    스물 몇 줄을 한 표에 늘어놓으면 *「무엇을 확인해야 하는가」* 가 보이지 않는다.
-    `확정`(출처 있음)과 `가정`(확인 필요)을 가르면 **뒤쪽 표가 곧 확인 목록**이
-    된다 — 조항이 요구하는 「전 항목 제공」은 그대로 지키면서.
+def _confidence_tally(rows: list[AssumptionRow]) -> str:
+    """주제 머리의 신뢰도 내역 — **주제로 묶어도 신뢰도를 잃지 않게** 한다."""
+    counts = {name: 0 for name in _CONFIDENCE_ORDER}
+    for row in rows:
+        counts[row.confidence] = counts.get(row.confidence, 0) + 1
+    parts = [f"{name} {counts[name]}" for name in _CONFIDENCE_ORDER if counts[name]]
+    extra = [
+        f"{name} {count}"
+        for name, count in sorted(counts.items())
+        if name not in _CONFIDENCE_ORDER and count
+    ]
+    return " · ".join([*parts, *extra]) or "0"
+
+
+def appendix_section(report: CaseReport) -> list[str]:
+    """붙임 1 — 전 가정 목록. **주제별로 묶고 신뢰도를 열로** (`FR-1002-AC6`).
+
+    ## 왜 신뢰도별 묶음에서 바꿨는가 (검토 「1차 의견」 5)
+
+    종전에는 `확정`/`추정`/`가정` 으로 묶었다. 그러면 **뒤쪽 표가 곧 확인
+    목록**이 되는 장점이 있지만, 검토자가 *「설비 단가를 어디서 보는가」* 를
+    물을 때 답하지 못한다 — 같은 주제의 항목이 신뢰도별로 흩어지기 때문이다.
+
+    의견은 주제별을 요구했고 **둘 다 필요하다.** 그래서 주제로 묶고 신뢰도를
+    **열과 주제 머리의 내역**으로 옮겼다. 확인 대상은 주제 머리의 `가정` 수로
+    바로 보이고, 항목은 주제로 찾을 수 있다.
+
+    ⚠ 주제는 **대장 키의 접두어**에서 온다 — 여기서 새 분류를 만들지 않는다
+    (`TOPIC_PREFIXES`).
     """
-    by_confidence: dict[str, list[AssumptionRow]] = {}
+    by_topic: dict[str, list[AssumptionRow]] = {}
     for row in report.assumptions:
-        by_confidence.setdefault(row.confidence, []).append(row)
+        by_topic.setdefault(topic_of(row.key), []).append(row)
 
     lines = [
         "## 붙임 1. 전제 대장 전건",
         "",
-        f"재현·검증용이다. 전제 대장 `{report.assumption_set_name}` "
-        f"판 {report.assumption_set_version} 의 **전 항목**이며, 본문 5절 순위에",
-        "오르지 않은 것도 포함한다.",
+        f"- 대장 — `{report.assumption_set_name}` 판 "
+        f"{report.assumption_set_version}",
+        f"- 범위 — 전 항목 {len(report.assumptions)}건 "
+        "(본문 5절 순위에 오르지 않은 것 포함)",
+        "- 묶음 — 주제별 (대장 키 접두어) · 신뢰도는 열",
         "",
     ]
-    # `확정` → `추정` → `가정` 순. 뒤로 갈수록 확인이 필요하다.
-    for confidence in ("확정", "추정", "가정"):
-        rows = by_confidence.pop(confidence, [])
+    ordered = [topic for topic, _ in TOPIC_PREFIXES] + [_TOPIC_UNCLASSIFIED]
+    for topic in ordered:
+        rows = by_topic.pop(topic, [])
         if not rows:
             continue
-        note = {
-            "확정": "출처가 확인된 값이다.",
-            "추정": "근거는 있으나 확정은 아니다.",
-            "가정": "**출처가 아직 없다 — 확인 대상이다.**",
-        }[confidence]
         lines += [
-            f"### 신뢰도 `{confidence}` — {len(rows)}건",
+            f"### {topic} — {len(rows)}건 (신뢰도: {_confidence_tally(rows)})",
             "",
-            note,
-            "",
-            "| 대장 키 | 값 | 단위 | 출처 | 기준연도 | 최종확인 |",
-            "|---|---|---|---|---|---|",
+            "| 대장 키 | 값 | 단위 | 신뢰도 | 출처 | 기준연도 | 최종확인 |",
+            "|---|---|---|---|---|---|---|",
         ]
-        lines += [_appendix_row(row) for row in rows]
+        lines += [_appendix_row(row) for row in sorted(rows, key=lambda r: r.key)]
         lines.append("")
-    for confidence, rows in sorted(by_confidence.items()):
-        lines += [
-            f"### 신뢰도 `{confidence}` — {len(rows)}건",
-            "",
-            "| 대장 키 | 값 | 단위 | 출처 | 기준연도 | 최종확인 |",
-            "|---|---|---|---|---|---|",
-        ]
-        lines += [_appendix_row(row) for row in rows]
-        lines.append("")
+    lines += [
+        "- 신뢰도 `확정` — 출처 확인 · `추정` — 근거 있음 · `가정` — 출처 없음 "
+        "(확인 대상)",
+        "",
+    ]
     return lines
 
+
 def glossary_section() -> list[str]:
-    """붙임 6 — 용어 설명.
+    """붙임 9 — 용어 설명.
 
     ## 왜 필요한가
 
     `MC-1` 의 검토자는 **비개발자**이며 조항이 그렇게 못 박고 있다. 「할인
     회수기간」·「SOH」·「1변수 스윕」을 설명 없이 쓰면 검토자가 막히는 자리가
-    **리포트의 인과가 아니라 어휘**가 되고, 그 미달은 원인을 짚기도 어렵다.
+    **리포트의 인과가 아니라 어휘**가 된다.
 
-    ⚠ **본문에 풀어 쓰지 않고 붙임에 둔다.** 본문에서 매번 풀면 4~5쪽을 넘고,
-    아는 사람에게는 읽기를 끊는다.
+    ⚠ **정의만 싣는다.** 용어에 대한 논평·독법은 해설이므로 두지 않는다
+    (양식 0절).
     """
     return [
-        "## 붙임 6. 용어 설명",
+        "## 붙임 9. 용어 설명",
         "",
-        "이 보고서에 나오는 용어를 풀어 적는다. 검토자가 막히는 자리가 **인과가",
-        "아니라 어휘**가 되지 않도록 둔다.",
-        "",
-        "| 용어 | 뜻 |",
+        "| 용어 | 정의 |",
         "|---|---|",
         "| **순현재가치(NPV)** | 미래 현금흐름을 현재 가치로 할인해 더한 뒤 "
-        "초기투자를 뺀 값. 0 이상이면 분석기간 안에 회수된다는 뜻이다 |",
-        "| **할인율** | 미래의 돈을 현재 가치로 환산할 때 쓰는 비율. 높을수록 "
-        "먼 미래의 편익이 작게 평가된다 |",
+        "초기투자를 뺀 값. 0 이상이면 분석기간 내 회수 |",
+        "| **할인율** | 미래의 돈을 현재 가치로 환산할 때 쓰는 비율 |",
         "| **할인 회수기간** | 할인한 누적 현금흐름이 초기투자에 도달하는 데 "
-        "걸리는 시간. 분석기간 안에 도달하지 못하면 「미회수」다 |",
+        "걸리는 시간. 분석기간 내 미도달이면 「미회수」 |",
         "| **이용률(Capacity Factor)** | 설비를 최대 출력으로 연중 돌렸을 때 "
         "대비 실제 발전량의 비율 |",
         "| **첨두 절감(Peak Shaving)** | 저장장치로 전력 사용 최대치를 낮춰 "
         "기본요금을 줄이는 운전 방식 |",
-        "| **SOC** | 배터리의 현재 충전 상태(%). 운전 범위를 제한해 수명을 "
-        "지킨다 |",
-        "| **SOH** | 배터리의 잔존 성능(%). 신품 대비 용량이며, 이 값이 수명 "
-        "종료 기준에 닿으면 교체 대상이다 |",
+        "| **SOC** | 배터리의 현재 충전 상태(%) |",
+        "| **SOH** | 배터리의 잔존 성능(%). 신품 대비 용량 |",
         "| **프로포마** | 연도별 편익·비용·순현금흐름을 정리한 표 |",
-        "| **1변수 스윕** | 인자 하나만 변동 범위에서 움직이고 나머지는 고정해 "
-        "결과가 얼마나 변하는지 보는 민감도 분석 |",
-        "| **결론 전환 임계값** | 그 인자가 어느 값이 되면 결론(회수 여부)이 "
-        "뒤바뀌는가. 이 보고서는 그 값을 실제로 다시 계산해 확인한다 |",
+        f"| **{SOLO_SWEEP}** | 인자 하나만 변동 범위에서 움직이고 나머지는 "
+        "고정해 결과 변화를 보는 민감도 분석 |",
+        "| **결합 스윕** | 케이스 그리드가 한 축으로 묶은 인자를 함께 움직여 "
+        "결과 변화를 보는 민감도 분석 |",
+        "| **상호작용 잔차** | 결합 이동의 결론 변동폭에서 단독 이동 변동폭의 "
+        "합을 뺀 값. 0이면 두 효과가 더해진다는 뜻 |",
+        "| **설계 변수** | 사업자가 **고르는** 값(설비 용량). 값이 틀릴 수 "
+        "있는 대장 항목과도, 평가자가 정하는 모형 파라미터와도 다르다 |",
+        "| **한계 기여** | 설계 변수를 한 단위 늘렸을 때 결론 축이 움직이는 "
+        "폭. 탐색 구간 양 끝점 사이의 평균이며, 형태가 단조일 때만 구간 "
+        "전체를 대표한다 |",
+        "| **결론 전환값** | 그 인자가 어느 값이 되면 결론(회수 여부)이 "
+        "뒤바뀌는가. 재계산으로 확인한 값 |",
         "| **전제 대장** | 계산에 쓰인 모든 값과 그 출처·신뢰도를 모아 둔 정본 "
-        "(`docs/assumptions.yaml`). 붙임 1 이 그 전건이다 |",
-        "| **신뢰도** | 값의 근거 수준. `확정`(출처 확인) · `추정`(근거는 있음) "
-        "· `가정`(출처 없음, 확인 대상) 셋이다 |",
+        "(`docs/assumptions.yaml`). 붙임 1 이 전건 |",
+        "| **신뢰도** | 값의 근거 수준. `확정`(출처 확인) · `추정`(근거 있음) "
+        "· `가정`(출처 없음, 확인 대상) |",
+        "| **디스패치** | 매 시간 어느 자원이 얼마를 발전·충전·방전할지 정하는 "
+        "운전 모의 (규칙: 붙임 6 · 결과: 붙임 7) |",
         "",
     ]
 
+
 def formula_section(report: CaseReport) -> list[str]:
-    """`FR-1001-AC2`·`AC3` — 산식을 자연어·수식·대입값 셋으로."""
+    """붙임 3 — `FR-1001-AC2`·`AC3`. 산식을 자연어·수식·대입값 셋으로."""
     lines = [
         "## 붙임 3. 산식 3중 표기",
         "",
-        "각 산식을 **자연어 · 수식 · 대입값** 셋으로 적는다. 대입값의 각 인자는",
-        "2절 표에서 출처·기준연도·신뢰도를 확인할 수 있다 (`FR-1001-AC4`).",
+        "- 표기 — 자연어 · 수식 · 대입값 (`FR-1001-AC3`)",
+        "- 각 인자의 출처·기준연도·신뢰도 — 붙임 1 · 붙임 2 (`FR-1001-AC4`)",
         "",
     ]
     for formula in report.formulas:
@@ -227,30 +284,26 @@ def formula_section(report: CaseReport) -> list[str]:
             "",
         ]
     lines += [
-        "> **회수기간과 순현재가치는 같은 판정의 두 얼굴이다.** 분석기간 말",
-        "> 누적 할인 현금흐름이 초기투자를 넘으면 순현재가치가 0 이상이고, 그것이",
-        "> 곧 「분석기간 안에 회수된다」이다. 위 1·2절이 순현재가치(원)로 전환을",
-        "> 재는 이유는 회수기간에는 **뒤집힐 부호가 없기 때문**이다 — 회수하지",
-        "> 못하면 값이 존재하지 않아 「얼마나 못 미쳤는지」를 말할 수 없다.",
+        "- 회수기간과 순현재가치의 관계 — 분석기간 말 누적 할인 현금흐름이 "
+        "초기투자를 넘으면 순현재가치 ≥ 0 이며 그것이 「분석기간 내 회수」다",
+        "- 전환 판정에 순현재가치(원)를 쓰는 이유 — 미회수 시 회수기간 값이 "
+        "존재하지 않아 변동폭을 정의할 수 없다",
         "",
     ]
     return lines
 
 
-
-
 def reproduction_section(report: CaseReport) -> list[str]:
-    """부록 B — **다른 사람(또는 다른 에이전트)이 이 결과를 다시 낼 수 있는가**
+    """붙임 5 — **다른 사람(또는 다른 에이전트)이 이 결과를 다시 낼 수 있는가**
     (R33 검토 지적 5).
 
     지적 원문은 *「타 에이전트가 보고서의 내용을 보고 분석결과를 재현할 수
     있도록 자세한 정보가 기재되어야 함」* 이었다. 첫 판에는 매니페스트 해시
     한 줄뿐이었는데, **해시는 같은지 다른지만 말하고 어떻게 만드는지는 말하지
-    않는다** — 재현의 근거가 아니라 재현 뒤의 대조 수단이다.
+    않는다.**
 
     그래서 ⓐ 명령 ⓑ 입력의 좌표 ⓒ 계산이 서 있는 규약 ⓓ 대조할 해시를 함께
-    적는다. 넷이 다 있어야 「해 보았더니 다른 수가 나왔다」가 **어디서** 갈렸는지
-    말할 수 있다.
+    적는다.
     """
     basis = report.basis
     return [
@@ -277,24 +330,23 @@ def reproduction_section(report: CaseReport) -> list[str]:
         f"| 초기투자 | {_won(basis.initial_investment_won)} (지원 반영 전 총사업비) |",
         f"| 1년차 편익 | {_won(basis.annual_benefit_won)} |",
         f"| 1년차 운영비 | {_won(basis.annual_cost_won)} |",
+        "| 디스패치 규칙 순서 | 붙임 6 (스텝별 결과는 붙임 7) |",
         "",
-        "설비 제원은 0절 표가 전부이며 그 값의 소유자는",
-        "`core/casegrid/e2e_runner.py` 의 모듈 상수다 — 대장이 아니다(설비 제원은",
-        "금액이 아니기 때문이다). 단가·분석기간만 대장에서 온다.",
+        "- 설비 제원 — 2.1 표가 전건 · 소유자는 `core/casegrid/e2e_runner.py` "
+        "모듈 상수 (대장 아님)",
+        "- 대장에서 오는 값 — 단가 · 분석기간",
         "",
         "### 대조",
         "",
-        f"- 실행 매니페스트 해시 **`{report.manifest_hash}`**",
-        "- 위 입력이 전부 같으면 해시가 같고, 하나라도 다르면 달라진다",
-        "  (`FR-1005-AC1`). **해시가 같은데 수치가 다르면 코드가 바뀐 것**이다.",
-        "- 골든 회귀는 `fixtures/golden/` 이 따로 붙든다 — 그쪽 기준값은 대장",
-        "  가정에 묶여 있어 **대장을 갱신하면 재산출이 필요하다.** 회귀 실패가",
-        "  곧 결함은 아니다.",
-        "",
-        "### 이 수치의 유효기간",
-        "",
-        "붙임 1 에 신뢰도 `가정` 항목이 포함되어 있다. **대장이 갱신되면 이",
-        "리포트의 모든 수치가 바뀐다** — 리포트를 손으로 고치지 말고 위 명령을",
-        "다시 돌려 새로 뽑을 것.",
+        "| 항목 | 값 |",
+        "|---|---|",
+        f"| 실행 매니페스트 해시 | `{report.manifest_hash}` |",
+        "| 해시의 성질 | 위 입력이 전부 같으면 같고, 하나라도 다르면 다르다 "
+        "(`FR-1005-AC1`) |",
+        "| 해시 일치 · 수치 불일치 | 코드가 바뀐 것 |",
+        "| 골든 회귀 | `fixtures/golden/` 이 별도로 붙든다 · 기준값은 대장 "
+        "가정에 묶여 있어 대장 갱신 시 재산출 필요 |",
+        "| 유효기간 | 대장 갱신 시 전 수치 변경 — 위 명령으로 재생성 "
+        "(손으로 고치지 않는다) |",
         "",
     ]

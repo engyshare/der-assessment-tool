@@ -82,7 +82,7 @@
 | `FR-105` | Must-have | 1 | `FR-105-AC1` | 자원 클래스는 자신이 지원하는 운전 방법 목록을 선언한다. 예: | 자동 | test_der_contract.py, test_dv_rule_enforcement.py 2건, test_ess.py 3건, test_ev_v2g.py 4건, test_heatpump.py 5건, test_operating_mode_mapping.py, test_pv.py 5건, test_pv_validation.py |
 |  |  | 1 | `FR-105-AC2` | 운전 방법은 자원 클래스에 함께 정의되며, 신규 운전 방법 추가 시 코어 엔진 수정이 발생하지 않는다 (NFR-201과 동일 기준) | 자동 | test_17_11_sg5.py, test_pv.py |
 |  |  | 1 | `FR-105-AC3` | 동일 시나리오 내에서 같은 유형의 두 인스턴스가 서로 다른 운전 방법을 가질 수 있다 (예: 가구용 ESS는 자가소비 우선, 공용부 ESS는 피크 저감) | 자동 | test_ess.py, test_pv.py |
-|  |  | 1 | `FR-105-AC4` | 선택한 운전 방법이 FR-302 디스패치 우선순위와 어떻게 결합되는지 리포트에 표기한다 | 자동 | test_dispatch_notes.py 5건 |
+|  |  | 1 | `FR-105-AC4` | 선택한 운전 방법이 FR-302 디스패치 우선순위와 어떻게 결합되는지 리포트에 표기한다 | 자동 | test_dispatch_notes.py 5건, test_operation_appendices.py 3건 |
 |  |  | 1 | `FR-105-AC5` | 운전 방법을 케이스 그리드의 탐색 변수로 지정할 수 있다 (FR-801) | 자동 | test_operating_mode_mapping.py |
 | `FR-106` | Must-have | 1 | `FR-106-AC1` | CommonAsset은 capex() / fixed_om() / lifetime / replacement_schedule() / salvage_value() 를… | 자동 | test_common_asset.py 4건 |
 |  |  | 1 | `FR-106-AC2` | 기본 제공 유형: CEMS(단지 통합 제어·모니터링), HEMS(가구 단위), 공용 계량·통신 설비 | 자동 | test_common_asset.py 3건 |
@@ -296,16 +296,16 @@
 |  |  | 1 | `FR-905-AC7` | 공유·중복 방지: 동일 데이터셋을 여러 시나리오·인스턴스가 참조하며 중복 저장하지 않는다. 데이터셋 삭제 시 참조 중인 시나리오를 먼저 안내한다 | 자동 | test_timeseries.py |
 |  |  | 1 | `FR-905-AC8` | 출처 메타데이터: 데이터셋도 (출처, 계측기간, 해상도, 신뢰도, 최종확인일) 을 보유하고 리포트에 표기한다 | 자동 | test_timeseries.py |
 | `FR-1001` | Must-have | 1 | `FR-1001-AC1` | (가) 영향 인자 우선 제시 — 각 결과 지표 옆에 그 값을 좌우한 상위 인자를 영향도 순으로 제시한다. 순위는 감이 아니라 민감도 계산 결과로 정한다 (FR-… | 자동 | test_phase1_dod.py, test_report.py |
-|  |  | 1 | `FR-1001-AC2` | (나) 산식 확인 — 임의 지표·프로포마 항목에서 그것을 만든 산식과 대입값을 그 자리에서 펼쳐볼 수 있다. 이동 횟수를 제약하지 않으며, "펼치면 보인다"가 … | 자동 | test_narrative.py 2건, test_report.py |
+|  |  | 1 | `FR-1001-AC2` | (나) 산식 확인 — 임의 지표·프로포마 항목에서 그것을 만든 산식과 대입값을 그 자리에서 펼쳐볼 수 있다. 이동 횟수를 제약하지 않으며, "펼치면 보인다"가 … | 자동 | test_narrative.py 2건, test_operation_appendices.py 2건, test_report.py |
 |  |  | 1 | `FR-1001-AC3` | (다) 3중 표기 — 각 산식은 자연어 설명 + 수식 + 대입값으로 표기한다 | 자동 | test_phase1_dod.py, test_case_report.py, test_report.py 3건 |
 |  |  | 1 | `FR-1001-AC4` | (라) 출처 동반 — 산식에 등장하는 모든 입력값에 출처·기준연도·신뢰도가 함께 표시된다 | 자동 | test_case_report.py, test_narrative.py, test_report.py |
 |  |  | 1 | `FR-1001-AC5` | (마) 판정 기준 — 비개발자 검토자가 리포트만 보고 "이 회수기간이 왜 이 값인지"와 "어떤 가정이 바뀌면 결론이 달라지는지"를 설명할 수 있다. 측정: 심의… | 수동 | test_report.py (스텁) + MC-1 (미수행) |
 | `FR-1002` | Must-have | 1 | `FR-1002-AC1` | 영향도 순 정렬이 1순위: 리포트 첫 화면은 주 지표(할인 회수기간)에 대한 인자별 영향도 순위로 시작한다. 입력 순·분류 순 나열은 부록으로 보낸다 | 자동 | test_phase1_dod.py, test_case_report.py, test_narrative.py 2건, test_report.py, test_sensitivity_real.py, test_dashboard.py |
-|  |  | 1 | `FR-1002-AC2` | 영향도 산출 방식: 각 인자를 합리적 변동 범위(전제의 신뢰구간, 없으면 기본 ±20%)에서 변동시켜 주 지표가 움직인 폭으로 측정한다. 케이스 그리드를 실행하… | 자동 | test_case_report.py 2건, test_combined_scenarios.py 4건, test_report.py, test_sensitivity_real.py |
+|  |  | 1 | `FR-1002-AC2` | 영향도 산출 방식: 각 인자를 합리적 변동 범위(전제의 신뢰구간, 없으면 기본 ±20%)에서 변동시켜 주 지표가 움직인 폭으로 측정한다. 케이스 그리드를 실행하… | 자동 | test_case_report.py 2건, test_combined_scenarios.py 5건, test_report.py, test_sensitivity_real.py |
 |  |  | 1 | `FR-1002-AC3` | 각 인자마다 함께 표시: 사용값 / 단위 / 기준연도 / 출처 / 신뢰도 / 최종확인일 / 지표 변동폭 / 결론이 뒤집히는 임계값 존재 여부 | 자동 | test_case_report.py 3건, test_narrative.py, test_report.py |
-|  |  | 1 | `FR-1002-AC4` | 결론 전환 강조: 합리적 변동 범위 안에서 목표 달성 여부가 뒤바뀌는 인자는 최상단에 별도 강조한다. 이것이 정책 판단에서 가장 중요한 정보다 | 자동 | test_case_report.py, test_combined_scenarios.py 3건, test_narrative.py, test_report.py, test_sensitivity_real.py 3건 |
+|  |  | 1 | `FR-1002-AC4` | 결론 전환 강조: 합리적 변동 범위 안에서 목표 달성 여부가 뒤바뀌는 인자는 최상단에 별도 강조한다. 이것이 정책 판단에서 가장 중요한 정보다 | 자동 | test_case_report.py, test_combined_scenarios.py 4건, test_narrative.py, test_report.py, test_sensitivity_real.py 3건 |
 |  |  | 1 | `FR-1002-AC5` | 가정 값 결합 표시 (v0.5 어휘 정정): 신뢰도 가정 인자는 영향도와 함께 표시하여, "영향도 낮은 가정"과 "영향도 높은 가정"을 구분할 수 있게 한다. … | 자동 | test_case_report.py, test_report.py 2건 |
-|  |  | 1 | `FR-1002-AC6` | 전체 가정 목록: 영향도 순위와 별개로 전 가정 목록을 부록 시트로 제공한다 (재현·검증용) | 자동 | test_case_report.py, test_report.py 2건 |
+|  |  | 1 | `FR-1002-AC6` | 전체 가정 목록: 영향도 순위와 별개로 전 가정 목록을 부록 시트로 제공한다 (재현·검증용) | 자동 | test_case_report.py, test_overview_sections.py 2건, test_report.py 2건 |
 | `FR-1003` | Must-have | 1 | `FR-1003-AC1` | XLSX: 엑셀에서 검산 가능한 형태 — 입력·프로포마·시계열·결과 시트를 분리하고, 주요 계산은 값이 아닌 셀 수식으로 출력하여 기존 엑셀 검토 방식과 병행 … | 자동 | test_benefit_breakdown_sheet.py 3건, test_report.py 3건 |
 |  |  | 1 | `FR-1003-AC2` | PDF: 심의자료용 요약 (표지·가정·결과·조합탐색·결론 5부) | 자동 | test_report.py 2건 |
 |  |  | 1 | `FR-1003-AC3` | JSON: 시나리오+전제 정의 전체 (재현용) | 자동 | test_reports_router.py, test_report.py |

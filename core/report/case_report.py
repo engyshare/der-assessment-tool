@@ -60,14 +60,24 @@ from core.assumption.provider import AssumptionSet
 from core.casegrid.e2e_runner import run_single_case_e2e
 from core.casegrid.ledger_levels import (
     build_level_map,
+    design_variables,
     ledger_backed_variables,
     ledger_unit_scales,
 )
 from core.casegrid.models import CaseBasis
+from core.casegrid.profiles import load_daily_shapes
 from core.casegrid.variants import run_order
 from core.contracts.assumptions import AssumptionValue
+from core.engine.rule_based import DispatchRule
 from core.incentive.schemas import IncentiveScheme
+from core.report.capacity import CapacityFinding, build_capacity_review
 from core.report.combined import CoupledSweep, build_coupled_sweeps
+from core.report.dispatch_notes import (
+    DispatchHour,
+    DispatchNote,
+    build_dispatch_notes,
+    build_hourly_profile,
+)
 from core.report.manifest import create_manifest
 from core.report.sensitivity import rank_influences
 
@@ -194,6 +204,22 @@ class CaseReport:
     formulas: tuple[Formula, ...]
     assumptions: tuple[AssumptionRow, ...]
     manifest_hash: str
+    #: 자원별 「운전 방법 × 디스패치 규칙 × 순위」 (`FR-105-AC4` · 의견 2).
+    dispatch_notes: tuple[DispatchNote, ...]
+    #: 이 실행이 적용한 규칙 순서. **엔진의 선언을 그대로 나른다** — 리포트가
+    #: 기본 순서를 다시 적으면 순서를 바꾼 실행에서 표가 조용히 틀린다.
+    rule_order: tuple[DispatchRule, ...]
+    #: 대표일 스텝별 운전 (의견 3).
+    dispatch_hours: tuple[DispatchHour, ...]
+    #: **부하·일사 형상을 가정해 다시 그린 운전** — 붙임 7 의 둘째 표.
+    #: 프로포마는 이것으로 다시 계산하지 않는다(자가소비 절감을 화폐화할
+    #: 소매 단가가 없어 한쪽만 반영하면 사업에 불리한 쪽으로 틀린다).
+    assumed_hours: tuple[DispatchHour, ...]
+    #: 그 운전이 쓴 형상과 총량. 리포트가 **무엇을 가정했는지** 적는다.
+    assumed_basis: AssumedOperationBasis | None
+    #: 설계 변수(용량)를 탐색 구간에서 훑은 결과 — 4.4 · 붙임 10.
+    #: *「적정 용량 검토가 선행되어야 한다」* 는 지적이 만든 절이다.
+    capacity_review: tuple[CapacityFinding, ...]
 
     @property
     def uncertain_influences(self) -> tuple[InfluenceEntry, ...]:
@@ -392,7 +418,16 @@ def _influences(
     scales = ledger_unit_scales()
     entries: list[InfluenceEntry] = []
 
+    # ★ **설계 변수는 여기서 뺀다** (4.4 가 진다). 5절이 답하는 물음은
+    # *「우리가 모르는 것 중 무엇이 결론을 좌우하는가」*, 즉 **무엇을 확보할
+    # 것인가**다. 용량은 모르는 값이 아니라 **고르는 값**이고, 한 표에 섞으면
+    # 「자료를 더 알아보라」와 「설계를 다시 하라」가 같은 우선순위 표에서
+    # 경쟁한다 — 할인율을 5.2 로 가른 것과 같은 판단이다.
+    design = {variable.name for variable in design_variables()}
+
     for variable, levels in level_map.items():
+        if variable in design:
+            continue
         ranked = rank_influences(
             {variable: dict(levels)},
             metric_fn=_probe_for(sweeper, variable),
@@ -464,8 +499,7 @@ def _formulas(basis: CaseBasis, metrics: Mapping[str, float]) -> tuple[Formula, 
             label="할인 회수기간",
             natural=(
                 "할인 회수기간 = 누적 할인 현금흐름이 초기투자에 도달하는 시점. "
-                "분석기간 안에 도달하지 못하면 「미회수」이며, 그것은 NPV 가 "
-                "음수인 것과 같은 말이다"
+                "분석기간 안에 도달하지 못하면 「미회수」"
             ),
             expression="min{ T' : Σ(t=1..T') CF_t / (1+r)^t ≥ I₀ }",
             substituted=(
@@ -475,6 +509,70 @@ def _formulas(basis: CaseBasis, metrics: Mapping[str, float]) -> tuple[Formula, 
         ),
     )
 
+
+#: 부하 총량이 오는 대장 키. 형상은 자산(`fixtures/profiles/`)이 정하고
+#: **총량은 대장이 정한다** — 둘을 한 곳에 두면 하나를 고칠 때 다른 하나가
+#: 따라 움직이거나 그 반대가 된다.
+LOAD_LEDGER_KEY = "load.household.annual"
+
+
+@dataclass(frozen=True)
+class AssumedOperationBasis:
+    """가정 운전이 **무엇을 가정했는지** — 붙임 7 둘째 표의 머리.
+
+    적지 않으면 두 표의 차이가 *「계산을 고쳤다」* 로 읽힌다. 실제로는 **입력을
+    가정한 것**이며, 그 가정의 출처·신뢰도까지 함께 실어야 검토자가 어느 쪽을
+    믿을지 스스로 정한다.
+    """
+
+    load_title: str
+    load_confidence: str
+    load_annual_kwh: float
+    load_ledger_key: str
+    generation_title: str
+    generation_confidence: str
+
+
+def _assumed_operation(
+    *,
+    level_map: Mapping[str, Mapping[str, float]],
+    horizon_years: int,
+    scheme: IncentiveScheme | None,
+    provider: AssumptionSet,
+) -> tuple[tuple[DispatchHour, ...], AssumedOperationBasis | None]:
+    """부하·일사 형상을 주고 **같은 진입점**을 한 번 더 부른다.
+
+    자산이나 대장 항목이 없으면 **메우지 않고 비운다** — 기본 형상으로 메우면
+    「자산이 비었다」와 「이 형상을 골랐다」가 구별되지 않고, 붙임 7 이 지어낸
+    운전을 실물처럼 싣는다.
+    """
+    try:
+        shapes = load_daily_shapes()
+        entry = provider.get(LOAD_LEDGER_KEY)
+    except (OSError, ValueError, KeyError):
+        return (), None
+    if entry is None:
+        # 대장에서 부하 총량이 사라지면 **비운다.** 기본값을 두면 대장을
+        # 고쳐도 붙임 7 이 옛 총량으로 계속 그려진다.
+        return (), None
+    annual = float(entry.value)
+
+    outcome = run_single_case_e2e(
+        {},
+        level_map=level_map,
+        horizon_years=horizon_years,
+        scheme=scheme,
+        daily_shapes=shapes,
+        annual_load_kwh=annual,
+    )
+    return build_hourly_profile(outcome.dispatch), AssumedOperationBasis(
+        load_title=shapes.load.title,
+        load_confidence=shapes.load.confidence,
+        load_annual_kwh=annual,
+        load_ledger_key=LOAD_LEDGER_KEY,
+        generation_title=shapes.generation.title,
+        generation_confidence=shapes.generation.confidence,
+    )
 
 def _appendix(provider: AssumptionSet) -> tuple[AssumptionRow, ...]:
     """전 가정 목록 — 영향도 순위와 **별개로** 제공한다 (`FR-1002-AC6`)."""
@@ -525,6 +623,30 @@ def build_case_report(
         base_npv=float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC]),
     )
 
+    # ★ **가정 운전** — 부하·일사 형상을 주고 **같은 진입점**을 한 번 더
+    # 부른다. 리포트가 자원을 다시 세우면 사본이 되고, 러너의 제원이 바뀔 때
+    # 붙임 7 만 옛 운전을 계속 인쇄한다.
+    #
+    # ⚠ **이 실행의 지표를 쓰지 않는다.** 부하를 넣으면 잉여판매가 줄어드는데
+    # 그 대가인 자가소비 절감은 소매 단가가 없어 계상할 수 없다 — 한쪽만
+    # 반영한 NPV 는 사업에 불리한 쪽으로 틀린다(NSPM 대칭성 · 양식 4절).
+    # 여기서 취하는 것은 **운전(물리량)뿐**이다.
+    assumed_hours, assumed_basis = _assumed_operation(
+        level_map=level_map, horizon_years=horizon_years, scheme=scheme,
+        provider=provider,
+    )
+
+    # ★ 용량 스윕은 **1변수 스윕과 같은 기계**를 쓴다 (`sweeper.conclusion_at`).
+    # 갈라 두면 용량 쪽만 변형(`as_planned`)을 읽지 않는 어긋남이 생긴다.
+    capacity_review = build_capacity_review(
+        sweeper.conclusion_at,
+        used={
+            name: levels["base"]
+            for name, levels in level_map.items()
+            if "base" in levels
+        },
+    )
+
     manifest = create_manifest({
         "scenario": scenario.get("scenario", scenario_path.stem),
         "subsidy_rate": subsidy_rate,
@@ -559,4 +681,17 @@ def build_case_report(
         formulas=_formulas(outcome.basis, outcome.variants[PLAN_VARIANT]),
         assumptions=_appendix(provider),
         manifest_hash=manifest.hash,
+        # ★ 엔진 규칙과 운전 결과를 **실행이 내놓은 것에서** 읽는다 (의견 2·3).
+        # 여기서 자원을 다시 세우거나 순서를 다시 적으면 사본이 되고, 러너가
+        # 운전 방법·규칙 순서를 바꿔도 리포트는 옛 표를 계속 인쇄한다.
+        dispatch_notes=tuple(
+            build_dispatch_notes(
+                list(outcome.resources), rule_order=outcome.rule_order
+            )
+        ),
+        rule_order=outcome.rule_order,
+        dispatch_hours=build_hourly_profile(outcome.dispatch),
+        capacity_review=capacity_review,
+        assumed_hours=assumed_hours,
+        assumed_basis=assumed_basis,
     )
