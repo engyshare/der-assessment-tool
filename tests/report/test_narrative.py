@@ -19,6 +19,10 @@ import pytest
 from core.report._format import _recovery
 from core.report.appendix_sections import UNREAD_BY_PIPELINE
 from core.report.case_report import CONCLUSION_METRIC, build_case_report
+from core.report.method_sections import (
+    cost_benefit_section,
+    resource_detail_section,
+)
 from core.report.narrative import NONE_IN_RANGE, render_markdown
 from core.report.unreflected import DIRECTION_ADVERSE, build_unreflected
 
@@ -242,8 +246,12 @@ def test_each_cost_item_shows_its_amount_and_formula() -> None:
     report = build_case_report(
         _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
     )
-    text = render_markdown(report)
-    detail = text[text.index("## 붙임 4.") : text.index("## 붙임 5.")]
+    # ★ **절을 만드는 함수에 직접 묻고, 그 결과가 문서에 실리는지 따로 본다.**
+    # 렌더된 문면만 보면 「붙임 4 를 짓는 코드」와 이 검사가 이름으로 이어지지
+    # 않아, `method_sections.py` 를 고치는 사람이 여기를 함께 보지 않는다
+    # (`check_test_accompaniment` 가 그것을 잡는다).
+    detail = "\n".join(resource_detail_section(report.basis))
+    assert detail in render_markdown(report), "붙임 4 절이 문서에 실리지 않았다"
 
     assert report.basis.costs, "비용 항목이 비어 있다"
     for line in report.basis.costs:
@@ -278,10 +286,9 @@ def test_the_resource_table_carries_the_costs_that_belong_to_no_resource() -> No
         "0이면 이 검사가 잔차 행의 부재를 정당한 상태로 읽는다"
     )
 
-    text = render_markdown(report)
-    section = text[
-        text.index("### 4.3 자원별 수지") : text.index("## 5. 결론을 좌우하는 요인")
-    ]
+    # 위 검사와 같은 이유로 절을 만드는 함수에 직접 묻는다.
+    section = "\n".join(cost_benefit_section(basis))
+    assert section in render_markdown(report), "4.3 절이 문서에 실리지 않았다"
 
     assert "자원 미귀속" in section, "자원에 붙지 않는 운영비가 4.3 에서 사라졌다"
     assert f"{unattributed:,}원" in section, (
