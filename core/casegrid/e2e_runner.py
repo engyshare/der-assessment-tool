@@ -280,6 +280,15 @@ def run_single_case_e2e(
         "grid_purchase_price",
         level_map,
     )
+    # ★ **잉여를 파는 단가** (`tariff.surplus_direct_sale` · R35). 종전에는 아래
+    # `SurplusSale(...)` 호출 안의 리터럴 120.0 이었고, 그것이 구매 단가의
+    # 기준값과 **우연히 같았다** — 근거와 파급은 `ledger_levels.py::_LEDGER_VARS`
+    # 의 그 줄에 있다. 기본값을 두지 않는 이유는 구매 단가와 같다.
+    surplus_sale_price = _resolve(
+        case_values.get("surplus_sale_price", "base"),
+        "surplus_sale_price",
+        level_map,
+    )
 
     # 1. Resources
     # ★ **형상이 오면 이용률 대신 시계열을 준다** (둘 다 주면 자원이 거부한다).
@@ -354,7 +363,9 @@ def run_single_case_e2e(
     # 무엇이 그 하나를 고르는가가 비어 있었고, 답이 계약구조다.
     #
     # 구조를 주지 않으면 종전 그대로 잉여판매를 쓴다 — `ModelConfig.contract` 가
-    # `| None` 이므로 「계약구조 없는 모델」은 정당한 상태다.
+    # `| None` 이므로 「계약구조 없는 모델」은 정당한 상태다. 그 갈래의 단가는
+    # **수준표에서 온다**(R35) — 리터럴이던 동안 그것은 어느 케이스 축에도 없어
+    # 영향도 표에 오르지 못했고, 구매 단가와 우연히 같은 값이었다.
     if structure is not None:
         if provider is None:
             raise ValueError(
@@ -378,7 +389,9 @@ def run_single_case_e2e(
         # `SettlementCost` 가 건넌다.
         settlement_costs = tuple(plan.costs)
     else:
-        settlement_streams = (SurplusSale(sale_price_won_per_kwh=120.0),)
+        settlement_streams = (
+            SurplusSale(sale_price_won_per_kwh=surplus_sale_price),
+        )
         settlement_costs = ()
 
     peak_reduction_kw = ess.reducible_peak_kw(year=1)

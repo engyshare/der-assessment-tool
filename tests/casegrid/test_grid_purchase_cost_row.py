@@ -58,6 +58,10 @@ def _level_map(grid_purchase_price: float) -> dict[str, Mapping[str, float]]:
         "ess_unit_cost": MappingProxyType({"base": 400_000.0}),
         "discount_rate": MappingProxyType({"base": 0.045}),
         "grid_purchase_price": MappingProxyType({"base": grid_purchase_price}),
+        # 잉여 판매단가 — 러너가 요구한다(R35). 이 파일이 흔드는 값이 아니므로
+        # 고정하되 **구매 단가와 다른 수**로 둔다: 같게 두면 단가를 0·200 으로
+        # 흔드는 아래 검사들이 *판매* 단가도 함께 움직인 것처럼 읽힌다.
+        "surplus_sale_price": MappingProxyType({"base": 90.0}),
         **design_levels(),
     }
 

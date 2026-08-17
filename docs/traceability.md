@@ -242,7 +242,7 @@
 |  |  | 2 | `FR-702-AC2` | O&M 비용은 별도 처리 — 운전량이 아니라 설비 보유에 비례하므로 보간이 아닌 전후 채움 후 일괄 물가 적용 | **미매핑** | — |
 |  |  | 2 | `FR-702-AC3` | 자원 수명 종료로 구성이 바뀌는 해는 자동으로 시뮬레이션 대상에 추가된다 | **미매핑** | — |
 |  |  | 2 | `FR-702-AC4` | 보간으로 계산된 연도는 리포트에서 실계산 연도와 구분 표기된다 | **미매핑** | — |
-| `FR-703` | Must-have | 1 | `FR-703-AC1.npv` | NPV 할인 순현재가치 — 할인율 파라미터화 (공공 4.5~5.5% 기본). 오라클 §13.0.2 순위 1 / 원 단위 완전 일치 | 자동 | test_e2e_cost_sign.py 3건, test_grid_purchase_cost_row.py, test_metrics.py |
+| `FR-703` | Must-have | 1 | `FR-703-AC1.npv` | NPV 할인 순현재가치 — 할인율 파라미터화 (공공 4.5~5.5% 기본). 오라클 §13.0.2 순위 1 / 원 단위 완전 일치 | 자동 | test_e2e_cost_sign.py 3건, test_grid_purchase_cost_row.py, test_surplus_sale_price_wiring.py, test_metrics.py |
 |  |  | 1 | `FR-703-AC1.irr` | IRR 내부수익률 — 오라클 §13.0.2 순위 2 / 0.01%. FR-704-AC2(사업자 관점)가 이 조항만 인용한다 | 자동 | test_metrics.py |
 |  |  | 1 | `FR-703-AC1.mirr-value` | MIRR 수정내부수익률 (값) — 오라클 §13.0.2 순위 2 / 0.01% | 자동 | test_metrics.py |
 |  |  | 1 | `FR-703-AC1.mirr-order` | MIRR 우선 표시 규칙 — 현금흐름의 부호변경이 다수일 때 MIRR을 IRR보다 우선 표시한다. 값이 아니라 조건부 표시 규칙이므로 AC1.mirr-value… | 자동 | test_indicators.py |
@@ -297,7 +297,7 @@
 |  |  | 1 | `FR-905-AC8` | 출처 메타데이터: 데이터셋도 (출처, 계측기간, 해상도, 신뢰도, 최종확인일) 을 보유하고 리포트에 표기한다 | 자동 | test_timeseries.py |
 | `FR-1001` | Must-have | 1 | `FR-1001-AC1` | (가) 영향 인자 우선 제시 — 각 결과 지표 옆에 그 값을 좌우한 상위 인자를 영향도 순으로 제시한다. 순위는 감이 아니라 민감도 계산 결과로 정한다 (FR-… | 자동 | test_phase1_dod.py, test_report.py |
 |  |  | 1 | `FR-1001-AC2` | (나) 산식 확인 — 임의 지표·프로포마 항목에서 그것을 만든 산식과 대입값을 그 자리에서 펼쳐볼 수 있다. 이동 횟수를 제약하지 않으며, "펼치면 보인다"가 … | 자동 | test_narrative.py 4건, test_operation_appendices.py 2건, test_report.py |
-|  |  | 1 | `FR-1001-AC3` | (다) 3중 표기 — 각 산식은 자연어 설명 + 수식 + 대입값으로 표기한다 | 자동 | test_phase1_dod.py, test_grid_purchase_cost_row.py 3건, test_case_report.py, test_report.py 3건 |
+|  |  | 1 | `FR-1001-AC3` | (다) 3중 표기 — 각 산식은 자연어 설명 + 수식 + 대입값으로 표기한다 | 자동 | test_phase1_dod.py, test_grid_purchase_cost_row.py 3건, test_surplus_sale_price_wiring.py, test_case_report.py, test_report.py 3건 |
 |  |  | 1 | `FR-1001-AC4` | (라) 출처 동반 — 산식에 등장하는 모든 입력값에 출처·기준연도·신뢰도가 함께 표시된다 | 자동 | test_case_report.py, test_narrative.py, test_report.py |
 |  |  | 1 | `FR-1001-AC5` | (마) 판정 기준 — 비개발자 검토자가 리포트만 보고 "이 회수기간이 왜 이 값인지"와 "어떤 가정이 바뀌면 결론이 달라지는지"를 설명할 수 있다. 측정: 심의… | 수동 | test_report.py (스텁) + MC-1 (미수행) |
 | `FR-1002` | Must-have | 1 | `FR-1002-AC1` | 영향도 순 정렬이 1순위: 리포트 첫 화면은 주 지표(할인 회수기간)에 대한 인자별 영향도 순위로 시작한다. 입력 순·분류 순 나열은 부록으로 보낸다 | 자동 | test_phase1_dod.py, test_case_report.py, test_narrative.py 2건, test_report.py, test_sensitivity_real.py, test_dashboard.py |
@@ -336,7 +336,7 @@
 |  |  | 1 | `NFR-107-AC5` | 수동 검증 분류의 정본은 docs/manual-checks.yaml이다. spec은 어느 수용기준이 수동인지 열거하지 않는다. 대장의 전건에 대해 ⓐ crite… | 자동 | test_traceability_gate.py |
 |  |  | 1 | `NFR-107-M1` | CI가 spec 수용기준 목록과 마커·YAML을 대조하여 미매핑 0건 확인. 구현: scripts/gen_traceability.py (Wave 0 산출물 0.… | 자동 | test_17_9_dod9.py, test_marker_substance.py 11건, test_traceability_gate.py 4건 |
 | `NFR-201` | Must-have | 1 | `NFR-201-M1` | 신규 자원 추가 PR에서 core/engine/, core/cba/ diff 0줄 | 자동 | test_phase1_measurements.py |
-| `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | 자동 | test_e2e_settlement_wiring.py 2건, test_ledger_levels.py 4건, test_ci_gates.py, test_der_contract.py 2건, test_tariff.py, test_aggregated_ppa.py, test_settlement.py 3건, test_settlement_household_contract.py, test_settlement_manager_structure.py |
+| `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | 자동 | test_e2e_settlement_wiring.py 2건, test_ledger_levels.py 4건, test_surplus_sale_price_wiring.py 4건, test_ci_gates.py, test_der_contract.py 2건, test_tariff.py, test_aggregated_ppa.py, test_settlement.py 3건, test_settlement_household_contract.py, test_settlement_manager_structure.py |
 | `NFR-203` | Should-have | 1 | `NFR-203-M1` | pytest-cov CI 게이트 | 자동 | test_ci_gates.py |
 | `NFR-204` | Should-have | 1 | `NFR-204-M1` | mypy strict 통과 | 자동 | test_ci_gates.py |
 | `NFR-205` | Must-have | 1 | `NFR-205-M1` | 코드 리뷰 + lint 규칙. 근거: DER-VET Params.py의 클래스 변수 전역 상태는 동시 실행·테스트 격리를 불가능하게 만든다 (부록 C.5) | 자동 | test_ledger_levels.py, test_ci_gates.py 2건, test_ess.py |
