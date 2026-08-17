@@ -158,8 +158,13 @@ def method_section(report: CaseReport) -> list[str]:
         "| 초기투자 시점 | 총사업비를 `t=0` 에 두고 할인하지 않는다 · 운영 "
         "현금흐름만 1년차부터 할인 |",
         f"| 가격 기준 | {report.price_basis} (전 항목 공통) |",
-        "| 프로포마 비용 행 | 고정 운영비 (변동 O&M · 교체 · 잔존가치 미포함 · "
-        "3.4) |",
+        # ★ **비용 행의 구성을 문장으로 박지 않는다 (R34).** 종전 문면은
+        # *「고정 운영비」* 였고, 계통 전력 구매가 비용 행이 된 뒤로 **거짓이
+        # 됐다** — 규약 표는 검토자가 「무엇이 비용으로 세어졌는가」를 읽는
+        # 자리이므로, 그 자리가 틀리면 붙임 4 의 항목 표와 서로 다른 사업을
+        # 말한다. 실린 항목에서 지어 이 자리가 구성과 함께 움직이게 한다.
+        f"| 프로포마 비용 행 | {' · '.join(line.label for line in basis.costs)} "
+        "(변동 O&M · 교체 · 잔존가치 미포함 · 3.4) |",
         "",
         "### 3.3 평가 관점",
         "",
@@ -231,12 +236,31 @@ def cost_benefit_section(basis: CaseBasis) -> list[str]:
             f"{_won(resource.fixed_om_won_per_year)} | {_won(earned)} | "
             f"{_won(net)} | {payback} |"
         )
+    # ★★ **자원에 붙지 않는 운영비를 잔차로 싣는다 (R34).**
+    #
+    # 위 표는 자원마다 `fixed_om_won_per_year` 만 세므로, 자원에 귀속되지 않는
+    # 비용(계통 전력 구매 · 정산 수수료)이 **표에서 사라진다.** 사라지면 「연
+    # 순편익」과 「단순 회수」가 실제보다 좋게 나오고, 그 차이는 합계를 적지
+    # 않는 표에서는 아무에게도 보이지 않는다.
+    #
+    # 항목을 열거하지 않고 **잔차로** 계산하는 것이 요점이다 — 열거하면 새
+    # 비용이 생길 때 이 자리를 함께 고쳐야 하고, 고치지 않으면 다시 사라진다.
+    attributed = sum(
+        resource.fixed_om_won_per_year for resource in basis.resources
+    )
+    unattributed = basis.annual_cost_won - attributed
+    if unattributed:
+        lines.append(
+            f"| *자원 미귀속* | — | {_won(unattributed)} | — | — | — |"
+        )
     lines += [
         "",
         "- 「단순 회수」 산식 — 초기투자 ÷ 연 순편익 (**할인하지 않음** · 결론에 "
         "쓰는 지표는 4.1 의 할인 회수기간)",
         "- 이 표의 성립 조건 — 편익이 자원에 1:1 로 귀속될 때 "
         "(이 구성: PV→잉여판매 · ESS→첨두절감)",
+        "- 「자원 미귀속」 — 자원 하나에 귀속되지 않는 운영비 "
+        "(항목별 금액·산식은 붙임 4). 자원 행의 회수기간에는 반영되지 않는다",
         "",
     ]
     return lines
@@ -260,6 +284,24 @@ def resource_detail_section(basis: CaseBasis) -> list[str]:
         "|---|---|---|---|",
         *(_benefit_row(line, total_benefit) for line in basis.benefits),
         f"| **합계** | | **{_won(total_benefit)}** | 100% |",
+        "",
+        # ★★ **비용 항목을 편익과 같은 자리에 싣는다 (R34).**
+        #
+        # 종전에는 본문·붙임 어디에도 비용의 **항목별** 표가 없었고 「1년차
+        # 운영비」 합계 하나만 있었다. 합계만 있는 표에서는 **빠진 행이
+        # 드러나지 않는다** — 계통에서 산 전력이 값 없이 쓰이던 동안 운영비는
+        # 200,000원(고정 O&M 둘)으로 그럴듯했다. 산식 칸에 수량과 단가를 함께
+        # 적는 이유는 둘을 고치는 사람이 다르기 때문이다(단가는 대장, 수량은 운전).
+        "### 비용 항목",
+        "",
+        "| 항목 | 귀속 자원 | 연 금액 | 산식 |",
+        "|---|---|---|---|",
+        *(
+            f"| {line.label} | {line.from_resource or '—'} | "
+            f"{_won(line.annual_won)} | `{line.formula}` |"
+            for line in basis.costs
+        ),
+        f"| **합계** | | **{_won(basis.annual_cost_won)}** | |",
         "",
     ]
     for resource in basis.resources:

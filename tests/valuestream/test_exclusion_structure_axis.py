@@ -58,6 +58,8 @@ _RULES: tuple[ExclusionRule, ...] = (
 
 class _StructA(ValueStream):
     tag: ClassVar[str] = "_StructA"
+    #: 검사용 편익 — 창을 읽지 않으므로 연간화 대상이 아니다 (R34 계약).
+    scales_with_dispatch_window = False
     #: **클래스 기본값이 있어야 구조 없이도 설 수 있다.** 없으면 구조를 주지 않은
     #: 인스턴스가 `DV-13`(지불 주체 미특정)으로 거부되고, 그러면 아래 「구조를
     #: 모르는 조합」 케이스를 만들 수 없다 — 실물 편익도 전부 기본값을 갖는다.
@@ -75,6 +77,8 @@ class _StructA(ValueStream):
 
 class _StructB(ValueStream):
     tag: ClassVar[str] = "_StructB"
+    #: 검사용 편익 — 창을 읽지 않으므로 연간화 대상이 아니다 (R34 계약).
+    scales_with_dispatch_window = False
     payer = Payer.OPERATOR
 
     def __init__(self, *, structure: str | None = None) -> None:

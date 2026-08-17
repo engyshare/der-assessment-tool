@@ -109,7 +109,7 @@
 |  |  | 1 | `FR-205-AC1.DistrictDirectTrade` | 분산특구 직접거래 — (약관요금 − 계약단가) × 거래량 − 거래지원수수료(FR-401-AC2.DirectTrade). 계약단가·거래량은 협상값이며 없으면 거부… | 자동 | test_e2e_settlement_wiring.py, test_payer_structure_contract.py 3건, test_settlement.py 6건 |
 |  |  | 1 | `FR-205-AC1.NetMetering` | 상계거래 — 잉여를 판매하지 않고 요금에서 차감한다. 차감단가는 약관요금(실효단가)이며 판매단가(SMP)가 아니다 — SMP 는 도매가라 회피한 요금보다 적게 … | 자동 | test_e2e_settlement_wiring.py 3건, test_payer_structure_contract.py 4건, test_exclusion_structure_axis.py 3건, test_settlement.py 7건 |
 |  |  | 1 | `FR-205-AC1.SurplusDirectSale` | 잉여 직거래 — 상계와 같은 산식, 다른 단가(Q-16, 도매 정산단가 계열). 같은 단가를 쓰면 두 구조가 수치까지 같아지고 FR-202 비교표에 같은 줄이 … | 자동 | test_payer_structure_contract.py 3건, test_settlement.py 3건 |
-|  |  | 1 | `FR-205-AC1.AggregatedPPA` | 집합 PPA — 발전량 전량 × PPA 계약단가(FR-401-AC2.AggregatedPPA). 잉여판매로 대신하면 자가소비분이 빠져 편익이 조용히 작아진다 | 자동 | test_payer_structure_contract.py 3건, test_aggregated_ppa.py 2건, test_settlement.py 2건 |
+|  |  | 1 | `FR-205-AC1.AggregatedPPA` | 집합 PPA — 발전량 전량 × PPA 계약단가(FR-401-AC2.AggregatedPPA). 잉여판매로 대신하면 자가소비분이 빠져 편익이 조용히 작아진다 | 자동 | test_annualisation_convention.py, test_payer_structure_contract.py 3건, test_aggregated_ppa.py 2건, test_settlement.py 2건 |
 |  |  | 2 | `FR-205-AC1.VPP` | VPP 경유 — VPP 사업자를 경유한 시장참여 정산. FR-401-AC2.VPPMarket 이 선행이다 | 자동 | test_e2e_settlement_wiring.py, test_payer_structure_contract.py 3건, test_settlement.py 3건 |
 | `FR-301` | Must-have | 1 | `FR-301-AC1` | 매 스텝 자원별 충·방전·발전·소비량과 계통 수·송전량을 산출 | 자동 | test_ess.py, test_ev_v2g.py, test_rule_based.py |
 |  |  | 1 | `FR-301-AC2` | 전력·열 수지 균형식이 모든 스텝에서 오차 < 1e-6 kWh | 자동 | test_ess.py, test_thermal_load.py 2건, test_rule_based.py |
@@ -126,14 +126,14 @@
 |  |  | - | `FR-303-AC4` | Infeasible 시 어떤 제약이 충돌했고 어느 편익이 원인인지 진단 (FR-403 연계) | **미매핑** | — |
 | `FR-304` | Nice-to-have | 3 | `FR-304-AC1` | PV·ESS 용량을 결정변수로 NPV 최대화 조합 산출. 연간 손익과 자본비의 시간 스케일 정합을 위해 연금 환산 계수를 적용한다 (부록 C.3 B-2) | **미매핑** | — |
 | `FR-305` | Nice-to-have | 3 | `FR-305-AC1` | 임의 시점 N시간 정전 시 부하 지속 시간 산출, EENS 화폐가치를 편익 계상 | **미매핑** | — |
-| `FR-401` | Must-have | 1 | `FR-401-AC1` | 편익 1종 = 독립 클래스 1개로 구현되고, 각 편익은 활성화 여부를 개별 토글할 수 있다. 편익을 추가하거나 비활성화해도 코어 엔진(core/engine/·c… | 자동 | test_der_contract.py 2건, test_aggregated_ppa.py, test_formulas.py |
+| `FR-401` | Must-have | 1 | `FR-401-AC1` | 편익 1종 = 독립 클래스 1개로 구현되고, 각 편익은 활성화 여부를 개별 토글할 수 있다. 편익을 추가하거나 비활성화해도 코어 엔진(core/engine/·c… | 자동 | test_annualisation_convention.py 3건, test_der_contract.py 2건, test_aggregated_ppa.py, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.SelfConsumption` | SelfConsumption 자가소비 전기요금 절감 — (기존요금 − 신규요금), 누진·TOU 구조 반영 | 자동 | test_pv.py, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.SurplusSale` | SurplusSale 잉여전력 판매 — 잉여량 × 판매단가(직거래/상계/SMP) | 자동 | test_pv.py 2건, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.REC` | REC REC 수익 — 발전량 × 가중치 × REC 단가 | 자동 | test_pv.py 2건, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.DirectTrade` | DirectTrade 분산특구 직접거래 차익 — (약관요금 − 직접거래단가) × 거래량 − 거래지원수수료 | 자동 | test_formulas.py |
 |  |  | 1 | `FR-401-AC2.PeakShaving` | PeakShaving 기본요금(피크) 절감 — 월 최대수요 저감분 × 기본요금 단가 | 자동 | test_ess.py, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.HeatCostSaving` | HeatCostSaving 열 비용 절감 (히트펌프) — (기존 열원 연료비 − 히트펌프 전력비) | 자동 | test_heatpump.py 2건, test_formulas.py |
-|  |  | 1 | `FR-401-AC2.AggregatedPPA` | AggregatedPPA 집합 PPA 수익 — 발전량 전량 × PPA 계약단가(약관요금 × 비율) (v0.16 신설) | 자동 | test_aggregated_ppa.py 5건 |
+|  |  | 1 | `FR-401-AC2.AggregatedPPA` | AggregatedPPA 집합 PPA 수익 — 발전량 전량 × PPA 계약단가(약관요금 × 비율) (v0.16 신설) | 자동 | test_e2e_settlement_wiring.py 2건, test_annualisation_convention.py, test_aggregated_ppa.py 5건 |
 |  |  | 2 | `FR-401-AC2.DemandResponse` | DemandResponse 수요반응 정산금 — 감축량 × 정산단가 (중복·배타 규칙 반영) | **미매핑** | — |
 |  |  | 2 | `FR-401-AC2.VPPMarket` | VPPMarket VPP 시장참여 수익 — 시장정산 − 운영수수료 | **미매핑** | — |
 |  |  | 3 | `FR-401-AC2.Resilience` | Resilience 정전 회피 편익 — EENS × VoLL | **미매핑** | — |
@@ -242,7 +242,7 @@
 |  |  | 2 | `FR-702-AC2` | O&M 비용은 별도 처리 — 운전량이 아니라 설비 보유에 비례하므로 보간이 아닌 전후 채움 후 일괄 물가 적용 | **미매핑** | — |
 |  |  | 2 | `FR-702-AC3` | 자원 수명 종료로 구성이 바뀌는 해는 자동으로 시뮬레이션 대상에 추가된다 | **미매핑** | — |
 |  |  | 2 | `FR-702-AC4` | 보간으로 계산된 연도는 리포트에서 실계산 연도와 구분 표기된다 | **미매핑** | — |
-| `FR-703` | Must-have | 1 | `FR-703-AC1.npv` | NPV 할인 순현재가치 — 할인율 파라미터화 (공공 4.5~5.5% 기본). 오라클 §13.0.2 순위 1 / 원 단위 완전 일치 | 자동 | test_e2e_cost_sign.py 3건, test_metrics.py |
+| `FR-703` | Must-have | 1 | `FR-703-AC1.npv` | NPV 할인 순현재가치 — 할인율 파라미터화 (공공 4.5~5.5% 기본). 오라클 §13.0.2 순위 1 / 원 단위 완전 일치 | 자동 | test_e2e_cost_sign.py 3건, test_grid_purchase_cost_row.py, test_metrics.py |
 |  |  | 1 | `FR-703-AC1.irr` | IRR 내부수익률 — 오라클 §13.0.2 순위 2 / 0.01%. FR-704-AC2(사업자 관점)가 이 조항만 인용한다 | 자동 | test_metrics.py |
 |  |  | 1 | `FR-703-AC1.mirr-value` | MIRR 수정내부수익률 (값) — 오라클 §13.0.2 순위 2 / 0.01% | 자동 | test_metrics.py |
 |  |  | 1 | `FR-703-AC1.mirr-order` | MIRR 우선 표시 규칙 — 현금흐름의 부호변경이 다수일 때 MIRR을 IRR보다 우선 표시한다. 값이 아니라 조건부 표시 규칙이므로 AC1.mirr-value… | 자동 | test_indicators.py |
@@ -296,14 +296,14 @@
 |  |  | 1 | `FR-905-AC7` | 공유·중복 방지: 동일 데이터셋을 여러 시나리오·인스턴스가 참조하며 중복 저장하지 않는다. 데이터셋 삭제 시 참조 중인 시나리오를 먼저 안내한다 | 자동 | test_timeseries.py |
 |  |  | 1 | `FR-905-AC8` | 출처 메타데이터: 데이터셋도 (출처, 계측기간, 해상도, 신뢰도, 최종확인일) 을 보유하고 리포트에 표기한다 | 자동 | test_timeseries.py |
 | `FR-1001` | Must-have | 1 | `FR-1001-AC1` | (가) 영향 인자 우선 제시 — 각 결과 지표 옆에 그 값을 좌우한 상위 인자를 영향도 순으로 제시한다. 순위는 감이 아니라 민감도 계산 결과로 정한다 (FR-… | 자동 | test_phase1_dod.py, test_report.py |
-|  |  | 1 | `FR-1001-AC2` | (나) 산식 확인 — 임의 지표·프로포마 항목에서 그것을 만든 산식과 대입값을 그 자리에서 펼쳐볼 수 있다. 이동 횟수를 제약하지 않으며, "펼치면 보인다"가 … | 자동 | test_narrative.py 2건, test_operation_appendices.py 2건, test_report.py |
-|  |  | 1 | `FR-1001-AC3` | (다) 3중 표기 — 각 산식은 자연어 설명 + 수식 + 대입값으로 표기한다 | 자동 | test_phase1_dod.py, test_case_report.py, test_report.py 3건 |
+|  |  | 1 | `FR-1001-AC2` | (나) 산식 확인 — 임의 지표·프로포마 항목에서 그것을 만든 산식과 대입값을 그 자리에서 펼쳐볼 수 있다. 이동 횟수를 제약하지 않으며, "펼치면 보인다"가 … | 자동 | test_narrative.py 4건, test_operation_appendices.py 2건, test_report.py |
+|  |  | 1 | `FR-1001-AC3` | (다) 3중 표기 — 각 산식은 자연어 설명 + 수식 + 대입값으로 표기한다 | 자동 | test_phase1_dod.py, test_grid_purchase_cost_row.py 3건, test_case_report.py, test_report.py 3건 |
 |  |  | 1 | `FR-1001-AC4` | (라) 출처 동반 — 산식에 등장하는 모든 입력값에 출처·기준연도·신뢰도가 함께 표시된다 | 자동 | test_case_report.py, test_narrative.py, test_report.py |
 |  |  | 1 | `FR-1001-AC5` | (마) 판정 기준 — 비개발자 검토자가 리포트만 보고 "이 회수기간이 왜 이 값인지"와 "어떤 가정이 바뀌면 결론이 달라지는지"를 설명할 수 있다. 측정: 심의… | 수동 | test_report.py (스텁) + MC-1 (미수행) |
 | `FR-1002` | Must-have | 1 | `FR-1002-AC1` | 영향도 순 정렬이 1순위: 리포트 첫 화면은 주 지표(할인 회수기간)에 대한 인자별 영향도 순위로 시작한다. 입력 순·분류 순 나열은 부록으로 보낸다 | 자동 | test_phase1_dod.py, test_case_report.py, test_narrative.py 2건, test_report.py, test_sensitivity_real.py, test_dashboard.py |
-|  |  | 1 | `FR-1002-AC2` | 영향도 산출 방식: 각 인자를 합리적 변동 범위(전제의 신뢰구간, 없으면 기본 ±20%)에서 변동시켜 주 지표가 움직인 폭으로 측정한다. 케이스 그리드를 실행하… | 자동 | test_case_report.py 2건, test_combined_scenarios.py 5건, test_report.py, test_sensitivity_real.py |
+|  |  | 1 | `FR-1002-AC2` | 영향도 산출 방식: 각 인자를 합리적 변동 범위(전제의 신뢰구간, 없으면 기본 ±20%)에서 변동시켜 주 지표가 움직인 폭으로 측정한다. 케이스 그리드를 실행하… | 자동 | test_case_report.py 2건, test_combined_scenarios.py 6건, test_report.py, test_sensitivity_real.py |
 |  |  | 1 | `FR-1002-AC3` | 각 인자마다 함께 표시: 사용값 / 단위 / 기준연도 / 출처 / 신뢰도 / 최종확인일 / 지표 변동폭 / 결론이 뒤집히는 임계값 존재 여부 | 자동 | test_case_report.py 3건, test_narrative.py, test_report.py |
-|  |  | 1 | `FR-1002-AC4` | 결론 전환 강조: 합리적 변동 범위 안에서 목표 달성 여부가 뒤바뀌는 인자는 최상단에 별도 강조한다. 이것이 정책 판단에서 가장 중요한 정보다 | 자동 | test_case_report.py, test_combined_scenarios.py 4건, test_narrative.py, test_report.py, test_sensitivity_real.py 3건 |
+|  |  | 1 | `FR-1002-AC4` | 결론 전환 강조: 합리적 변동 범위 안에서 목표 달성 여부가 뒤바뀌는 인자는 최상단에 별도 강조한다. 이것이 정책 판단에서 가장 중요한 정보다 | 자동 | test_case_report.py, test_combined_scenarios.py 5건, test_narrative.py 2건, test_report.py, test_sensitivity_real.py 3건 |
 |  |  | 1 | `FR-1002-AC5` | 가정 값 결합 표시 (v0.5 어휘 정정): 신뢰도 가정 인자는 영향도와 함께 표시하여, "영향도 낮은 가정"과 "영향도 높은 가정"을 구분할 수 있게 한다. … | 자동 | test_case_report.py, test_report.py 2건 |
 |  |  | 1 | `FR-1002-AC6` | 전체 가정 목록: 영향도 순위와 별개로 전 가정 목록을 부록 시트로 제공한다 (재현·검증용) | 자동 | test_case_report.py, test_overview_sections.py 2건, test_report.py 2건 |
 | `FR-1003` | Must-have | 1 | `FR-1003-AC1` | XLSX: 엑셀에서 검산 가능한 형태 — 입력·프로포마·시계열·결과 시트를 분리하고, 주요 계산은 값이 아닌 셀 수식으로 출력하여 기존 엑셀 검토 방식과 병행 … | 자동 | test_benefit_breakdown_sheet.py 3건, test_report.py 3건 |

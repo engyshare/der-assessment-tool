@@ -1,4 +1,4 @@
-# 진행 상태 — 2026-08-15 (R33 진행 중 · 「1차 의견」 6건 전건 완료)
+# 진행 상태 — 2026-08-17 (R34 종료 · 계통 전력 구매 배선 확인 · 변이 일곱 전건 빨간불)
 
 > # ▶ 이 파일이 **라운드 인계 정본**이다. `## 지금 할 일` 부터 읽는다
 >
@@ -41,8 +41,9 @@
 3-File System **Step 3(exe-tasks) 진행 중**. spec **v0.16** + 작업 목록 **v2.8**.
 
 **Phase 1 Must-have 미매핑 0건.** 남은 미매핑 8건은 전부 Phase 2·3 이다.
-**수집 1,526건 · `pytest` rc=0**(2026-08-15 실측) · 게이트 전건 `rc=0`
-(`ruff` 0건 · `mypy` **112파일** 무결 · `lint-imports` **4계약 kept 0 broken** ·
+**수집 1,554건 · `pytest` rc=0**(2026-08-17 실측) · 게이트 전건 `rc=0`
+(`ruff` 0건 · `mypy` **114파일** 무결 · `lint-imports` **4계약 kept 0 broken**
+(⚠ `PYTHONUTF8=1` 이 필요하다 — 게이트 절) ·
 `check_marker_substance` 0건 · `check_file_size --code-strict` 0건 ·
 `check_hardcoded_params` 0건 · `check_source_rules` 0건 ·
 `check_partition_assignment` 0건 · `check_disclosure` 0건 · `check_assumptions` 통과 ·
@@ -60,6 +61,115 @@
 ---
 
 ## 지금 할 일 (우선순위 순)
+
+> # ⏹ 2026-08-17 R34 종료 · **미확인 셋을 닫았다 — 게이트 전건 rc=0 · 변이 일곱 전건 빨간불**
+>
+> R34 의 본 작업(계통 전력 구매 비용 배선 · 집합 PPA 통로 · 365배 결함)은 앞
+> 세션이 놓았고 **확인하지 못한 채 중단했다**. 이 세션이 닫은 것이 아래다.
+>
+> | # | 확인한 것 | 결과 |
+> |---|---|---|
+> | **1** | `pytest` 전건 | **수집 1,554건 · rc=0.** 직전 실행의 `rc=1`(계약 6건)은 닫혔다 — `__init_subclass__` 검사 순서 교체와 `_Stub` 선언이 실제로 들었다 |
+> | **2** | 새 계약 검사 `tests/contract/test_annualisation_convention.py` | **4건 전건 통과**(`_PROBES` 표로 편익 8종을 세우는 부분 포함). `ruff` 가 이 파일에서 3건(import 정렬 · `RUF001` 둘)을 냈고 고쳤다 |
+> | **3** | 게이트 전건 | 전부 `rc=0` — 아래 「실측」 절 |
+> | **4** | **변이 6건 + 갈래 하나** | **셋이 초록불이었다.** 검사 다섯을 세우고 다시 심어 전건 빨간불 — 아래 표 |
+> | **5** | 실물 리포트 재생성 + **눈으로 읽기** | `docs/evidence/MC-1-검토용-리포트-2026-08-17.md`. **낡은 문면 둘 + 빈 표 하나**를 찾아 고쳤다 |
+>
+> ### R34 가 놓은 것 — **셋** (앞 세션 · 이 세션이 게이트로 확인했다)
+>
+> | 무엇 | 어디에 |
+> |---|---|
+> | **계통 전력 구매 비용을 배선했다** — 새 대장 항목 `tariff.hv_single_contract.energy_only` 120원/kWh(**전력량요금만**. 실효단가 `…avg` 150원/kWh 를 그대로 쓰지 않은 이유: 그 값은 *기본요금 안분 포함* 이고 실행 경로가 그 기본요금을 이미 **첨두 절감 편익**(8,320원/kW·월)으로 세고 있어 **같은 성분이 비용·편익 양쪽에 들어간다**. 범위 80~170 · `q_ref` 는 **`Q-6` 을 그대로** 쓴다: 확보 대상이 같은 약관 하나이고, 새 Q 를 세우면 §16.6 현황판이 실제보다 결손이 많아 보인다) · 수준표 변수 `grid_purchase_price` · 비용 행 생성기 `energy_purchase_row()` · `CostLine` 신설 · 붙임 4 비용 항목 표 · 4.3 잔차 행 | `docs/assumptions.yaml` · `ledger_levels.py` · `core/cba/proforma.py` · `core/casegrid/{models,e2e_runner}.py` · `core/report/method_sections.py` |
+> | **집합 PPA 통로** — `_with_model_generation()` 이 `PV.annual_generation_kwh(year=1)` 을 물어 조립기에 넣는다. **호출자가 값을 함께 주면 거부한다**(정본이 둘이 되므로) | `core/casegrid/e2e_runner.py` |
+> | ★★★ **그 통로를 열자 365배 결함이 드러났다** — 러너가 정산 편익 **전건**에 365를 곱하고 있었다. 그 암묵 규약은 잉여판매·상계에서만 맞았고, 생성자에서 **연간** 수량을 받는 편익에서는 365배가 됐다(집합 PPA 502,605원/년 → **183,450,825원**). **아무 예외도 나지 않았다.** `ValueStream` 에 **`scales_with_dispatch_window`** 를 기본값 없이 신설하고 러너가 그 선언을 읽게 했다 | `core/contracts/valuestream.py` · 편익 8종 · `e2e_runner.py` |
+>
+> ### ★★★ 실측 — **결론이 뒤집혔다** (오늘 재생성한 리포트에서 다시 읽었다)
+>
+> | | 배선 전 | 배선 후 (2026-08-17 리포트) |
+> |---|---|---|
+> | 순현재가치 (무보조) | −865,881원 | **−4,391,980원** |
+> | 1년차 운영비 | 200,000원 | **471,073원** (구매 271,073원 신설) |
+> | `pv_capacity_kw` 한계 기여 | −61,681원/kW · 단조 감소 · 최선 1kW | **+451,092원/kW · 단조 증가 · 최선 9kW** |
+> | `ess_capacity_kwh` 한계 기여 | +190,445원/kWh · 단조 증가 · 최선 23kWh | **−290,977원/kWh · 단조 감소 · 최선 2kWh** |
+> | 영향도 1위 | `ess_unit_cost` | **`grid_purchase_price`** (변동폭 2,644,579원) |
+> | 단독 전환 인자 | 있었다(할인율 3.44% 등) | **0건** — 검토 범위 안에서 0 선을 넘기는 인자가 없다 |
+>
+> **두 설계 변수의 부호가 모두 반대로 돌아섰다.** 종전 「ESS 를 키울수록 좋다」는
+> *공짜로 받아 파는 기계*가 만든 결론이었다. ⚠ 새 PV 결론도 그대로 믿지 말 것 —
+> 아래 「남은 판단」 6.
+>
+> ⚠ 전환 인자가 0건이 되며 **검사 넷이 무력화됐다**(셋은 `set() != set()` 로 정당한
+> 상태를 빨간불로, 둘은 순회 0회로 조용한 초록불). `tests/report/conftest.py` 의
+> **탐침 대장**(`flip_probe_assumptions` — 검토 범위 셋만 넓히고 기준선 수치는 실물과
+> 같다)으로 갈랐다.
+>
+> ### ★★★ 변이 — **셋이 아무것도 붙들지 못했다**
+>
+> | # | 변이 | 첫 판정 | 조치 | 재판정 |
+> |---|---|---|---|---|
+> | 1 | `energy_purchase_row` 호출을 지운다 | 인계가 지목한 검사 셋(미반영 둘·서술)은 **전건 초록불**. 넓혀 돌리니 전환 인자 검사 둘이 빨간불이었으나 **값이 움직여 깨진 것**이고 구매 비용을 이름으로 붙드는 검사는 0건 | `test_the_purchase_price_reaches_the_npv`(단가 0 → 200 에 NPV 가 줄어드는가) · `test_the_cost_total_and_the_itemised_lines_agree` **신설** | **빨간불 2건** |
+> | 2 | 비용 **항목**을 조건부로 (`if not annual_purchase_won: 행을 뺀다`) | — (검사가 없어 새로 만들고 심었다) | `tests/casegrid/test_grid_purchase_cost_row.py` **신설** — 단가 0 으로 금액 0을 만들고 **행의 존재**를 본다 | **빨간불** |
+> | 2b | **프로포마 행**을 조건부로 | ★초록불 | **만들지 않았다** — 아래 「붙들 수 없는 갈래」 | 초록불(설계상) |
+> | 3 | 러너가 `scales_with_dispatch_window` 를 무시하고 전건에 365 | 빨간불 | — | — |
+> | 4 | `AggregatedPPA.scales_with_dispatch_window` 를 `True` 로 거짓 선언 | 빨간불 2건(선언·실물 대조 + 진입점) | — | — |
+> | 5 | `_with_model_generation` 이 호출자 입력을 **조용히 덮어쓴다** | — (검사가 없었다) | `test_the_caller_may_not_hand_the_runner_a_second_generation_number` + **양성 짝**(용량 3배 → PPA 편익 3배) 신설 | **빨간불** |
+> | 6a | 붙임 4 **비용 항목 표**를 지운다 | ★초록불 — `tests/report` **전건**에서 아무도 잡지 않았다 | `test_each_cost_item_shows_its_amount_and_formula` 신설 (편익 쪽 검사의 반대편) | **빨간불** |
+> | 6b | 4.3 **자원 미귀속 잔차 행**을 지운다 | ★초록불 — 같음 | `test_the_resource_table_carries_the_costs_that_belong_to_no_resource` 신설 | **빨간불** |
+>
+> ⚠ **하네스가 경고한 그대로 밟았다** — 변이를 여럿 이어 돌리다 **2분 시간초과로
+> 죽자 `finally` 가 건너뛰어져 `core/report/method_sections.py` 에 `if False:` 가
+> 남았다.** `.mutbak` 로 원복했다. 변이는 **한 번에 하나씩, 대상을 좁혀** 돌린다.
+>
+> ### ★★ 붙들 수 없는 갈래 — **변이 2b 는 관측 가능한 차이를 만들지 않는다**
+>
+> 프로포마 쪽 구매 행을 `if annual_purchase_won:` 로 조건부화해도 **밖에서 보이는
+> 수가 한 자리도 움직이지 않는다**: 그 갈래가 성립하는 것은 금액이 0일 때뿐이고,
+> 0원 행을 빼도 합계·NPV·회수기간이 같다. `CaseOutcome` 이 현금흐름 **행 목록**을
+> 내지 않으므로 검사가 볼 자리가 없다.
+>
+> **판단이 필요하다** — 그 자리를 검사로 붙들려면 `CaseOutcome` 에 프로포마 행을
+> 실어야 한다. 지금은 러너의 주석과 `basis.costs` 쪽 검사만이 규약을 지킨다.
+>
+> ### ✔ 실물을 눈으로 읽고 찾은 셋 — **전부 「배선했더니 문장이 거짓이 됐다」**
+>
+> | 어디 | 무엇이 거짓이었나 | 어떻게 고쳤나 |
+> |---|---|---|
+> | 3.2 계산 규약 「프로포마 비용 행」 | *「고정 운영비」* — 계통 전력 구매가 비용 행이 된 뒤로 거짓 | **실린 항목에서 지어 낸다**(`basis.costs` 의 라벨) — 구성이 바뀌면 함께 움직인다 |
+> | 붙임 8 「계통 전력 구매 비용」 판정 문면 | *「금액 미정량 (구매 단가 없음)」*·*「구매 단가(소매 요금) 부재」* — 단가는 대장에 있다 | **금액을 잰다**(수량 × 단가) · 사유를 「행이 없다」로 · 해소 조건을 「행 배선」으로 |
+> | `case_report.py` 가정 운전 주석 | *「자가소비 절감은 소매 단가가 없어 계상할 수 없다」* (인계가 지목한 남은 한 곳) | 진짜 사유로 갱신 — **배타 규칙 유형 A** 와 **부하 미확보(`Q-3`)**. 단가는 있고 붙임 8 이 그 단가로 실제로 잰다 |
+>
+> ➕ **6.2 「결론 전환 조건」이 머리만 남은 빈 표로 인쇄됐다** — 전환 인자가 0건이
+> 되며 행이 하나도 없었다. 검토자에게 빈 표는 *「없다」* 와 *「싣지 못했다」* 를
+> 구별해 주지 않는다(1절 요약은 이미 「없음 (검토 범위 내)」로 적고 있었다).
+> `NONE_IN_RANGE` 상수를 세워 두 자리가 같은 문면을 쓰게 하고,
+> `test_the_flip_condition_table_is_never_left_empty` 로 붙들었다.
+>
+> ### 실측 — 게이트 (2026-08-17)
+>
+> `pytest` **수집 1,554건 rc=0** · `ruff` 0건 · `mypy` **114파일** 무결 ·
+> `lint-imports` 4 kept 0 broken · `gen_traceability` rc=1(미매핑 8 — 정상) ·
+> `check_task_mapping` rc=0 · `check_*` 7종 rc=0 · `check_file_size --code-strict`
+> rc=0 · **음성 스위트 11종 rc=0** · **CI 버전(3.11) rc=0**.
+>
+> ⚠ **`lint-imports` 가 `PYTHONUTF8=1` 없이 rc=1 이었다** — 계약 위반이 아니라
+> 자기 배너를 cp949 로 디코드하다 죽은 것이다. 게이트 절의 그 줄을 고쳤다.
+>
+> ### 남은 판단 — 다음 라운드로
+>
+> 1. **잉여 판매단가 120원/kWh 가 러너 리터럴이다** — 대장으로 올릴 것인가.
+>    구매단가(대장 120)와 **우연히 같고** 함께 움직이지 않는다. ESS 차익거래가
+>    왕복효율(90%)만큼 순손실이므로 **용량 검토의 형태가 이 우연에 민감하다.**
+> 2. **5.1 이 비었을 때 무엇을 싣는가.** 전환 인자 0건이면 검토자가 *「얼마나
+>    부족한가」* 를 5.1 에서 읽을 수 없다(붙임 2 의 변동폭·양 끝은 남아 있다).
+>    지원 필요액을 5.1 에 올릴지 판단. **6.2 는 이번에 「없음」 행으로 닫았다.**
+> 3. **프로포마 행 목록을 `CaseOutcome` 에 실을 것인가** — 위 「붙들 수 없는 갈래」.
+> 4. `FR-401-AC2.VPPMarket`(Phase 2) — R33 표 4번 그대로.
+> 5. **`SettlementInputs.annual_generation_kwh` 가 협상값 자료형에 남아 있다** —
+>    조립기를 **자원 없이** 부르는 자리(구조 비교·계약 테스트)가 있어 옮기지
+>    않았고, 사유를 그 필드 주석에 적어 두었다. 그 호출자가 사라지면 옮긴다.
+> 6. ⚠ **새 PV 결론을 그대로 믿지 말 것.** PV 가 좋아진 이유는 **평탄 발전
+>    프로파일**(야간 발전)이다 — 붙임 8 이 그 크기를 잰다(수전 스텝에 실린 발전
+>    연 985kWh · 구매 단가 기준 연 118,260원). 일사 곡선이 배선되면 다시 뒤집힐 수 있다.
 
 > # ⏹ 2026-08-14 R32 종료 · **R32 표 1~5 를 완주하고 사용자 몫을 잠정 확정했다**
 >
@@ -519,13 +629,17 @@ PY=~/miniconda3/python.exe
 PYTHONUTF8=1 $PY -m pytest -q                                   # rc=0. 2분 초과 — 배경 실행
 PYTHONUTF8=1 $PY -m ruff check core tests scripts app infra web # --fix 는 마지막에
 PYTHONUTF8=1 $PY -m mypy                                        # 103파일
-~/miniconda3/Scripts/lint-imports.exe                           # 4 kept 0 broken
+PYTHONUTF8=1 ~/miniconda3/Scripts/lint-imports.exe              # 4 kept 0 broken
+#   ⚠ 이것도 PYTHONUTF8 이 필요하다 (2026-08-17 실측). 켜지 않으면
+#   `'cp949' codec can't decode byte 0xe2` 로 rc=1 이 나고, 그것은 계약 위반이
+#   아니라 **자기 배너를 못 읽은 것**이다 — 위 ★ 문단이 pytest 에만 해당하는
+#   줄로 읽혀 이 줄만 맨몸으로 남아 있었다
 PYTHONUTF8=1 $PY scripts/gen_traceability.py    # rc=1 이 정상(미매핑 8). ★ 부수효과로 파일을 다시 만든다
 git diff --stat docs/traceability.md            # ← 커밋 전 이것이 반영돼야 CI 가 초록불이다
 PYTHONUTF8=1 $PY scripts/check_task_mapping.py  # rc=0 이어야 한다 — CI 차단이다
 for g in check_marker_substance check_hardcoded_params check_source_rules          check_partition_assignment check_disclosure check_assumptions          check_precommit_installed; do PYTHONUTF8=1 $PY scripts/$g.py; done
 PYTHONUTF8=1 $PY scripts/check_file_size.py --code-strict
-for f in scripts/negtest_*.py; do PYTHONUTF8=1 $PY "$f"; done   # 10종. 배경 실행
+for f in scripts/negtest_*.py; do PYTHONUTF8=1 $PY "$f"; done   # 11종. 배경 실행
 PYTHONUTF8=1 ~/miniconda3/envs/r31py311/python.exe -m pytest -q # CI 는 3.11 이다
 ```
 

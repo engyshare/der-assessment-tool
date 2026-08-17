@@ -22,6 +22,8 @@ class SelfConsumption(ValueStream):
     """
 
     tag = "SelfConsumption"
+    #: 생성자의 **연간** 요금 두 값의 차다 — 디스패치를 보지 않는다.
+    scales_with_dispatch_window = False
     payer = Payer.RESIDENT
 
     def __init__(

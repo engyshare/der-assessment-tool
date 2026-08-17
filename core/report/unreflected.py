@@ -55,6 +55,11 @@ JUDGED_METHOD = "방법의 한계"
 #: 자가소비 편익의 태그 (`core/valuestream/self_consumption.py`).
 _SELF_CONSUMPTION_TAG = "SelfConsumption"
 
+#: 계통 전력 구매 **비용 항목**의 태그 (`core/casegrid/e2e_runner.py`).
+#: 문자열 하나를 두 파일이 나누어 갖는다 — 러너가 태그를 바꾸면 이 판정이
+#: 조용히 「비용 행 없음」으로 돌아서므로 계약 테스트가 둘을 함께 붙든다.
+_GRID_PURCHASE_TAG = "GridPurchase"
+
 #: 한 해를 스텝으로 다 덮었는지 가르는 수.
 _STEPS_PER_YEAR = 8_760
 
@@ -158,8 +163,11 @@ def _replacement_items(basis: CaseBasis) -> list[UnreflectedItem]:
                     f"{len(short)}건 ({listed}) · 각 1회 교체"
                 ),
                 reason=(
+                    # ⚠ 종전 문면은 「비용 행은 고정 운영비뿐」이었다. R34 에
+                    # 전력 구매 행이 생겨 **거짓이 됐다.** 비용 행의 구성을
+                    # 세어 적으면 다음에 또 낡으므로, 없는 것만 적는다.
                     "`ESS.replacement_schedule()` 존재 · 실행 경로 "
-                    "(`e2e_runner`) 호출 없음 · 비용 행은 고정 운영비뿐"
+                    "(`e2e_runner`) 호출 없음 · 비용 행에 교체 항목 없음"
                 ),
                 resolves_when="`FR-104-AC2` (교체비 계상) 실행 경로 배선",
                 measured=True,
@@ -226,20 +234,36 @@ def _self_consumption_item(
         return []
     sized = "미정량 · 편익 갈래에 `SelfConsumption` 없음 (전량 판매)"
     if assumed is not None:
+        # ★ **금액을 잰다 (R34).** 구매 단가가 배선되기 전에는 이 칸이 「금액
+        # 미정량 (소매 단가 없음)」이었다. 자가소비 절감은 *사지 않아서 아낀
+        # 돈*이므로 **같은 한계단가**를 쓴다 — 이 항목이 구매 비용의 반대편
+        # 추이며, 크기를 적지 않으면 붙임 8 이 불리한 항목만 정량으로 싣는다
+        # (NSPM 대칭성. 양식 4절이 금지하는 형태다).
+        annual_kwh = assumed.self_consumption * 365
+        price = basis.grid_purchase_price_won_per_kwh
         sized = (
             "편익 갈래에 `SelfConsumption` 없음 (전량 판매) · **형상 가정 시** "
             f"자가소비 {assumed.self_consumption:,.2f}kWh/일 "
-            f"(연간화 {assumed.self_consumption * 365:,.0f}kWh) · "
-            "금액 미정량 (소매 단가 없음) · 붙임 7"
+            f"(연간화 {annual_kwh:,.0f}kWh) · "
+            f"단가 {price:,.0f}원/kWh 적용 시 연 {annual_kwh * price:,.0f}원 · "
+            "붙임 7"
         )
     return [
         UnreflectedItem(
             label="자가소비 편익",
+            # ⚠ **개선으로 적지 않는다.** 자가소비는 잉여판매와 배타(유형 A)라
+            # 켜는 순간 판매 수익이 그만큼 사라진다 — 순 방향은 구매 단가와
+            # 판매 단가의 차이, 그리고 부하 형상이 정한다. 지금 두 단가가
+            # 우연히 같아 지금 구성에서는 상쇄에 가깝다(대장 항목
+            # `tariff.hv_single_contract.energy_only` 부기).
             direction=DIRECTION_UNKNOWN,
             magnitude=sized,
-            reason="파이프라인 운전에 가구 부하 없음 · 소매 요금 단가 부재",
+            reason=(
+                "파이프라인 운전에 가구 부하 없음 (전량 판매) · "
+                "잉여판매와 배타이므로 순 방향은 두 단가의 차이가 정한다"
+            ),
             resolves_when=(
-                "가구 부하 `Q-3` 확보 + 요금 엔진 배선 "
+                "가구 부하 `Q-3` 확보 (§16.3 개인정보 절차 선행) "
                 "(배타 규칙 유형 A — 잉여판매와 동시 계상 불가)"
             ),
             measured=True,
@@ -248,9 +272,11 @@ def _self_consumption_item(
 
 
 def _purchase_item(
-    hours: tuple[DispatchHour, ...], assumed: _AssumedQuantities | None
+    basis: CaseBasis,
+    hours: tuple[DispatchHour, ...],
+    assumed: _AssumedQuantities | None,
 ) -> list[UnreflectedItem]:
-    """**계통에서 산 전력의 비용**이 프로포마에 없다.
+    """**계통에서 산 전력의 비용**이 프로포마에 있는가 — 비용 항목으로 판정한다.
 
     ## ★★ 시간대별 표를 내고서야 드러난 것 (R33 · 의견 3)
 
@@ -259,13 +285,23 @@ def _purchase_item(
     **틀렸다.** 붙임 7 을 실제로 내 보니 ESS 가 심야 여섯 스텝에서 충전하고
     그 전력이 **계통에서 들어온다** — 부하가 없어도 구매는 일어난다.
 
-    프로포마의 비용 행은 고정 운영비뿐이므로 **그 전력을 공짜로 쓰고 있다.**
-    즉 방향이 「불명」이 아니라 **악화**이며, 수량은 잴 수 있다(단가만 없다).
+    ## ✔ R34 에 배선됐다 — **그래서 이 판정은 남는다**
+
+    비용 행이 생겼으므로 이 항목은 지금 구성에서 빈 목록을 돌려준다. 그런데
+    **판정 자체를 지우지 않았다**: 비용 행을 만드는 것은 러너의 세 줄이고,
+    그것이 조건부가 되거나 다른 진입점이 생기면 **수전이 있는데 값이 없는**
+    상태가 다시 만들어진다. 그때 조용히 좋아진 순현재가치를 붙드는 것이 이
+    함수다 — 이 저장소가 반복해서 만난 *「지웠더니 되돌아왔다」* 를 막는다.
 
     ⚠ 조건을 「수전이 0인가」로 두었다가 이 결함을 놓칠 뻔했다. 판정은
-    **수전이 있는데 비용 행이 없는가**여야 한다 — 그래서 두 갈래로 적는다.
+    **수전이 있는데 비용 행이 없는가**여야 한다 — 그래서 세 갈래로 적는다.
+    ⚠ 러너의 상수·인자를 읽지 않고 **결과로 드러난 사실**(비용 항목의 태그)로
+    판정한다. 구매를 계상하는 경로가 어디에 생기든 이 판정이 따라가게 하려는
+    것이며, `_self_consumption_item` 이 편익 갈래로 판정하는 것과 같은 형태다.
     """
     if not hours:
+        return []
+    if any(line.tag == _GRID_PURCHASE_TAG for line in basis.costs):
         return []
     daily = sum(hour.grid_import for hour in hours)
     if not daily:
@@ -283,9 +319,16 @@ def _purchase_item(
         UnreflectedItem(
             label="계통 전력 구매 비용",
             direction=DIRECTION_ADVERSE,
+            # ★ **금액을 잰다 (R34).** 종전 문면은 *「금액 미정량 (구매 단가
+            # 없음)」* 이었고, 한계단가가 대장에 선 뒤로 **거짓이 됐다** —
+            # 단가는 `basis` 가 들고 있다. 그 문면을 남겨 두면 검토자는 이미
+            # 확보된 값을 다시 확보하라는 뜻으로 읽고, 빠진 것이 **행 하나**
+            # 라는 사실이 가려진다.
             magnitude=(
                 f"수량 측정 · 대표일 계통 수전 {daily:,.2f}kWh "
-                f"(연간화 {daily * 365:,.0f}kWh) · 금액 미정량 (구매 단가 없음)"
+                f"(연간화 {daily * 365:,.0f}kWh) · 단가 "
+                f"{basis.grid_purchase_price_won_per_kwh:,.0f}원/kWh 적용 시 연 "
+                f"{daily * 365 * basis.grid_purchase_price_won_per_kwh:,.0f}원"
                 + (
                     " · **형상 가정 시** "
                     f"{assumed.grid_import:,.2f}kWh/일 "
@@ -295,10 +338,13 @@ def _purchase_item(
                 )
             ),
             reason=(
-                "프로포마 비용 행에 전력 구매 항목 없음 (고정 운영비뿐) · "
-                "구매 단가(소매 요금) 부재"
+                "프로포마 비용 항목에 전력 구매 없음 · 단가는 대장에 있다 "
+                "(`tariff.hv_single_contract.energy_only`)"
             ),
-            resolves_when="요금 엔진 배선 + 구매 단가 확보 (`Q-6` 등)",
+            resolves_when=(
+                "구매 비용 행 배선 (`e2e_runner` → `energy_purchase_row`) — "
+                "단가 확보는 끝났다 (`Q-6`)"
+            ),
             measured=True,
         )
     ]
@@ -316,10 +362,12 @@ def _flat_generation_item(
     일사 곡선이 아니다. 드러내지 않으면 검토자는 표를 보고 **야간 태양광 발전을
     사실로 읽는다.**
 
-    ⚠ **방향을 적지 않는다.** 발전을 주간으로 옮기면 계통 송전(편익)과 계통
-    수전(비용)이 **함께** 늘어난다. 지금 프로포마에는 구매 비용 행이 없으므로
-    순 방향은 *그 항목이 함께 배선되는가*에 달려 있다 — 한쪽만 배선하면 어느
-    방향으로든 틀린다.
+    ⚠ **방향을 적지 않는다.** 발전을 주간으로 옮기면 계통 송전(편익)이 늘고
+    계통 수전(비용)이 준다. **R34 에 구매 비용이 배선되어 둘 다 값을 갖게 됐고,
+    그래서 방향은 이제 「배선 여부」가 아니라 두 단가의 차이가 정한다** — 지금
+    판매 120원/kWh 와 구매 120원/kWh 가 우연히 같아 부호가 형상에 달려 있다.
+    실제 일사 곡선을 넣어 보지 않고는 잴 수 없으므로 미측정으로 남긴다
+    (지어내면 「곡선을 넣으면 좋아진다」가 되고 그것이 검토 결론이 된다).
 
     ⚠ **「PV 가 평탄하다」를 문장으로 박지 않는다.** 일사 시계열을 바인딩하는
     날 그 문장은 틀린 채로 계속 인쇄된다. 그래서 *「스텝별 출력이 전부 같은
@@ -360,7 +408,15 @@ def _flat_generation_item(
             magnitude=(
                 f"수량 측정 · 스텝별 출력이 전부 같은 발전 자원 {len(flat)}건 "
                 f"({listed}) · 계통 수전 스텝에 실린 발전량 "
-                f"{covered:,.2f}kWh/일 (연간화 {covered * 365:,.0f}kWh)"
+                f"{covered:,.2f}kWh/일 (연간화 {covered * 365:,.0f}kWh) · "
+                # ★ **금액을 잰다 (R34).** 이 수는 「야간 발전이라는 인공물이
+                # 결론에 얼마를 보태고 있는가」다 — 수전 스텝에 실린 발전량은
+                # 그만큼의 구매를 면하게 해 주므로 **한계단가를 곱하면 그
+                # 인공물의 값**이 나온다. 4.4 가 태양광 용량을 「키울수록
+                # 좋다」로 내는 근거의 크기가 여기 있다.
+                f"구매 단가 {basis.grid_purchase_price_won_per_kwh:,.0f}원/kWh "
+                f"기준 연 {covered * 365 * basis.grid_purchase_price_won_per_kwh:,.0f}"
+                "원어치 구매를 면하고 있다"
             ),
             reason=(
                 "발전 입력이 이용률(`capacity_factor`) 단일값 · 일사 시계열 "
@@ -419,7 +475,7 @@ def build_unreflected(report: CaseReport) -> tuple[UnreflectedItem, ...]:
         *_replacement_items(basis),
         *_unread_items(report),
         *_self_consumption_item(basis, assumed),
-        *_purchase_item(report.dispatch_hours, assumed),
+        *_purchase_item(basis, report.dispatch_hours, assumed),
         *_flat_generation_item(basis, report.dispatch_hours),
         *_season_item(report.dispatch_hours),
         *_METHOD_LIMITS,

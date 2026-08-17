@@ -20,6 +20,8 @@ class HeatCostSaving(ValueStream):
     """열비용 절감 — 기존 열원 연료비 − 히트펌프 전력비."""
 
     tag = "HeatCostSaving"
+    #: 생성자의 **연간** 열비용 두 값의 차다 — 디스패치를 보지 않는다.
+    scales_with_dispatch_window = False
     payer = Payer.RESIDENT
 
     def __init__(

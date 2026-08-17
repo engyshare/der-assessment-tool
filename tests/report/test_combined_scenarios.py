@@ -35,8 +35,10 @@ _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
 _GOLDEN = _REPO_ROOT / "fixtures" / "golden"
 
 
-def _report(name: str = "scenario_unsubsidized"):
-    return build_case_report(_GOLDEN / f"{name}.yaml", assumptions_path=_ASSUMPTIONS)
+def _report(name: str = "scenario_unsubsidized", assumptions: Path | None = None):
+    return build_case_report(
+        _GOLDEN / f"{name}.yaml", assumptions_path=assumptions or _ASSUMPTIONS
+    )
 
 
 @pytest.mark.req("FR-801-AC7.quick", "FR-1002-AC2")
@@ -196,12 +198,20 @@ def test_body_marks_the_single_variable_table_as_a_solo_sweep() -> None:
     policy = text.index("### 5.2 정책 설정값")
     assert flip < combined < policy, "결합 표가 5.1 안에 있지 않다"
 
+    # ★ **라벨은 표가 비어도 있어야 한다 (R34).** 구매 비용이 배선된 뒤 실물
+    # 대장에서는 검토 범위 안에 전환 인자가 없어 5.1 이 「단독 전환 인자 —
+    # 없음」 한 줄이 된다. 그 줄에도 `산출` 라벨이 실려야 하며, 실리지 않으면
+    # **바로 아래 결합 표가 1변수 결과로 읽힌다** — 이 검사가 막으려는 오독이
+    # 표가 빌 때 오히려 쉬워진다.
+    assert SOLO_SWEEP in text[flip:combined], (
+        "5.1 의 1변수 산출에 「단독 기여」 라벨이 없다"
+    )
+
     solo_rows = [
         line
         for line in text[flip:combined].splitlines()
         if line.startswith("| `")
     ]
-    assert solo_rows, "5.1 에 단독 인자 행이 없다"
     for row in solo_rows:
         assert SOLO_SWEEP in row, (
             f"산출 방법이 행에 없다 — 「단독 기여」임이 표에서 사라졌다: {row}"
@@ -211,8 +221,46 @@ def test_body_marks_the_single_variable_table_as_a_solo_sweep() -> None:
     assert "상호작용 잔차" in text[combined:policy]
 
 
+@pytest.mark.req("FR-1002-AC2", "FR-1002-AC4")
+def test_solo_rows_still_carry_the_label_when_the_table_is_not_empty(
+    flip_probe_assumptions: Path,
+) -> None:
+    """★ **행이 있을 때 라벨이 행에 붙는가** — 위 검사의 빈 표 갈래를 메운다.
+
+    실물 대장에서는 5.1 의 1변수 표가 비어 있다(전환 인자 0건 — R34 에 구매
+    비용이 배선된 뒤). 그러면 위 검사의 **행 순회가 0회 돌아** 「행마다 라벨이
+    붙는가」를 아무도 보지 않게 된다. 라벨을 행에서 지우는 변이가 그때 초록불이
+    되므로, 전환 인자가 존재하는 탐침 대장에서 그 갈래를 따로 붙든다.
+
+    ⚠ 탐침이 바꾸는 것은 **검토 범위 하나**이며 기준선 수치는 실물과 같다
+    (`conftest.py`).
+    """
+    text = render_markdown(
+        build_case_report(
+            _GOLDEN / "scenario_subsidy_80.yaml",
+            assumptions_path=flip_probe_assumptions,
+        )
+    )
+    flip = text.index("### 5.1 불확실 인자")
+    combined = text.index("#### 결합 시나리오 — ")
+
+    solo_rows = [
+        line for line in text[flip:combined].splitlines() if line.startswith("| `")
+    ]
+    assert solo_rows, (
+        "탐침 대장에서도 5.1 에 단독 인자 행이 없다 — 이 검사가 0회 순회로 "
+        "통과한다. `conftest.py` 의 탐침 범위를 넓힐 것"
+    )
+    for row in solo_rows:
+        assert SOLO_SWEEP in row, (
+            f"산출 방법이 행에 없다 — 「단독 기여」임이 표에서 사라졌다: {row}"
+        )
+
+
 @pytest.mark.req("FR-1002-AC4")
-def test_summary_carries_the_combined_case_not_only_the_solo_ones() -> None:
+def test_summary_carries_the_combined_case_not_only_the_solo_ones(
+    flip_probe_assumptions: Path,
+) -> None:
     """★ **요약(1절)이 결합 결과를 함께 말한다.**
 
     심의위원은 1절만 읽고 판단의 뼈대를 잡는다(양식). 요약에 단독 기여만
@@ -222,8 +270,14 @@ def test_summary_carries_the_combined_case_not_only_the_solo_ones() -> None:
 
     ⚠ 요약이 **제 손으로 계산하지 않았는지**도 함께 본다. 요약의 수는 5.1 의
     결합 행에서 그대로 와야 하며, 갈라지면 두 표를 대조할 때에야 드러난다.
+
+    ⚠ **탐침 대장으로 돈다 (R34).** 구매 비용이 배선된 뒤 실물 범위에서는
+    동반 하락도 −2,431,980원이라 **회수되는 결합 행이 0건**이고, 그러면 이
+    검사가 아무것도 순회하지 않는다 — 「요약이 결합 결과를 말하지 않는다」를
+    잡으려는 검사가 정작 결합 결과가 없을 때 초록불이 되는 형태다. 탐침은
+    설비단가 하단만 넓혀 **동반 하락에서만** 회수되게 한다(`conftest.py`).
     """
-    report = _report()
+    report = _report(assumptions=flip_probe_assumptions)
     text = render_markdown(report)
     summary = text[text.index("## 1. 요약") : text.index("## 2. 평가 개요")]
 

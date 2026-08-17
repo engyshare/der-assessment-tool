@@ -99,30 +99,74 @@ def test_unread_variable_gets_no_invented_direction() -> None:
         assert "0원" in item.magnitude, "측정된 변동폭이 크기 칸에 없다"
 
 
-def test_grid_purchase_without_a_cost_row_is_reported_as_adverse() -> None:
-    """★★ **계통에서 산 전력의 비용이 프로포마에 없다** (표를 내고서야 드러났다).
+def test_the_grid_purchase_is_now_a_cost_row_and_leaves_the_unreflected_table() -> None:
+    """★★ **계통에서 산 전력이 값을 갖는다** (R34 · 사용자 판정).
 
-    종전 판정은 *「가구 부하가 없으므로 구매 자체가 없다」* 였다. 붙임 7 을
-    실제로 내 보니 ESS 가 심야에 충전하고 그 전력이 **계통에서 들어온다** —
-    부하가 없어도 구매는 일어난다. 프로포마의 비용 행은 고정 운영비뿐이므로
-    그 전력을 값 없이 쓰고 있고, 방향은 「불명」이 아니라 **악화**다.
-
-    ⚠ 판정 조건이 「수전이 0인가」이면 이 결함을 놓친다. 조건은 **수전이
-    있는데 비용 행이 없는가**여야 한다.
+    R33 은 이 항목을 붙임 8 에 「반영 시 결과 악화 · 금액 미정량」으로 실었다.
+    R34 에 한계단가(`tariff.hv_single_contract.energy_only`)를 대장에 세우고
+    비용 행을 배선했으므로, 이제 **미반영 표에서 사라지고 붙임 4 의 비용
+    항목으로 옮겨가야 한다.** 사라지지 않으면 같은 사실이 두 곳에 실린다.
     """
     report = _report()
     imported = sum(hour.grid_import for hour in report.dispatch_hours)
-    item = next(
-        i for i in build_unreflected(report) if i.label == "계통 전력 구매 비용"
+    assert imported, "이 구성은 대표일에 계통 수전을 가져야 한다 (ESS 심야 충전)"
+
+    (row,) = [line for line in report.basis.costs if line.tag == "GridPurchase"]
+    assert row.annual_won > 0, (
+        f"수전이 {imported:,.2f}kWh/일 인데 구매 비용이 {row.annual_won}원이다 — "
+        "행은 있고 값이 없으면 프로포마에서 「사 온 것이 없다」와 구별되지 않는다"
     )
-    if imported:
-        assert item.direction == DIRECTION_ADVERSE, (
-            f"대표일 계통 수전이 {imported:,.2f}kWh 인데 방향이 "
-            f"{item.direction} 이다 — 값 없이 쓴 전력은 비용이다"
-        )
-        assert f"{imported:,.2f}kWh" in item.magnitude, "측정 수량이 없다"
-    else:
-        assert item.direction == DIRECTION_UNKNOWN
+    assert f"{imported:,.2f}kWh" in row.formula, "산식에 측정 수량이 없다"
+    assert f"{report.basis.grid_purchase_price_won_per_kwh:,.0f}원/kWh" in row.formula, (
+        "산식에 단가가 없다 — 수량과 단가 중 어느 쪽이 틀렸는지 가릴 수 없다"
+    )
+
+    assert not [
+        i for i in build_unreflected(report) if i.label == "계통 전력 구매 비용"
+    ], "비용 행이 있는데 미반영 항목으로도 실린다 — 같은 사실이 두 곳에 있다"
+
+
+def test_grid_purchase_without_a_cost_row_is_reported_as_adverse() -> None:
+    """★★ **비용 행을 없애면 다시 「악화」로 드러나는가** (R33 이 찾은 결함).
+
+    종전 판정은 *「가구 부하가 없으므로 구매 자체가 없다」* 였다. 붙임 7 을
+    실제로 내 보니 ESS 가 심야에 충전하고 그 전력이 **계통에서 들어온다** —
+    부하가 없어도 구매는 일어난다. 값 없이 쓴 전력이 있으면 방향은 「불명」이
+    아니라 **악화**다.
+
+    ⚠ 판정 조건이 「수전이 0인가」이면 이 결함을 놓친다. 조건은 **수전이
+    있는데 비용 행이 없는가**여야 한다.
+
+    ⚠ **R34 에 배선됐는데도 이 검사를 남긴다.** 비용 행을 만드는 것은 러너의
+    세 줄이고, 그것이 조건부가 되거나 다른 진입점이 생기면 같은 상태가 다시
+    만들어진다 — 그때 순현재가치는 **조용히 좋아진다**. 그래서 행을 거둔
+    리포트를 만들어 판정이 살아 있는지 본다.
+    """
+    report = _report()
+    imported = sum(hour.grid_import for hour in report.dispatch_hours)
+    without = replace(
+        report,
+        basis=replace(
+            report.basis,
+            costs=tuple(
+                line for line in report.basis.costs if line.tag != "GridPurchase"
+            ),
+            annual_cost_won=sum(
+                line.annual_won
+                for line in report.basis.costs
+                if line.tag != "GridPurchase"
+            ),
+        ),
+    )
+
+    item = next(
+        i for i in build_unreflected(without) if i.label == "계통 전력 구매 비용"
+    )
+    assert item.direction == DIRECTION_ADVERSE, (
+        f"대표일 계통 수전이 {imported:,.2f}kWh 인데 방향이 "
+        f"{item.direction} 이다 — 값 없이 쓴 전력은 비용이다"
+    )
+    assert f"{imported:,.2f}kWh" in item.magnitude, "측정 수량이 없다"
 
 
 def test_body_carries_only_the_name_and_direction() -> None:

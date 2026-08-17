@@ -27,6 +27,7 @@ from core.assumption.item import AssumptionItem, ConfidenceLevel
 from core.assumption.provider import AssumptionSet
 from core.casegrid.e2e_runner import run_single_case_e2e
 from core.casegrid.ledger_levels import design_levels
+from core.casegrid.models import CaseOutcome
 from core.contracts.assumptions import AssumptionProvider, PriceBasis
 from core.contracts.validation import ValidationError
 from core.regulation.tariff import (
@@ -39,6 +40,7 @@ from core.regulation.tariff import (
 from core.valuestream.settlement import (
     MANAGER_FEE_KEY,
     NOT_YET_ASSEMBLED,
+    PPA_RATIO_KEY,
     TARIFF_KEY,
     TRADE_FEE_KEY,
     SettlementInputs,
@@ -49,6 +51,11 @@ LEVEL_MAP = {
     "pv_unit_cost": MappingProxyType({"base": 1_600_000.0}),
     "ess_unit_cost": MappingProxyType({"base": 400_000.0}),
     "discount_rate": MappingProxyType({"base": 0.045}),
+    # 계통 전력 구매 한계단가 — 러너가 요구한다(기본값을 두지 않는 것이 규칙).
+    # **대장의 120 과 다른 수를 일부러 쓴다** — 같은 수를 쓰면 이 파일이 대장의
+    # 사본을 하나 갖게 되고, 대장이 바뀔 때 여기가 따라오지 않아도 아무 일이
+    # 없다 — 이 파일 머리의 「탐침값」 규약 그대로다.
+    "grid_purchase_price": MappingProxyType({"base": 100.0}),
     # 설계 변수(용량)는 이 파일의 관심이 아니지만 **러너가 요구한다** —
     # 기본값을 두지 않는 것이 규칙이라 기본 탐색점을 그대로 받아 온다.
     **design_levels(),
@@ -258,6 +265,86 @@ def test_an_unassembled_structure_is_refused_by_the_execution_path(
         )
 
     assert structure in caught.value.reason
+
+
+#: 「집합 PPA」 — 조립기가 약관요금과 **비율**만 묻는다(`PPA_RATIO_KEY` 독스트링).
+_PPA_STRUCTURE = "집합 PPA"
+
+
+def _ppa_provider() -> AssumptionProvider:
+    def item(key: str, value: float, unit: str) -> AssumptionItem:
+        return AssumptionItem(
+            key=key, value=value, value_unit=unit, base_year="2026",
+            applicable_scope="검사용", derivation_method="검사용",
+            source=None, verified_at=None, confidence=ConfidenceLevel.ASSUMED,
+        )
+
+    return AssumptionSet(
+        name="검사", version="1",
+        items={
+            TARIFF_KEY: item(TARIFF_KEY, 150.0, "원/kWh"),
+            PPA_RATIO_KEY: item(PPA_RATIO_KEY, 0.85, "비율"),
+        },
+        price_basis=PriceBasis.NOMINAL,
+    )
+
+
+@pytest.mark.req("FR-401-AC2.AggregatedPPA")
+def test_the_caller_may_not_hand_the_runner_a_second_generation_number() -> None:
+    """★★★ 발전량을 **함께 주면 거부한다** — 정본이 둘이 되지 않는다 (R34).
+
+    `_with_model_generation()` 은 `PV` 에게 물어 조립기에 넣는다. 그 자리에서
+    호출자 입력을 **조용히 덮어쓰면** 사용자는 자기가 준 수로 계산된 줄 알고
+    리포트를 읽는다 — 반대로 입력을 살리면 모형이 계산하는 수의 둘째 출처가
+    생긴다. 어느 쪽이든 두 수가 갈릴 때 **아무 예외도 나지 않는 상태**이며,
+    이 저장소가 반복해서 잡아 온 형태다.
+
+    ⚠ **거부만 검사하면 「무엇이든 거부하는」 구현도 통과한다** — 아래 양성
+    검사가 짝이다.
+    """
+    with pytest.raises(ValueError, match="정본"):
+        run_single_case_e2e(
+            {}, level_map=LEVEL_MAP, horizon_years=_PROBE_HORIZON,
+            structure=_PPA_STRUCTURE, provider=_ppa_provider(),
+            settlement_inputs=SettlementInputs(annual_generation_kwh=1_000.0),
+        )
+
+
+@pytest.mark.req("FR-401-AC2.AggregatedPPA")
+def test_the_ppa_benefit_follows_the_model_generation_not_a_frozen_number() -> None:
+    """★★ 양성 — 그 수가 **모형에서 온다**: 용량을 3배로 하면 편익도 3배다.
+
+    「거부한다」만으로는 러너가 발전량을 **어디서** 가져오는지 알 수 없다.
+    상수를 넣어 두어도 위 거부 검사와 조립기 단위 테스트는 전부 초록불이고,
+    그 상태에서 집합 PPA 편익은 설비 규모와 **무관한 수**가 된다 — 용량이
+    설계 변수인 이 저장소에서는 4.4 의 결론이 통째로 그 수 위에 선다.
+
+    비례를 보는 이유: 금액을 손계산으로 못 박으면 이 파일이 `PV` 의 이용률·
+    열화 산식 사본을 갖게 된다(그 대조는 `tests/contract/
+    test_annualisation_convention.py` 가 대장으로 한다). 여기서는 **모형에
+    연동되는가**만 본다.
+    """
+    small = run_single_case_e2e(
+        {"pv_capacity_kw": "low"}, level_map=LEVEL_MAP,
+        horizon_years=_PROBE_HORIZON, structure=_PPA_STRUCTURE,
+        provider=_ppa_provider(),
+    )
+    large = run_single_case_e2e(
+        {"pv_capacity_kw": "base"}, level_map=LEVEL_MAP,
+        horizon_years=_PROBE_HORIZON, structure=_PPA_STRUCTURE,
+        provider=_ppa_provider(),
+    )
+
+    def ppa_won(outcome: CaseOutcome) -> int:
+        (line,) = [b for b in outcome.basis.benefits if b.tag == "AggregatedPPA"]
+        return line.annual_won
+
+    ratio = LEVEL_MAP["pv_capacity_kw"]["base"] / LEVEL_MAP["pv_capacity_kw"]["low"]
+    assert ppa_won(large) == pytest.approx(ppa_won(small) * ratio, rel=1e-6), (
+        f"태양광 용량을 {ratio:g}배로 했는데 집합 PPA 편익이 "
+        f"{ppa_won(small):,}원 → {ppa_won(large):,}원 이다 — 발전량이 모형에서 "
+        "오지 않고 어딘가에 박힌 수를 쓰고 있습니다"
+    )
 
 
 @pytest.mark.req("FR-205-AC1.NetMetering", "NFR-202-M1")

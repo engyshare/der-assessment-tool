@@ -91,6 +91,9 @@ from core.report.unreflected import (
 SOLO_SWEEP = "1변수 스윕"
 #: 묶음 전건을 함께 옮긴 줄.
 COUPLED_SWEEP = "결합 스윕"
+#: 「찾았으나 없다」 — **검토 범위 안에서** 없다는 뜻이다. 요약 칸과 6.2 표가
+#: 같은 문면을 써야 두 자리가 같은 사실을 말하는 것으로 읽힌다.
+NONE_IN_RANGE = "없음 (검토 범위 내)"
 
 
 def _summary_section(report: CaseReport) -> list[str]:
@@ -152,7 +155,7 @@ def _summary_combined(report: CaseReport) -> str:
                     f"`{sweep.bundle}` 동반 `{point.level}` → "
                     f"{_won(point.npv)} (**회수**)"
                 )
-    return " · ".join(cells) if cells else "없음 (검토 범위 내)"
+    return " · ".join(cells) if cells else NONE_IN_RANGE
 
 
 def _provisional_cell(report: CaseReport) -> str:
@@ -383,6 +386,15 @@ def _judgement_section(report: CaseReport) -> list[str]:
                     f"| `{sweep.bundle}` 전건 `{point.level}` 동반 | "
                     f"{_won(point.npv)} (회수) | {COUPLED_SWEEP} |"
                 )
+    # ★ **행이 없으면 「없음」을 적는다 (R34 · 실물을 눈으로 읽고 찾았다).**
+    #
+    # 전환 인자가 0건이 되자 이 표가 **머리 두 줄만 남은 빈 표**로 인쇄됐다.
+    # 검토자에게 빈 표는 *「없다」* 와 *「싣지 못했다」* 를 구별해 주지 않는다 —
+    # 1절 요약은 같은 사실을 이미 「없음 (검토 범위 내)」로 적고 있으므로,
+    # 여기만 비면 두 자리가 다른 말을 하는 것처럼 읽힌다.
+    if lines[-1] == "|---|---|---|":
+        lines.append(f"| {NONE_IN_RANGE} | — | — |")
+
     lines += ["", "### 6.3 미해소 항목", "", "| 구분 | 항목 | 해소 조건 |", "|---|---|---|"]
     for entry in report.flipping:
         if entry.ledger_key:

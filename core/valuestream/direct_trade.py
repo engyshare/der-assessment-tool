@@ -19,6 +19,9 @@ class DirectTrade(ValueStream):
     """직접거래 차익 — (약관요금 − 직접거래단가) × 거래량 − 수수료."""
 
     tag = "DirectTrade"
+    #: 생성자의 **연간** 거래량으로 계산한다 — 디스패치를 보지 않는다.
+    #: ⚠ 이 선언이 없던 동안 러너가 365를 곱해 **365배**로 계상했다(R34).
+    scales_with_dispatch_window = False
     payer = Payer.OPERATOR
 
     def __init__(

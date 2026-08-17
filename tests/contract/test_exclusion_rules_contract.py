@@ -41,6 +41,8 @@ def _stub(tag_name: str) -> ValueStream:
     class _Stub(ValueStream):
         tag: ClassVar[str] = tag_name
         payer: ClassVar[Payer] = Payer.OPERATOR
+        #: 이 스텁은 0원을 돌려주므로 창과 무관하다 (R34 계약).
+        scales_with_dispatch_window = False
 
         def annual_value(self, dispatch: DispatchResult, *, year: int) -> Money:
             return to_won(0)

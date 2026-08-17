@@ -46,6 +46,8 @@ class DistributedBenefit(ValueStream):
     """
 
     tag = "DistributedBenefit"
+    #: 생성자가 받은 **연간** 편익 항목 다섯의 합이다 — 디스패치를 보지 않는다.
+    scales_with_dispatch_window = False
     payer = Payer.SOCIETY
 
     def __init__(

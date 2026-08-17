@@ -14,6 +14,7 @@ hardcoded in this module (NFR-202).
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from decimal import Decimal
 
 from core.casegrid.incentive_cases import (
@@ -24,6 +25,7 @@ from core.casegrid.models import (
     BenefitLine,
     CaseBasis,
     CaseOutcome,
+    CostLine,
     ResourceLine,
 )
 from core.casegrid.profiles import DailyShapes
@@ -31,6 +33,7 @@ from core.cba.metrics import npv, payback_discounted
 from core.cba.proforma import (
     benefit_row,
     check_analysis_period,
+    energy_purchase_row,
     fee_row,
     fixed_om_row,
 )
@@ -47,7 +50,7 @@ from core.incentive.schemas import IncentiveScheme
 from core.regulation.tariff import TariffEngine
 from core.valuestream import PeakShaving, SurplusSale
 from core.valuestream.exclusion_table import assert_no_exclusions
-from core.valuestream.settlement import SettlementInputs, assemble
+from core.valuestream.settlement import SettlementCost, SettlementInputs, assemble
 
 # ⚠ **`HORIZON_YEARS = 20` 상수가 여기 있었다. R31 이 지웠다.**
 #
@@ -268,6 +271,15 @@ def run_single_case_e2e(
     ess_capacity_kwh = _resolve(
         case_values.get("ess_capacity_kwh", "base"), "ess_capacity_kwh", level_map
     )
+    # ★ **계통에서 산 전력의 한계단가** (`tariff.hv_single_contract.energy_only`).
+    # 기본값을 두지 않는다 — 두면 수준표에서 이 변수를 빼도 러너가 옛 단가로
+    # 계속 계산하고, 그 어긋남은 NPV 를 바꾸면서 아무 예외도 내지 않는다
+    # (`horizon_years` 에서 R31 이 내린 것과 같은 판단).
+    grid_purchase_price = _resolve(
+        case_values.get("grid_purchase_price", "base"),
+        "grid_purchase_price",
+        level_map,
+    )
 
     # 1. Resources
     # ★ **형상이 오면 이용률 대신 시계열을 준다** (둘 다 주면 자원이 거부한다).
@@ -353,7 +365,9 @@ def run_single_case_e2e(
         plan = assemble(
             structure,
             provider=provider,
-            inputs=settlement_inputs,
+            # ★★ **발전량은 모형이 계산한다 — 사용자 입력이 아니다** (R34).
+            # 아래 `_with_model_generation` 독스트링에 판정 근거가 있다.
+            inputs=_with_model_generation(settlement_inputs, pv),
             tariff_engine=tariff_engine,
         )
         settlement_streams: tuple[ValueStream, ...] = plan.streams
@@ -377,15 +391,44 @@ def run_single_case_e2e(
     # 다 돌린 뒤」가 되고, 무엇보다 **위반 조합의 NPV 가 한 번은 만들어진다.**
     assert_no_exclusions([*settlement_streams, peak, *extra_value_streams])
 
-    settlement_by_stream = [
-        (stream, int(stream.annual_value(grid_export_result, year=1)))
-        for stream in settlement_streams
-    ]
-    settlement_per_day = sum(value for _, value in settlement_by_stream)
-    peak_per_day = peak.annual_value(grid_export_result, year=1)
-    annual_benefit = int(settlement_per_day * DAYS_PER_YEAR + peak_per_day)
+    # ★★★ **연간화를 편익이 선언한 대로 한다 (R34).**
+    #
+    # 종전 이 자리는 *정산 편익 전건에 365를 곱하고 첨두 절감에는 곱하지
+    # 않는다* 는 **암묵 규약**이었다. 그 규약은 잉여판매·상계 두 갈래에서만
+    # 맞았고, 생성자에서 **연간** 수량을 받는 편익(「분산특구 직접거래」의
+    # 거래량 · 「집합 PPA」의 전량 발전량)에서는 **365배**를 만들었다 — 실측:
+    # 집합 PPA 502,605원/년이 183,450,825원으로 실렸다. 금액이 그럴듯하지
+    # 않을 만큼 컸는데도 **케이스 그리드가 그 구조를 돌지 않아** 아무도 보지
+    # 못했고, 「구조를 넣으면 NPV 가 달라진다」만 보는 배선 검사는 초록불이었다.
+    #
+    # 이제 곱할지 말지는 **편익이 선언한다**(`scales_with_dispatch_window`).
+    # 여기에 태그 목록을 두지 않은 이유는 그 목록이 편익이 늘 때 낡기 때문이다.
+    annualised: list[tuple[ValueStream, int]] = []
+    for stream in (*settlement_streams, peak):
+        value = float(stream.annual_value(grid_export_result, year=1))
+        if type(stream).scales_with_dispatch_window:
+            value *= DAYS_PER_YEAR
+        annualised.append((stream, int(value)))
+    settlement_by_stream = annualised[:-1]
+    peak_per_year = annualised[-1][1]
+    annual_benefit = sum(value for _, value in annualised)
 
     # 4. Proforma → NPV
+    #
+    # ★★★ **계통에서 산 전력의 값** (R34 · `energy_purchase_row` 독스트링).
+    #
+    # 수량은 처음부터 여기 있었다 — `dispatch.grid_import` 다. 빠져 있던 것은
+    # 단가와 그것을 곱해 **비용 행으로 만드는 이 세 줄**이었고, 그 동안
+    # 저장장치는 심야에 받아 온 전력을 값 없이 썼다.
+    #
+    # ⚠ **행을 조건부로 만들지 않는다** — 수전이 0이어도 0원 행을 싣는다.
+    # 「수전이 없어서 0원」과 「행이 없어서 0원」은 프로포마에서 똑같이 보이는데
+    # 뜻이 정반대다(하나는 측정, 하나는 누락). 붙임 8 의 판정 조건도 그래서
+    # **「수전이 있는데 비용 행이 없는가」**여야 한다(`unreflected` 독스트링).
+    daily_grid_import_kwh = sum(dispatch.grid_import)
+    annual_grid_import_kwh = daily_grid_import_kwh * DAYS_PER_YEAR
+    annual_purchase_won = int(annual_grid_import_kwh * grid_purchase_price)
+
     initial_investment = Money(pv.capex(year=1) + ess.capex(year=1))
     benefit_rows = [
         benefit_row(
@@ -406,6 +449,12 @@ def run_single_case_e2e(
             start_year=1,
             end_year=horizon_years,
             annual_amount_won=int(ess.fixed_om(year=1)),
+        ),
+        energy_purchase_row(
+            "GridPurchase",
+            start_year=1,
+            end_year=horizon_years,
+            annual_amount_won=annual_purchase_won,
         ),
         *(
             fee_row(
@@ -440,7 +489,7 @@ def run_single_case_e2e(
         peak_tag=peak.tag,
         peak_reduction_kw=peak_reduction_kw,
         demand_charge=DEMAND_CHARGE_WON_PER_KW_MONTH,
-        peak_per_year=float(peak_per_day),
+        peak_per_year=float(peak_per_year),
     )
 
     return CaseOutcome(
@@ -461,8 +510,17 @@ def run_single_case_e2e(
             annual_cost_won=annual_cost,
             discount_rate=discount_rate,
             horizon_years=horizon_years,
+            grid_purchase_price_won_per_kwh=grid_purchase_price,
             resources=_resource_lines(pv, pv_capex, ess, ess_capex, benefit_lines),
             benefits=benefit_lines,
+            costs=_cost_lines(
+                pv_fixed_om=int(pv.fixed_om(year=1)),
+                ess_fixed_om=int(ess.fixed_om(year=1)),
+                daily_grid_import_kwh=daily_grid_import_kwh,
+                grid_purchase_price=grid_purchase_price,
+                annual_purchase_won=annual_purchase_won,
+                settlement_costs=settlement_costs,
+            ),
             dispatch_note=(
                 f"대표일 1일을 {STEPS_PER_DAY}스텝(1시간 간격)으로 모의하고 "
                 f"{DAYS_PER_YEAR}일로 연간화한다. 계절·요일 변동을 반영하지 "
@@ -471,6 +529,114 @@ def run_single_case_e2e(
             ).replace("{DAYS_PER_YEAR}", str(DAYS_PER_YEAR)),
         ),
     )
+
+
+def _with_model_generation(
+    inputs: SettlementInputs | None, pv: PV
+) -> SettlementInputs:
+    """연간 **전량** 발전량을 모형에서 채워 조립기에 넘긴다 — `FR-401-AC2.AggregatedPPA`.
+
+    ## 왜 이 통로가 비어 있었나 (R32 → R34)
+
+    R32 가 「집합 PPA」 편익 클래스와 조항을 세웠지만 **케이스 그리드에서 그
+    구조를 돌릴 수는 없었다** — 조립기가 발전량을 `SettlementInputs` 로만 받고
+    러너에는 그것을 채우는 자리가 없었다. 조립 층까지만 닫힌 상태였다.
+
+    ## 왜 사용자 입력이 아닌가 — **모형이 이미 그 수를 계산한다**
+
+    `SettlementInputs` 는 *「당사자가 협상해서 정하는 값」* 을 담는 자료형이다
+    (그 독스트링이 기준을 적어 두었다). 계약단가·거래량은 협상의 결과지만
+    **발전량은 설비와 일사가 정하는 물리량**이며 협상 대상이 아니다. 사용자
+    입력으로 두면 모형이 계산하는 수의 **둘째 출처**가 생기고, 두 값이 갈릴 때
+    아무 예외도 나지 않는다 — 이 저장소가 반복해서 잡아 온 형태다.
+
+    ## 어디서 읽는가 — **자원에게 묻는다**
+
+    `PV.annual_generation_kwh()` 가 이미 있다. 러너가 `capacity × 이용률 × 8,760`
+    을 다시 곱하지 않는 이유는 그것이 자원 안의 산식과 **사본 관계**가 되기
+    때문이다(열화·형상 반영이 자원 쪽에만 들어오면 여기가 조용히 옛 값을 낸다).
+
+    ⚠ **디스패치 결과에서 뽑지 않는다.** `DispatchResult.electric` 은 순 계통
+    흐름이라 자가소비분이 이미 상계돼 있고, 「양수 합」을 쓰면 그것은 잉여여서
+    이 편익이 `SurplusSale` 의 사본이 된다(`aggregated_ppa.py` 독스트링).
+
+    ⚠ **1년차 발전량이다.** 편익 시계열 전체가 1년차 기준으로 세워지는 이
+    파이프라인의 규약을 따른다 — 연도별 열화를 이 편익만 반영하면 갈래마다
+    다른 규약이 생긴다. 연도별로 가려면 `AggregatedPPA` 가 스칼라 대신 시계열을
+    받아야 하고 그것은 편익 전건이 함께 움직일 때 할 일이다.
+    """
+    generation = pv.annual_generation_kwh(year=1)
+    if inputs is None:
+        return SettlementInputs(annual_generation_kwh=generation)
+    if inputs.annual_generation_kwh is not None:
+        raise ValueError(
+            "연간 발전량(annual_generation_kwh)을 사용자 입력으로 주었습니다 — "
+            "이 값은 모형이 자원 제원에서 계산하므로 둘 중 어느 것이 정본인지 "
+            f"정할 수 없습니다(모형 계산값 {generation:,.0f}kWh · 입력값 "
+            f"{inputs.annual_generation_kwh:,.0f}kWh). 협상값이 아닌 물리량이므로 "
+            "빼고 넘기십시오"
+        )
+    return replace(inputs, annual_generation_kwh=generation)
+
+
+def _cost_lines(
+    *,
+    pv_fixed_om: int,
+    ess_fixed_om: int,
+    daily_grid_import_kwh: float,
+    grid_purchase_price: float,
+    annual_purchase_won: int,
+    settlement_costs: Sequence[SettlementCost],
+) -> tuple[CostLine, ...]:
+    """운영비를 **항목별로** 갈라 담는다 (`CostLine` 독스트링 참조).
+
+    ⚠ **연간화 규약이 항목마다 다르다** — 편익 쪽과 같은 함정이다. 고정 O&M 은
+    이미 연간액이고, 전력 구매는 **대표일 수량**에 365를 곱해야 한다. 산식
+    문면에 그 곱을 그대로 적는다: 수량과 단가 중 어느 쪽이 틀렸는지 검토자가
+    가릴 수 있어야 하고, 둘은 서로 다른 사람이 고친다(단가는 대장, 수량은 운전).
+    """
+    lines = [
+        CostLine(
+            tag="PVFixedOM",
+            label="태양광 고정 운영비",
+            annual_won=pv_fixed_om,
+            from_resource="PV",
+            formula=f"연 {pv_fixed_om:,}원 (1년차 · 연 2% 상승)",
+        ),
+        CostLine(
+            tag="ESSFixedOM",
+            label="저장장치 고정 운영비",
+            annual_won=ess_fixed_om,
+            from_resource="ESS",
+            formula=f"연 {ess_fixed_om:,}원",
+        ),
+        CostLine(
+            tag="GridPurchase",
+            label="계통 전력 구매",
+            annual_won=annual_purchase_won,
+            # ⚠ 자원 이름을 「ESS」로 적지 않는다. 수전은 **부하와 충전의 합**이
+            # 발전을 넘을 때 생기므로 어느 한 자원의 것이 아니다 — 지금 구성에서
+            # 충전이 대부분이라는 것은 붙임 7 이 스텝별로 보여 준다.
+            from_resource="",
+            formula=(
+                f"대표일 수전 {daily_grid_import_kwh:,.2f}kWh × "  # noqa: RUF001
+                f"{DAYS_PER_YEAR}일 × "  # noqa: RUF001
+                f"{grid_purchase_price:,.0f}원/kWh "
+                f"= {annual_purchase_won:,}원"
+            ),
+        ),
+    ]
+    lines.extend(
+        CostLine(
+            tag=cost.tag,
+            label=cost.label,
+            annual_won=int(cost.annual_amount_won),
+            from_resource="",
+            formula=f"연 {int(cost.annual_amount_won):,}원 (정산 구조가 만드는 비용)",
+        )
+        for cost in settlement_costs
+    )
+    return tuple(lines)
 
 
 def _benefit_lines(
@@ -483,26 +649,33 @@ def _benefit_lines(
 ) -> tuple[BenefitLine, ...]:
     """편익을 **갈래별로** 갈라 담는다 (`BenefitLine` 독스트링 참조).
 
-    ⚠ **연간화 규약이 갈래마다 다르다.** 정산 편익은 대표일 1일치라 365를
-    곱하고, 첨두 절감은 월 12회를 이미 안고 있어 곱하지 않는다. 이 차이는
-    합계만 보면 보이지 않으므로 산식 문면에 그대로 적는다 — 검토자가 곱하기
-    하나를 잘못 짚으면 365배가 틀린다.
+    ⚠ **연간화 규약이 갈래마다 다르다.** 창에서 읽는 편익은 대표일 1일치라
+    365를 곱하고, 생성자에서 연간 수량을 받는 편익은 곱하지 않는다. 이 차이는
+    합계만 보면 보이지 않으므로 **산식 문면에 그대로 적는다** — 검토자가 곱하기
+    하나를 잘못 짚으면 365배가 틀린다. 어느 쪽인지는 편익이 선언하며
+    (`scales_with_dispatch_window`) 여기서 짐작하지 않는다.
+
+    ⚠ **이름을 인스턴스에서 읽는다.** 종전에는 라벨이 `f"잉여 전력 판매 ({tag})"`
+    로 박여 있었고, 그래서 「집합 PPA」·「분산특구 직접거래」가 배선되면
+    **전량 판매·직접거래가 「잉여 전력 판매」로 인쇄된다**. 자원 귀속도 마찬가지다.
     """
     lines = [
         BenefitLine(
             tag=stream.tag,
-            label=f"잉여 전력 판매 ({stream.tag})",
-            annual_won=per_day * DAYS_PER_YEAR,
+            label=f"{stream.name} ({stream.tag})",
+            annual_won=annual_won,
             from_resource="PV",
             formula=(
                 # RUF001: 「×」는 검토자가 읽는 산식 문면이다. `x` 로 바꾸면
                 # 곱셈이 변수 이름처럼 보인다 — 대상을 좁히는 면제이지 규칙을
                 # 넓히는 것이 아니다.
-                f"대표일 {per_day:,}원 × {DAYS_PER_YEAR}일 "  # noqa: RUF001
-                f"= {per_day * DAYS_PER_YEAR:,}원"
+                f"대표일 {annual_won // DAYS_PER_YEAR:,}원 "
+                f"× {DAYS_PER_YEAR}일 = {annual_won:,}원"  # noqa: RUF001
+                if type(stream).scales_with_dispatch_window
+                else f"연 {annual_won:,}원 (연간 수량으로 산정 · 연간화 없음)"
             ),
         )
-        for stream, per_day in settlement_by_stream
+        for stream, annual_won in settlement_by_stream
     ]
     lines.append(
         BenefitLine(

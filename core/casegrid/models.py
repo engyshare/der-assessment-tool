@@ -231,6 +231,37 @@ class BenefitLine:
 
 
 @dataclass(frozen=True)
+class CostLine:
+    """운영비 한 항목이 **얼마이며 무엇에서 나왔는가** — `BenefitLine` 의 반대편.
+
+    ## 왜 편익 쪽만 갈래로 나누어 두었는가 — 그것이 결함을 가렸다
+
+    `BenefitLine` 은 R33 이 *「PV 에 480만원을 쓴 것이 타당한가」* 에 답하려고
+    만들었고, 비용 쪽은 **합계 하나(`annual_cost_won`)** 로 남았다. 그래서
+    리포트는 「1년차 운영비 200,000원」만 싣고 **그것이 무엇 둘의 합인지**
+    말하지 않았다. 비용 항목이 고정 O&M 둘뿐일 때는 아무도 그것을 아쉬워하지
+    않았는데, 바로 그 상태가 *「계통에서 산 전력이 공짜다」* 를 눈에 보이지
+    않게 했다 — **합계만 있는 표에서는 빠진 행이 드러나지 않는다.**
+
+    ⚠ **수량과 단가를 산식에 함께 적는다.** 「전력 구매 271,080원」만으로는
+    단가가 틀렸는지 수량이 틀렸는지 검토자가 가를 수 없고, 그 둘은 서로 다른
+    사람이 고친다(단가는 대장, 수량은 운전).
+
+    ⚠ **비용은 양수로 담는다** — 부호를 뒤집는 자리는 `net_operating_flows()`
+    하나여야 한다(R32 가 *「수수료율을 올릴수록 NPV 가 커진다」* 로 만난 형태).
+    """
+
+    tag: str
+    label: str
+    #: 1년차 금액(원). **양수 = 비용.**
+    annual_won: int
+    #: 이 비용을 일으킨 자원 이름. 자원에 귀속되지 않는 거래 비용은 빈 문자열.
+    from_resource: str
+    #: 산식 문면 — 수량·단가까지 (`FR-1001-AC3`).
+    formula: str
+
+
+@dataclass(frozen=True)
 class CaseBasis:
     """산식의 **대입값** — `FR-1001-AC3` 의 3중 표기 중 셋째 줄이 여기서 온다.
 
@@ -263,10 +294,24 @@ class CaseBasis:
     annual_cost_won: int
     discount_rate: float
     horizon_years: int
+    #: 계통에서 산 전력의 **한계단가**(원/kWh) — 대장
+    #: `tariff.hv_single_contract.energy_only`.
+    #:
+    #: ⚠ **비용 산식 안에도 문면으로 있는데 왜 값으로 또 담는가.** 이 단가는
+    #: 사지 **않은** 전력의 값도 정한다 — 자가소비 절감은 「사지 않아서 아낀
+    #: 돈」이므로 같은 단가를 쓴다. 즉 소비자가 둘이고, 그중 하나(붙임 8)는
+    #: 프로포마 행이 없는 항목의 크기를 재는 쪽이다. 산식 문면을 되파싱해
+    #: 쓰게 두면 **표기를 다듬을 때 크기가 조용히 0 이 된다.**
+    grid_purchase_price_won_per_kwh: float
     #: 평가 대상 자원 — 위 `ResourceLine` 참조.
     resources: tuple[ResourceLine, ...]
     #: 편익 갈래별 금액 — 위 `BenefitLine` 참조.
     benefits: tuple[BenefitLine, ...]
+    #: 운영비 항목별 금액 — 위 `CostLine` 참조. **합계(`annual_cost_won`)와
+    #: 함께 담는 이유**: 합계는 프로포마 행에서 세고 항목은 러너가 지으므로,
+    #: 둘이 어긋나면 그것 자체가 결함이다. 리포트가 그 어긋남을 잰다
+    #: (`tests/report/test_narrative.py`).
+    costs: tuple[CostLine, ...]
     #: 디스패치 규약 문면 — 「대표일 24스텝 × 365일」처럼 **결과를 읽는 데
     #: 필요한 전제**다. 규약을 적지 않으면 검토자가 시간해상도를 모른 채
     #: 연간 금액을 읽는다(재현도 불가능하다).

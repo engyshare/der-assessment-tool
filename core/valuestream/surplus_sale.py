@@ -23,6 +23,8 @@ class SurplusSale(ValueStream):
     """
 
     tag = "SurplusSale"
+    #: 창에서 읽는다 — `dispatch.electric` 의 양수 합(역송 kWh)이 산식의 수량이다.
+    scales_with_dispatch_window = True
     payer = Payer.OPERATOR
     #: **`docs/domain-rules.md` 관점 분리표의 「계약구조에 따름」 칸을 채운다.**
     #: 그 표는 *잉여판매·직접거래 수익*의 참여 주민 칸을 「계약구조에 따름」으로

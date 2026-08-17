@@ -51,6 +51,11 @@ LEVEL_MAP = {
     "pv_unit_cost": MappingProxyType({"base": 1_600_000.0}),
     "ess_unit_cost": MappingProxyType({"base": 400_000.0}),
     "discount_rate": MappingProxyType({"base": 0.045}),
+    # 계통 전력 구매 한계단가 — 러너가 요구한다(기본값을 두지 않는 것이 규칙).
+    # **대장의 120 과 다른 수를 일부러 쓴다** — 같은 수를 쓰면 이 파일이 대장의
+    # 사본을 하나 갖게 되고, 대장이 바뀔 때 여기가 따라오지 않아도 아무 일이
+    # 없다 — 이 파일 머리의 「탐침값」 규약 그대로다.
+    "grid_purchase_price": MappingProxyType({"base": 100.0}),
     # 설계 변수(용량)는 이 파일의 관심이 아니지만 **러너가 요구한다** —
     # 기본값을 두지 않는 것이 규칙이라 기본 탐색점을 그대로 받아 온다.
     **design_levels(),

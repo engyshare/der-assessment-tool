@@ -208,6 +208,8 @@ class _UnspecifiedBenefit(ValueStream):
     """테스트용 — 지불 주체가 UNSPECIFIED. 활성화 게이트 검증."""
 
     tag = "_TestUnspecified"
+    #: 검사용 편익 — 창을 읽지 않으므로 연간화 대상이 아니다 (R34 계약).
+    scales_with_dispatch_window = False
     payer = Payer.UNSPECIFIED
 
     def __init__(self, *, enabled: bool = True) -> None:

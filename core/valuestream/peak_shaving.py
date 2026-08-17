@@ -27,6 +27,8 @@ class PeakShaving(ValueStream):
     """
 
     tag = "PeakShaving"
+    #: 생성자의 **월별 12개월** 감축량으로 계산한다 — 이미 연간값이다.
+    scales_with_dispatch_window = False
     payer = Payer.RESIDENT
 
     MONTHS = 12

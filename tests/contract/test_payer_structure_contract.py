@@ -33,6 +33,8 @@ class _StructureBound(ValueStream):
     """구조에 따라 지갑이 갈리는 편익 — 이 계약이 새로 표현하게 된 것."""
 
     tag: ClassVar[str] = "_TestStructureBound"
+    #: 검사용 편익 — 창을 읽지 않으므로 연간화 대상이 아니다 (R34 계약).
+    scales_with_dispatch_window = False
     payer_by_structure: ClassVar[dict[str, Payer]] = MappingProxyType(  # type: ignore[assignment]
         {
             "상계거래": Payer.RESIDENT,

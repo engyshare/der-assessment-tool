@@ -31,6 +31,7 @@ from core.report.case_report import (
     CONCLUSION_METRIC,
     HEADLINE_METRIC,
     PLAN_VARIANT,
+    _scheme_for,
     build_case_report,
 )
 
@@ -39,8 +40,10 @@ _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
 _GOLDEN = _REPO_ROOT / "fixtures" / "golden"
 
 
-def _report(name: str = "scenario_unsubsidized"):
-    return build_case_report(_GOLDEN / f"{name}.yaml", assumptions_path=_ASSUMPTIONS)
+def _report(name: str = "scenario_unsubsidized", assumptions: Path | None = None):
+    return build_case_report(
+        _GOLDEN / f"{name}.yaml", assumptions_path=assumptions or _ASSUMPTIONS
+    )
 
 
 @pytest.mark.req("FR-1002-AC1", "FR-1002-AC3", "FR-1002-AC6", "FR-1005-AC1")
@@ -89,7 +92,9 @@ def test_conclusion_reads_the_supported_variant_not_the_case_metric() -> None:
 
 
 @pytest.mark.req("FR-1002-AC2", "FR-607-AC1")
-def test_the_sweep_follows_the_supported_variant_too() -> None:
+def test_the_sweep_follows_the_supported_variant_too(
+    flip_probe_assumptions: Path,
+) -> None:
     """★ **영향도 스윕도 지원을 반영한다.**
 
     결론 한 줄과 스윕은 **서로 다른 줄**에서 변형을 읽는다. 결론만 고치면
@@ -98,9 +103,16 @@ def test_the_sweep_follows_the_supported_variant_too() -> None:
 
     변이로 확인했다: 스윕 쪽만 케이스 지표로 되돌리면 위 결론 검사는 **전건
     초록불**이었다. 무보조 시나리오에서는 두 값이 같아서 드러나지 않는다.
+
+    ⚠ **탐침 대장으로 돈다 (R34).** 실물 대장에서는 구매 비용이 배선된 뒤
+    **어느 시나리오에도 전환 인자가 없어졌고**(무보조 −4,391,980원 · 보조 80%
+    +3,448,020원, 어느 인자도 검토 범위 안에서 0 선을 넘기지 못한다), 그러면 이
+    검사가 `set() != set()` 로 **정당한 상태를 빨간불**로 만든다. 범위를 넓힌
+    탐침에서는 보조 80% 만 전환을 갖는다 — 스윕이 변형을 읽지 않고 케이스
+    지표로 돌면 **양쪽이 다시 같아져** 이 검사가 빨간불이 된다(`conftest.py`).
     """
-    plain = _report("scenario_unsubsidized")
-    subsidised = _report("scenario_subsidy_80")
+    plain = _report("scenario_unsubsidized", flip_probe_assumptions)
+    subsidised = _report("scenario_subsidy_80", flip_probe_assumptions)
 
     plain_flips = {entry.variable for entry in plain.flipping}
     subsidised_flips = {entry.variable for entry in subsidised.flipping}
@@ -117,28 +129,44 @@ def test_the_sweep_follows_the_supported_variant_too() -> None:
 
 
 @pytest.mark.req("FR-1002-AC2", "FR-1002-AC4")
-def test_reported_flip_threshold_actually_flips_the_conclusion() -> None:
+def test_reported_flip_threshold_actually_flips_the_conclusion(
+    flip_probe_assumptions: Path,
+) -> None:
     """★★ **보고된 임계값으로 다시 돌려 결론이 실제로 뒤집히는지 본다.**
 
     이 검사가 없으면 임계값을 **표시만** 하는 구현이 통과한다 — 검토자는
     리포트에서 *「단가가 이 값을 넘으면 사업성이 뒤집힌다」* 를 읽고 정책
     판단을 하는데, 그 값이 계산과 무관해도 아무도 모른다.
-    """
-    report = _report()
-    flipping = report.flipping
-    assert flipping, "이 시나리오는 전환 인자를 가져야 한다 (전제가 바뀌었다면 갱신할 것)"
 
-    level_map = build_level_map(_ASSUMPTIONS)
+    ⚠ **탐침 대장 + 보조 80% 로 돈다 (R34).** 실물 대장에서는 전환 인자가
+    0건이고, 그러면 아래 순회가 **0회 돌면서 초록불**이 된다 — 이 저장소가
+    반복해서 경계해 온 *조용한 통과*이며, 이 검사가 잡으려는 결함(R33 의
+    `_find_flip_threshold` 허용오차)은 **전환 인자가 있었기 때문에** 잡혔다.
+    그래서 순회 대상이 비면 그것 자체를 빨간불로 만든다.
+    """
+    subsidy_rate = 0.8
+    report = _report("scenario_subsidy_80", flip_probe_assumptions)
+    flipping = report.flipping
+    assert flipping, (
+        "탐침 대장에서도 전환 인자가 없다 — 이 검사가 0회 순회로 통과한다. "
+        "`conftest.py` 의 탐침 범위를 넓힐 것"
+    )
+
+    level_map = build_level_map(flip_probe_assumptions)
     horizon = report.basis.horizon_years
+    # ⚠ **지원 조건을 함께 넘긴다.** 넘기지 않으면 재실행은 무보조 사업의
+    # 결론을 내고, 보조 80% 리포트의 임계값을 **다른 사업의 0 선**에 대고
+    # 재는 것이 된다 — 그러면 이 검사는 옳은 임계값을 빨간불로 만든다.
+    scheme = _scheme_for(subsidy_rate)
 
     for entry in flipping:
         assert entry.threshold is not None
         span = entry.high - entry.low
         below = _conclusion_at(
-            level_map, entry.variable, entry.threshold - span * 0.05, horizon
+            level_map, entry.variable, entry.threshold - span * 0.05, horizon, scheme
         )
         above = _conclusion_at(
-            level_map, entry.variable, entry.threshold + span * 0.05, horizon
+            level_map, entry.variable, entry.threshold + span * 0.05, horizon, scheme
         )
         assert (below >= 0.0) != (above >= 0.0), (
             f"{entry.variable}: 보고된 임계값 {entry.threshold} 를 사이에 두고 "
@@ -147,11 +175,15 @@ def test_reported_flip_threshold_actually_flips_the_conclusion() -> None:
         )
 
 
-def _conclusion_at(level_map, variable: str, value: float, horizon: int) -> float:
+def _conclusion_at(
+    level_map, variable: str, value: float, horizon: int, scheme=None
+) -> float:
     """그 인자를 `value` 로 두고 파이프라인을 다시 돌린 결론 축."""
     probe = {name: dict(levels) for name, levels in level_map.items()}
     probe[variable] = {**probe[variable], "base": value}
-    outcome = run_single_case_e2e({}, level_map=probe, horizon_years=horizon)
+    outcome = run_single_case_e2e(
+        {}, level_map=probe, horizon_years=horizon, scheme=scheme
+    )
     return float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
 
 
@@ -171,8 +203,21 @@ def test_substituted_values_match_the_metrics_they_explain() -> None:
         "NPV 산식의 초기투자가 그 변형의 실제 초기지출과 다르다"
     )
     assert f"{report.metrics[CONCLUSION_METRIC]:,.0f}원" in substituted["순현재가치"]
+    # ⚠ **회수하지 못하는 경우를 함께 본다 (R34).** 구매 비용이 배선된 뒤
+    # 보조 20% 는 분석기간 내 미회수(`inf`)가 됐다. 종전 문면(`{payback:.2f}년`)
+    # 을 그대로 요구하면 「`inf년`」이라는 **없는 표기를 강제**하게 되고, 그러면
+    # 실제로 회수하는 시나리오와 못 하는 시나리오 중 한쪽은 반드시 빨간불이다.
     payback = report.metrics[HEADLINE_METRIC]
-    assert f"{payback:.2f}년" in substituted["할인 회수기간"]
+    if payback == float("inf"):
+        assert "미회수" in substituted["할인 회수기간"], (
+            "회수기간이 무한인데 산식이 그것을 말하지 않는다 — 대입값 줄이 "
+            "빈칸이거나 없는 연수를 적고 있다"
+        )
+        assert f"{report.basis.horizon_years}년" in substituted["할인 회수기간"], (
+            "미회수 판정의 근거인 분석기간이 대입값에 없다"
+        )
+    else:
+        assert f"{payback:.2f}년" in substituted["할인 회수기간"]
 
     net = report.basis.annual_benefit_won - report.basis.annual_cost_won
     assert f"{net:,}원" in substituted["연 순현금흐름"]

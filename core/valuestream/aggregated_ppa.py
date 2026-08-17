@@ -37,6 +37,9 @@ class AggregatedPPA(ValueStream):
     """집합 PPA 수익 — 발전량 **전량** × 계약단가."""
 
     tag = "AggregatedPPA"
+    #: 생성자의 **연간 전량** 발전량으로 계산한다 — 디스패치를 보지 않는다.
+    #: ⚠ 이 선언이 없던 동안 러너가 365를 곱해 **365배**로 계상했다(R34).
+    scales_with_dispatch_window = False
     payer = Payer.OPERATOR
 
     def __init__(

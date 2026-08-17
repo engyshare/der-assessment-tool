@@ -42,6 +42,14 @@ _LEDGER_VARS: tuple[tuple[str, str, float], ...] = (
     ("pv_unit_cost", "capex.pv.rooftop", 1.0),
     ("ess_unit_cost", "capex.ess.new", 1.0),
     ("tariff_escalation", "escalation.electricity_tariff", 0.01),
+    # ★ **계통에서 산 전력의 한계단가** — R34 에 배선했다.
+    #
+    # 이 변수가 없던 동안 러너의 비용 행은 고정 O&M 둘뿐이었고, 저장장치가
+    # 심야에 계통에서 받아 온 전력을 **값 없이** 썼다. 그 결과 용량 검토가
+    # *「저장장치를 키울수록 좋다」* 를 냈다 — 공짜로 받아 파는 기계였기
+    # 때문이다. 대장 키가 `…energy_only` 인 이유는 그 항목의 주석에 있다
+    # (기본요금은 첨두 절감 편익이 이미 세고 있어 실효단가를 쓰면 두 번 센다).
+    ("grid_purchase_price", "tariff.hv_single_contract.energy_only", 1.0),
 )
 
 #: 대장 항목이 **아닌** 모형 파라미터. 위 독스트링 참조.

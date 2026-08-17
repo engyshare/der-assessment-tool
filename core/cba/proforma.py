@@ -139,6 +139,66 @@ def fee_row(
     )
 
 
+def energy_purchase_row(
+    tag: str,
+    start_year: int,
+    end_year: int,
+    annual_amount_won: int,
+) -> CashFlowRow:
+    """**계통에서 산 전력의 비용** — 변동비 (§13.2.2 C-3 · `FR-101-AC5`).
+
+    ## 왜 이 행이 뒤늦게 생겼는가
+
+    비용 행이 고정 O&M 둘뿐인 동안 저장장치는 심야에 계통에서 전력을 받아
+    주간에 팔았고, **받아 온 전력에는 값이 없었다.** 그래서 용량 검토가
+    *「저장장치를 키울수록 좋다」* 를 냈다 — 모형이 *공짜로 받아 파는 기계*를
+    쥐고 있었기 때문이다. 수전량은 처음부터 운전 결과에 있었고(`grid_import`)
+    빠진 것은 **단가와 그것을 곱해 행으로 만드는 자리**였다.
+
+    ## 왜 `fixed_om_row` 도 `fee_row` 도 아닌가
+
+    라벨이 뜻을 나른다(`fee_row` 독스트링과 같은 이유). 「고정 O&M」이면
+    설비 유지비로 읽히고 「정산 수수료」면 거래 비용으로 읽히는데, 이것은
+    **사 온 물건의 값**이다 — 수량(kWh)과 단가(원/kWh)의 곱이며 운전이
+    바뀌면 수량이 바뀐다. 고정비와 같은 행에 섞으면 *「운전을 바꾸면 이
+    비용이 바뀐다」* 가 프로포마에서 보이지 않는다.
+
+    ## ⚠ 에스컬레이션을 두지 않았다 — **한쪽만 올리면 한 방향으로 틀린다**
+
+    요금이 해마다 오르면 이 비용도 오른다. 그런데 같은 인상률은 잉여 판매
+    수익도 올리며, 그쪽은 아직 배선되지 않았다(`tariff_escalation` 이 케이스
+    그리드 축인데 파이프라인이 읽지 않는다 — 리포트가 `unread_by_pipeline`
+    로 드러낸다). 비용만 올리면 **편익은 그대로 둔 채 비용만 커져** 사업에
+    불리하게 틀린다. NSPM 대칭성이며, 요금 인상률은 비용·편익 **양쪽에
+    동시에** 배선한다 — 그 자리는 `DispatchContext` 의 가격 신호이고 WP-3
+    몫이다.
+    """
+    if start_year < 1:
+        raise ValidationError(
+            field="proforma.purchase_start_year",
+            reason=f"분석 연도는 1부터 셉니다: {start_year}",
+            action="start_year 를 1 이상으로 지정하십시오",
+        )
+    if annual_amount_won < 0:
+        raise ValidationError(
+            field="proforma.purchase_annual_amount_won",
+            reason=f"전력 구매 비용이 음수입니다: {annual_amount_won}",
+            action=(
+                "구매 비용은 비용이므로 양수로 지정하십시오. 음수면 "
+                "「전력을 사면 돈을 받는 사업」이 되어, 저장장치를 키울수록 "
+                "경제성이 좋아지는 결과가 나옵니다"
+            ),
+        )
+    return CashFlowRow(
+        label=f"{tag} 전력 구매",
+        tag=tag,
+        amounts={
+            year: Decimal(annual_amount_won)
+            for year in range(start_year, end_year + 1)
+        },
+    )
+
+
 def replacement_row(
     tag: str,
     replacement_years: list[int],

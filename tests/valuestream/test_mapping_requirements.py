@@ -21,6 +21,8 @@ from tests.valuestream.test_report import _dispatch_zeros
 
 class _FixedBenefit(ValueStream):
     tag = "FixedBenefit"
+    #: 검사용 편익 — 창을 읽지 않으므로 연간화 대상이 아니다 (R34 계약).
+    scales_with_dispatch_window = False
     payer = Payer.RESIDENT
 
     def __init__(self, value: int, *, enabled: bool = True) -> None:

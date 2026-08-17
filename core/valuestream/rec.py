@@ -16,6 +16,8 @@ class REC(ValueStream):
     """REC 수익 — 발전량 × 가중치 × 단가."""
 
     tag = "REC"
+    #: 창에서 읽는다 — `dispatch.electric` 의 양수 합이 발급 대상 발전량이다.
+    scales_with_dispatch_window = True
     payer = Payer.OPERATOR
 
     def __init__(

@@ -19,7 +19,7 @@ import pytest
 from core.report._format import _recovery
 from core.report.appendix_sections import UNREAD_BY_PIPELINE
 from core.report.case_report import CONCLUSION_METRIC, build_case_report
-from core.report.narrative import render_markdown
+from core.report.narrative import NONE_IN_RANGE, render_markdown
 from core.report.unreflected import DIRECTION_ADVERSE, build_unreflected
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -221,6 +221,105 @@ def test_each_resource_shows_what_it_cost_and_what_it_earns() -> None:
     for resource in report.basis.resources:
         assert f"{resource.capex_won:,}원" in section, (
             f"{resource.kind}: 초기투자가 수지표에 없다"
+        )
+
+
+@pytest.mark.req("FR-1001-AC2")
+def test_each_cost_item_shows_its_amount_and_formula() -> None:
+    """★★ 편익의 **반대편** — 비용도 항목·금액·산식으로 실린다 (R34).
+
+    위 검사가 편익 갈래를 붙드는 동안 비용 쪽에는 같은 자리가 없었다. 그래서
+    붙임 4 의 「비용 항목」 표를 통째로 지워도 **아무것도 빨간불이 되지 않았다**
+    (2026-08-17 실측 · 변이 6a). 그 상태가 위험한 이유는 R34 가 이미 한 번
+    밟았다 — 합계 하나(「1년차 운영비 200,000원」)만 있는 표에서는 **빠진 행이
+    드러나지 않고**, 계통에서 산 전력이 값 없이 쓰이는 동안에도 그 수는
+    그럴듯했다.
+
+    산식까지 보는 이유: 금액만 실으면 검토자가 수량과 단가 중 어느 쪽이
+    틀렸는지 가릴 수 없고, 그 둘은 서로 다른 사람이 고친다(단가는 대장,
+    수량은 운전).
+    """
+    report = build_case_report(
+        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    text = render_markdown(report)
+    detail = text[text.index("## 붙임 4.") : text.index("## 붙임 5.")]
+
+    assert report.basis.costs, "비용 항목이 비어 있다"
+    for line in report.basis.costs:
+        assert line.label in detail, f"{line.tag}: 비용 항목이 붙임 4 에 없다"
+        assert f"{line.annual_won:,}원" in detail, f"{line.tag}: 금액이 없다"
+        assert line.formula in detail, f"{line.tag}: 산식이 없다"
+    assert f"**{report.basis.annual_cost_won:,}원**" in detail, (
+        "비용 항목 표에 합계가 없다 — 항목만 있으면 본문의 「1년차 운영비」와 "
+        "이 표가 같은 것을 말하는지 검토자가 맞춰 볼 수 없다"
+    )
+
+
+@pytest.mark.req("FR-1001-AC2")
+def test_the_resource_table_carries_the_costs_that_belong_to_no_resource() -> None:
+    """★★ 4.3 이 **자원에 붙지 않는 운영비**를 잔차로 싣는다 (R34).
+
+    자원별 수지표는 자원마다 고정 운영비만 세므로, 계통 전력 구매·정산 수수료가
+    **표에서 사라진다.** 사라지면 「연 순편익」과 「단순 회수」가 실제보다 좋게
+    나오고, 합계를 적지 않는 표에서 그 차이는 아무에게도 보이지 않는다.
+
+    그 잔차 행을 지우는 변이가 **리포트 스위트 전건에서 초록불**이었다
+    (2026-08-17 실측 · 변이 6b).
+    """
+    report = build_case_report(
+        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    basis = report.basis
+    attributed = sum(r.fixed_om_won_per_year for r in basis.resources)
+    unattributed = basis.annual_cost_won - attributed
+    assert unattributed, (
+        "이 구성은 자원에 귀속되지 않는 운영비(계통 전력 구매)를 가져야 한다 — "
+        "0이면 이 검사가 잔차 행의 부재를 정당한 상태로 읽는다"
+    )
+
+    text = render_markdown(report)
+    section = text[
+        text.index("### 4.3 자원별 수지") : text.index("## 5. 결론을 좌우하는 요인")
+    ]
+
+    assert "자원 미귀속" in section, "자원에 붙지 않는 운영비가 4.3 에서 사라졌다"
+    assert f"{unattributed:,}원" in section, (
+        f"자원 미귀속 운영비 {unattributed:,}원이 4.3 에 실리지 않았다 — "
+        "자원 행의 합만 보면 연 순편익이 실제보다 좋게 읽힌다"
+    )
+
+
+@pytest.mark.req("FR-1002-AC4")
+def test_the_flip_condition_table_is_never_left_empty() -> None:
+    """★ 6.2 가 **머리만 남은 빈 표**로 인쇄되지 않는다 (R34 · 실물을 읽고 찾았다).
+
+    전환 인자가 0건이 되자 이 표는 행이 하나도 없는 채로 나왔다. 검토자에게
+    빈 표는 *「없다」* 와 *「싣지 못했다」* 를 구별해 주지 않고, 1절 요약은 같은
+    사실을 이미 「없음」으로 적고 있어 **두 자리가 다른 말을 하는 것처럼**
+    읽힌다.
+
+    ⚠ 「없음」을 문장으로 박지 않는다 — 전환 인자가 생기면 그 행이 대신
+    들어와야 하므로, 여기서는 **어느 경우에도 행이 있다**를 본다.
+    """
+    report = build_case_report(
+        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    text = render_markdown(report)
+    section = text[
+        text.index("### 6.2 결론 전환 조건") : text.index("### 6.3 미해소 항목")
+    ]
+    rows = [
+        line
+        for line in section.splitlines()
+        if line.startswith("|") and not line.startswith("|---")
+    ]
+
+    assert len(rows) >= 2, f"6.2 표에 머리 말고 행이 없다 — {rows}"
+    if not report.flipping:
+        assert NONE_IN_RANGE in section, (
+            "전환 인자가 0건인데 그 사실을 적은 행이 없다 — 요약(1절)은 이미 "
+            f"「{NONE_IN_RANGE}」 로 적고 있다"
         )
 
 
