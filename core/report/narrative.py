@@ -107,10 +107,13 @@ GAP_MARGIN = "여유"
 
 
 def _summary_section(report: CaseReport) -> list[str]:
-    """【1】 요약 — 한 표.
+    """【1】 요약 — 한 표. **행 이름과 값으로만** 낸다.
 
-    양식이 요구하는 여섯 행(결론 · 주 지표 · 결론 축 · 전환 인자 · 결합 전환
-    조건 · 미반영 항목)을 **행 이름과 값으로만** 낸다.
+    ⚠ **행 목록을 여기 세지 않는다** — 양식 【1】이 그것의 소유자이고
+    `test_form_conformance.py::test_summary_rows_match_the_form` 이 둘을
+    대조한다. 종전 이 자리는 *「여섯 행」* 이라 적어 두었는데 실물은 이미
+    여덟 행이었고, **그 낡은 사본이 두 라운드의 계획으로 따라 들어갔다**
+    (「양식 6행 · 실물 8행이 어긋나 있다」 — 어긋난 것은 이 주석뿐이었다).
     """
     metrics = report.metrics
     unreflected = build_unreflected(report)

@@ -116,6 +116,22 @@ def test_appendices_match_the_form() -> None:
     _assert_same_order(declared, rendered, "붙임")
 
 
+def _first_column(lines: list[str]) -> list[str]:
+    """표의 **첫 열**을 위에서부터. 첫 행(표 머리)은 뗀다."""
+    return [
+        line.split("|")[1].strip()
+        for line in lines
+        if line.startswith("| ") and not line.startswith("|---")
+    ][1:]
+
+
+def _slice_between(lines: list[str], head: str, tail: str) -> list[str]:
+    """`head` 로 시작하는 줄부터 그 뒤 첫 `tail` 줄 직전까지."""
+    start = next(i for i, line in enumerate(lines) if line.startswith(head))
+    end = next(i for i in range(start + 1, len(lines)) if lines[i].startswith(tail))
+    return lines[start:end]
+
+
 def test_title_block_rows_match_the_form() -> None:
     """표제의 **행 이름과 순서**가 양식 【표제】 표와 같다.
 
@@ -124,28 +140,84 @@ def test_title_block_rows_match_the_form() -> None:
     주체를 요구하는데 실물에 없었다). 그래서 따로 본다.
     """
     lines = _form_lines()
-    start = lines.index("### 【표제】")
-    end = next(i for i in range(start + 1, len(lines)) if lines[i].startswith("### 【1】"))
-    declared = [
-        line.split("|")[1].strip()
-        for line in lines[start:end]
-        if line.startswith("| ") and not line.startswith("|---")
-    ][1:]  # 첫 행은 표 머리(`행 | 내용`)다
+    declared = _first_column(_slice_between(lines, "### 【표제】", "### 【1】"))
     assert declared, "양식에서 표제 표를 못 읽었다"
 
     rendered_all = _rendered_lines()
     body_start = next(
         i for i, line in enumerate(rendered_all) if line.startswith("## 1. ")
     )
-    rendered = [
-        line.split("|")[1].strip()
-        for line in rendered_all[:body_start]
-        if line.startswith("| ") and not line.startswith("|---")
-    ][1:]
+    rendered = _first_column(rendered_all[:body_start])
 
     assert declared == rendered, (
         f"표제 행이 양식과 실물에서 다르다 — 양식 {declared} · 실물 {rendered}"
     )
+
+
+def _assert_prefix_rows(declared: list[str], rendered: list[str], what: str) -> None:
+    """행 이름이 **양식으로 시작하고, 이어지는 것은 구분자**여야 한다.
+
+    ★ **`startswith` 만으로는 「행이 다른 행의 이름을 달고 나오는 것」을 못
+    잡는다.** 요약의 「결론」은 「결론 축」의 접두이기도 해서, 실물의 첫 행을
+    「결론 축 · 순현재가치」로 바꾸면 **같은 이름의 행이 둘**이 되는데도 접두
+    검사는 여덟 행 전건 통과한다(2026-08-18 실측 — 변이 M4). 그래서 접두를 뗀
+    **나머지가 무엇으로 시작하는가**를 함께 본다 — 실물이 덧붙이는 것은 지표
+    이름(` · 할인 회수기간`)이나 갈래 표시(` (단독)`)뿐이고 둘 다 구분자로
+    시작한다. 「 축 · 순현재가치」는 구분자로 시작하지 않으므로 걸린다.
+
+    ⚠ 순서 뒤바꿈은 접두 검사도 잡는다(맞바꾼 반대쪽에서 걸린다). 이 규칙이
+    사는 값은 **이름이 자라는 변이** 쪽이다.
+
+    ⚠ 덧붙임을 양식에 베끼지 않는 이유는 `_assert_same_order` 와 같다 —
+    베끼면 문장 하나 다듬을 때마다 두 파일이 함께 움직여야 하고, 결국
+    **검사를 통과시키려고 양식을 고치게** 된다.
+    """
+    assert len(declared) == len(rendered), (
+        f"{what} 행 수가 양식과 실물에서 다르다 — "
+        f"양식 {len(declared)}행 {declared} · 실물 {len(rendered)}행 {rendered}. "
+        "한쪽에만 있는 행은 양식을 먼저 고쳐서 맞춘다"
+    )
+    for declared_name, rendered_name in zip(declared, rendered, strict=True):
+        rest = (
+            rendered_name[len(declared_name) :]
+            if rendered_name.startswith(declared_name)
+            else None
+        )
+        assert rest is not None and (rest == "" or rest.startswith((" · ", " ("))), (
+            f"{what} 행 이름이 갈렸다 — "
+            f"양식 「{declared_name}」 · 실물 「{rendered_name}」"
+        )
+
+
+def test_summary_rows_match_the_form() -> None:
+    """요약 표의 **행 이름과 순서**가 양식 【1】 표와 같다.
+
+    ## ★★ 검토자가 **먼저 보는 절**이 규정 밖에서 자라고 있었다
+
+    절 · 소절 · 붙임 · 표제는 위 넷이 양방향으로 붙들지만 **요약 표의 행
+    목록은 아무도 보지 않았다.** 이 검사를 처음 돌린 2026-08-18 에 양식 【1】의
+    「결합 전환 조건」과 실물의 「결론 전환 조건 (결합)」이 갈려 있었고, 양식은
+    **자기 자신과도** 갈려 있었다 — §2 의 `6.2` 는 같은 것을 「결론 전환
+    조건」이라 부른다. 한쪽이 둘과 갈렸으므로 그쪽(양식 【1】)을 고쳤다.
+
+    ⚠ **행 수는 어긋나 있지 않았다.** 인계 문서 둘이 *「양식 6행 · 실물 8행」*
+    이라 적어 두었는데 양식은 이미 여덟 행이었고, 여섯이라 적힌 곳은
+    `narrative.py::_summary_section` 의 독스트링뿐이었다 — **세지 않은 사본이
+    두 라운드의 계획으로 따라 들어갔다.** 그래서 그 독스트링은 이제 행을 세지
+    않고 이 검사를 가리킨다.
+
+    ★ 이 검사가 서야 **요약에 행을 더할지**를 판단할 수 있다. 붙들지 않은
+    목록에 행을 더하는 것은 어긋남을 깊게 만드는 일이다.
+    """
+    declared = _first_column(
+        _slice_between(_form_lines(), "### 【1】", "### 【2】")
+    )
+    assert len(declared) >= 6, f"양식에서 요약 표를 못 읽었다: {declared}"
+
+    rendered = _first_column(_slice_between(_rendered_lines(), "## 1. ", "---"))
+    assert len(rendered) >= 6, f"실물에서 요약 표를 못 읽었다: {rendered}"
+
+    _assert_prefix_rows(declared, rendered, "요약")
 
 
 def test_the_report_carries_no_authoring_date() -> None:
