@@ -58,3 +58,19 @@ class PeakShaving(ValueStream):
             return to_won(0)
         total_kw_months = sum(self._monthly)
         return to_won(total_kw_months * self._charge)
+
+    def formula(self, dispatch: DispatchResult, *, year: int) -> str:
+        """월 감축 합계 × 기본요금 단가 — `ValueStream.formula` 계약.
+
+        ⚠ **`12개월` 을 곱으로 적지 않는다.** 수량은 이미 12개월 치의 **합**
+        (`kW·월`)이고, 곱으로 적으면 검토자가 12를 한 번 더 곱해 12배로 읽는다.
+        월별이 균일한지 아닌지는 이 합에 드러나지 않으므로 **개월 수와 월평균을
+        괄호로 함께** 적는다 — 지금 구성은 12개월이 같은 값이다.
+        """
+        months = len(self._monthly)
+        total_kw_months = sum(self._monthly)
+        return (
+            f"월 감축 합계 {total_kw_months:,.2f}kW·월 "
+            f"({months}개월 · 월평균 {total_kw_months / months:,.2f}kW) "
+            f"× 기본요금 {self._charge:,.0f}원/kW·월"  # noqa: RUF001
+        )

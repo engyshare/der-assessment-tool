@@ -69,8 +69,25 @@ class SurplusSale(ValueStream):
         if not self.enabled:
             return to_won(0)
         # electric 양수 = 계통으로 내보낸 전력(잉여). 음수(소비)는 0으로 클램프.
-        surplus_kwh = sum(max(0.0, e) for e in dispatch.electric)
+        surplus_kwh = self._surplus_kwh(dispatch)
         return to_won(surplus_kwh * self._price)
+
+    def formula(self, dispatch: DispatchResult, *, year: int) -> str:
+        """잉여 역송 × 판매단가 — `ValueStream.formula` 계약.
+
+        ⚠ **수량을 `annual_value` 와 같은 함수에서 읽는다**(`_surplus_kwh`).
+        여기서 클램프를 다시 적으면 사본이 되고, 음수 처리 규칙이 한쪽만
+        바뀌면 산식과 금액이 조용히 갈린다.
+        """
+        return (
+            f"잉여 역송 {self._surplus_kwh(dispatch):,.2f}kWh "
+            f"× 판매단가 {self._price:,.0f}원/kWh"  # noqa: RUF001
+        )
+
+    @staticmethod
+    def _surplus_kwh(dispatch: DispatchResult) -> float:
+        """계통으로 내보낸 전력 — 음수(소비)는 0으로 클램프."""
+        return sum(max(0.0, e) for e in dispatch.electric)
 
     def exclusions(self) -> list[tuple[str, ExclusionType, str]]:
         # 자가소비한 kWh 와 잉여 kWh 는 같은 1 kWh 를 두 용도로 쓸 수 없다 (유형 A).

@@ -30,70 +30,23 @@ from pathlib import Path
 import pytest
 
 from core.assumption.provider import AssumptionSet
-from core.casegrid.e2e_runner import run_single_case_e2e
+from core.casegrid.e2e_runner import DAYS_PER_YEAR, run_single_case_e2e
 from core.casegrid.ledger_levels import build_level_map
 from core.contracts.der import DispatchResult
-from core.contracts.registry import discover
 from core.contracts.units import to_won
 from core.contracts.valuestream import Payer, ValueStream
 from core.valuestream.settlement import PPA_RATIO_KEY, TARIFF_KEY
+from tests.contract.valuestream_probes import (
+    PROBES,
+    assert_every_stream_has_a_probe,
+    deployed_streams,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
 
 #: 대표일 24스텝. 값은 **역송**(양수)이며 창을 읽는 편익만 이것을 본다.
 _ONE_DAY = tuple([1.0] * 24)
-
-
-def _deployed_streams() -> tuple[type[ValueStream], ...]:
-    """배포 편익 전건 — 레지스트리에서 온다.
-
-    목록을 손으로 적으면 편익이 늘 때 낡고, 낡은 목록은 **새 편익을 검사에서
-    빼면서 초록불로 남는다**(`NFR-207-AC1` 이 같은 이유로 레지스트리를 요구한다).
-    """
-    import core.valuestream
-
-    return tuple(
-        discover(core.valuestream, ValueStream).values()  # type: ignore[type-abstract]
-    )
-
-
-#: 편익마다의 **탐침 인자**. 금액은 뜻이 없다 — 재는 것은 *창을 두 배로 주면
-#: 값이 두 배가 되는가* 이므로, 0이 아니기만 하면 된다.
-#:
-#: ⚠ **대장 값을 쓰지 않는다.** 이 표가 대장을 읽으면 대장이 바뀔 때 이 검사의
-#: 판정이 함께 흔들리고, 그러면 규약 검사가 **금액 검사를 겸하게** 된다.
-#: 금액이 맞는지는 아래 진입점 검사가 대장과 자원 제원으로 따로 본다.
-#:
-#: ⚠ **DoD 공장(`_create_valuestream_for_tag`)을 쓰지 않는다.** 그 공장은 배타
-#: 규칙표에 오르는 태그만 만들며 `HeatCostSaving` 에서 멈춘다 — 재지 못한
-#: 편익을 건너뛰면 그 선언은 아무도 확인하지 않은 채 남는다.
-_PROBES: dict[str, dict[str, object]] = {
-    "SurplusSale": {"sale_price_won_per_kwh": 100.0},
-    "REC": {"weight": 1.0, "rec_price_won_per_unit": 50_000.0},
-    "SelfConsumption": {
-        "baseline_annual_bill_won": 1_000_000.0,
-        "new_annual_bill_won": 700_000.0,
-    },
-    "HeatCostSaving": {
-        "baseline_fuel_cost_won_per_year": 900_000.0,
-        "hp_electricity_cost_won_per_year": 400_000.0,
-    },
-    "DistributedBenefit": {"sub_items": None},
-    "DirectTrade": {
-        "tariff_won_per_kwh": 150.0,
-        "trade_price_won_per_kwh": 130.0,
-        "trade_volume_kwh": 4_000.0,
-    },
-    "PeakShaving": {
-        "monthly_peak_reduction_kw": [2.0] * 12,
-        "demand_charge_won_per_kw_month": 8_000.0,
-    },
-    "AggregatedPPA": {
-        "ppa_price_won_per_kwh": 120.0,
-        "annual_generation_kwh": 4_000.0,
-    },
-}
 
 
 def _result(electric: tuple[float, ...]) -> DispatchResult:
@@ -112,7 +65,7 @@ def test_every_deployed_value_stream_declares_the_convention() -> None:
 
     목록을 손으로 적지 않는 이유는 그것이 편익이 늘 때 낡기 때문이다.
     """
-    classes = _deployed_streams()
+    classes = deployed_streams()
     assert classes, "편익 레지스트리가 비어 있다 — 순회가 0회 돌면 이 검사는 무의미하다"
     for cls in classes:
         assert "scales_with_dispatch_window" in vars(cls), (
@@ -151,17 +104,12 @@ def test_the_declaration_matches_what_the_class_actually_does() -> None:
     어긋남을 잡지 못한다. 그 어긋남은 365분의 1 을 만들며, 작아진 쪽이라
     **보수적으로 보이기까지 한다.**
     """
-    streams = _deployed_streams()
-    missing = sorted(cls.tag for cls in streams if cls.tag not in _PROBES)
-    assert not missing, (
-        f"탐침 인자가 없는 편익이 있다: {', '.join(missing)} — 편익을 늘리면 "
-        "여기에 탐침을 함께 적는다. 건너뛰게 두면 새 편익의 규약 선언이 "
-        "**아무도 재지 않은 채로** 남는다"
-    )
+    streams = deployed_streams()
+    assert_every_stream_has_a_probe()
 
     checked = 0
     for cls in streams:
-        stream = cls(**_PROBES[cls.tag])  # type: ignore[arg-type]
+        stream = cls(**PROBES[cls.tag])  # type: ignore[arg-type]
         one = float(stream.annual_value(_result(_ONE_DAY), year=1))
         two = float(stream.annual_value(_result(_ONE_DAY * 2), year=1))
         if not one and not two:
@@ -209,3 +157,42 @@ def test_the_entry_point_does_not_multiply_an_already_annual_benefit() -> None:
     assert "연간화 없음" in line.formula, (
         "산식이 연간화 규약을 말하지 않는다 — 검토자가 365를 다시 곱한다"
     )
+
+
+@pytest.mark.req("FR-401-AC1")
+def test_the_printed_formula_says_whether_it_was_annualised() -> None:
+    """★★★ **인쇄된 산식이 연간화 여부를 말하는가** — 선언과 대조한다 (R36).
+
+    ## 왜 금액 검사만으로는 부족한가
+
+    위 검사들은 **금액**이 맞는지 본다. 그런데 R36 이 편익 산식에 대입값을
+    싣게 하면서 **문면이 스스로 산술을 주장하게** 됐고, 그 주장은 금액과
+    따로 틀릴 수 있다. 실측(변이 M4): 러너가 문면에서 `× 365일` 만 빼면
+
+        대표일 잉여 역송 16.10kWh × 판매단가 110원/kWh = 646,415원
+
+    이 실린다 — **금액은 맞는데 문장이 거짓**이다(16.10 × 110 = 1,771). 검토자가
+    붙임 4 를 손으로 검산하면 365배 어긋난 값을 얻고, 그러면 **틀린 것은 리포트가
+    아니라 자기 계산이라고 읽는다.** R35 ② 가 「두 끝의 값을 서로 바꿔 실어도
+    거리만 보는 검사 일곱이 통과했다」에서 만난 것과 같은 형태다.
+
+    ## 어떻게 다른 층에서 보는가
+
+    기대값을 **레지스트리의 선언**(`scales_with_dispatch_window`)에서 가져오고
+    실물은 **인쇄된 문면**에서 읽는다. 태그 목록을 적지 않는 이유는 늘 같다 —
+    편익이 늘면 낡는다.
+    """
+    outcome = run_single_case_e2e(
+        {}, level_map=build_level_map(_ASSUMPTIONS), horizon_years=20
+    )
+    declared = {cls.tag: cls.scales_with_dispatch_window for cls in deployed_streams()}
+    assert outcome.basis.benefits, "편익 항목이 0건이면 이 검사는 아무것도 보지 않는다"
+
+    for line in outcome.basis.benefits:
+        printed = f"× {DAYS_PER_YEAR}일" in line.formula  # noqa: RUF001
+        assert printed == declared[line.tag], (
+            f"«{line.label}» 의 산식이 연간화 여부를 잘못 말한다 — "
+            f"선언 {declared[line.tag]} · 문면 「{line.formula}」\n"
+            "금액이 맞아도 문면이 거짓이면 검토자의 손검산이 365배 어긋나고, "
+            "그러면 틀린 것은 리포트가 아니라 자기 계산이라고 읽습니다"
+        )

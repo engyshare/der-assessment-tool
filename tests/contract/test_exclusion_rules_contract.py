@@ -47,6 +47,9 @@ def _stub(tag_name: str) -> ValueStream:
         def annual_value(self, dispatch: DispatchResult, *, year: int) -> Money:
             return to_won(0)
 
+        def formula(self, dispatch: DispatchResult, *, year: int) -> str:
+            return "검사용 스텁 0원"
+
     return _Stub(name=f"stub:{tag_name}")
 
 

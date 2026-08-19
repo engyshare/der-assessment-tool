@@ -32,6 +32,9 @@ class _FixedBenefit(ValueStream):
     def annual_value(self, dispatch: DispatchResult, *, year: int) -> Money:
         return self._value if self.enabled else Money(0)
 
+    def formula(self, dispatch: DispatchResult, *, year: int) -> str:
+        return f"검사용 고정값 {int(self._value):,}원"
+
 
 @pytest.mark.req("FR-402-AC4")
 def test_exclusion_rules_are_declarative_table_rows() -> None:

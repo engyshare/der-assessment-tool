@@ -40,3 +40,15 @@ class HeatCostSaving(ValueStream):
             return to_won(0)
         saving = self._baseline - self._hp
         return to_won(saving)
+
+    def formula(self, dispatch: DispatchResult, *, year: int) -> str:
+        """기존 열원 연료비 − 히트펌프 전력비 — `ValueStream.formula` 계약.
+
+        ★ **기준선이 「난방 안 함」이 아니라 「기존 보일러 유지」라는 사실이
+        산식에 보여야 한다** (도메인 원칙 1-3). 절감액 한 수만 적으면 무엇을
+        기준선으로 잡았는지가 붙임 4 에서 사라진다.
+        """
+        return (
+            f"기존 열원 연료비 {self._baseline:,.0f}원/년 "
+            f"− 히트펌프 전력비 {self._hp:,.0f}원/년"  # noqa: RUF001
+        )

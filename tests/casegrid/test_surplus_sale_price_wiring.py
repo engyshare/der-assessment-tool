@@ -31,6 +31,7 @@ R34 까지 이 단가는 러너 안의 리터럴이었다:
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from types import MappingProxyType
@@ -255,3 +256,50 @@ def test_the_two_prices_are_separate_ledger_items() -> None:
         f"두 변수가 같은 대장 키({keys[_VARIABLE]})를 가리킨다 — 사는 값과 파는 "
         "값이 한 줄로 묶였습니다"
     )
+
+
+@pytest.mark.req("NFR-202-M1")
+def test_the_appendix_formula_carries_the_price_and_the_quantity() -> None:
+    """★★★ **붙임 4 의 산식이 그 단가를 싣는다** (R36).
+
+    R35 ① 은 이 단가를 대장으로 올려 **영향도 1위**임을 실측했다. 그런데 그 값이
+    **붙임 4 어디에도 없었다** — 편익 산식이 `대표일 1,771원 × 365일` 이라 곱해서
+    나온 금액만 있고 무엇에 얼마를 곱했는지가 없었다. 비용 쪽은 같은 자리에
+    `대표일 수전 6.19kWh × 365일 × 120원/kWh` 로 갈라 적는다.
+
+    ★ **수량과 단가를 함께 본다.** 단가만 보면 산식이 단가를 적어 두고 수량은
+    엉뚱한 것을 실어도 통과한다 — 그 둘의 **곱이 실린 금액과 맞는가**까지
+    본다(R35 ② 가 「거리만 보는 검사는 거짓 문장을 통과시킨다」에서 세운 형태).
+    """
+    price = 137.0
+    outcome = run_single_case_e2e(
+        {}, level_map=_level_map(price), horizon_years=_PROBE_HORIZON
+    )
+    line = next(x for x in outcome.basis.benefits if x.tag == _SURPLUS_TAG)
+
+    assert f"{price:,.0f}원/kWh" in line.formula, (
+        f"붙임 4 의 잉여판매 산식에 판매단가가 없다 — 「{line.formula}」\n"
+        "영향도 1위 인자의 값이 리포트 어디에도 없으면, 검토자는 그 금액이 왜 "
+        "그 금액인지 확인할 수 없습니다"
+    )
+
+    quantity = _quantity_kwh(line.formula)
+    assert _annualised(quantity, price) == pytest.approx(line.annual_won, rel=1e-3), (
+        f"산식에 실린 수량과 단가의 곱이 실린 금액과 다르다 — "
+        # RUF001: 실패 메시지가 산식 문면과 같은 모양이어야 대조가 된다.
+        f"「{line.formula}」\n{quantity:,.2f}kWh × {price:,.0f}원/kWh × "  # noqa: RUF001
+        f"{DAYS_PER_YEAR}일 ≠ {line.annual_won:,}원"
+    )
+
+
+def _quantity_kwh(formula: str) -> float:
+    """산식 문면에서 **대표일 수량**을 읽는다.
+
+    ⚠ 문면을 파싱하는 검사는 표기를 조금 다듬어도 깨진다. 그래도 이 자리에서는
+    파싱이 옳다 — 재는 것이 *「검토자가 **읽는 그 수**가 금액과 맞는가」* 이기
+    때문이다. 구현에서 수량을 다시 받아 오면 **리포트에 실제로 인쇄된 수**가
+    아니라 그것을 만든 값을 검산하게 되고, 그 사이의 어긋남이 그대로 남는다.
+    """
+    match = re.search(r"([\d,]+\.\d+)kWh", formula)
+    assert match, f"산식에서 kWh 수량을 못 읽었다 — 「{formula}」"
+    return float(match.group(1).replace(",", ""))

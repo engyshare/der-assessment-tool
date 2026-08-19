@@ -72,6 +72,27 @@ class DistributedBenefit(ValueStream):
         )
         return to_won(total)
 
+    def formula(self, dispatch: DispatchResult, *, year: int) -> str:
+        """하위 항목 다섯의 합 — `ValueStream.formula` 계약.
+
+        ★ **0인 항목도 적는다.** 이 편익의 기본은 전부 0이고(FR-404-AC1~AC3),
+        합계 한 수만 적으면 **「0원」과 「항목이 없다」가 같은 모양**이 된다 —
+        그런데 뜻은 정반대다(하나는 *제도 근거가 없어 크기를 추정하지 않았다*,
+        하나는 *그 항목을 아예 세지 않았다*). 프로포마의 전력 구매 행을
+        조건부로 만들지 않는 것과 같은 근거다.
+        """
+        items = self._items
+        return " + ".join(
+            f"{label} {value:,.0f}원"
+            for label, value in (
+                ("송배전 회피", items.transmission_avoidance_won),
+                ("손실 감소", items.loss_reduction_won),
+                ("계통서비스", items.grid_service_won),
+                ("온실가스", items.ghg_reduction_won),
+                ("회복력", items.resilience_won),
+            )
+        )
+
     def is_policy_assumed(self) -> bool:
         """활성화됐고 합계가 0이 아니면 정책 가정 편익 — 리포트 상단 경고 대상.
 

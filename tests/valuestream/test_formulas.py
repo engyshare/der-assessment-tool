@@ -218,6 +218,9 @@ class _UnspecifiedBenefit(ValueStream):
     def annual_value(self, dispatch: DispatchResult, *, year: int) -> Money:
         return to_won(0)
 
+    def formula(self, dispatch: DispatchResult, *, year: int) -> str:
+        return "검사용 스텁 0원"
+
 
 def test_unspecified_payer_rejected_at_activation() -> None:
     """지불 주체 미특정 + 활성화 → 생성 단계에서 ValueError — FR-402-AC5.

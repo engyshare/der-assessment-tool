@@ -48,6 +48,9 @@ class _StructureBound(ValueStream):
     def annual_value(self, dispatch: DispatchResult, *, year: int) -> Money:
         return to_won(0)
 
+    def formula(self, dispatch: DispatchResult, *, year: int) -> str:
+        return "검사용 스텁 0원"
+
 
 @pytest.mark.contract
 @pytest.mark.req("FR-205-AC1.NetMetering")

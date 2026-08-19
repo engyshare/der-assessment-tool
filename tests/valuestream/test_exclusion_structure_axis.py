@@ -74,6 +74,9 @@ class _StructA(ValueStream):
     def annual_value(self, dispatch: DispatchResult, *, year: int) -> Money:
         return to_won(0)
 
+    def formula(self, dispatch: DispatchResult, *, year: int) -> str:
+        return "검사용 스텁 0원"
+
 
 class _StructB(ValueStream):
     tag: ClassVar[str] = "_StructB"
@@ -86,6 +89,9 @@ class _StructB(ValueStream):
 
     def annual_value(self, dispatch: DispatchResult, *, year: int) -> Money:
         return to_won(0)
+
+    def formula(self, dispatch: DispatchResult, *, year: int) -> str:
+        return "검사용 스텁 0원"
 
 
 # ── ① 구조 한정 규칙이 그 구조에서만 걸린다 ──────────────────────────

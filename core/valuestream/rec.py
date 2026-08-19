@@ -44,6 +44,22 @@ class REC(ValueStream):
     def annual_value(self, dispatch: DispatchResult, *, year: int) -> Money:
         if not self.enabled:
             return to_won(0)
-        # 발전량 = electric 양수 합. 음수(충전/소비)는 REC 대상이 아니다.
-        generation_kwh = sum(max(0.0, e) for e in dispatch.electric)
-        return to_won(generation_kwh * self._weight * self._price)
+        return to_won(self._generation_kwh(dispatch) * self._weight * self._price)
+
+    def formula(self, dispatch: DispatchResult, *, year: int) -> str:
+        """발전량 × 가중치 × 단가 — `ValueStream.formula` 계약.
+
+        ★ **가중치를 산식에 싣는다.** 규제 프로파일이 정하는 값이라 대장·단가와
+        다른 사람이 고치는데, 빠지면 검토자가 발전량과 단가만 곱해 보고 금액이
+        맞지 않는다고 읽는다.
+        """
+        return (
+            f"발전 {self._generation_kwh(dispatch):,.2f}kWh "
+            f"× 가중치 {self._weight:,.2f} "  # noqa: RUF001
+            f"× REC 단가 {self._price:,.0f}원/REC"  # noqa: RUF001
+        )
+
+    @staticmethod
+    def _generation_kwh(dispatch: DispatchResult) -> float:
+        """발급 대상 발전량 — `electric` 양수 합. 음수(충전/소비)는 대상이 아니다."""
+        return sum(max(0.0, e) for e in dispatch.electric)

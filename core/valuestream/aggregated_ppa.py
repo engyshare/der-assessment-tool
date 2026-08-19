@@ -72,6 +72,19 @@ class AggregatedPPA(ValueStream):
             return to_won(0)
         return to_won(self._generation * self._price)
 
+    def formula(self, dispatch: DispatchResult, *, year: int) -> str:
+        """전량 발전 × PPA 계약단가 — `ValueStream.formula` 계약.
+
+        ★ **「전량」을 산식 문면에 적는다.** 잉여판매의 수량과 같은 `kWh` 인데
+        **뜻이 다르다**(이쪽은 계통 역송분이 아니라 발전 전량이다). 단위만
+        같고 뜻이 다른 두 수량이 같은 붙임에 나란히 서므로, 구분을 산식이
+        지지 않으면 검토자가 둘을 더해 볼 수 있다.
+        """
+        return (
+            f"전량 발전 {self._generation:,.0f}kWh "
+            f"× PPA 계약단가 {self._price:,.0f}원/kWh"  # noqa: RUF001
+        )
+
     def exclusions(self) -> list[tuple[str, ExclusionType, str]]:
         """전량을 팔았으므로 **잉여판매도 자가소비도 함께 켤 수 없다** (유형 A).
 

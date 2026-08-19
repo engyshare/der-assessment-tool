@@ -499,10 +499,12 @@ def run_single_case_e2e(
     )
     benefit_lines = _benefit_lines(
         settlement_by_stream,
-        peak_tag=peak.tag,
-        peak_reduction_kw=peak_reduction_kw,
-        demand_charge=DEMAND_CHARGE_WON_PER_KW_MONTH,
-        peak_per_year=float(peak_per_year),
+        peak=peak,
+        peak_per_year=peak_per_year,
+        # ★ 연간화에 쓴 **그 창**을 넘긴다 — 산식의 수량은 금액이 나온 창에서
+        # 읽어야 한다. 다른 창을 넘기면 산식과 금액이 갈리고, 그 어긋남은
+        # 곱해서 나온 합계만 보면 드러나지 않는다.
+        dispatch=grid_export_result,
     )
 
     return CaseOutcome(
@@ -655,10 +657,9 @@ def _cost_lines(
 def _benefit_lines(
     settlement_by_stream: Sequence[tuple[ValueStream, int]],
     *,
-    peak_tag: str,
-    peak_reduction_kw: float,
-    demand_charge: float,
-    peak_per_year: float,
+    peak: ValueStream,
+    peak_per_year: int,
+    dispatch: DispatchResult,
 ) -> tuple[BenefitLine, ...]:
     """편익을 **갈래별로** 갈라 담는다 (`BenefitLine` 독스트링 참조).
 
@@ -671,39 +672,57 @@ def _benefit_lines(
     ⚠ **이름을 인스턴스에서 읽는다.** 종전에는 라벨이 `f"잉여 전력 판매 ({tag})"`
     로 박여 있었고, 그래서 「집합 PPA」·「분산특구 직접거래」가 배선되면
     **전량 판매·직접거래가 「잉여 전력 판매」로 인쇄된다**. 자원 귀속도 마찬가지다.
+
+    ★ **첨두 절감도 같은 통로를 지난다** (R36). 종전에는 이 편익만 라벨과 산식이
+    여기에 박여 있었고, 그래서 위 규칙의 예외로 남아 있었다 — 라벨은
+    「첨두 수요 절감」으로 고정(인스턴스 이름은 「기본요금(피크) 절감」)이고
+    산식은 러너가 지었다. 자원 귀속만 다르므로 그것만 인자로 받는다.
     """
-    lines = [
-        BenefitLine(
-            tag=stream.tag,
-            label=f"{stream.name} ({stream.tag})",
-            annual_won=annual_won,
-            from_resource="PV",
-            formula=(
-                # RUF001: 「×」는 검토자가 읽는 산식 문면이다. `x` 로 바꾸면
-                # 곱셈이 변수 이름처럼 보인다 — 대상을 좁히는 면제이지 규칙을
-                # 넓히는 것이 아니다.
-                f"대표일 {annual_won // DAYS_PER_YEAR:,}원 "
-                f"× {DAYS_PER_YEAR}일 = {annual_won:,}원"  # noqa: RUF001
-                if type(stream).scales_with_dispatch_window
-                else f"연 {annual_won:,}원 (연간 수량으로 산정 · 연간화 없음)"
-            ),
-        )
-        for stream, annual_won in settlement_by_stream
-    ]
-    lines.append(
-        BenefitLine(
-            tag=peak_tag,
-            label=f"첨두 수요 절감 ({peak_tag})",
-            annual_won=int(peak_per_year),
-            from_resource="ESS",
-            formula=(
-                f"월 감축 {peak_reduction_kw:.2f}kW × "  # noqa: RUF001
-                f"{demand_charge:,.0f}원/kW·월 × {MONTHS_PER_YEAR}개월 "  # noqa: RUF001
-                f"= {int(peak_per_year):,}원"
-            ),
+    return tuple(
+        _benefit_line(stream, annual_won, resource, dispatch)
+        for stream, annual_won, resource in (
+            *((s, v, "PV") for s, v in settlement_by_stream),
+            (peak, int(peak_per_year), "ESS"),
         )
     )
-    return tuple(lines)
+
+
+def _benefit_line(
+    stream: ValueStream, annual_won: int, resource: str, dispatch: DispatchResult
+) -> BenefitLine:
+    """편익 한 줄 — **산식은 편익이 내고 연간화는 여기가 붙인다**.
+
+    ## ★★★ 왜 산식을 여기서 짓지 않는가 (R36)
+
+    종전 이 자리는 창을 읽는 편익에 **`대표일 1,771원 × 365일`** 을 적었다.
+    곱해서 나온 금액만 있고 **무엇에 얼마를 곱했는지가 없다** — 같은 리포트의
+    비용 쪽은 `대표일 수전 6.19kWh × 365일 × 120원/kWh` 로 수량과 단가를 갈라
+    적는데(`_cost_lines`), 편익 쪽만 그러지 못했다. 그래서 **영향도 1위 인자인
+    잉여 판매단가의 값이 붙임 4 어디에도 없었다.**
+
+    대입값을 아는 것은 그 값을 생성자에서 받은 **편익 자신**이므로 문면을
+    `ValueStream.formula()` 가 낸다. 여기서 지으려면 태그별 분기를 들게 되고
+    그 목록은 편익이 늘 때 낡는다 — 위 연간화와 같은 근거다.
+
+    ⚠ **연간화와 합계는 여기가 붙인다.** 편익은 자기 대입값까지만 알고,
+    *「이 창이 대표일인가」* 는 호출측의 사정이다. 두 곳이 다 적으면 갈릴 수
+    있고 갈린 쪽이 365배다.
+    """
+    # RUF001: 「×」는 검토자가 읽는 산식 문면이다. `x` 로 바꾸면 곱셈이 변수
+    # 이름처럼 보인다 — 대상을 좁히는 면제이지 규칙을 넓히는 것이 아니다.
+    body = stream.formula(dispatch, year=1)
+    formula = (
+        f"대표일 {body} × {DAYS_PER_YEAR}일 = {annual_won:,}원"  # noqa: RUF001
+        if type(stream).scales_with_dispatch_window
+        else f"{body} = {annual_won:,}원 (연간 수량으로 산정 · 연간화 없음)"
+    )
+    return BenefitLine(
+        tag=stream.tag,
+        label=f"{stream.name} ({stream.tag})",
+        annual_won=annual_won,
+        from_resource=resource,
+        formula=formula,
+    )
 
 
 def _resource_lines(

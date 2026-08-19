@@ -56,6 +56,22 @@ class DirectTrade(ValueStream):
         spread = self._tariff - self._trade
         return to_won(spread * self._volume - self._fee)
 
+    def formula(self, dispatch: DispatchResult, *, year: int) -> str:
+        """(약관요금 − 직접거래단가) × 거래량 − 수수료 — `ValueStream.formula` 계약.
+
+        ⚠ **괄호를 적는다.** 차를 먼저 내고 곱하는데, 괄호 없이 적으면
+        `약관 − 거래단가 × 거래량` 으로 읽혀 **연산 순서가 뒤집힌다.**
+
+        ★ **이 편익이 버는 것은 단가가 아니라 차익이다** — 두 단가를 각각
+        적어야 어느 쪽이 움직여 금액이 바뀌었는지 검토자가 가린다.
+        """
+        return (
+            f"(약관요금 {self._tariff:,.0f}원/kWh "
+            f"− 직접거래단가 {self._trade:,.0f}원/kWh) "  # noqa: RUF001
+            f"× 거래량 {self._volume:,.0f}kWh "  # noqa: RUF001
+            f"− 거래지원수수료 {self._fee:,.0f}원"  # noqa: RUF001
+        )
+
     def exclusions(self) -> list[tuple[str, ExclusionType, str]]:
         # 잉여를 직접거래와 상계거래로 동시에 팔 수 없다 (유형 A, domain-rules §2-A 표).
         return [(

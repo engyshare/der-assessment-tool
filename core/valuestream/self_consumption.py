@@ -48,6 +48,18 @@ class SelfConsumption(ValueStream):
         saving = self._baseline - self._new
         return to_won(saving)
 
+    def formula(self, dispatch: DispatchResult, *, year: int) -> str:
+        """기존 요금 − 신규 요금 — `ValueStream.formula` 계약.
+
+        ★ **차를 그대로 적는다.** 절감액만 적으면 「요금이 얼마에서 얼마로
+        내렸는가」가 사라지고, 그 두 값은 요금 엔진이 낸 것이라 이 편익이
+        아니라 **그쪽을 확인해야** 검산이 된다.
+        """
+        return (
+            f"기존 연간 요금 {self._baseline:,.0f}원 "
+            f"− 신규 연간 요금 {self._new:,.0f}원"  # noqa: RUF001
+        )
+
     def exclusions(self) -> list[tuple[str, ExclusionType, str]]:
         # 자가소비한 kWh 는 잉여판매(SurplusSale)와 동일 물리량을 공유 — 유형 A.
         # 동일 kWh 를 두 곳에 쓸 수 없으므로 배타 규칙으로 등록 (FR-402-AC2.A).
