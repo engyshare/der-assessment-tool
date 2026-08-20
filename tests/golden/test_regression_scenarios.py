@@ -1,3 +1,56 @@
+"""골든 3종 회귀 스냅숏 — **이 파일이 무엇을 재고 무엇을 못 재는가.**
+
+정본은 작업목록 16.4 다: *「가정값 위의 골든은 회귀 테스트이지 정확도 테스트가
+아니다. … 이 3종이 통과한다는 것은 «계산이 어제와 같다» 는 뜻이지 «계산이 맞다»
+는 뜻이 아니다.」* 아래 대조가 초록불인 것은 그 뜻이며, 그 이상을 주장하지 않는다.
+
+## ① 이 골든이 넘기는 현금흐름의 모양 — 편익 **한 행**, 비용 행 없음
+
+`_reference_metrics()` 와 `_scenario_metrics()` 는 둘 다 `benefit_row` 하나만
+세운다. 한 해에 행이 하나뿐이므로 **행 단위 순회와 연 단위 순회가 같은 목록을
+낸다** — 그래서 `payback_simple` 이 R38 까지 한 해의 행을 합치지 않고 한 걸음씩
+세고 있었는데도 세 시나리오가 전건 초록불이었다. **이 골든은 그 결함의 파수꾼이
+아니다.** 그 자리를 보는 검사는 `tests/cba/test_indicators.py` 와
+`tests/cba/test_metrics.py` 의 「한 해에 행이 여럿」 구획에 있다.
+
+## ② 실행 경로의 모양은 다르다 — 여기가 재는 것이 아니다
+
+실물은 `core/casegrid/e2e_runner.py::net_operating_flows()` 를 지나며 **편익
+1행 + 부호를 뒤집은 비용 여러 행**(`PVFixedOM`·`ESSFixedOM`·`GridPurchase`·
+정산 수수료)을 만든다. 그 경계를 붙드는 것은 `tests/casegrid/test_e2e_cost_sign.py`
+다. 즉 **두 모양이 갈려 있고, 갈린 자리를 각각 다른 검사가 붙든다.** 이 갈림
+자체는 조항 위반이 아니다(위 16.4) — 다만 이 파일의 초록불을 「실행 경로가
+맞다」로 읽으면 안 된다.
+
+## ③ 왜 아직 옮기지 않는가 — 옮기는 조건
+
+모양을 옮기면 `fixtures/golden/*.yaml` 의 `expected_values` 6개가 전부 바뀌고,
+무보조 시나리오의 `npv` 는 **부호가 뒤집힌다**(R38 실측. 단 `GridPurchase` 와
+정산 수수료 행을 채우지 못했으므로 그 실측은 변화폭의 **하한**이다). 「어제와
+같다」를 재는 자리의 기준점을 흔드는 일이므로 **한 번만** 해야 한다. 그런데 지금
+골든 안에는 `GridPurchase` 단가도 정산 구조도 없고, 교체비·잔존가치 배선이 비용
+행을 더 늘린다 — 지금 옮기면 옛 모양을 **또 다른 잠정 모양**으로 바꾸는 것이다.
+
+→ **옮기는 시점은 그 배선이 끝나 비용 행 구성이 확정된 뒤이며, 그때 위 6개를
+함께 재산출한다.** 세 yaml 머리글이 같은 조건을 가리킨다.
+
+## ④ 세 yaml 이 선언한 출처는 위 두 수를 낼 수 없다 — 별개 축, 고치지 않았다
+
+세 yaml 은 오라클 순위 3(외부 공표 실적)과 출처 파일
+`tests/integration/test_wave2_end_to_end.py` 를 선언한다. 그 파일을 열어 보면
+**회수기간을 아예 계산하지 않고**, `npv` 에도 수치 단언이 없다(형과 정수 여부만
+본다). 게다가 행 구성이 편익 1행 + 고정 O&M 2행이며 `total_row()` 로 합쳐
+넘긴다 — 위 ①과 다른 모양이다. 즉 **선언된 출처는 세 yaml 의 두 수를 낼 수
+없다.**
+
+이것은 ①~③의 「모양」 축과 다른 **정박** 축이며, 정본이 이미 유예해 둔 자리다
+(작업목록 16.1b ④ — Q-4·Q-5 회신이 §13.3 판정을 연다). 기계로 적어 둔 자리는
+`tests/ci/test_performance_and_golden.py` 의
+`test_repo_golden_files_are_readable_and_declare_an_oracle_rank_and_source`
+독스트링이다. 순위·출처 필드는 주석이 아니라 파서가 읽는 값이므로 R38-C2 는
+**값을 고치지 않고 사실만 남겼다.**
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -87,17 +140,9 @@ def _reference_metrics() -> dict[str, float]:
     annual_benefit = Money(surplus * DAYS_PER_YEAR + peak)
 
     base_capex = Money(int(pv.capex(year=1) + ess.capex(year=1)))
-    # ⚠ **이 골든은 한 해에 행이 하나뿐인 현금흐름을 넘긴다** — 편익 한 행이고
-    # 비용 행이 없다. 그래서 `payback_simple` 이 R38 까지 그 해의 행을 합치지
-    # 않고 한 걸음씩 세고 있었는데도 세 시나리오가 **전건 초록불**이었다. 이
-    # 골든은 그 결함의 파수꾼이 **아니다** — 그 자리를 보는 검사는
-    # `tests/cba/test_indicators.py` 와 `tests/cba/test_metrics.py` 의
-    # 「한 해에 행이 여럿」 구획에 있다.
-    #
-    # 여기의 행 구성을 여럿으로 바꾸지 않은 이유: 이 파일은 **회귀 스냅숏**이고
-    # (`fixtures/golden/*.yaml` 머리글이 그렇게 적는다) 행 구성을 바꾸면 세
-    # yaml 의 expected 를 다시 뽑아야 한다 — 「어제와 같다」를 재는 자리에서
-    # 기준선을 흔드는 것이므로 R38 은 하지 않았다.
+    # ⚠ **편익 한 행. 비용 행이 없다.** 이 모양이 무엇을 못 재는지와 언제
+    # 옮기는지는 **모듈 독스트링이 정본이다** — 여기에 다시 적지 않는다(같은
+    # 사실이 두 곳에 있으면 한쪽만 고쳐진다).
     rows = [
         benefit_row(
             "annual_benefit",
@@ -130,6 +175,9 @@ def _scenario_metrics(subsidy_rate: float) -> dict[str, float]:
     )
     equity = scheme.calculate_financing(base_capex)["equity"]
     initial_investment = Money(int(equity))
+    # ⚠ 여기도 **편익 한 행**이다. 그리고 **실제로 대조에 쓰이는 것은 이쪽이다**
+    # — 아래 회귀 검사와 `tests/acceptance2/test_17_7_dod7.py` 가 부르는 함수가
+    # 이 함수다. 이 모양이 못 재는 것은 모듈 독스트링 ①·②를 볼 것.
     rows = [
         benefit_row(
             "annual_benefit",

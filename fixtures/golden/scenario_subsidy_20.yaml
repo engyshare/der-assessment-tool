@@ -2,6 +2,29 @@
 # proof of accuracy. Re-generate this file whenever the assumption ledger version
 # changes; until then, mismatches are expected and are not defects.
 # Calculated on 2026-08-09 with docs/assumptions.yaml version 1.
+#
+# ── 이 기준값의 «모양» (R38-C2) ──────────────────────────────────────────
+# 아래 두 수는 **편익 한 행뿐인 현금흐름**에서 나왔다 — 비용 행이 없다. 실행
+# 경로(`core/casegrid/e2e_runner.py::net_operating_flows()`)는 편익 1행 + 부호를
+# 뒤집은 비용 여러 행을 만들므로 **이 기준값은 실물 산출물의 모양이 아니다.**
+# 그래서 이 회귀가 초록불인 것은 「계산이 어제와 같다」는 뜻이며(작업목록 16.4),
+# 「실행 경로가 맞다」는 뜻이 아니다. 자세한 것은
+# `tests/golden/test_regression_scenarios.py` 모듈 독스트링이 정본이다.
+#
+# 옮기는 조건: 교체비·잔존가치 배선이 끝나 비용 행 구성이 확정된 뒤에 **한 번**
+# 옮기고, 그때 세 파일의 `expected_values` 를 함께 재산출한다. 지금 옮기면
+# `GridPurchase` 단가와 정산 수수료 구조가 골든 안에 없어 또 다른 잠정 모양을
+# 고정하게 된다.
+#
+# 위 3행의 「mismatches … are not defects」는 **대장 판이 올라간 뒤의 어긋남**을
+# 말한다 — 어긋남을 무시해도 된다는 뜻이 아니다. 회귀가 어긋나면 검사는 빨간불이
+# 되고 머지가 막힌다(`FR-1103-AC1`).
+#
+# `oracle_rank: 3`(외부 공표 실적)은 **아직 정박되지 않은 선언**이다 — §13.3
+# 판정은 Q-4·Q-5 회신까지 유예돼 있다(작업목록 16.1b ④). 그 사실을 기계로 적어
+# 둔 자리는 `tests/ci/test_performance_and_golden.py` 의
+# `test_repo_golden_files_are_readable_and_declare_an_oracle_rank_and_source`
+# 독스트링이다.
 
 scenario: "energy_independent_household"
 subsidy_rate: 0.20
