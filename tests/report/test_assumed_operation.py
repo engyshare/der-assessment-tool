@@ -173,12 +173,67 @@ def test_a_missing_profile_asset_stops_the_report() -> None:
         module.load_daily_shapes = original  # type: ignore[assignment]
 
 
+def test_an_asset_that_vanishes_between_the_two_reads_is_not_swallowed() -> None:
+    """★★ 자산이 **읽는 사이에** 사라지면 조용히 비우지 않는다 (R37 후속).
+
+    ## 왜 이 자리가 있는가 — 변이가 초록불로 남았다
+
+    `build_case_report` 는 형상을 **두 번** 읽는다: 결론에 넘기려고 한 번,
+    붙임 7 둘째 표를 그리려고 `_assumed_operation` 에서 한 번. 그래서
+    *「자산이 없으면 리포트가 서지 않는다」* 는 **첫 읽기에만** 걸려 있고, 둘째
+    읽기가 실패하는 갈래는 위 검사가 보지 못한다.
+
+    그 갈래를 `except OSError` 로 삼키면 **결론은 이미 읽은 형상 위에 서 있는데
+    붙임 7 은 「미산출」로 비는** 상태가 된다 — 리포트가 무엇 위에 섰는지
+    스스로 부정하는 꼴이고, 아무 예외도 나지 않는다. `OSError` 를 `except` 에서
+    뺀 것이 그 처리이며, 이 검사가 그것을 붙든다(빼지 않으면 초록불이다).
+
+    ⚠ **읽기를 한 번으로 줄이면 이 갈래는 아예 없어진다** — 그것이 더 나은
+    구조이나 이 라운드의 담당 밖이다. 구조가 바뀌면 이 검사는 「없어진 갈래를
+    지키는 검사」가 되므로 그때 함께 지울 자리다.
+    """
+    import core.report.case_report as module
+
+    original = module.load_daily_shapes
+    calls = {"n": 0}
+
+    def vanishing(*args: object, **kwargs: object):
+        calls["n"] += 1
+        if calls["n"] >= 2:
+            raise OSError("둘째 읽기에서 자산이 사라졌다")
+        return original(*args, **kwargs)
+
+    module.load_daily_shapes = vanishing  # type: ignore[assignment]
+    try:
+        with pytest.raises(OSError):
+            build_case_report(
+                _GOLDEN / "scenario_unsubsidized.yaml",
+                assumptions_path=_ASSUMPTIONS,
+            )
+        assert calls["n"] >= 2, (
+            f"형상을 {calls['n']}회만 읽었다 — 이 검사가 겨누는 둘째 읽기에 "
+            "닿지 않았다(읽기가 한 번으로 줄었다면 이 검사를 지울 자리다)"
+        )
+    finally:
+        module.load_daily_shapes = original  # type: ignore[assignment]
+
+
 def test_a_missing_load_total_leaves_the_table_out() -> None:
-    """★ 대장에 부하 총량이 없으면 **붙임 7 둘째 표만** 빠진다.
+    """★★ 대장에 부하 총량이 없으면 **붙임 7 둘째 표만** 빠지고, 사유는 **대장뿐**이다.
 
     기본값으로 메우면 「대장이 비었다」와 「이 값을 골랐다」가 구별되지 않고,
     붙임 7 이 **지어낸 부하를 실물처럼** 싣는다. 자산 부재와 달리 이쪽은 결론의
     입력이 아니므로(부하는 운전만 그린다) 리포트 자체는 선다.
+
+    ## ⚠ **사유에 「형상 자산 부재」가 없어야 한다** (R37 후속)
+
+    이 자리가 비어 있어서 부작용이 났다. 종전 검사는 사유 문면이 **있는가**만
+    보았고, 그래서 문면이 *「형상 자산 또는 대장 항목 부재」* 로 남아 있는 것을
+    아무도 잡지 못했다 — 그 괄호의 앞쪽 절은 **인쇄될 수 없는 사유**다(자산이
+    없으면 위 검사대로 리포트가 서지 않는다).
+
+    그래서 여기서는 **적힌 것과 적히지 않은 것을 함께** 본다. 「무엇이 있는가」만
+    보는 검사는 사유가 넓어지는 방향의 잘못을 구조적으로 보지 못한다.
     """
     import core.report.case_report as module
 
@@ -191,8 +246,16 @@ def test_a_missing_load_total_leaves_the_table_out() -> None:
         assert report.assumed_hours == (), "대장 항목이 없는데 운전이 나왔다"
         assert report.assumed_basis is None
         text = render_markdown(report)
-        assert "미산출 (형상 자산 또는 대장 항목 부재)" in text, (
+        assert "미산출 (대장 항목 부재)" in text, (
             "대장 항목 부재를 리포트가 밝히지 않는다"
         )
+        # ★ 사유가 **넓어지지 않았는가.** 자산은 결론의 입력이므로 여기까지 온
+        # 실행에서는 사유가 될 수 없다 — 그 절이 문면에 있으면 리포트가 스스로
+        # 세운 규칙과 어긋나는 안내를 싣는 것이다.
+        for impossible in ("형상 자산 또는", "형상 자산 부재"):
+            assert impossible not in text, (
+                f"인쇄될 수 없는 사유가 문면에 남았다: {impossible!r} — "
+                "자산이 없으면 리포트 자체가 서지 않는다"
+            )
     finally:
         module.LOAD_LEDGER_KEY = original  # type: ignore[assignment]

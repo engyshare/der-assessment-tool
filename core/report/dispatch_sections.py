@@ -216,9 +216,14 @@ def _assumed_lines(report: CaseReport) -> list[str]:
     hours = report.assumed_hours
     basis = report.assumed_basis
     if not hours or basis is None:
+        # ⚠ **「형상 자산 부재」를 사유로 적지 않는다** (R37 후속).
+        # 그 자산은 이제 결론의 입력이므로 없으면 **리포트 자체가 서지 않는다**
+        # (`case_report.build_case_report` 가 형상을 먼저 읽는다). 여기까지
+        # 왔다는 것은 자산이 있었다는 뜻이고, 남은 사유는 **대장 항목** 하나다.
+        # 있을 수 없는 사유를 괄호에 남겨 두면 검토자가 「자산이 없어서 비었을
+        # 수도 있다」로 읽는다 — 리포트가 스스로 세운 규칙과 어긋나는 안내다.
         return [
-            "- 부하·일사 형상을 가정한 운전 — 미산출 (형상 자산 또는 대장 "
-            "항목 부재)",
+            "- 부하·일사 형상을 가정한 운전 — 미산출 (대장 항목 부재)",
             "",
         ]
     baseline_import = sum(hour.grid_import for hour in report.dispatch_hours)

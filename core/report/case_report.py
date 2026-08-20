@@ -661,14 +661,28 @@ def _assumed_operation(
 ) -> tuple[tuple[DispatchHour, ...], AssumedOperationBasis | None]:
     """부하·일사 형상을 주고 **같은 진입점**을 한 번 더 부른다.
 
-    자산이나 대장 항목이 없으면 **메우지 않고 비운다** — 기본 형상으로 메우면
-    「자산이 비었다」와 「이 형상을 골랐다」가 구별되지 않고, 붙임 7 이 지어낸
-    운전을 실물처럼 싣는다.
+    **대장의 부하 총량이 없으면 메우지 않고 비운다** — 기본값으로 메우면
+    「대장이 비었다」와 「이 값을 골랐다」가 구별되지 않고, 붙임 7 이 지어낸
+    부하를 실물처럼 싣는다.
+
+    ## ⚠ 자산 부재는 **여기서 처리할 일이 아니다** (R37 후속 정정)
+
+    종전 이 독스트링은 *「자산이나 대장 항목이 없으면 비운다」* 였고 `except` 도
+    `OSError` 를 잡았다. R37 이 일사 곡선을 결론에 배선하면서 **그 절이 자산
+    쪽에서 거짓이 됐다** — 자산이 없으면 `build_case_report` 가 형상을 먼저
+    읽다가 터지므로 **이 함수에 닿지 않는다.** `OSError` 갈래는 도달 불가였고,
+    그 상태에서 붙임 7 은 *「형상 자산 또는 대장 항목 부재」* 라는 **인쇄될 수
+    없는 사유**를 싣고 있었다.
+
+    그래서 `OSError` 를 빼고 사유를 대장 하나로 좁혔다. **`load_daily_shapes()`
+    를 `try` 안에 남겨 둔 것은 의도**다 — 여기서 그것이 터지면 그것은 「비울
+    상황」이 아니라 **리포트가 서지 못할 상황**이므로 삼켜서는 안 된다.
+    (남은 `ValueError`·`KeyError` 는 대장 조회 몫이다.)
     """
     try:
         shapes = load_daily_shapes()
         entry = provider.get(LOAD_LEDGER_KEY)
-    except (OSError, ValueError, KeyError):
+    except (ValueError, KeyError):
         return (), None
     if entry is None:
         # 대장에서 부하 총량이 사라지면 **비운다.** 기본값을 두면 대장을

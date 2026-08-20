@@ -137,11 +137,22 @@ def test_the_conclusion_stands_on_the_shaped_run() -> None:
     ), "평탄 실행과 곡선 실행의 결론이 같다 — 이 검사가 배선을 붙들지 못한다"
 
 
-def test_the_shape_moves_energy_without_creating_it_on_the_default_path() -> None:
-    """★ 배선이 **총량을 옮기지 않았다** — 형상은 배분이지 값이 아니다.
+def test_the_shape_moves_energy_without_creating_it() -> None:
+    """★ 형상이 **총량을 옮기지 않는다** — 형상은 배분이지 값이 아니다.
 
     총량이 함께 움직였다면 이 라운드의 전/후 비교는 *「곡선의 효과」* 가 아니라
     *「발전량이 바뀐 효과」* 를 잰 것이 된다.
+
+    ## ⚠ 이 검사는 **기본 경로를 보지 않는다**
+
+    이름에 `…_on_the_default_path` 가 붙어 있었는데 **거짓이었다** — 여기서는
+    러너를 평탄·곡선으로 두 번 직접 부르고 총량을 견주며, 리포트는
+    `horizon_years` 를 얻는 데만 쓴다. 그래서 배선을 되돌리는 변이에 **이
+    검사는 초록불로 남는다**(그 변이는 위 세 검사가 잡는다).
+
+    이름이 거짓이면 다음 사람이 *그 자리가 붙들려 있다*고 읽으므로 이름에서
+    떼었다. 붙드는 것(형상은 총량을 만들지 않는다)은 그대로 옳고 필요하다 —
+    러너 층의 성질이며, 기본 경로가 그것을 쓰는지는 위 검사들이 본다.
     """
     levels = build_level_map(_ASSUMPTIONS)
     horizon = _report().basis.horizon_years
