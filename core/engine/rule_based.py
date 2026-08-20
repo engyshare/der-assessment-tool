@@ -156,8 +156,15 @@ class RuleBasedEngine(DispatchEngine):
         exports: list[float] = []
         for step in range(steps):
             net = math.fsum(result.electric[step] for result in per_resource.values())
-            imports.append(max(-net, 0.0))
-            exports.append(max(net, 0.0))
+            # ⚠ **`max(-net, 0.0)` 을 쓰지 않는다 — 음의 0 이 새어 나간다** (R37).
+            # `net` 이 정확히 `+0.0` 인 스텝에서 `-net` 은 `-0.0` 이고, 파이썬의
+            # `max` 는 둘이 같을 때 **앞의 것**을 돌려주므로 `-0.0` 이 남는다.
+            # 수치로는 0 과 같아 어떤 검사도 걸리지 않지만 **붙임 7 이
+            # 「-0.00」 을 인쇄한다** — 검토자는 계통 수전에 붙은 음수 부호를
+            # 읽는다. R37 이 일사 곡선을 배선해 야간 발전이 0 이 되자 net 이
+            # 정확히 0 인 스텝이 처음 생겨 드러났다.
+            imports.append(-net if net < 0.0 else 0.0)
+            exports.append(net if net > 0.0 else 0.0)
         return imports, exports
 
     @staticmethod

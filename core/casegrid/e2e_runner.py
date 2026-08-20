@@ -130,17 +130,28 @@ def _resolve(
     raise ValueError(f"Unknown level {key!r} for variable {var_name!r}")
 
 
-def _household_load(
+def _household_load_if_total_given(
     daily_shapes: DailyShapes | None, annual_load_kwh: float | None
 ) -> Load | None:
-    """가구 부하 자원 — **형상과 총량이 함께 와야** 세운다.
+    """가구 부하 자원 — **부하 총량(`annual_load_kwh`)이 왔을 때만** 세운다.
 
-    ## 왜 둘을 함께 요구하는가
+    ## 왜 함수 이름이 조건을 말하는가 (R37)
 
-    형상만 오면 총량을 지어내야 하고, 총량만 오면 하루 안에서 **균등 배분**이
-    되어 지금 PV 가 겪는 것과 같은 형태가 된다(붙임 8 「일중 발전 프로파일」).
-    둘 중 하나만으로 부하를 세우면 *「부하를 반영했다」* 는 진술이 성립하는데
-    **그 부하는 실제로 아무 시간대도 갖지 않는다.**
+    종전에는 「형상과 총량이 함께 와야 한다」였고, 형상만 오면 **오류로 막았다**.
+    그 막음이 잡으려던 실수는 *「부하를 넣을 생각이었는데 총량을 잊었다」* 다.
+
+    R37 이 일사 곡선을 기본 경로에 배선하면서 `daily_shapes` 는 **발전 형상의
+    자산이 되었다** — 이제 형상은 모든 실행에 온다. 그러므로 *형상이 왔다* 를
+    *부하를 원한다* 로 읽을 수 없다. 부하를 원한다는 뜻은 **총량만이** 말한다.
+
+    ⚠ **그래서 조건을 그냥 풀지 않고 이름으로 갈랐다.** 조건만 완화하면 옛
+    실수(총량을 잊었다)가 조용히 통과하고 호출부는 그것을 알 수 없다. 이름이
+    `…_if_total_given` 이면 호출 자리에서 *「총량을 주지 않으면 부하가 서지
+    않는다」* 가 읽히므로, 통과가 조용하지 않다. 반대 방향의 실수는 **여전히
+    오류다** — 총량은 왔는데 형상이 없으면 부하가 하루 안에서 균등 배분되어
+    지금 PV 가 겪던 것과 같은 형태가 되고(붙임 8 「일중 발전 프로파일」),
+    *「부하를 반영했다」* 는 진술이 성립하는데 **그 부하는 실제로 아무 시간대도
+    갖지 않는다.**
 
     ⚠ **부하는 편익을 만들지 않는다** (`RC-LD-B0`). `Load.value_streams()` 가
     비어 있는 것이 정답이며, 부하가 만드는 절감은 그 절감을 일으킨 자원의
@@ -148,12 +159,12 @@ def _household_load(
     (`FR-402-AC2.C`). 그래서 이 자원을 더해도 편익 갈래는 늘지 않고 **운전만**
     달라진다.
     """
-    if daily_shapes is None and annual_load_kwh is None:
+    if annual_load_kwh is None:
         return None
-    if daily_shapes is None or annual_load_kwh is None:
+    if daily_shapes is None:
         raise ValueError(
-            "대표일 형상(daily_shapes)과 연간 부하(annual_load_kwh)는 함께 "
-            "주어야 합니다 — 하나만 주면 부하가 시간대를 갖지 못한 채 "
+            "연간 부하(annual_load_kwh)를 주면 대표일 형상(daily_shapes)도 "
+            "함께 주어야 합니다 — 총량만 주면 부하가 시간대를 갖지 못한 채 "
             "「반영했다」가 성립합니다"
         )
     return Load(
@@ -293,7 +304,18 @@ def run_single_case_e2e(
     # 1. Resources
     # ★ **형상이 오면 이용률 대신 시계열을 준다** (둘 다 주면 자원이 거부한다).
     # 연간 발전량은 **그대로**이며 시간대만 옮겨간다 — 형상은 배분이지 값이
-    # 아니다. 이 통로가 없던 것이 아니라 쓰지 않았던 것이다(붙임 8).
+    # 아니다.
+    #
+    # ✔ **R37 에 리포트가 이 통로를 쓴다.** 종전에는 통로가 열려 있는데 배포
+    # 경로가 쓰지 않아 결론이 평탄 발전 위에 서 있었고(붙임 8 「일중 발전
+    # 프로파일」), 붙임 7 만 곡선을 그렸다. 이제 `build_case_report` 가 본
+    # 실행과 스윕에 형상을 넘긴다 — 그 배선은 `tests/report/
+    # test_irradiance_wired.py` 가 진입점에서 붙든다.
+    #
+    # ⚠ **인자를 필수로 만들지 않았다.** 러너는 케이스 그리드·성능 측정도
+    # 도는 범용 진입점이고, 형상 없는 실행은 정당한 상태다(그때 이용률 하나로
+    # 균등 배분한다는 것을 이 자리가 말한다). 결론을 내는 배포 경로가 하나뿐
+    # 이므로 배선은 거기서 붙드는 것이 맞다.
     generation_profile = (
         daily_shapes.generation.spread(
             pv_capacity_kw * PV_CAPACITY_FACTOR * HOURS_PER_YEAR,
@@ -345,7 +367,7 @@ def run_single_case_e2e(
     # 비어 있다). 그래서 여기 더해도 편익 갈래는 늘지 않고 **운전만** 달라진다 —
     # 계통 수전이 실제 수량으로 나온다. 화폐화(자가소비 절감·구매 비용)는 요금
     # 엔진의 몫이며, 한쪽만 계상하면 사업에 불리한 쪽으로 틀린다(NSPM 대칭성).
-    household = _household_load(daily_shapes, annual_load_kwh)
+    household = _household_load_if_total_given(daily_shapes, annual_load_kwh)
     resources: list[DER] = [pv, ess] if household is None else [pv, ess, household]
     dispatch = engine.run(resources, ctx)
 

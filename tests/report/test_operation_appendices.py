@@ -33,6 +33,7 @@ from core.report.dispatch_sections import (
     dispatch_rule_section,
 )
 from core.report.narrative import render_markdown
+from tests.report.conftest import report_shapes
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -71,10 +72,12 @@ def test_rule_order_comes_from_the_engine_not_the_report() -> None:
     여기서는 실행이 내놓은 `rule_order` 를 리포트가 그대로 나르는지 본다.
     """
     report = _report()
+    # ★ **리포트와 같은 배선으로 돌린다 (R37)** — `conftest.report_shapes`.
     outcome = run_single_case_e2e(
         {},
         level_map=build_level_map(_ASSUMPTIONS),
         horizon_years=report.basis.horizon_years,
+        daily_shapes=report_shapes(),
     )
     assert report.rule_order == outcome.rule_order, (
         "리포트의 규칙 순서가 실행이 쓴 순서와 다르다"
@@ -153,10 +156,14 @@ def test_hourly_export_total_matches_the_benefit_formula_quantity() -> None:
     말할 수 없다. 여기서는 송전 합계가 실행의 송전 합계와 같은지 본다.
     """
     report = _report()
+    # ★ **리포트와 같은 배선으로 돌린다 (R37).** 형상 없이 돌리면 송전
+    # 합계가 16.10 대 18.80 으로 갈리는데, 그것은 붙임 7 이 틀린 것이 아니라
+    # 검사가 **다른 사업**을 돌린 것이다(`conftest.report_shapes`).
     outcome = run_single_case_e2e(
         {},
         level_map=build_level_map(_ASSUMPTIONS),
         horizon_years=report.basis.horizon_years,
+        daily_shapes=report_shapes(),
     )
     expected = sum(outcome.dispatch.grid_export)
     reported = sum(hour.grid_export for hour in report.dispatch_hours)

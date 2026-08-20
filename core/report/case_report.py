@@ -65,7 +65,7 @@ from core.casegrid.ledger_levels import (
     ledger_unit_scales,
 )
 from core.casegrid.models import CaseBasis
-from core.casegrid.profiles import load_daily_shapes
+from core.casegrid.profiles import DailyShapes, load_daily_shapes
 from core.casegrid.variants import run_order
 from core.contracts.assumptions import AssumptionValue
 from core.engine.rule_based import DispatchRule
@@ -397,6 +397,13 @@ class _Sweeper:
 
     ⚠ **값으로 memo 한다.** 이진탐색이 같은 값을 여러 번 묻고, 한 번이 17ms 다.
     memo 가 없으면 변수 넷에 200회를 넘게 돈다.
+
+    ★ **형상을 본 실행과 같은 것으로 받는다 (R37).** 스윕이 형상 없이 돌면
+    본문 2절은 일사 곡선으로, 3·4절(민감도·용량 검토)은 **평탄 발전**으로
+    계산되어 두 절이 서로 다른 사업을 그린다 — 그리고 두 절 모두 자기
+    기준에서는 매끈하므로 아무 검사도 걸리지 않는다. 인자를 필수로 두지 않고
+    기본값 `None` 을 남기는 것이 아니라 **호출부가 넘기게** 하고, 그 배선을
+    검사가 붙든다(`tests/report/test_irradiance_wired.py`).
     """
 
     def __init__(
@@ -405,10 +412,12 @@ class _Sweeper:
         level_map: Mapping[str, Mapping[str, float]],
         horizon_years: int,
         scheme: IncentiveScheme | None,
+        daily_shapes: DailyShapes,
     ) -> None:
         self._level_map = level_map
         self._horizon_years = horizon_years
         self._scheme = scheme
+        self._daily_shapes = daily_shapes
         self._memo: dict[tuple[tuple[str, float], ...], float] = {}
 
     def conclusion_at(self, variable: str, value: float) -> float:
@@ -436,6 +445,7 @@ class _Sweeper:
             level_map=probe,
             horizon_years=self._horizon_years,
             scheme=self._scheme,
+            daily_shapes=self._daily_shapes,
         )
         result = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
         self._memo[key] = result
@@ -716,11 +726,23 @@ def build_case_report(
     subsidy_rate = float(scenario["subsidy_rate"])
     scheme = _scheme_for(subsidy_rate)
 
+    # ★ **일사 곡선을 기본 경로에 배선한다 (R37 · `todo.md` 4번).**
+    # 넘기지 않으면 러너가 이용률 하나로 24스텝을 **균등 배분**하고, 그러면
+    # 심야에도 태양광이 0.45kWh 를 낸다 — 붙임 8 이 그것을 「미반영 항목」으로
+    # 싣고 있었다. 통로(`PV.generation_profile_kwh`)와 자산(야간 가중치 0.0)은
+    # 이미 있었고 **쓰지 않았을 뿐**이다.
+    #
+    # ⚠ **총량은 옮기지 않는다.** 형상은 합이 1 인 배분 벡터라 연간 발전량은
+    # 그대로이고 시간대만 옮겨간다(`DailyShape.spread`). 총량은 계속 대장이
+    # 갖는다 — 이 배선은 소유를 바꾸지 않는다.
+    shapes = load_daily_shapes()
     outcome = run_single_case_e2e(
-        {}, level_map=level_map, horizon_years=horizon_years, scheme=scheme
+        {}, level_map=level_map, horizon_years=horizon_years, scheme=scheme,
+        daily_shapes=shapes,
     )
     sweeper = _Sweeper(
-        level_map=level_map, horizon_years=horizon_years, scheme=scheme
+        level_map=level_map, horizon_years=horizon_years, scheme=scheme,
+        daily_shapes=shapes,
     )
     influences = _influences(
         sweeper=sweeper, level_map=level_map, provider=provider

@@ -38,6 +38,7 @@ from core.report.case_report import (
     build_case_report,
 )
 from core.report.narrative import GAP_MARGIN, GAP_SHORTFALL, render_markdown
+from tests.report.conftest import report_shapes
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -136,11 +137,16 @@ def test_the_break_even_support_rate_actually_zeroes_the_conclusion() -> None:
         "확인할 수 있는 구간을 벗어났다"
     )
 
+    # ★ **리포트와 같은 배선으로 돌린다 (R37).** `build_case_report` 가
+    # 일사 곡선을 본 실행·스윕에 넘기므로, 형상 없이 다시 돌리면 리포트의
+    # 수를 **다른 사업**의 0 선에 대고 재는 것이 된다. 형상은 검사가
+    # 자산에서 직접 읽는다(`conftest.report_shapes` 독스트링).
     outcome = run_single_case_e2e(
         {},
         level_map=build_level_map(_ASSUMPTIONS),
         horizon_years=report.basis.horizon_years,
         scheme=_scheme_for(rate),
+        daily_shapes=report_shapes(),
     )
     npv = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
 
@@ -376,7 +382,12 @@ def test_the_endpoint_values_are_paired_with_the_run_that_produced_them() -> Non
             probe = {name: dict(values) for name, values in level_map.items()}
             probe[entry.variable] = {**levels, "base": levels[level]}
             outcome = run_single_case_e2e(
-                {}, level_map=probe, horizon_years=horizon, scheme=scheme
+                {},
+                level_map=probe,
+                horizon_years=horizon,
+                scheme=scheme,
+                # ★ 리포트와 같은 배선 (R37) — `conftest.report_shapes` 참조.
+                daily_shapes=report_shapes(),
             )
             measured = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
             assert reported == pytest.approx(measured, abs=1.0), (

@@ -34,6 +34,7 @@ from core.report.case_report import (
     _scheme_for,
     build_case_report,
 )
+from tests.report.conftest import report_shapes
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -181,8 +182,16 @@ def _conclusion_at(
     """그 인자를 `value` 로 두고 파이프라인을 다시 돌린 결론 축."""
     probe = {name: dict(levels) for name, levels in level_map.items()}
     probe[variable] = {**probe[variable], "base": value}
+    # ★ **리포트와 같은 배선으로 돌린다 (R37).** `build_case_report` 가
+    # 일사 곡선을 본 실행·스윕에 넘기므로, 형상 없이 다시 돌리면 리포트의
+    # 수를 **다른 사업**의 0 선에 대고 재는 것이 된다. 형상은 검사가
+    # 자산에서 직접 읽는다(`conftest.report_shapes` 독스트링).
     outcome = run_single_case_e2e(
-        {}, level_map=probe, horizon_years=horizon, scheme=scheme
+        {},
+        level_map=probe,
+        horizon_years=horizon,
+        scheme=scheme,
+        daily_shapes=report_shapes(),
     )
     return float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
 
