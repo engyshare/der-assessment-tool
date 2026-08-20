@@ -117,6 +117,7 @@ from pathlib import Path
 import pytest
 
 import core.der
+from core.casegrid import e2e_runner
 from core.cba import proforma
 from core.contracts.der import DER
 from core.contracts.registry import discover
@@ -137,9 +138,15 @@ KNOWN_ESCALATION_DEBT: frozenset[tuple[str, str]] = frozenset({
 #: `capex_unit_won_per_kwh`·`replacement_cost_won`·`replacement_unit_won_per_kwh` 등).
 _FUTURE_OUTLAY_PARAM_HINTS = ("capex", "replacement")
 
-_E2E_RUNNER_PATH = (
-    Path(__file__).resolve().parents[2] / "core" / "casegrid" / "e2e_runner.py"
-)
+#: 소스 경로를 **모듈에게 묻는다** — 저장소 구조를 문자열로 다시 적지 않는다.
+#:
+#: ⚠ 처음 판은 `parents[2] / "core" / "casegrid" / "e2e_runner.py"` 로 경로를
+#: 조립했다. 그러면 두 가지가 생긴다 — ⓐ 파일이 옮겨지면 이 검사가 조용히
+#: **없는 파일**을 읽으려 하고 ⓑ **`check_test_accompaniment` 에 이 검사가 보이지
+#: 않는다**(그 게이트는 「그 모듈을 `import` 하는 테스트」를 찾는다. R38 실측 —
+#: `e2e_runner.py` 를 고쳤는데 동반 테스트가 0건이라 `NFR-105` 위반으로 잡혔다).
+#: **import 로 바꾸면 둘이 함께 해소된다** — 재는 대상과 의존 관계가 같아진다.
+_E2E_RUNNER_PATH = Path(inspect.getsourcefile(e2e_runner) or "")
 
 
 def _future_outlay_capable_tags() -> dict[str, type[DER]]:
