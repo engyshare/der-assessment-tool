@@ -35,6 +35,7 @@ CI 는 저장소를 새로 받아 돌므로 **로컬 훅이 구조적으로 없�
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -44,6 +45,35 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 #: 훅 파일에는 자기 이름이 들어간다. 파일이 있기만 하면 통과시키면, 손으로 만든
 #: 빈 훅이나 다른 도구의 훅도 「설치됨」이 된다.
 _MARKER = "pre-commit"
+
+
+def _hooks_dir(repo_root: Path) -> Path:
+    """훅이 실제로 놓이는 디렉터리. **worktree 에서는 `.git` 이 파일이다.**
+
+    ⚠ **`repo_root / ".git" / "hooks"` 로 하드코딩하면 worktree 에서 거짓
+    빨간불이 난다** (R38 실측). worktree 의 `.git` 은 gitdir 을 가리키는
+    **파일**이라 그 경로가 존재하지 않고, 검사는 「설치되지 않음」이라 말한다 —
+    그런데 git 은 worktree 에서도 **공통 hooks 디렉터리**를 쓰므로 훅은 실제로
+    걸린다. 위반이 없는데 위반이라고 보고하는 «시끄러운» 실패다.
+
+    그래서 `.git` 이 디렉터리가 아닐 때만 git 에게 묻는다 — 물어보는 값이
+    정본이고, 이 함수가 그 답을 베끼지 않는다. 임시 경로로 이 함수를 모는
+    테스트(`.git/` 를 디렉터리로 만든다)는 첫 갈래로 그대로 지난다.
+    """
+    dot_git = repo_root / ".git"
+    if dot_git.is_dir():
+        return dot_git / "hooks"
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "--git-path", "hooks"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return dot_git / "hooks"  # git 이 없으면 종전 자리를 그대로 가리킨다
+    resolved = Path(out)
+    return resolved if resolved.is_absolute() else repo_root / resolved
 
 
 def hook_state(repo_root: Path) -> tuple[bool, str]:
@@ -57,10 +87,11 @@ def hook_state(repo_root: Path) -> tuple[bool, str]:
     if not config.is_file():
         return False, f"`.pre-commit-config.yaml` 이 없습니다: {config}"
 
-    hook = repo_root / ".git" / "hooks" / "pre-commit"
+    hooks = _hooks_dir(repo_root)
+    hook = hooks / "pre-commit"
     if not hook.is_file():
         return False, (
-            "`.git/hooks/pre-commit` 이 없습니다 — 설정은 선언돼 있으나 "
+            f"`{hook}` 이 없습니다 — 설정은 선언돼 있으나 "
             "**이 작업 사본에서는 아무것도 막지 않습니다.**"
         )
 
