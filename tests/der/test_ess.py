@@ -516,26 +516,28 @@ def test_rc_all_c1_vat_is_separated_from_the_body() -> None:
     assert _p1_ess(capex_unit_won_per_kwh=500_000.0).capex_vat(year=1) == 0
 
 
-@pytest.mark.req("FR-101-AC2")
-def test_rc_all_c2_geometric_series_formula_is_resource_independent() -> None:
-    """`RC-ALL-C2` 산식 자체의 검증 — **자원과 무관하다**.
-
-    산식 원문 (§13.2.2): 등비수열 합 `A × ((1+i)^n − 1) / i`
-        A=100,000 · i=0.02 · n=20 → 100,000 × 24.29736979… = **2,429,737원**
-
-    분리해 두는 이유: 이 값이 틀리면 **모든 자원의** 20년 O&M 누계가 함께
-    틀린다. 자원 안에만 두면 어느 자원의 문제인지 구분이 늦다.
-    """
-    a, i, n = 100_000, 0.02, 20
-    assert to_won(a * ((1 + i) ** n - 1) / i) == 2_429_737
-
-
 @pytest.mark.req("FR-101-AC5")
 def test_rc_all_c2_fixed_om_20y_cumulative_matches_geometric_sum() -> None:
     """`RC-ALL-C2` ESS 파라미터화 — 연 10만원 · 물가 2% · 20년 → 2,429,737원.
 
     `won_sum` 은 **각 항을 반올림한 뒤 더한다**(NFR-103-M1). 그 합이 닫힌형과
     일치해야 프로포마의 행별 합과 총계가 어긋나지 않는다.
+
+    **2,429,737원은 이 검사가 계산한 값이 아니다** — spec §13.2.2 `RC-ALL-C2`
+    의 오라클(`A × ((1+i)^n − 1)/i`, 손계산 2,429,736.98…)이다. 검사는 그
+    상수와 `ess.fixed_om()` 20년 합을 견줄 뿐이며, **양쪽 끝이 서로 다른
+    층에서 온다**(R39-C).
+
+    닫힌형 항등식과 반올림 규약 자체는 여기서 재지 않는다 — 갈라 적는다:
+      · 닫힌형 = 메서드 합 : `tests/asset/test_common_asset.py::`
+        `test_rc_ca_c2_fixed_om_20year_total` (FR-106-AC4, `Decimal` 산술)
+      · `to_won` 사사오입 규약 : `tests/contract/test_money_boundary.py::`
+        `test_to_won_uses_half_up_not_bankers` (NFR-103-M1)
+
+    ⚠ **여기에 `to_won(a*((1+i)**n-1)/i) == 2_429_737` 을 다시 넣지 말 것.**
+    R39-C 가 그 형태를 지웠다 — 검사가 오라클을 스스로 계산하므로 `ess` 를
+    어떻게 망가뜨려도 초록불이었고(물가 계수를 지운 변이를 이 검사만 잡았다),
+    실제로 붙들던 것은 「`to_won` 이 반올림을 하기는 하는가」 하나였다.
     """
     ess = _p1_ess(fixed_om_won_per_year=100_000.0, escalation_rate=0.02)
     assert ess.fixed_om(year=1) == 100_000
