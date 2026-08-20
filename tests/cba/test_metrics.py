@@ -240,7 +240,7 @@ def test_yaml_expected_mirr_is_consistent_with_formula(case: YamlMap) -> None:
 #
 # 그러나 실행 경로가 실제로 넘기는 것은 **한 해에 행이 여럿인 현금흐름**이다 —
 # `e2e_runner._net_operating_rows()` 가 편익 행과 **부호를 뒤집은 비용 행**을
-# 나란히 이어 붙인다. 아래 여섯이 그 형태를 만든다.
+# 나란히 이어 붙인다. 아래 검사들이 그 형태를 만든다.
 #
 # 기대값의 출처는 **구현이 아니다**: 연 순현금흐름(편익 − 비용)을 이 파일이
 # 직접 세워 손계산으로 누적한다. 구현이 행을 어떻게 접든 그 수와 맞아야 한다.
@@ -282,9 +282,9 @@ def _hand_computed_discounted_payback() -> float:
 def test_payback_discounted_sums_the_rows_of_one_year_before_counting() -> None:
     """주 지표는 **연 단위**다 — 한 해의 행을 먼저 합친 뒤 0 선을 본다.
 
-    행 단위로 세면 Y1 의 편익 행(+3,000,000)만 누적한 지점에서 이미 initial
-    3,000,000 원을 넘어 **1년 남짓**을 반환한다. 그 해의 비용 행(−2,000,000)을
-    세기 전이다. 연 순편익은 1,000,000 원이므로 참값은 3년 부근이다.
+    행 단위로 세면 누적이 Y2 의 **편익 행**(+3,000,000)에서 0 선을 넘고
+    **그 해의 비용 행(−2,000,000)을 세기 전에 반환**해 1.7437년이 된다.
+    연 순편익은 1,000,000 원이므로 참값은 3.2994년이다.
     """
     val = payback_discounted(
         Money(_MULTIROW_INITIAL), _multirow_flows(), _MULTIROW_RATE
