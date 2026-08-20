@@ -32,6 +32,7 @@ from core.contracts.der import (
     DispatchResult,
 )
 from core.contracts.units import SECONDS_PER_HOUR, Money, to_won, won_sum
+from tests.contract.source_scan import top_level_import_lines
 from tests.contract.test_der_contract import DERContractTests
 
 
@@ -188,20 +189,36 @@ class TestReferencePVContract(DERContractTests):
 # ── Wave 0 종료 조건 ─────────────────────────────────────────────────
 
 @pytest.mark.contract
-@pytest.mark.req("FR-101-AC3")
+@pytest.mark.req("NFR-208-AC1")
 def test_reference_impl_imports_only_contracts() -> None:
     """구현이 `core.contracts` 외의 `core` 하위를 참조하지 않는다.
 
     import-linter가 CI에서 같은 것을 보지만, 여기서 걸리면 **어느 자원이**
     원인인지 즉시 드러난다. 린터는 위반 사실을, 이 테스트는 위반 주체를
     알려 준다.
+
+    ⚠ **마커를 `FR-101-AC3` 에서 옮겼다 (R38-B2).** 이 단언이 보는 것은
+    참조 구현의 **import 목록**이고 `AC3` 는 *「인터페이스만 구현하면 코어 엔진
+    수정 없이 **동작**」* 이다 — 여기서는 아무것도 돌지 않는다. `AC3` 는
+    `tests/engine/test_rule_based.py` 가 엔진을 돌려 실증한다.
+
+    ⚠ **이 단언은 `NFR-208-AC2`(형제 구획 직접 import 금지)도 함께 잡는다** —
+    `core.contracts` 밖의 **모든** `core` 하위를 거부하므로 역방향(`AC1`)과
+    형제(`AC2`) 둘 다 걸린다. 마커를 둘 달지 않은 것은 다른 조항의 집계를
+    함께 움직이지 않으려는 판단이며, R38-B2 결과 파일에 「구획 밖」으로
+    올렸다.
+
+    「진짜 import 줄만 본다」는 필터는 `tests/contract/source_scan.py` 가
+    정본이다(R38-D4) — 짝인
+    `test_der_contract.py::test_implements_der_without_engine_knowledge` 도
+    같은 필터를 쓴다. 사본을 두지 않는다.
     """
     import inspect
 
     source = inspect.getsource(inspect.getmodule(ReferencePV))
     offending = [
-        line.strip()
-        for line in source.splitlines()
+        line
+        for line in top_level_import_lines(source)
         if line.startswith(("import core", "from core"))
         and not line.startswith(("from core.contracts", "import core.contracts"))
     ]
