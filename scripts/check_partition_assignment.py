@@ -4,6 +4,12 @@ from pathlib import Path
 
 import _specparse
 
+# `NFR-402` 안의 `FR-402` 를 삼키지 않으려는 왼쪽 경계 (R21 처방).
+# `\b` 는 `N`·`F` 사이(둘 다 단어문자)에는 경계를 만들지 않으므로
+# `NFR-` 접두 뒤의 `FR-` 를 정확히 막는다 — `(?<!N)` 과 실측으로 대조해 골랐다
+# (`.orch/R39/result_scan_boundary.md` §1-b).
+FR_COL_BOUNDARY = re.compile(r"\bFR-")
+
 
 def expand_ranges(text: str) -> list[str]:
     results = []
@@ -18,23 +24,15 @@ def expand_ranges(text: str) -> list[str]:
             results.append(part)
     return results
 
-def main():
-    spec_path = Path(sys.argv[1] if len(sys.argv) > 1 else "rslt/spec-분산특구-경제성평가.md")
-    reqs, _defects = _specparse.parse_spec(spec_path)
 
-    phases = _specparse.parse_phase_appendix(spec_path)
-    for req in reqs:
-        if req.rid in phases:
-            req.phase = phases[req.rid]
+def build_assigned_to(lines: list[str]) -> dict[str, list[str]]:
+    """§16.3 구획표 줄들에서 `{FR-ID: [WP, ...]}` 를 뽑는다.
 
-    must_phase1_frs = {
-        r.rid for r in reqs
-        if r.rid.startswith("FR-") and r.is_must and str(r.phase) == "1"
-    }
-
-    lines = spec_path.read_text(encoding="utf-8").splitlines()
+    `_specparse` 와 무관하게 원문 줄만 본다 — 합성 입력으로 이 함수 하나만
+    떼어 검사할 수 있게 한다.
+    """
     in_table = False
-    assigned_to = {}
+    assigned_to: dict[str, list[str]] = {}
 
     for line in lines:
         if line.startswith("### 16.3"):
@@ -57,12 +55,32 @@ def main():
                 continue
             wp = m_wp.group(0)
 
-            if len(cells) > 5 and "FR-" in cells[3]:
+            if len(cells) > 5 and FR_COL_BOUNDARY.search(cells[3]):
                 fr_col = cells[3]
                 frs = expand_ranges(fr_col)
                 for fr in frs:
                     if fr.startswith("FR-"):
                         assigned_to.setdefault(fr, []).append(wp)
+
+    return assigned_to
+
+
+def main():
+    spec_path = Path(sys.argv[1] if len(sys.argv) > 1 else "rslt/spec-분산특구-경제성평가.md")
+    reqs, _defects = _specparse.parse_spec(spec_path)
+
+    phases = _specparse.parse_phase_appendix(spec_path)
+    for req in reqs:
+        if req.rid in phases:
+            req.phase = phases[req.rid]
+
+    must_phase1_frs = {
+        r.rid for r in reqs
+        if r.rid.startswith("FR-") and r.is_must and str(r.phase) == "1"
+    }
+
+    lines = spec_path.read_text(encoding="utf-8").splitlines()
+    assigned_to = build_assigned_to(lines)
 
     errors = 0
     # Spec defects that WP-15 cannot fix (rslt/ is read-only)
