@@ -274,6 +274,10 @@ def test_the_summary_row_carries_the_same_support_rate_as_the_body() -> None:
             level_map=build_level_map(_ASSUMPTIONS),
             horizon_years=report.basis.horizon_years,
             scheme=_scheme_for(rate),
+            # ★ 리포트와 같은 배선 (R37) — 형상 없이 돌리면 리포트의 수를 **다른
+            # 사업**의 0 선에 대고 재게 된다. 실측으로 걸렸다: 곡선 배선 뒤 이
+            # 검사가 125,808원(≈ 곡선↔평탄 차이 128,194원)을 남겼다.
+            daily_shapes=report_shapes(),
         )
         npv = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
         # 표시 자리수(`:.1%`)의 반 칸. 이보다 좁게 잡으면 반올림만으로 빨간불이
