@@ -198,7 +198,7 @@ def test_rc_pv_b3_rec_weight_scales_linearly() -> None:
 
 # ── 공통 비용 5종 (RC-ALL-C1~C5) — §13.2.2 예시 열 ──────────────────
 
-@pytest.mark.req("FR-101-AC2")
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c1_capex() -> None:
     """`RC-ALL-C1` 오라클(§13.2.2): `단가 × 용량 + 부대비` → 1,500,000 × 3 =
     **4,500,000원**. 부가세는 별도 항목으로 분리한다. 초기 투자는 1년차에만
@@ -231,7 +231,7 @@ def test_rc_all_c1_includes_balance_of_system_cost() -> None:
     assert pv.capex(year=1) == Money(5_000_000)
 
 
-@pytest.mark.req("FR-101-AC2")
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c2_fixed_om_20_year_cumulative() -> None:
     """`RC-ALL-C2` 오라클(§13.2.2, 등비수열 합): `A × ((1+i)^n − 1) / i`.
 
@@ -241,7 +241,7 @@ def test_rc_all_c2_fixed_om_20_year_cumulative() -> None:
     assert pv.fixed_om_cumulative(horizon=HORIZON) == Money(2_429_737)
 
 
-@pytest.mark.req("FR-101-AC2")
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c2_year_by_year_sum_matches_closed_form() -> None:
     """연도별 합계 = 폐형식 누계, **원 단위 완전 일치** (NFR-103-M1). 프로포마는
     행별 값을 사람이 더해 보는 문서라, 어긋나면 화면상 정상으로 보이면서 근거가
@@ -268,7 +268,7 @@ def test_rc_all_c3_variable_om() -> None:
     assert pv.variable_om(year=1) == Money(6_570)
 
 
-@pytest.mark.req("FR-101-AC2")
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c3_follows_degradation() -> None:
     """변동 O&M은 열화된 발전량을 따라간다 (FR-104-AC1과 정합). 1년차 발전량으로
     20년을 고정하면 발전량과 변동비가 서로 다른 물리를 말한다. 물가 효과를 꺼서
@@ -279,7 +279,7 @@ def test_rc_all_c3_follows_degradation() -> None:
     assert pv.variable_om(year=2) < pv.variable_om(year=1)
 
 
-@pytest.mark.req("FR-101-AC2")
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c3_applies_inflation_to_nominal_price() -> None:
     """변동 O&M 단가에도 물가가 걸린다 — 오라클 `1,314 × 0.995 × 5원 × 1.02`.
 

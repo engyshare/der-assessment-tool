@@ -187,7 +187,7 @@ def _replacement_items(basis: CaseBasis) -> list[UnreflectedItem]:
                     "`core/cba/salvage.py::salvage_value()` 존재 · 실행 경로 "
                     "호출 없음"
                 ),
-                resolves_when="`FR-104-AC4` (잔존가치) 실행 경로 배선",
+                resolves_when="`FR-104-AC5` (잔존가치) 실행 경로 배선",
                 measured=True,
             )
         )

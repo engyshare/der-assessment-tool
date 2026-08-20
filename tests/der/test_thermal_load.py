@@ -236,7 +236,7 @@ def test_rejects_growth_rate_out_of_range() -> None:
 
 # ── RC-ALL-C1 CAPEX ──────────────────────────────────────────────────
 
-@pytest.mark.req("FR-101-AC2")
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c1_capex_and_vat_are_separated_for_thermal_load() -> None:
     """`RC-ALL-C1` 산식 원문 (§13.2.2): `단가 × 용량 + 부대비`, 부가세는 별도 항목.
 
@@ -260,7 +260,7 @@ def test_rc_all_c1_capex_and_vat_are_separated_for_thermal_load() -> None:
 
 # ── RC-ALL-C2 고정 O&M ───────────────────────────────────────────────
 
-@pytest.mark.req("FR-101-AC2")
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c2_fixed_om_20y_total_matches_geometric_series_for_thermal_load() -> None:
     """`RC-ALL-C2` 산식 원문 (§13.2.2): 등비수열 합 `A × ((1+i)^n − 1) / i`.
 
@@ -281,7 +281,7 @@ def test_rc_all_c2_fixed_om_20y_total_matches_geometric_series_for_thermal_load(
 
 # ── RC-ALL-C3 변동 O&M ───────────────────────────────────────────────
 
-@pytest.mark.req("FR-101-AC2")
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c3_variable_om_uses_thermal_throughput_not_capacity() -> None:
     """`RC-ALL-C3` 산식 원문 (§13.2.2): `처리량 × 단가`.
 

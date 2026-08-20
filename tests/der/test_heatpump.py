@@ -431,7 +431,7 @@ def test_rc_all_c1_capex_with_vat_separated() -> None:
 
 # ── RC-ALL-C2 고정 O&M ───────────────────────────────────────────────
 
-@pytest.mark.req("FR-101-AC2")
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c2_fixed_om_20year_geometric_sum() -> None:
     """등비수열 합 `A × ((1+i)^n − 1)/i`. A=100,000 i=0.02 n=20 → **2,429,737원**.
 
@@ -460,7 +460,7 @@ def test_rc_all_c3_variable_om_on_heat_supplied() -> None:
     assert hp.variable_om(year=1) == Money(15_000)   # 3,000 × 5
 
 
-@pytest.mark.req("FR-101-AC2")
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c3_throughput_is_heat_not_electricity() -> None:
     """전력량(1,000 kWh)이 아니라 열량(3,000 kWh) 기준임을 못 박는다.
 

@@ -406,7 +406,7 @@ def test_charger_power_too_small_for_the_window_is_rejected() -> None:
 
 # ── 공통 비용 5종 (RC-ALL-C1~C5, spec §13.2.2) ───────────────────────
 
-@pytest.mark.req("FR-101-AC2")
+@pytest.mark.req("FR-101-AC5")
 @pytest.mark.req("FR-102-AC1.EV_V2G")
 def test_rc_all_c1_capex_with_vat_separated() -> None:
     """`RC-ALL-C1` CAPEX.
@@ -424,7 +424,7 @@ def test_rc_all_c1_capex_with_vat_separated() -> None:
     assert ev.capex_vat(year=2) == Money(0)
 
 
-@pytest.mark.req("FR-101-AC2")
+@pytest.mark.req("FR-101-AC5")
 @pytest.mark.req("FR-102-AC1.EV_V2G")
 def test_rc_all_c2_fixed_om_20yr_geometric_sum() -> None:
     """`RC-ALL-C2` 고정 O&M 20년 누계.
@@ -448,7 +448,7 @@ def test_rc_all_c2_fixed_om_20yr_geometric_sum() -> None:
     assert total == to_won(closed_form)
 
 
-@pytest.mark.req("FR-101-AC2")
+@pytest.mark.req("FR-101-AC5")
 @pytest.mark.req("FR-102-AC1.EV_V2G")
 def test_rc_all_c3_variable_om_by_throughput() -> None:
     """`RC-ALL-C3` 변동 O&M.
@@ -463,7 +463,6 @@ def test_rc_all_c3_variable_om_by_throughput() -> None:
     assert ev.throughput_kwh(year=1) == pytest.approx(6570.0, rel=1e-9)
 
 
-@pytest.mark.req("FR-104-AC4")
 @pytest.mark.req("FR-104-AC3")
 def test_rc_all_c4_replacement_at_year_after_lifetime() -> None:
     """`RC-ALL-C4` 교체비 — 수명 도달 **다음 연도 초**에 계상.
@@ -471,6 +470,22 @@ def test_rc_all_c4_replacement_at_year_after_lifetime() -> None:
     오라클: 충전기 수명 10년 → **11년차**에 교체비. 물가 2% 적용 시
         3,000,000 × 2 × 1.02^10 = 7,313,966.52 → **7,313,967원**
     부대비(전기 인입·설치 공사)는 교체 시 재발생하지 않으므로 제외한다.
+
+    ⚠ **`req("FR-104-AC4")` 를 떼었다 (R38-B).** 그 조항은 *「인버터 등
+    **부속설비의 독립 수명**(10~12년)을 **본체와 분리 관리**」* 인데
+    `EV_V2G` 에는 분리할 두 수명이 없다 — `lifetime`(충전기) 하나이고, 차량은
+    사업 자산이 아니라 모델에 수명이 없다(아래
+    `test_retire_zeroes_dispatch_output_after_first_eol` 이 *「EV_V2G 는
+    부속설비가 없다」* 고 적는 것과 같은 사실이다). 그래서 이 단언은 AC4 를
+    **잴 수 없다** — 부속설비 관리를 통째로 지워도 빨간불이 나지 않는다.
+    AC4 는 PV·ESS·HeatPump·Load·ThermalLoad·참조구현이 각자 두 수명으로
+    붙들고 있으므로 매핑이 비지 않는다.
+
+    남는 것(수명 도달 **다음 연도 초** 계상 · 물가 적용)은 §13.2.2 C-4 이고
+    **그것을 규정한 AC 가 `FR-104` 에 없다** — `status.md` 미해결의
+    *「`FR-104` 는 … C-1 CAPEX·C-2 고정 O&M·C-3 변동 O&M 에 대응하는 AC 가
+    없다」* 와 같은 공백이며 spec 개정(§16.5) 몫이다. 여기서 이웃 조항을
+    빌려 적으면 그 조항이 「검증됨」으로 세어진다.
     """
     ev = make_ev(escalation_rate=0.02, lifetime=10)
     schedule = ev.replacement_schedule(horizon=20)

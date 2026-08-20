@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import ast
 import random
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pytest
 
-from core.contracts.der import DispatchContext, DispatchResult
+import core.der
+from core.contracts.der import DER, DispatchContext, DispatchResult
 from core.contracts.engine import DispatchEngine, SystemDispatch
+from core.contracts.registry import discover
 from core.contracts.units import SECONDS_PER_HOUR, Money
 from core.engine import DispatchRule, RuleBasedEngine, dispatch_digest, media_balance_error
+from core.engine import rule_based as _engine_module
+from core.engine.rule_based import rule_for
 
 
 def ctx(steps: int = 4) -> DispatchContext:
@@ -262,3 +268,220 @@ def test_rule_order_is_configurable_and_reflected_in_dispatch_order() -> None:
 
     assert list(default_dispatch.per_resource) == ["pv", "ess", "ev", "load"]
     assert list(custom_dispatch.per_resource) == ["load", "pv", "ess", "ev"]
+
+
+# ── FR-101-AC3 확장성 — 「인터페이스만 구현하면 엔진 수정 없이 동작」 ────────
+#
+# **R38-B2 가 세웠다. 그전까지 이 조항을 재는 검사가 0건이었다.**
+# 인용 2건(`test_der_contract.py::test_implements_der_without_engine_knowledge`·
+# `test_smoke_wave0.py::test_reference_impl_imports_only_contracts`)은 **자원이
+# 엔진을 import 하지 않는가**를 보았고 그것은 `NFR-208-AC1`(역방향 import 금지)
+# 이다. 그 둘이 초록불인 채로 이 엔진은 `_rule_for()` 에서 자원 태그 셋을
+# **리터럴로 알고 있다** — 즉 「자원이 엔진을 모른다」가 참이면서 「엔진이 자원을
+# 모른다」가 거짓일 수 있다. 두 조항이 같은 것을 다른 말로 하는 것이 아니다.
+
+#: 엔진이 `_rule_for()` 에서 **디스패치 순위를 배정하려고** 리터럴로 아는 태그.
+#:
+#: 이 셋은 **선언된 예외**다. 늘어나면 아래 검사가 빨간불이 되고, 늘리는 사람이
+#: 여기에 적으며 근거를 남기게 된다 — 목록을 손으로 유지하는 것이 목적이 아니라
+#: **목록이 늘어나는 것을 보이게** 하는 것이 목적이다.
+ENGINE_KNOWN_TAGS = frozenset({"PV", "ESS", "EV_V2G"})
+
+
+class ContractOnlyResource(DER):
+    """`DER` 계약의 **추상 메서드 7종만** 구현한 새 자원.
+
+    `__init__` 을 정의하지 않는다 — `DER.__init__` 을 그대로 쓰므로 인스턴스
+    속성이 계약이 세우는 것 **그대로**이고, 「인터페이스만」이 서술이 아니라
+    **구조**가 된다. `OPERATING_MODES` 도 선언하지 않는다(빈 튜플이면 계약이
+    `operating_mode` 를 빈 문자열로 둔다).
+
+    `tag` 는 **엔진이 모르는 값**이다 — `ENGINE_KNOWN_TAGS` 와 겹치면 이 자원은
+    특별 취급되는 경로로 돌아 「모르는 자원도 돈다」를 증명하지 못한다.
+    """
+
+    tag = "R38B2ContractOnly"
+
+    def capex(self, *, year: int) -> Money:
+        return Money(0)
+
+    def capex_vat(self, *, year: int) -> Money:
+        return Money(0)
+
+    def fixed_om(self, *, year: int) -> Money:
+        return Money(0)
+
+    def variable_om(self, *, year: int) -> Money:
+        return Money(0)
+
+    def replacement_schedule(self, *, horizon: int) -> dict[int, Money]:
+        return {}
+
+    def salvage_value(self, *, year: int) -> Money:
+        return Money(0)
+
+    def dispatch(self, context: DispatchContext) -> DispatchResult:
+        zeros = [0.0] * context.steps
+        return DispatchResult(
+            electric=[3.0] * context.steps,
+            heat=list(zeros),
+            cool=list(zeros),
+            fuel=list(zeros),
+        )
+
+
+def _engine_tag_literals() -> set[str]:
+    """엔진 소스의 문자열 리터럴(**독스트링 제외**)을 casefold 해 돌려준다.
+
+    ⚠ **독스트링을 제외하는 것이 핵심이다** (공통 4절 ②). 제외하지 않으면
+    엔진 독스트링에 자원 이름을 적는 순간 빨간불이 나고, 사람은 **설명을 고쳐
+    통과시키게** 된다 — 이 저장소가 일곱 번 만난 형태다. 주석은 `ast` 에 남지
+    않으므로 따로 걸러낼 필요가 없다.
+    """
+    source = Path(_engine_module.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    docstrings: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(
+            node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+        ):
+            continue
+        body = node.body
+        if (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
+            docstrings.add(id(body[0].value))
+    return {
+        node.value.casefold()
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and id(node) not in docstrings
+    }
+
+
+@pytest.mark.req("FR-101-AC3")
+def test_a_contract_only_resource_dispatches_through_the_unmodified_engine() -> None:
+    """★★ 조항의 ⓐ「인터페이스만 구현하면」 + ⓒ「동작」을 **실행으로** 잰다.
+
+    조항 문면: 「신규 자원 클래스가 위 인터페이스만 구현하면 코어 엔진 수정
+    없이 동작 (**단위 테스트로 실증**)」 — 괄호가 검증 방법을 지정하므로
+    **엔진을 실제로 돌리는 것**이 이 조항의 실증이다.
+
+    ⓐ 는 **측정한다.** `ContractOnlyResource` 의 클래스 namespace 가 추상 7종 +
+    `tag` 뿐이고 `__init__` 이 없음을 단언한다 — 훅을 하나라도 더하면 빨간불이다.
+
+    ⓑ 는 여기서 **사실로** 확인한다: 이 자원의 `tag` 가 엔진 소스의 태그 리터럴에
+    없는데도 돌았다. 즉 엔진은 이 자원을 알지 못한 채 처리했다. ⓑ 가 **계속**
+    참이게 하는 것은 아래
+    `test_engine_source_names_no_resource_tag_beyond_the_declared_three` 가 맡는다.
+
+    ⚠ **붙들지 못하는 것 — 갈라 적는다.**
+    ① 모르는 태그는 `GRID_IMPORT`(기본 갈래)로 배정되어 **디스패치 순서가
+       맨 뒤**다. 새 자원이 고유한 순위를 필요로 하면 엔진을 고쳐야 하며,
+       그 순위는 `FR-302` 소관이다. 이 검사는 「돈다」까지만 잰다
+    ② 「엔진 diff 0줄」은 실행 시점에 볼 수 없다 — `NFR-201-M1` 의 계측이며
+       PR 단위다. 여기서는 **원인**(엔진이 태그를 아는 것)을 아래 검사가 막는다
+    """
+    # ⓐ — 계약이 자라면 여기서 멈춘다. 7종을 손으로 적지 않고 계약에서 읽는다.
+    abstracts = set(DER.__abstractmethods__)
+    assert len(abstracts) == 7, (
+        f"`DER` 추상 메서드가 7종이 아니다: {sorted(abstracts)}. 계약이 자랐으면 "
+        "이 검사의 「인터페이스만」 기준도 사람이 다시 보아야 한다"
+    )
+    declared = {
+        name
+        for name in vars(ContractOnlyResource)
+        if not name.startswith("__") and name != "_abc_impl"
+    }
+    extra = sorted(declared - abstracts - {"tag"})
+    assert declared == abstracts | {"tag"}, (
+        f"새 자원이 계약 밖의 것을 선언했다: {extra}. 그러면 「인터페이스만 "
+        "구현하면」을 증명하지 못한다"
+    )
+    assert "__init__" not in vars(ContractOnlyResource), (
+        "새 자원이 자기 `__init__` 을 두었다 — 인스턴스 속성이 계약이 세우는 것과 "
+        "같다는 보장이 사라진다"
+    )
+
+    resource = ContractOnlyResource(name="newkind", lifetime=5, carries_electric=True)
+
+    # ⓑ 사실 확인 — 엔진 소스에 이 태그가 없다.
+    assert resource.tag.casefold() not in _engine_tag_literals(), (
+        f"엔진이 {resource.tag!r} 를 리터럴로 알고 있다 — 이 검사는 「엔진이 "
+        "모르는 자원도 돈다」를 증명하지 못한다"
+    )
+    # 모르는 태그가 **정의된 기본 갈래**로 떨어진다. 여기서 예외가 나면 새 자원은
+    # 엔진을 고치지 않고는 아예 돌지 않는다.
+    assert rule_for(resource) is DispatchRule.GRID_IMPORT
+
+    # ⓒ — 실제로 돌린다. 기존 자원과 **함께** 넣어 수지가 닫히는지 본다.
+    load = StubResource("load", [-1.0, -1.0, -1.0], tag="Load")
+    dispatch = RuleBasedEngine().run([resource, load], ctx(steps=3))
+
+    assert set(dispatch.per_resource) == {"newkind", "load"}, (
+        "새 자원이 결과에서 빠졌다 — 조용히 누락되면 그 자원의 편익·비용이 "
+        "통째로 사라지면서 수지 검사는 통과한다"
+    )
+    assert dispatch.per_resource["newkind"].electric == [3.0, 3.0, 3.0]
+    # 3.0(내보냄) − 1.0(받아들임) = 2.0 이 계통으로 나간다. 새 자원이 집계에서
+    # 빠졌다면 이 값이 0 이 되므로, 위 `set(...)` 단언과 **다른 경로**로 같은
+    # 누락을 잡는다.
+    assert dispatch.grid_export == [2.0, 2.0, 2.0]
+    assert dispatch.grid_import == [0.0, 0.0, 0.0]
+    assert max(abs(error) for error in dispatch.electric_balance_error()) == 0.0
+
+
+@pytest.mark.req("FR-101-AC3")
+def test_engine_source_names_no_resource_tag_beyond_the_declared_three() -> None:
+    """★★ 조항의 ⓑ「코어 엔진 수정 없이」를 **원인 쪽에서** 막는다.
+
+    「엔진이 수정되지 않았다」는 실행 시점에 볼 수 없다. **R23 이 같은 벽을
+    만나 「바뀌게 만드는 원인」을 막았다** — 편집기 소스에 자원 `tag` 문면이
+    없는지 `ast` 로 대조하는 형태다. 여기도 같다: 엔진이 자원 태그를 리터럴로
+    알면 **자원 1종을 더할 때 엔진이 그 목록을 늘려야** 하고, 그 순간 조항이
+    깨진다.
+
+    **지금 엔진은 셋을 안다** — `_rule_for()` 가 `PV`·`ESS`·`EV_V2G` 를
+    디스패치 **순위 배정**에 쓴다(`DEFAULT_RULE_ORDER`). 그것을 0 으로 만드는
+    것은 엔진 재설계이며 이 구획의 일이 아니다. 그래서 셋을 **선언된 예외**로
+    고정하고, **넷째가 생기는 순간 빨간불**이 되게 한다. 자원이 6종인데
+    엔진이 아는 것이 3종이라는 사실 자체가 「모르는 자원도 돈다」의 증거다.
+
+    비교 대상을 **레지스트리에서 읽는다**(`discover(core.der, DER)`) — 손으로
+    적으면 자원을 추가할 때 반드시 빠지고, 빠진 자원은 검사받지 않는다.
+
+    ⚠ **붙들지 못하는 것 — 갈라 적는다.**
+    ① `core/engine/` 만 본다. `core/cba/`·`core/casegrid/` 가 태그를 리터럴로
+       아는지는 보지 않는다(`NFR-201-M1` 이 그 두 디렉터리를 PR diff 로 본다)
+    ② **정확히 일치하는 태그 문면만** 잡는다. `pv_self_consumption` 처럼
+       태그를 **부분 문자열로 품은** 리터럴은 통과한다 — 규칙 이름이 자원
+       이름을 딴 것은 정상이므로 부분 일치로 넓히면 규칙 상수 전부가 걸린다
+    ③ 태그가 아닌 방식의 결합(`isinstance` 분기, 클래스 이름 대조)은 보지
+       않는다. 그것이 생기면 이 검사는 조용히 통과한다
+    """
+    tags = {tag.casefold(): tag for tag in discover(core.der, DER)}
+    assert len(tags) >= 4, (
+        f"레지스트리 자원이 {len(tags)}종이다 — 「엔진이 아는 것보다 자원이 "
+        "많다」가 성립하지 않으면 이 검사는 아무것도 말하지 않는다"
+    )
+
+    named = {tags[key] for key in _engine_tag_literals() & tags.keys()}
+    grown = sorted(named - set(ENGINE_KNOWN_TAGS))
+    shrunk = sorted(set(ENGINE_KNOWN_TAGS) - named)
+    assert named == set(ENGINE_KNOWN_TAGS), (
+        f"엔진이 리터럴로 아는 자원 태그가 선언된 예외와 다르다.\n"
+        f"  선언: {sorted(ENGINE_KNOWN_TAGS)}\n"
+        f"  실측: {sorted(named)}\n"
+        f"  더 늘었다면: {grown} — 자원 1종을 더할 때 엔진을 고쳐야 한다는 "
+        "뜻이며 FR-101-AC3 이 금지하는 것이다. 정말 필요하면 "
+        "`ENGINE_KNOWN_TAGS` 에 근거와 함께 적으십시오.\n"
+        f"  줄었다면: {shrunk} — 좋은 방향이다. 선언에서 지우십시오"
+    )
+    assert set(ENGINE_KNOWN_TAGS) < set(tags.values()), (
+        "엔진이 자원 전건을 리터럴로 알고 있다 — 새 자원마다 엔진을 고쳐야 하는 "
+        "상태이며 FR-101-AC3 이 성립하지 않는다"
+    )

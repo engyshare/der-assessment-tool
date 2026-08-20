@@ -14,8 +14,12 @@
 """
 from __future__ import annotations
 
+import importlib.util
+import re
+import sys
 from dataclasses import replace
 from pathlib import Path
+from types import ModuleType
 
 from core.report.case_report import build_case_report
 from core.report.narrative import render_markdown
@@ -33,6 +37,11 @@ from core.report.unreflected import (
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
 _GOLDEN = _REPO_ROOT / "fixtures" / "golden"
+_SPEC = _REPO_ROOT / "rslt" / "spec-분산특구-경제성평가.md"
+_SCRIPTS = _REPO_ROOT / "scripts"
+
+#: 붙임 8 의 「해소 조건」 칸이 인용한 `FR-104` 수용기준 ID.
+_CITED_FR104 = re.compile(r"`(FR-104-AC\d+)`")
 
 
 def _report():
@@ -66,6 +75,84 @@ def test_replacement_item_appears_only_when_a_resource_outlives_nothing() -> Non
     assert "잔존가치" in labels, (
         "분석기간보다 수명이 긴 자원이 생겼는데 잔존가치 행이 없다"
     )
+
+
+def _spec_module(stem: str) -> ModuleType:
+    """`scripts/` 의 spec 파서를 그대로 쓴다 — 여기서 다시 쓰지 않는다.
+
+    두 번째 파서를 세우면 **조항 ID 를 판정하는 자리가 둘**이 되고, 둘이
+    어긋나는 날 어느 쪽이 정본인지 말할 수 없다. `tests/ci/
+    test_traceability_gate.py` 가 쓰는 것과 같은 적재 방식이다.
+    """
+    scripts = str(_SCRIPTS)
+    if scripts not in sys.path:
+        sys.path.insert(0, scripts)
+    name = f"_unreflected_{stem}"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS / f"{stem}.py")
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _fr104_criteria() -> dict[str, str]:
+    """spec 실물의 `FR-104` 수용기준 문면 — 이 검사의 **다른 층**이다."""
+    reqs, _defects = _spec_module("_specparse").parse_spec(_SPEC)
+    fr104 = next(r for r in reqs if r.rid == "FR-104")
+    return {c.cid: c.text for c in fr104.criteria}
+
+
+def test_the_clause_cited_for_each_item_is_the_one_the_spec_gives_it() -> None:
+    """★★ **붙임 8 이 인용한 조항 ID 를 spec 문면이 정한다** (R38-B).
+
+    R38 전까지 잔존가치 행의 해소 조건은 `FR-104-AC4` 였고, spec 의 `AC4` 는
+    *「인버터 등 부속설비의 독립 수명(10~12년)을 본체와 분리 관리」* 다.
+    잔존가치는 `AC5` (*「분석기간 종료 시 잔존 수명 비례 잔존가치를 최종연도에
+    계상」*)이며, 어긋난 라벨이 그대로 **검토용 리포트 2건**에 실려 나갔다
+    (`docs/evidence/MC-1-검토용-리포트-2026-08-15.md`·`-17.md`).
+    라벨만 고치면 다음 라운드에 다시 어긋나므로 여기서 붙든다.
+
+    **어느 층에서 오는가**: 항목명(`교체비`·`잔존가치`)은 `unreflected.py` 가
+    정하지만 **그 말이 어느 AC 의 것인가는 spec 이 정한다.** 그래서 대상이
+    스스로 정하는 값만으로는 이 단언이 성립하지 않는다 — ID 를 바꾸면
+    빨간불이고, 항목명을 spec 에 없는 말로 바꿔도 빨간불이다(소유 AC 가 0건이
+    되어 아래 둘째 단언이 걸린다).
+
+    ⚠ **붙들지 못하는 것 — 갈라 적는다.**
+    ① `FR-104` 두 항목만 본다. `unreflected.py` 의 다른 해소 조건(`Q-3`,
+       요금 엔진 등)은 조항 ID 를 인용하지 않으므로 대상이 아니다.
+    ② `_specparse.parse_spec()` 이 수용기준 문면을 **90자로 줄여** 돌려주므로,
+       90자 뒤에 항목명이 처음 나오는 AC 가 있으면 그 AC 는 소유자로 세어지지
+       않는다. 지금 `FR-104` AC1~AC5 는 전건 90자 안이다.
+    ③ 인용이 **가리키는 검사가 실제로 그 AC 를 재는가**는 보지 않는다 —
+       그것은 추적표 생성기와 사람의 대조 몫이다.
+    """
+    criteria = _fr104_criteria()
+    assert len(criteria) == 5, f"spec 의 FR-104 수용기준이 5건이 아니다: {criteria}"
+
+    items = {item.label: item for item in build_unreflected(_report())}
+    for label in ("교체비", "잔존가치"):
+        assert label in items, f"붙임 8 에 {label} 항목이 없다 — 전제가 바뀌었다"
+        cited = _CITED_FR104.findall(items[label].resolves_when)
+        assert len(cited) == 1, (
+            f"{label} 의 해소 조건이 FR-104 수용기준을 정확히 하나 인용하지 "
+            f"않는다: {items[label].resolves_when!r}"
+        )
+        owning = [cid for cid, text in criteria.items() if label in text]
+        assert len(owning) == 1, (
+            f"spec 의 FR-104 수용기준 중 「{label}」 을 말하는 것이 "
+            f"{len(owning)}건이다: {owning}. 조항이 갈렸거나 항목명이 조항의 "
+            "말과 어긋났다 — 어느 쪽이든 사람이 판정할 일이다"
+        )
+        assert cited[0] == owning[0], (
+            f"{label} 항목이 {cited[0]} 를 인용하지만 spec 이 그 말을 두고 있는 "
+            f"것은 {owning[0]} 다 (`{criteria[owning[0]]}`). {cited[0]} 의 문면은 "
+            f"`{criteria[cited[0]]}` 이며 다른 것을 말한다 — 이 라벨은 붙임 8 로 "
+            "실려 나가므로 검토자가 조항을 잘못 찾는다"
+        )
 
 
 def test_replacement_and_salvage_point_in_opposite_directions() -> None:

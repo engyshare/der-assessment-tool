@@ -58,10 +58,10 @@
 | 요구사항 | 우선순위 | Phase | 수용기준 | 내용 | 검증 | 위치 |
 |---|---|---|---|---|---|---|
 | `FR-101` | Must-have | 1 | `FR-101-AC1` | 속성: name, tag, dt, carries_electric, carries_heat, carries_cool, consumes_fuel, lifetime,… | 자동 | test_der_contract.py 6건, test_ess.py, test_heatpump.py |
-|  |  | 1 | `FR-101-AC2` | 메서드: capex(), fixed_om(), variable_om(), replacement_schedule(), salvage_value(), dispatc… | 자동 | test_der_contract.py 5건, test_ess.py 4건, test_ev_v2g.py 3건, test_heatpump.py 3건, test_load.py, test_pv.py 5건, test_thermal_load.py 3건 |
-|  |  | 1 | `FR-101-AC3` | 신규 자원 클래스가 위 인터페이스만 구현하면 코어 엔진 수정 없이 동작 (단위 테스트로 실증) | 자동 | test_der_contract.py, test_smoke_wave0.py |
+|  |  | 1 | `FR-101-AC2` | 메서드: capex(), fixed_om(), variable_om(), replacement_schedule(), salvage_value(), dispatc… | 자동 | test_der_contract.py 5건, test_ess.py, test_heatpump.py, test_load.py |
+|  |  | 1 | `FR-101-AC3` | 신규 자원 클래스가 위 인터페이스만 구현하면 코어 엔진 수정 없이 동작 (단위 테스트로 실증) | 자동 | test_rule_based.py 2건 |
 |  |  | 1 | `FR-101-AC4` | 매체 플래그에 따라 엔진이 전기·열·냉 수지를 자동으로 분리 집계한다 | 자동 | test_der_contract.py 3건, test_heatpump.py 3건, test_pv.py 2건, test_rule_based.py |
-|  |  | 1 | `FR-101-AC5` | (v0.15 신설) capex()·fixed_om()·variable_om() 의 **산식은 | 자동 | test_ess.py, test_heatpump.py 2건, test_load.py 3건, test_pv.py 3건 |
+|  |  | 1 | `FR-101-AC5` | (v0.15 신설) capex()·fixed_om()·variable_om() 의 **산식은 | 자동 | test_ess.py 4건, test_ev_v2g.py 3건, test_heatpump.py 4건, test_load.py 3건, test_pv.py 8건, test_thermal_load.py 3건 |
 | `FR-102` | Must-have | 1 | `FR-102-AC1.PV` | PV 태양광 (옥상/벽면 BIPV 구분) — 용량(kW), 이용률(%) 또는 8760 발전 시계열, 방위·경사, 연간 열화율, 인버터 수명 | 자동 | test_pv.py 9건, test_pv_validation.py 2건 |
 |  |  | 1 | `FR-102-AC1.ESS` | ESS 배터리 (신품/사용후배터리) — 정격용량(kWh), 정격출력(kW), RTE(%), SOC 상하한, 사이클수명, 달력수명, EOL 잔존율 | 자동 | test_ess.py 6건 |
 |  |  | 1 | `FR-102-AC1.EV_V2G` | EV_V2G 전기차 + 양방향 충전기 — 대수, 배터리(kWh), 최대 충방전(kW), 접속가능시간대, 참여율, 열화 보상단가 | 자동 | test_ev_v2g.py 18건 |
@@ -77,7 +77,7 @@
 | `FR-104` | Must-have | 1 | `FR-104-AC1` | PV: 연 degradation_rate(%/년) 발전량 감소 | 자동 | test_smoke_wave0.py, test_ev_v2g.py, test_heatpump.py, test_pv.py 2건 |
 |  |  | 1 | `FR-104-AC2` | ESS: 사이클 누적 + 달력 열화 중 보수적 값 적용, EOL(기본 80%) 도달 시 교체비 계상 | 자동 | test_ess.py 6건 |
 |  |  | 1 | `FR-104-AC3` | 수명 도달 자원은 replace / retire 선택 가능. 선택의 결과는 아래 「retire 의 의미」 다섯으로 정한다 (v0.14 명확화 — 조항이 선택지만… | 자동 | test_der_contract.py 2건, test_ess.py 5건, test_ev_v2g.py 4건, test_heatpump.py 4건, test_load.py 7건, test_pv.py 5건, test_thermal_load.py 6건 |
-|  |  | 1 | `FR-104-AC4` | 인버터 등 부속설비의 독립 수명(10~12년)을 본체와 분리 관리 | 자동 | test_smoke_wave0.py, test_ess.py, test_ev_v2g.py, test_heatpump.py 2건, test_load.py, test_pv.py 3건, test_thermal_load.py 3건 |
+|  |  | 1 | `FR-104-AC4` | 인버터 등 부속설비의 독립 수명(10~12년)을 본체와 분리 관리 | 자동 | test_smoke_wave0.py, test_ess.py, test_heatpump.py 2건, test_load.py, test_pv.py 3건, test_thermal_load.py 3건 |
 |  |  | 1 | `FR-104-AC5` | 분석기간 종료 시 잔존 수명 비례 잔존가치를 최종연도에 계상 | 자동 | test_der_contract.py 2건, test_ess.py 2건, test_ev_v2g.py, test_heatpump.py 2건, test_load.py 2건, test_pv.py 3건, test_thermal_load.py |
 | `FR-105` | Must-have | 1 | `FR-105-AC1` | 자원 클래스는 자신이 지원하는 운전 방법 목록을 선언한다. 예: | 자동 | test_der_contract.py, test_dv_rule_enforcement.py 2건, test_ess.py 3건, test_ev_v2g.py 4건, test_heatpump.py 5건, test_operating_mode_mapping.py, test_pv.py 5건, test_pv_validation.py |
 |  |  | 1 | `FR-105-AC2` | 운전 방법은 자원 클래스에 함께 정의되며, 신규 운전 방법 추가 시 코어 엔진 수정이 발생하지 않는다 (NFR-201과 동일 기준) | 자동 | test_17_11_sg5.py, test_pv.py |
@@ -346,7 +346,7 @@
 |  |  | 1 | `NFR-207-AC3` | (v0.15 신설) tag 미선언도 기동 시점 오류다 — 건너뛰면 그 자원이 | 자동 | test_registry.py |
 |  |  | 1 | `NFR-207-AC4` | (v0.15 신설) 스캔 결과가 0건이면 오류다 — 스캔이 성립하지 않은 | 자동 | test_registry.py |
 |  |  | 1 | `NFR-207-M1` | 신규 자원 추가 PR의 diff에 §16.4 공유 파일 목록의 변경 0줄 | 자동 | test_17_10_dod10.py, test_registry.py 2건 |
-| `NFR-208` | Must-have | 1 | `NFR-208-AC1` | 상위 계층은 하위 계층을 import할 수 있으나 역방향 import는 금지한다 (예: core/der/ → core/engine/ 금지) | 자동 | test_import_boundaries.py |
+| `NFR-208` | Must-have | 1 | `NFR-208-AC1` | 상위 계층은 하위 계층을 import할 수 있으나 역방향 import는 금지한다 (예: core/der/ → core/engine/ 금지) | 자동 | test_import_boundaries.py, test_der_contract.py, test_smoke_wave0.py |
 |  |  | 1 | `NFR-208-AC2` | 동일 계층의 형제 구획 간 직접 import를 금지한다 (예: core/valuestream/ → core/regulation/ 직접 참조 금지, core/co… | 자동 | test_import_boundaries.py, test_thermal_load.py |
 |  |  | 1 | `NFR-208-AC3` | core/contracts/는 어떤 구획도 import하지 않는 순수 인터페이스·타입·단위 정의만 포함한다 | 자동 | test_import_boundaries.py, test_assumption_provider.py 2건, test_registry.py |
 |  |  | 1 | `NFR-208-M1` | import-linter 계약(layers + independence)을 CI에서 강제. 위반 0건 | 자동 | test_17_10_dod10.py, test_import_boundaries.py 2건 |

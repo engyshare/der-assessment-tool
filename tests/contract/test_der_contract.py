@@ -27,6 +27,7 @@ import pytest
 
 from core.contracts.der import DER, MEDIA, DispatchContext
 from core.contracts.units import Money, Year, steps_per_year
+from tests.contract.source_scan import top_level_import_lines
 
 # spec FR-101-AC1 이 열거한 속성. 이름을 여기서 다시 짓지 않고 그대로 옮긴다 —
 # 옮겨 적는 순간 spec과 코드가 갈릴 수 있으므로, 갈리면 이 테스트가 깨진다.
@@ -488,15 +489,33 @@ class DERContractTests:
             f"salvage_value() 의 인자는 `year` 뿐입니다 (실제 {params})"
         )
 
-    # ── 확장성 (FR-101-AC3) ─────────────────────────────────────────
+    # ── 역방향 import 금지 (NFR-208-AC1) ────────────────────────────
     @pytest.mark.contract
-    @pytest.mark.req("FR-101-AC3")
+    @pytest.mark.req("NFR-208-AC1")
     def test_implements_der_without_engine_knowledge(self) -> None:
         """구현체가 코어 엔진을 import하지 않는다.
 
         NFR-208-AC1(역방향 import 금지)을 자원 단위로 앞당겨 잡는다.
         import-linter가 CI에서 같은 것을 보지만, 여기서 걸리면 어느 자원이
         원인인지 즉시 드러난다.
+
+        ⚠ **마커를 `FR-101-AC3` 에서 옮겼다 (R38-B2).** 위 독스트링이 v0.1부터
+        스스로 `NFR-208-AC1` 이라 적고 있었는데 마커는 `FR-101-AC3` 이었다.
+        `AC3` 는 *「신규 자원 클래스가 위 인터페이스만 구현하면 **코어 엔진 수정
+        없이 동작**」* 이고, 이 단언은 **자원이 엔진을 import 하는가**만 본다 —
+        방향이 반대이며 `NFR-208-AC1` 이 그 방향을 **허용**한다(*「상위 계층은
+        하위 계층을 import할 수 있으나 역방향 import는 금지」*). 실제로 이
+        검사가 초록불인 채로 `core/engine/rule_based.py::_rule_for()` 가 자원
+        태그 셋을 리터럴로 알고 있다. `AC3` 는 이제
+        `tests/engine/test_rule_based.py` 가 **엔진을 돌려** 실증한다.
+
+        ⚠ **줄 필터를 씌운다 (R38-D4).** 예전에는 모듈 전문을 문자열로 봐서
+        구현의 독스트링·주석이 설명을 위해 `core.engine` 을 언급하기만 해도
+        빨간불이 났다 — 재려는 것(「엔진을 import 하는가」)과 재는 방법
+        (「본문 어디에도 그 이름이 없다」)이 어긋나 있었다. 짝인
+        `test_smoke_wave0.py::test_reference_impl_imports_only_contracts`
+        는 처음부터 import 줄만 걸러 그 함정에 서지 않았다 — 그 필터 형태를
+        `tests/contract/source_scan.py` 로 모으고 여기서 가져다 쓴다.
         """
         der = self.make()
         assert isinstance(der, DER)
@@ -504,10 +523,12 @@ class DERContractTests:
         module = inspect.getmodule(type(der))
         assert module is not None
         source = inspect.getsource(module)
+        import_lines = top_level_import_lines(source)
         for forbidden in ("core.engine", "core.cba", "core.casegrid"):
-            assert forbidden not in source, (
-                f"자원 구현이 {forbidden} 를 참조합니다. 자원은 계약만 보고 "
-                "동작해야 합니다 (FR-101-AC3, NFR-208-AC1)"
+            offending = [line for line in import_lines if forbidden in line]
+            assert not offending, (
+                f"자원 구현이 {forbidden} 를 참조합니다: {offending}. 자원은 "
+                "계약만 보고 동작해야 합니다 (FR-101-AC3, NFR-208-AC1)"
             )
 
 

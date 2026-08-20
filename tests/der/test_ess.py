@@ -479,7 +479,7 @@ def test_rc_ess_x1_discharge_below_soc_floor_is_rejected_with_cause() -> None:
 
 
 # ── RC-ALL-C1~C3 (§13.2.2) ─────────────────────────────────────────
-@pytest.mark.req("FR-101-AC2")
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c1_capex() -> None:
     """`RC-ALL-C1` 산식 원문 (§13.2.2): `단가 × 용량 + 부대비`
 
@@ -530,7 +530,7 @@ def test_rc_all_c2_geometric_series_formula_is_resource_independent() -> None:
     assert to_won(a * ((1 + i) ** n - 1) / i) == 2_429_737
 
 
-@pytest.mark.req("FR-101-AC2")
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c2_fixed_om_20y_cumulative_matches_geometric_sum() -> None:
     """`RC-ALL-C2` ESS 파라미터화 — 연 10만원 · 물가 2% · 20년 → 2,429,737원.
 
@@ -543,7 +543,7 @@ def test_rc_all_c2_fixed_om_20y_cumulative_matches_geometric_sum() -> None:
     assert won_sum(ess.fixed_om(year=y) for y in range(1, 21)) == 2_429_737
 
 
-@pytest.mark.req("FR-101-AC2")
+@pytest.mark.req("FR-101-AC5")
 def test_rc_all_c3_variable_om_is_based_on_throughput_kwh() -> None:
     """`RC-ALL-C3` 산식 원문 (§13.2.2): `처리량 × 단가`
 
