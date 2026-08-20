@@ -54,6 +54,11 @@ def test_dod7_golden_regression_actually_compares_computed_values() -> None:
     3종 각각에 대해 **실제 core 계산값**을 산출해 `expected_values` 와
     직접 대조한다 — CI 가 어딘가에서 돌린다는 것과 이 구획 스스로가 실제
     회귀 대조를 실행해 통과를 확인하는 것은 다르다.
+
+    ⚠ 이 대조가 지나는 현금흐름은 **편익 한 행뿐**이다 — 실물 산출물
+    전체가 아니다. 그 모양이 무엇을 재고 무엇을 못 재는지는 사본을 두지
+    않는다 — `tests/golden/test_regression_scenarios.py` 모듈 독스트링이
+    정본이다.
     """
     mod = _load_golden_regression_module()
     for name in GOLDEN_SCENARIO_FILES:
@@ -354,13 +359,20 @@ def test_dod7_violation_detection_works_golden_missing_metadata(
             content = "\n".join(
                 line for line in content.splitlines() if not line.startswith("oracle_source")
             ) + "\n"
-            assert "oracle_source" not in content
+            # ⚠ 파일 본문(주석 포함)에서 문자열을 찾지 않는다 — 머리글 주석이
+            # 산문으로 `oracle_source` 를 언급하기만 해도 걸리는 자기항진이었다
+            # (R38-D3 실측, 재현은 result_acceptance_fix.md 참조). 재려는 것은
+            # 「키가 없다」이므로 파싱한 구조에서 키 부재를 확인한다.
+            assert "oracle_source" not in yaml.safe_load(content)
         (fake_dir / name).write_text(content, encoding="utf-8")
 
     monkeypatch.setattr(sys.modules[__name__], "GOLDEN_DIR", fake_dir)
 
+    # ⚠ 이 fallback 메시지에 `oracle_source` 를 적지 않는다 — 적으면 판정기가
+    # 아무것도 잡지 못해 이 줄이 발동해도 아래 assert 가 그 자신의 문구를 보고
+    # 통과해 버린다(R38-D3 실측: 판정기의 존재검사를 무력화해도 초록불이었다).
     try:
         test_dod7_golden_scenario_metadata_indicates_source()
-        raise AssertionError("검사가 누락된 oracle_source 를 감지하지 못했습니다")
+        raise AssertionError("검사가 메타데이터 누락을 감지하지 못했습니다")
     except AssertionError as e:
         assert "oracle_source" in str(e)
