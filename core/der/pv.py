@@ -478,6 +478,16 @@ class PV(DER):
 
     # 물가 계수는 계약의 `escalation_factor(year=...)` 다 (v1.1 개정 ⑤) — 자원이
     # 각자 지수를 쓰면 기준연도가 갈려 한 해씩 어긋난 비용이 나온다.
+    #
+    # ⚠ **`escalation_rate` 슬롯은 자원당 하나다** — 비용 항목별로 나뉘어 있지
+    # 않다. 그래서 이 인자로 들어오는 값 하나가 `fixed_om()`(아래)·
+    # `variable_om()`·`replacement_schedule()` **셋**을 함께 굴린다. 호출자가
+    # 「O&M 물가만」과 「교체비 물가」를 다른 값으로 두고 싶어도 이 클래스는 그
+    # 구분을 갖지 않는다 — 다른 값이 필요하면 계약을 바꿔야 한다(지금은 바꾸지
+    # 않았다). 운영 배선(`core/casegrid/e2e_runner.py`)에서 이 인자에 실제로
+    # 무엇을 넘기는지, 그리고 다른 자원(`ESS`)이 이 인자를 받는지는 이 파일이
+    # 모른다 — `tests/contract/test_escalation_debt.py` 가 그 사실을 붙든다
+    # (R38-D2).
 
     def capex(self, *, year: int) -> Money:
         """`RC-ALL-C1` CAPEX — 1년차에만 계상. 오라클 1,500,000 × 3 = 4,500,000원.

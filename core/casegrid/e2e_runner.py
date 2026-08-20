@@ -95,7 +95,22 @@ HOURS_PER_YEAR = DAYS_PER_YEAR * STEPS_PER_DAY
 # 남기면 수준표를 고쳐도 러너가 옛 용량을 쓰고 **NPV 만 조용히 달라진다**.
 PV_CAPACITY_FACTOR = 0.15
 PV_FIXED_OM_WON_PER_YEAR = 100_000
-PV_OM_ESCALATION = 0.02
+#: **PV 의 물가 계수 — 이름을 `PV_OM_ESCALATION` 에서 바꿨다(R38-D2).** 옛 이름은
+#: 「O&M 전용」이라 주장했지만 실제로는 그러지 않는다. `PV` 는 `escalation_rate`
+#: 슬롯을 하나만 가지므로(계약 층 설계 — 비용 항목별로 나뉘어 있지 않다), 이 값
+#: 하나가 아래 **세 자리**를 함께 굴린다:
+#:   ⓐ `pv.py:499` 고정 O&M · `pv.py:531` 변동 O&M · `pv.py:563` 교체비(인버터·본체) capex
+#: **`ESS` 는 이 값을 받지 않는다** — 아래 `ESS(...)` 호출에 `escalation_rate` 인자가
+#: 없어 기본값 `0.0` 으로 서고, 그래서 ESS 의 18년차 배터리 교체비는 **오늘의
+#: 원**으로 적힌다. 대장은 `price_basis: "명목"` 을 한 번 선언하는데(`DV-7`) 그
+#: 선언은 자원마다 값을 넣으라는 뜻이지, 넣지 않아도 된다는 뜻이 아니다. 이
+#: 어긋남은 `tests/contract/test_escalation_debt.py::KNOWN_ESCALATION_DEBT` 가
+#: 부채로 고정해 붙든다 — **이 값을 여기서 조용히 「고치지」 말 것.** 배선 판단은
+#: 오케스트레이터가 내리고(§1) 등재는 별도 절차를 거친다.
+#: **또한 이 계수는 「설비단가의 실질(물가 제외) 추세」를 0 으로 두는 가정을 겸한다**
+#: — 교체비에 학습곡선 등으로 인한 실질 하락이 있다면 별도 대장 항목이 있어야
+#: 하는데 지금 그 항목이 없다(`Q-` 신설 검토 대상, `result_escalation_debt.md` §6).
+PV_ESCALATION_RATE = 0.02
 PV_SELF_CONSUMPTION_RATIO = 0.0
 
 #: ESS **정격출력**(kW). 용량과 달리 설계 변수로 올리지 않았다 — 이 값이
@@ -331,7 +346,7 @@ def run_single_case_e2e(
         generation_profile_kwh=generation_profile,
         unit_capex_won_per_kw=pv_capex,
         fixed_om_won_per_year=PV_FIXED_OM_WON_PER_YEAR,
-        escalation_rate=PV_OM_ESCALATION,
+        escalation_rate=PV_ESCALATION_RATE,
         self_consumption_ratio=PV_SELF_CONSUMPTION_RATIO,
         operating_mode=OperatingMode.FULL_EXPORT,
     )
@@ -477,7 +492,7 @@ def run_single_case_e2e(
             start_year=1,
             end_year=horizon_years,
             annual_amount_won=int(pv.fixed_om(year=1)),
-            escalation_rate=0.02,
+            escalation_rate=PV_ESCALATION_RATE,
         ),
         fixed_om_row(
             "ESSFixedOM",
