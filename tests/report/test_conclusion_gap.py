@@ -11,6 +11,7 @@ R35 가 잉여 판매단가를 대장으로 올린 뒤, 실물 대장의 두 골
     거리가 본문에 실린다              ← 「없음」 한 줄로 끝나지 않는다
     ★ 전환 지원율로 다시 돌리면 0 이다  ← 표시만 하는 구현을 걸러 낸다
     ★ 두 시나리오가 같은 값을 낸다      ← 지원이 `t=0` 감액이라는 규약의 대조
+    ★ 1절 요약이 그 수를 그대로 싣는다   ← 검토자가 **먼저 보는 표**
     인자마다 남는 거리가 실린다        ← 끝까지 밀어도 얼마가 남는가
     미반영 인자를 「닫힌 자리」로 적지 않는다
 
@@ -20,6 +21,7 @@ R33 의 `_find_flip_threshold` 결함이 「임계값을 표시만」 하는 구
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -51,6 +53,33 @@ def _report(name: str = "scenario_unsubsidized") -> CaseReport:
 def _section(report: CaseReport) -> str:
     text = render_markdown(report)
     return text[text.index("### 5.1 불확실 인자") : text.index("### 5.2 정책 설정값")]
+
+
+#: 1절 요약 표의 그 행 · 본문 5.1 의 그 줄. **머리를 상수로 둔다** — 행 이름이
+#: 다른 행의 접두로 자라는 변이(R35 ③ M4)는 접두 검사를 통과하므로, 여기서
+#: 「정확히 이 이름의 행이 하나」를 함께 요구한다.
+_SUMMARY_ROW_HEAD = "| 결론 전환 지원율 |"
+_BODY_LINE_HEAD = "- 결론 전환 지원율 —"
+_PERCENT = re.compile(r"\d+(?:\.\d+)?%")
+
+
+def _one_line(text: str, head: str) -> str:
+    """`head` 로 시작하는 줄이 **정확히 하나**임을 요구하고 그 줄을 낸다."""
+    hits = [line for line in text.splitlines() if line.startswith(head)]
+    assert len(hits) == 1, (
+        f"「{head}」로 시작하는 줄이 {len(hits)}개다 — 0개면 그 행이 지워졌거나 "
+        f"다른 이름을 달고 나온 것이고, 둘 이상이면 같은 수가 두 곳에 실린 "
+        f"것이다: {hits}"
+    )
+    return hits[0]
+
+
+def _percents(line: str) -> list[str]:
+    """줄에 실린 백분율을 **적힌 그대로** 왼쪽부터. 자리수 변이를 보려면 값이
+    아니라 문면을 견주어야 한다 — `53%` 와 `52.6%` 는 값으로는 가깝다."""
+    found = _PERCENT.findall(line)
+    assert found, f"백분율이 없다 — 줄: {line}"
+    return found
 
 
 @pytest.mark.req("FR-1002-AC4")
@@ -176,6 +205,85 @@ def test_the_support_rate_formula_carries_the_same_number_as_the_body() -> None:
     )
     assert f"{report.total_project_cost_won:,.0f}원" in line, (
         "산식에 총사업비가 없다 — 환산의 분모를 검토자가 볼 수 없다"
+    )
+
+
+@pytest.mark.req("FR-1002-AC4", "FR-607-AC1", "FR-1001-AC3")
+def test_the_summary_row_carries_the_same_support_rate_as_the_body() -> None:
+    """★★ **1절 요약의 「결론 전환 지원율」이 세 자리에서 한 수인가.**
+
+    요약 · 본문 5.1 · 붙임 3 산식이 같은 수를 실어야 한다. 요약이 스스로
+    환산하면 검토자는 **먼저 보는 표에서 본문과 다른 수**를 읽고, 그 어긋남은
+    두 절을 대조할 때에야 드러난다.
+
+    ## ★ 값 셋 중 둘이 **다른 층**에서 온다
+
+    같은 조립기의 세 자리를 서로 견주는 것만으로는 부족하다 — 자기가 계산한 수를
+    세 곳에 똑같이 인쇄하는 구현은 전건 통과한다(R35 함정 절). 그래서 둘을 더
+    본다.
+
+    - **두 시나리오 대조** — 무보조(0%)와 보조 80% 는 결론 축이 다른데
+      전환 지원율은 **한 값**이다. 요약이 *결손/총사업비* 를 직접 계산하면
+      무보조에서는 우연히 맞고(지원율이 0 이므로 두 식이 같다) **보조 80% 에서
+      갈린다.** 한 시나리오만 보는 검사는 어떤 잘못된 환산도 통과시킨다.
+    - **인쇄된 그 수로 진입점을 다시 돌린다** — 정본은 `run_single_case_e2e` 다.
+      허용오차는 **표시 자리수의 반 칸**(0.05%p)이므로, `:.0%` 로 자리수를 줄인
+      변이는 여기서 걸린다(53% 는 0.4%p 어긋나 약 3.6만원이 남는다).
+
+    ⚠ 백분율은 **값이 아니라 문면**으로 견준다. `53%` 와 `52.6%` 는 값으로는
+    가깝고, 자리수 변이는 값 비교로는 보이지 않는다.
+    """
+    printed: dict[str, str] = {}
+    for name in ("scenario_unsubsidized", "scenario_subsidy_80"):
+        report = _report(name)
+        text = render_markdown(report)
+
+        row = _one_line(text, _SUMMARY_ROW_HEAD)
+        rate_text, current_text = _percents(row)[:2]
+
+        body = _one_line(text, _BODY_LINE_HEAD)
+        assert rate_text == _percents(body)[0], (
+            f"{name}: 요약의 전환 지원율({rate_text})이 본문 5.1"
+            f"({_percents(body)[0]})과 다르다 — 검토자가 먼저 보는 표와 근거가 "
+            f"갈렸다. 요약 행: {row}"
+        )
+        substituted = {
+            formula.label: formula.substituted for formula in report.formulas
+        }
+        assert rate_text in substituted["결론 전환 지원율"], (
+            f"{name}: 요약의 전환 지원율({rate_text})이 붙임 3 산식"
+            f"({substituted['결론 전환 지원율']})의 대입값과 다르다"
+        )
+        # 수와 **그 수가 나온 조건**의 짝 (R35 ② 함정 절). 현 지원율을 함께
+        # 싣지 않으면 두 시나리오의 요약 행이 서로 바뀌어도 매끈하다.
+        assert current_text == f"{report.subsidy_rate:.1%}", (
+            f"{name}: 요약 행의 현 지원율({current_text})이 이 시나리오의 "
+            f"지원율({report.subsidy_rate:.1%})이 아니다 — 행: {row}"
+        )
+
+        # ★ 다른 층 — 요약에 **인쇄된 그 수**를 진입점에 그대로 먹인다.
+        rate = float(rate_text.rstrip("%")) / 100.0
+        outcome = run_single_case_e2e(
+            {},
+            level_map=build_level_map(_ASSUMPTIONS),
+            horizon_years=report.basis.horizon_years,
+            scheme=_scheme_for(rate),
+        )
+        npv = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
+        # 표시 자리수(`:.1%`)의 반 칸. 이보다 좁게 잡으면 반올림만으로 빨간불이
+        # 나고, 넓게 잡으면 자리수를 줄인 변이가 통과한다.
+        tolerance = report.total_project_cost_won * 0.0005
+        assert abs(npv) <= tolerance, (
+            f"{name}: 요약에 실린 지원율 {rate_text} 로 다시 돌렸는데 결론 축이 "
+            f"{npv:,.0f}원이다 (허용 ±{tolerance:,.0f}원). 요약이 환산이 아닌 "
+            f"수를 싣거나 자리수를 줄여 실었다 — 행: {row}"
+        )
+        printed[name] = rate_text
+
+    assert len(set(printed.values())) == 1, (
+        f"두 시나리오의 요약이 다른 전환 지원율을 싣는다 — {printed}. 지원이 "
+        "`t=0` 초기지출 감액이라면 0 선에 닿는 지원율은 한 값이며, 갈렸다는 것은 "
+        "요약이 결론 축을 총사업비로 직접 나누고 있다는 뜻이다"
     )
 
 

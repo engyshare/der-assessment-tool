@@ -128,6 +128,11 @@ def _summary_section(report: CaseReport) -> list[str]:
         f"| 주 지표 · 할인 회수기간 | **{_years(metrics[HEADLINE_METRIC])}** |",
         f"| 결론 축 · 순현재가치 | **{_won(metrics[CONCLUSION_METRIC])}** |",
         f"| 결론 전환 인자 (단독) | {_flip_names(report)} |",
+        # ★ 값을 여기서 계산하지 않는다 — `break_even_subsidy_rate` 한 함수를
+        # 본문 5.1 · 붙임 3 과 **함께** 쓴다. 요약이 스스로 환산하면 같은
+        # 물음에 세 자리가 다른 수를 낸다. 자리수도 5.1 과 같은 `:.1%` 다.
+        f"| 결론 전환 지원율 | **{report.break_even_subsidy_rate:.1%}** "
+        f"(현 지원율 {report.subsidy_rate:.1%} · 산식은 붙임 3) |",
         f"| 결론 전환 조건 (결합) | {_summary_combined(report)} |",
         f"| 미반영 항목 | {unreflected_direction_tally(unreflected)} |",
         f"| 적정 용량 | {capacity_summary(report.capacity_review)} |",
