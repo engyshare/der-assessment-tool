@@ -59,10 +59,12 @@
 
 ## 한 줄 요약
 
-3-File System **Step 3(exe-tasks) 진행 중**. spec **v0.16** + 작업 목록 **v2.8**.
+3-File System **Step 3(exe-tasks) 진행 중**. spec **v0.17** + 작업 목록 **v2.8**.
 
-**Phase 1 Must-have 미매핑 0건.** 남은 미매핑 8건은 전부 Phase 2·3 이다.
-**수집 1,581건 · `pytest` rc=0**(2026-08-18 R36 실측 · **3.11 은 미실행**) · 게이트 `rc=0`
+**Phase 1 Must-have 미매핑 0건.** 남은 미매핑 **9건**은 전부 Phase 2·3 이며, 늘어난 한 건은
+R37 이 `FR-402-AC2.C` 를 **Phase 3 으로 명확화**하면서 거짓 인용을 뗀 결과다(거짓으로
+매핑돼 있던 것을 미매핑으로 드러낸 것이며 새 결손이 아니다).
+**수집 1,587건 · `pytest` rc=0**(2026-08-20 R37 실측 · **3.11 도 rc=0 · 실패 0**) · 게이트 `rc=0`
 (`ruff` 0건 · `mypy` **114파일** 무결 · `lint-imports` **4계약 kept 0 broken**
 (⚠ `PYTHONUTF8=1` 이 필요하다 — 게이트 절) ·
 `check_marker_substance` 0건 · `check_file_size --code-strict` 0건 ·
@@ -71,8 +73,10 @@
 `check_precommit_installed` 통과 ·
 **`check_task_mapping` 0건 — R31 에 CI 차단으로 승격했고 R32 의 조항 전개에서
 실제로 빨간불을 냈다**(실재하지 않는 인용 1 + 미인용 Must-have 7)).
-**요구사항 105건 / 수용기준 321건 / 자동 291 / 수동 8 / 수동 스텁 4.**
-**배타 규칙 7건**(`docs/exclusion-rules.yaml`) · **Python 3.11(CI 버전)에서도 rc=0**.
+**요구사항 105건 / 수용기준 321건 / 자동 290 / 수동 4**(추적표 요약 실측 · 2026-08-20).
+**배타 규칙 7건**(`docs/exclusion-rules.yaml` · **유형 C 는 0건이며 그것이 옳다** —
+그 규칙이 다룰 편익 `CarbonCredit` 이 `[Phase 3]` 이다. R37 판정) ·
+**Python 3.11(CI 버전)에서도 rc=0**.
 
 > **R32 결정·판정은 `docs/decisions-2026-08-14-R32.md`, R31 은
 > `docs/decisions-2026-08-14-R31.md` 가 정본이다** — 이 파일에 옮겨 적지 않는다
