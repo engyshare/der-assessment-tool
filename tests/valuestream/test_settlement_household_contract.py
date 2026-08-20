@@ -85,9 +85,12 @@ def test_the_household_sells_its_surplus_at_the_contract_price() -> None:
     assert stream.annual_value(_dispatch(400.0), year=1) == 400 * CONTRACT_PRICE
 
 
-@pytest.mark.req("FR-205-AC1.HouseholdDirect", "FR-402-AC2.A")
+@pytest.mark.req("FR-205-AC1.HouseholdDirect")
 def test_the_settlement_target_is_the_surplus_not_self_consumption() -> None:
     """② ★★ **정산 대상이 잉여다** — 자가소비 절감으로 바꿔치기하지 않았다.
+
+    이 검사는 `FR-402-AC2.A` 의 배타 규칙 함수를 부르지 않는다 — 단일 조립
+    결과의 타입만 확인한다.
 
     배타 규칙표가 둘을 유형 A 로 두므로 **하나만** 켤 수 있고, 그 선택이 편익을
     통째로 바꾼다. 금액만 보면 어느 쪽이든 그럴듯하므로 **자료형으로** 붙든다.
@@ -102,9 +105,12 @@ def test_the_settlement_target_is_the_surplus_not_self_consumption() -> None:
     )
 
 
-@pytest.mark.req("FR-205-AC1.HouseholdDirect", "FR-402-AC5")
+@pytest.mark.req("FR-205-AC1.HouseholdDirect")
 def test_the_payer_is_the_household() -> None:
     """③ 지불 주체가 **가구**다 — 사업자를 거치지 않는 것이 이 구조의 정의다.
+
+    이 검사는 `FR-402-AC5` 를 재지 않는다 — 특정 값(RESIDENT)이 나오는지만
+    본다.
 
     사업자로 두면 관점별 NPV 에서 주민 수익이 통째로 사라지고 **합계는 맞아서**
     드러나지 않는다(상계거래에서 같은 판단을 했다).

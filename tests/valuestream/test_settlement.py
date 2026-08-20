@@ -161,9 +161,12 @@ def test_direct_trade_without_the_negotiated_inputs_is_refused() -> None:
 
 # ── ③ 지불 주체가 구조에 따라 갈린다 ─────────────────────────────────
 
-@pytest.mark.req("FR-205-AC1.NetMetering", "FR-205-AC1.DistrictDirectTrade", "FR-402-AC5")
+@pytest.mark.req("FR-205-AC1.NetMetering", "FR-205-AC1.DistrictDirectTrade")
 def test_the_payer_follows_the_structure() -> None:
     """★★ **같은 `SurplusSale` 이 구조에 따라 다른 지갑을 가리킨다.**
+
+    이 검사는 `FR-402-AC5` 를 재지 않는다 — 미특정 거부 경로를 실행하지 않고
+    이미 특정된 값이 구조별로 갈리는가만 본다.
 
     `docs/domain-rules.md` 관점 분리표는 *잉여판매·직접거래 수익*의 참여 주민
     칸을 「계약구조에 따름」으로 둔다. 상계는 판매가 아니라 **가구 계량점의 요금
@@ -269,11 +272,14 @@ def test_an_unknown_structure_is_refused_before_the_lookup() -> None:
 
 # ── ⑤ 조립 결과가 배타 규칙을 지난다 ─────────────────────────────────
 
-@pytest.mark.req("FR-205-AC1.NetMetering", "FR-402-AC2.A")
+@pytest.mark.req("FR-402-AC2.A")
 def test_the_assembler_checks_its_own_output_against_the_exclusion_table(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """★★★ **선언표가 규칙표를 어기면 조립 시점에 거부된다.**
+
+    이 검사는 `FR-205-AC1.NetMetering` 을 재지 않는다 — 재는 것은 조립기의
+    배타 규칙 자기검사이며 그것은 `FR-402-AC2.A` 가 규정한다.
 
     `SelfConsumption`·`SurplusSale`·`DirectTrade` 는 서로 유형 A 배타다 —
     같은 잉여를 화폐화하는 세 갈래이므로 동시에 켤 수 없다. 조립기가 그것을

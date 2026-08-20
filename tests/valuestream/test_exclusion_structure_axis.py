@@ -106,12 +106,15 @@ def test_a_structure_scoped_rule_fires_in_that_structure() -> None:
     assert [(a, b) for a, b, _, _ in found] == [("_StructA", "_StructB")]
 
 
-@pytest.mark.req("FR-402-AC1", "FR-402-AC4")
+@pytest.mark.req("FR-402-AC4")
 def test_the_same_pair_is_allowed_in_another_structure() -> None:
     """★ **다른 구조에서는 걸리지 않는다** — 오탐 0 이 차단 100% 만큼 중요하다.
 
-    이 단언이 없으면 「구조를 무시하고 늘 거는」 구현도 위 테스트를 통과하고,
-    그 상태는 `FR-402-AC1` 이 명시로 금지한 방향이다(정당한 동시 계상을 지운다).
+    이 단언이 없으면 「구조를 무시하고 늘 거는」 구현도 위 테스트를 통과한다.
+
+    `FR-402-AC1` 은 제거했다(R37) — 이 검사가 보는 것은 「구조 스코프 매칭」이지
+    동시발생 다중 편익(자가소비+피크저감+망회피+CO2)의 계상 여부가 아니다. 그
+    자리의 주인은 이미 병기된 `FR-402-AC4`(선언적 배타 규칙 테이블)다.
     """
     found = collect_exclusions(
         [_StructA(structure="잉여 직거래"), _StructB(structure="잉여 직거래")], _RULES
@@ -122,13 +125,17 @@ def test_the_same_pair_is_allowed_in_another_structure() -> None:
 
 # ── ② 구조를 모르는 조합에는 걸리지 않는다 ───────────────────────────
 
-@pytest.mark.req("FR-402-AC1")
+@pytest.mark.req("FR-402-AC4")
 def test_streams_without_a_structure_do_not_trigger_structure_rules() -> None:
     """구조를 선언하지 않은 편익에는 구조 한정 규칙이 걸리지 않는다.
 
     ⚠ **반대로 두면 위험하다.** 「구조를 모르면 전부 적용」으로 읽으면 구조를
     지정하지 않은 **기존 케이스가 갑자기 거부된다** — 프로파일 축이 같은 판단을
     이미 하고 있다(`profile=None` 이면 제도 한정 규칙을 끈다).
+
+    이 검사의 주인은 `FR-402-AC4` 다 — 규칙 테이블의 구조 스코프가 매칭되지
+    않는 쪽(음성)이며, 양성 케이스(①·구조 한정 규칙이 그 구조에서만 걸린다)와
+    같은 조항이다(R37).
     """
     found = collect_exclusions([_StructA(), _StructB()], _RULES)
 

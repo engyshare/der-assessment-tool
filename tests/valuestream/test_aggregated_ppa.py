@@ -129,7 +129,7 @@ def test_the_ppa_excludes_both_surplus_sale_and_self_consumption(
     assert other_tag in (caught.value.reason or "")
 
 
-@pytest.mark.req("FR-401-AC2.AggregatedPPA", "NFR-303-M1")
+@pytest.mark.req("FR-401-AC2.AggregatedPPA")
 @pytest.mark.parametrize(
     ("price", "generation"), [(-1.0, GENERATION), (TARIFF, -1.0)]
 )
@@ -138,6 +138,9 @@ def test_negative_inputs_are_refused(price: float, generation: float) -> None:
 
     음수 발전량은 소비이며, **계통 순흐름을 그대로 넘긴 경우**에 실제로 생긴다 —
     통과시키면 수익이 음수가 되어 「손해 보는 PPA」가 그럴듯하게 계산된다.
+
+    이 검사는 `NFR-303-M1` 을 재지 않는다 — `ValueError` 발생만 확인하고
+    field·reason·action 3요소를 검사하지 않는다.
     """
     with pytest.raises(ValueError):
         AggregatedPPA(

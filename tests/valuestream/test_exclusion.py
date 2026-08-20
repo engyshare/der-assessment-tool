@@ -82,7 +82,7 @@ def test_type_a_symmetric_lookup_works_both_directions() -> None:
 # ── 유형 B~D — 오탐 0 (양성). 정당한 동시 편익이 지워지지 않는다 ─────────
 # FR-402-AC1: 동시 발생 효과는 중복이 아니다 — 정상 계상한다.
 
-@pytest.mark.req("FR-402-AC1", "FR-402-AC2.C")
+@pytest.mark.req("FR-402-AC1")
 def test_simultaneous_distinct_payer_benefits_are_not_excluded() -> None:
     """**핵심 케이스** — 자가소비(RESIDENT) + REC(OPERATOR) + 피크저감(RESIDENT) +
     열비용절감(RESIDENT) 동시 계상은 정상이다.
@@ -94,6 +94,13 @@ def test_simultaneous_distinct_payer_benefits_are_not_excluded() -> None:
     자가소비(kWh·전력량요금) 와 피크저감(kW·기본요금) 은 물리량이 다르다.
     REC(발전량·REC단가) 와 자가소비(소비량·요금단가) 는 같은 발전을 다른 용도로.
     열비용절감(열·연료비) 은 전기와 매체가 다르다.
+
+    `FR-402-AC2.C` 마커는 R37 에서 뗐다 — 이 테스트에는 `tCO2`·배출권 수익·사회적
+    탄소비용·관점 전환이 없다. `AC2.C` 는 *같은 tCO2 를 관점을 바꿔가며 두 산식으로
+    화폐화하는 것*을 막는 조항(위임: `FR-704`)이고, 여기서 재는 것은 위 독스트링이
+    스스로 적은 대로 `FR-402-AC1` 이다. **다시 붙이지 마라** — ID 가 실재하면
+    `gen_traceability` 는 「검증됨」으로 세므로, 재지 않는 인용은 조용히 매핑표를
+    부풀린다.
     """
     sc = SelfConsumption(baseline_annual_bill_won=300, new_annual_bill_won=120)
     rec = REC(weight=1.0, rec_price_won_per_unit=50_000)

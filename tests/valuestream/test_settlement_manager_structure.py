@@ -174,9 +174,12 @@ def test_the_tariff_table_changes_the_benefit() -> None:
 
 # ── ③ 수수료가 편익에서 빠지지 않는다 ────────────────────────────────
 
-@pytest.mark.req("FR-205-AC1.ManagerEntity", "FR-402-AC1")
+@pytest.mark.req("FR-205-AC1.ManagerEntity")
 def test_the_fee_is_not_subtracted_from_the_benefit() -> None:
     """★★ 절감액이 **온전하다** — 수수료를 편익에서 빼지 않았다.
+
+    이 검사는 `FR-402-AC1` 을 재지 않는다 — 편익 하나의 계산 내부를 보며
+    동시발생 다중 편익을 시험하지 않는다.
 
     편익에서 빼면 **관점별 NPV 에서 그 지출이 사라진다** — 편익 계정만 줄고
     비용 계정에는 한 줄도 남지 않으므로 정부·사회 관점에서 그 비용이 아예 없는
