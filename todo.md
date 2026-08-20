@@ -14,12 +14,12 @@
 >
 > | 무엇 | 파일 |
 > |---|---|
-> | 주 지표 회수기간 결함 (아래 **1번**) | `.orch/R37/brief_payback.md` |
+> | 주 지표 회수기간 결함 (**R38 ① 이 닫았다**) | `.orch/R37/brief_payback.md` · `result_payback.md` |
 > | 교체비·잔존가치 (아래 **2번**) | `.orch/R37/scout_replacement.md` |
 > | 일사 곡선 배선의 실측·검토 (**`main` 에 합쳤다**) | `.orch/R37/result_irradiance.md` · `review_irradiance.md` |
 >
 > ⚠ **`.orch/` 는 `.gitignore` 안이다** — 저장소에 들어오지 않는다. 다른 기계에서
-> 이어받을 때는 **`status.md` R37 블록의 요약이 정본**이다.
+> 이어받을 때는 **`status.md` 의 R38·R37 블록 요약이 정본**이다.
 
 ---
 
