@@ -27,7 +27,7 @@ import pytest
 
 from core.contracts.der import DER, MEDIA, DispatchContext
 from core.contracts.units import Money, Year, steps_per_year
-from tests.contract.source_scan import top_level_import_lines
+from tests.contract.source_scan import imported_module_names
 
 # spec FR-101-AC1 이 열거한 속성. 이름을 여기서 다시 짓지 않고 그대로 옮긴다 —
 # 옮겨 적는 순간 spec과 코드가 갈릴 수 있으므로, 갈리면 이 테스트가 깨진다.
@@ -516,6 +516,16 @@ class DERContractTests:
         `test_smoke_wave0.py::test_reference_impl_imports_only_contracts`
         는 처음부터 import 줄만 걸러 그 함정에 서지 않았다 — 그 필터 형태를
         `tests/contract/source_scan.py` 로 모으고 여기서 가져다 쓴다.
+
+        ⚠ **`ast` 로 바꾼다 (R39-A).** 줄 필터는 `line.startswith("import ")`
+        형태라 들여쓴 줄, 즉 함수·메서드 본문 안의 지역 import 를 거짓으로
+        읽었다 — `PV.capex()` 본문 안에 `from core.cba import BCResult` 를
+        심어도 이 검사가 초록불이었다(`.orch/R39/result_ast_import.md` 1-c).
+        위반이 통과로 보고되는 조용한 실패이며 R38-D4 의 반대 방향이다.
+        `source_scan.imported_module_names()` 가 `ast.walk` 로 트리 전체를
+        훑어 지역 import 도 잡는다. 반환 자료형이 원문 줄에서 **모듈 경로
+        문자열**로 바뀌어 아래 판정도 `forbidden in line` 부분 문자열 대조에서
+        `forbidden in name`(모듈 경로 대조)으로 바뀐다.
         """
         der = self.make()
         assert isinstance(der, DER)
@@ -523,9 +533,9 @@ class DERContractTests:
         module = inspect.getmodule(type(der))
         assert module is not None
         source = inspect.getsource(module)
-        import_lines = top_level_import_lines(source)
+        module_names = imported_module_names(source)
         for forbidden in ("core.engine", "core.cba", "core.casegrid"):
-            offending = [line for line in import_lines if forbidden in line]
+            offending = [name for name in module_names if forbidden in name]
             assert not offending, (
                 f"자원 구현이 {forbidden} 를 참조합니다: {offending}. 자원은 "
                 "계약만 보고 동작해야 합니다 (FR-101-AC3, NFR-208-AC1)"

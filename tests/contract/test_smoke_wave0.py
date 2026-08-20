@@ -32,7 +32,7 @@ from core.contracts.der import (
     DispatchResult,
 )
 from core.contracts.units import SECONDS_PER_HOUR, Money, to_won, won_sum
-from tests.contract.source_scan import top_level_import_lines
+from tests.contract.source_scan import imported_module_names
 from tests.contract.test_der_contract import DERContractTests
 
 
@@ -208,19 +208,27 @@ def test_reference_impl_imports_only_contracts() -> None:
     함께 움직이지 않으려는 판단이며, R38-B2 결과 파일에 「구획 밖」으로
     올렸다.
 
-    「진짜 import 줄만 본다」는 필터는 `tests/contract/source_scan.py` 가
+    「진짜 import 만 본다」는 필터는 `tests/contract/source_scan.py` 가
     정본이다(R38-D4) — 짝인
     `test_der_contract.py::test_implements_der_without_engine_knowledge` 도
     같은 필터를 쓴다. 사본을 두지 않는다.
+
+    ⚠ **`ast` 로 바꾼다 (R39-A).** 예전 줄 필터는 함수·메서드 본문 안의 지역
+    import 를 놓쳤다(들여쓴 줄이라 `line.startswith("import ")` 가 거짓이
+    된다) — 위반이 통과로 보고되는 조용한 실패다. `imported_module_names()`
+    는 `ast.walk` 로 이 함정에 서지 않는다. 반환 자료형이 원문 줄에서 **모듈
+    경로 문자열**로 바뀌어 아래 판정도 `line.startswith(...)` 대신
+    `name == "core"`/`name.startswith("core.")` 로 바뀐다.
     """
     import inspect
 
     source = inspect.getsource(inspect.getmodule(ReferencePV))
+    module_names = imported_module_names(source)
     offending = [
-        line
-        for line in top_level_import_lines(source)
-        if line.startswith(("import core", "from core"))
-        and not line.startswith(("from core.contracts", "import core.contracts"))
+        name
+        for name in module_names
+        if (name == "core" or name.startswith("core."))
+        and not (name == "core.contracts" or name.startswith("core.contracts."))
     ]
     assert not offending, (
         f"참조 구현이 계약 밖 core 모듈을 import합니다: {offending}. "
