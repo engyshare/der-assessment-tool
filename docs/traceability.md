@@ -243,14 +243,14 @@
 |  |  | 2 | `FR-702-AC3` | 자원 수명 종료로 구성이 바뀌는 해는 자동으로 시뮬레이션 대상에 추가된다 | **미매핑** | — |
 |  |  | 2 | `FR-702-AC4` | 보간으로 계산된 연도는 리포트에서 실계산 연도와 구분 표기된다 | **미매핑** | — |
 | `FR-703` | Must-have | 1 | `FR-703-AC1.npv` | NPV 할인 순현재가치 — 할인율 파라미터화 (공공 4.5~5.5% 기본). 오라클 §13.0.2 순위 1 / 원 단위 완전 일치 | 자동 | test_e2e_cost_sign.py 3건, test_grid_purchase_cost_row.py, test_surplus_sale_price_wiring.py, test_metrics.py |
-|  |  | 1 | `FR-703-AC1.irr` | IRR 내부수익률 — 오라클 §13.0.2 순위 2 / 0.01%. FR-704-AC2(사업자 관점)가 이 조항만 인용한다 | 자동 | test_metrics.py |
-|  |  | 1 | `FR-703-AC1.mirr-value` | MIRR 수정내부수익률 (값) — 오라클 §13.0.2 순위 2 / 0.01% | 자동 | test_metrics.py |
+|  |  | 1 | `FR-703-AC1.irr` | IRR 내부수익률 — 오라클 §13.0.2 순위 2 / 0.01%. FR-704-AC2(사업자 관점)가 이 조항만 인용한다 | 자동 | test_metrics.py 2건 |
+|  |  | 1 | `FR-703-AC1.mirr-value` | MIRR 수정내부수익률 (값) — 오라클 §13.0.2 순위 2 / 0.01% | 자동 | test_metrics.py 2건 |
 |  |  | 1 | `FR-703-AC1.mirr-order` | MIRR 우선 표시 규칙 — 현금흐름의 부호변경이 다수일 때 MIRR을 IRR보다 우선 표시한다. 값이 아니라 조건부 표시 규칙이므로 AC1.mirr-value… | 자동 | test_indicators.py |
 |  |  | 1 | `FR-703-AC1.bcr` | B/C 총편익 현가 / 총비용 현가 — 오라클 §13.0.2 순위 1. (v0.12 배정) 분자·분모를 각각 원 단위 완전 일치로 판정하고 비율 자체에는 별도 … | 자동 | test_metrics.py |
 |  |  | 1 | `FR-703-AC1.lcoe-resource` | LCOE (자원별) 균등화발전원가 — 발전 자원(PV 등)별로만 산출한다 | 자동 | test_indicators.py |
 |  |  | 1 | `FR-703-AC1.lcoe-mixed` | 혼합 모델 전체 LCOE 미산출 — 히트펌프·ESS가 섞인 모델의 전체 LCOE는 분모 정의가 성립하지 않으므로 산출하지 않는다 (v0.3 정정). 모델 전체 … | 자동 | test_indicators.py |
-|  |  | 1 | `FR-703-AC1.payback-simple` | 단순 회수기간 누적 현금흐름 0 도달 — 소수점 보간 | 자동 | test_indicators.py |
-|  |  | 1 | `FR-703-AC1.payback-discounted` | 할인 회수기간 할인 후 누적 0 도달 — 주 지표. 오라클 §13.0.2 순위 2 / 0.01% | 자동 | test_metrics.py |
+|  |  | 1 | `FR-703-AC1.payback-simple` | 단순 회수기간 누적 현금흐름 0 도달 — 소수점 보간 | 자동 | test_indicators.py 3건 |
+|  |  | 1 | `FR-703-AC1.payback-discounted` | 할인 회수기간 할인 후 누적 0 도달 — 주 지표. 오라클 §13.0.2 순위 2 / 0.01% | 자동 | test_metrics.py 8건 |
 |  |  | 1 | `FR-703-AC1.household-saving` | 가구당 월 절감액 원/호·월 — 주민 설득용 | 자동 | test_indicators.py |
 |  |  | 1 | `FR-703-AC1.self-consumption` | 연간 자가소비율 % | 자동 | test_indicators.py |
 |  |  | 1 | `FR-703-AC1.supply-duty` | 초과발전량 우선공급 의무 충족률 % — 제도 준수 지표. 현행 기준값 70%는 규제 프로파일(FR-504)이 들고 있으며 이 조항에 고정하지 않는다 | 자동 | test_indicators.py |

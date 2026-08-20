@@ -161,3 +161,52 @@ def test_fiscal_pv_sums_components() -> None:
         other_fiscal_cost_pv_won=Money(50_000),
     )
     assert int(val) == 1_250_000
+
+
+# ── payback-simple — 한 해에 행이 여럿일 때 (R38) ──────────────────────────
+#
+# ⚠ 위의 `test_payback_simple_no_discount` 는 편익 행 **하나**만 넘긴다. 한 해에
+# 행이 하나뿐이면 「행 단위」와 「연 단위」가 같은 값을 내므로 그 검사는
+# **구조적으로** 이 결함을 볼 수 없었다 — 아래 둘이 그 자리를 본다. 상세한 경위는
+# `tests/cba/test_metrics.py` 의 같은 이름 구획에 있다(주 지표 쪽이 정본).
+
+
+@pytest.mark.req("FR-703-AC1.payback-simple")
+def test_payback_simple_sums_the_rows_of_one_year_before_counting() -> None:
+    """단순 회수기간도 **연 단위**다 — 그 해의 행을 먼저 합친다.
+
+    편익 3,000,000 · 비용 2,000,000(부호 뒤집은 행) → 연 순편익 1,000,000 원.
+    initial 3,000,000 원이므로 답은 정확히 3년이다. 행 단위로 세면 Y1 의 편익
+    행만으로 이미 0 선을 넘어 **1년**을 반환한다.
+    """
+    years = range(1, 21)
+    rows = [
+        benefit_row(tag="benefit", schedule={y: 3_000_000 for y in years}),
+        benefit_row(tag="cost_negated", schedule={y: -2_000_000 for y in years}),
+    ]
+    val = payback_simple(Money(3_000_000), rows)
+    # 기대값은 구현이 아니라 산식에서 온다: initial / 연 순편익.
+    expected = 3_000_000 / (3_000_000 - 2_000_000)
+    assert val == pytest.approx(expected, rel=1e-9), (
+        f"단순 회수기간이 연 단위가 아니다: 산출 {val:.4f}년 vs 산식 "
+        f"{expected:.4f}년 (initial ÷ 연 순편익)"
+    )
+
+
+@pytest.mark.req("FR-703-AC1.payback-simple")
+def test_payback_simple_does_not_depend_on_row_order() -> None:
+    """같은 해 행의 **순서를 뒤집어도 값이 같다** — 초록불이 정답인 검사다.
+
+    R38 까지는 정순 1년 대 역순 4년으로 갈렸다.
+    """
+    years = range(1, 21)
+    rows = [
+        benefit_row(tag="benefit", schedule={y: 3_000_000 for y in years}),
+        benefit_row(tag="cost_negated", schedule={y: -2_000_000 for y in years}),
+    ]
+    forward = payback_simple(Money(3_000_000), rows)
+    reversed_ = payback_simple(Money(3_000_000), list(reversed(rows)))
+    assert forward == reversed_, (
+        f"행 순서가 단순 회수기간을 바꾼다: 정순 {forward:.4f}년 vs 역순 "
+        f"{reversed_:.4f}년"
+    )

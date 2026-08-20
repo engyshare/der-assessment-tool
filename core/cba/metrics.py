@@ -99,13 +99,42 @@ def bcr(
 
 
 def _flatten(operating: list[CashFlowRow]) -> list[tuple[int, float]]:
-    """operating 을 (year, amount) 평탄화, year 오름차순."""
+    """operating 을 (year, amount) 평탄화, year 오름차순. **행을 합치지 않는다.**
+
+    ⚠ **연 단위로 합치고 싶으면 `_by_year()` 를 쓴다.** 여기서 합치면
+    `mirr()` 값이 바뀐다 — `mirr` 은 `amount > 0` 을 **행 단위**로 걸러
+    미래가치를 쌓으므로, 한 해의 편익 행(+)과 비용 행(−)을 미리 합치면
+    그 해가 순편익 하나로 접히고 미래가치가 줄어든다(실측: 0.4048 → 0.1277).
+    `irr` 은 전부 합하므로 어느 쪽이든 같다.
+
+    누적을 한 걸음씩 보는 쪽(`payback_*`)에는 이 목록을 **그대로 쓰면 안 된다** —
+    한 해에 행이 여럿이면 그 해의 편익 행만 누적한 지점에서 0 선을 넘고 남은
+    음수 행을 세기 전에 반환한다. R38 이 그것을 `_by_year()` 로 갈랐다.
+    """
     pairs: list[tuple[int, float]] = []
     for row in operating:
         for year, amount in row.amounts.items():
             pairs.append((year, float(amount)))
     pairs.sort(key=lambda p: p[0])
     return pairs
+
+
+def _by_year(operating: list[CashFlowRow]) -> list[tuple[int, float]]:
+    """operating 을 **연도별 순현금흐름 한 수**로 접는다, year 오름차순.
+
+    한 해에 행이 여럿인 것(편익 행 + 부호를 뒤집은 비용 행)은 이 저장소의
+    **정상 형태**다 — `e2e_runner._net_operating_rows()` 가 그렇게 넘긴다.
+    누적을 한 걸음씩 보는 지표는 그 행들을 **먼저 합쳐야** 한다. 합치지 않으면
+    편익 행만 누적한 지점에서 0 선을 넘고 **행 순서가 값을 바꾼다.**
+
+    `_flatten()` 과 갈라 둔 이유는 그쪽 독스트링에 있다 — `mirr` 이 부호를
+    행 단위로 읽어 합치면 값이 바뀐다. **같은 함수로 둘 수 없다.**
+    """
+    totals: dict[int, float] = {}
+    for row in operating:
+        for year, amount in row.amounts.items():
+            totals[year] = totals.get(year, 0.0) + float(amount)
+    return sorted(totals.items())
 
 
 def _npv_float(
@@ -193,23 +222,26 @@ def payback_simple(
 ) -> float:
     """단순 회수기간 — 누적 현금흐름 0 도달 (FR-703-AC1.payback-simple).
 
-    할인 없이 누적. 도달하지 못하면 ``math.inf`` 에 가까운 큰 값.
+    할인 없이 **연도별 순현금흐름**(`_by_year`)을 누적. 도달하지 못하면
+    ``math.inf``. 회수는 해 안에서 선형 보간하므로 값은 ``(해-1) + 소수부`` 다.
+
+    ⚠ **연도 단위다** — `_flatten()` 을 쓰면 한 해의 편익 행만 누적한 지점에서
+    반환하고 **행 순서가 값을 바꾼다**(R38). `_by_year()` 독스트링 참조.
     """
     inv = float(initial_investment)
-    flows = _flatten(operating)
+    flows = _by_year(operating)
     cumulative = -inv
-    prev_cum = cumulative
-    prev_year = 0
     for year, amount in flows:
         prev_cum = cumulative
         cumulative += amount
         if cumulative >= 0:
-            # 이 해 안에서 회수 — 선형 보간
+            # 이 해 안에서 회수 — 선형 보간. 기준점은 **직전 해의 끝**이며
+            # 그것은 `year - 1` 이다. 순회 중의 「직전 행의 연도」로 두면
+            # 연도가 비어 있는 현금흐름에서 엉뚱한 해를 가리킨다.
             if amount == 0:
                 return float(year)
             fraction = (-prev_cum) / amount
-            return prev_year + fraction
-        prev_year = year
+            return (year - 1) + fraction
     return float("inf")
 
 
@@ -221,23 +253,26 @@ def payback_discounted(
     """할인 회수기간 — 주 지표 (FR-703-AC1.payback-discounted). 순위 2, 0.01%.
 
     각 해의 현금흐름을 할인한 뒤 ``to_won`` 반올림, 누적이 initial 을 넘는 시점.
+
+    ★ **문면대로 연 단위다.** 그 해의 행을 `_by_year()` 로 **먼저 합친 뒤**
+    한 번 할인한다 — 반올림도 그 해에 한 번이다. R38 까지는 `_flatten()` 의
+    행 목록을 그대로 돌아 **행 단위**로 셌고, 그래서 선언(이 문단)과 구현이
+    갈려 있었다. 실측으로 보조 80% 가 4.8623년 → 6.3923년이 됐다.
     """
     inv = float(initial_investment)
-    flows = _flatten(operating)
+    flows = _by_year(operating)
     cumulative = -inv
-    prev_cum = cumulative
-    prev_year = 0
     for year, amount in flows:
         prev_cum = cumulative
         factor = (1.0 + discount_rate) ** year
         discounted = float(to_won(amount / factor))
         cumulative += discounted
         if cumulative >= 0:
+            # 기준점은 직전 해의 끝(`year - 1`) — `payback_simple` 과 같다.
             if discounted == 0:
                 return float(year)
             fraction = (-prev_cum) / discounted
-            return prev_year + fraction
-        prev_year = year
+            return (year - 1) + fraction
     return float("inf")
 
 

@@ -87,6 +87,17 @@ def _reference_metrics() -> dict[str, float]:
     annual_benefit = Money(surplus * DAYS_PER_YEAR + peak)
 
     base_capex = Money(int(pv.capex(year=1) + ess.capex(year=1)))
+    # ⚠ **이 골든은 한 해에 행이 하나뿐인 현금흐름을 넘긴다** — 편익 한 행이고
+    # 비용 행이 없다. 그래서 `payback_simple` 이 R38 까지 그 해의 행을 합치지
+    # 않고 한 걸음씩 세고 있었는데도 세 시나리오가 **전건 초록불**이었다. 이
+    # 골든은 그 결함의 파수꾼이 **아니다** — 그 자리를 보는 검사는
+    # `tests/cba/test_indicators.py` 와 `tests/cba/test_metrics.py` 의
+    # 「한 해에 행이 여럿」 구획에 있다.
+    #
+    # 여기의 행 구성을 여럿으로 바꾸지 않은 이유: 이 파일은 **회귀 스냅숏**이고
+    # (`fixtures/golden/*.yaml` 머리글이 그렇게 적는다) 행 구성을 바꾸면 세
+    # yaml 의 expected 를 다시 뽑아야 한다 — 「어제와 같다」를 재는 자리에서
+    # 기준선을 흔드는 것이므로 R38 은 하지 않았다.
     rows = [
         benefit_row(
             "annual_benefit",
