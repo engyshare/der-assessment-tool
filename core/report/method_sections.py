@@ -239,12 +239,35 @@ def cost_benefit_section(basis: CaseBasis) -> list[str]:
     없다 — 검토자는 PV 에 얼마를 쓴 것이 타당한지 보려는데, 리포트는 PV 가 그중
     얼마를 벌어 오는지 말하지 않았다.
 
-    ⚠ **여기의 「자원별 회수」는 참고값이다.** 편익 귀속이 깨끗한 것은 이 구성이
-    PV→잉여판매, ESS→첨두절감으로 **하나씩 대응하기 때문**이며, 자원이 서로의
-    편익을 바꾸는 구성(예: PV 자가소비 + ESS 차익거래)에서는 이렇게 가를 수
-    없다. 그 사실을 표 아래에 적는다 — 적지 않으면 다음 사례에서 같은 표를
-    보고 같은 방식으로 읽는다.
+    ## ★★★ 왜 「1:1 귀속」을 **선언에서 읽지 않는가** (R43-E2)
+
+    종전 이 함수는 편익을 `line.tag in resource.produces` 로 실었고, 표 아래에
+    **스스로** 성립 조건을 적었다 — *「편익이 자원에 1:1 로 귀속될 때 (이
+    구성: PV→잉여판매 · ESS→첨두절감)」*. **그 조건이 이 실행에서 거짓이었다.**
+    잉여 판매 754,820원의 근거 수량은 계통 송전 18.80kWh 인데 그중 8.00kWh 는
+    저장장치 방전분이며(붙임 7 대표일 13~16시), 표는 전액을 태양광 몫으로 적어
+    단순 회수를 태양광 7.3년 · 저장장치 50.2년으로 인쇄했다.
+
+    ⚠ **문면을 좁히는 대신 수량으로 갈랐다.** 표가 *「1:1 이 아닐 수 있다」* 고
+    말하게 하는 것은 **틀린 수를 남긴 채 각주로 면책하는 것**이며, 이 파일에는
+    각주로 면책한 문장이 낡아 거짓이 된 사례가 이미 둘 있다(아래 R34·R39-E
+    별표). 몫은 러너가 운전 결과에서 낸다
+    (`core/casegrid/attribution.py::attribute_benefits`).
+
+    ⚠ **성립 조건도 실행에서 짓는다** — 아래 `_attribution_notes()`. 조건을
+    문장으로 박아 두면 구성이 바뀌는 날 그 문장만 참인 채로 남는다.
+
+    ⚠ **가른 것과 선언한 것을 구별해 적는다.** 계통 송전 창에서 나오지 않은
+    금액은 여전히 **자원의 선언**(`produces`)으로 귀속되며 — 첨두 절감이
+    그렇다 — 자원이 서로의 편익을 바꾸는 구성(예: PV 자가소비 + ESS 차익거래)
+    에서는 그 선언이 종전과 같은 형태로 낡을 수 있다. 그래서 표 아래가 갈래
+    마다 **무엇을 근거로 귀속했는지**를 함께 적는다.
     """
+    earned_by_name: dict[str, int] = {}
+    for share in basis.benefit_attributions:
+        earned_by_name[share.resource_name] = (
+            earned_by_name.get(share.resource_name, 0) + share.annual_won
+        )
     lines = [
         "### 4.3 자원별 수지 — 얼마를 넣고 얼마를 버는가",
         "",
@@ -252,11 +275,7 @@ def cost_benefit_section(basis: CaseBasis) -> list[str]:
         "|---|---|---|---|---|---|",
     ]
     for resource in basis.resources:
-        earned = sum(
-            line.annual_won
-            for line in basis.benefits
-            if line.tag in resource.produces
-        )
+        earned = earned_by_name.get(resource.name, 0)
         net = earned - resource.fixed_om_won_per_year
         payback = (
             f"{resource.capex_won / net:.1f}년" if net > 0 else "회수 불가"
@@ -279,21 +298,80 @@ def cost_benefit_section(basis: CaseBasis) -> list[str]:
         resource.fixed_om_won_per_year for resource in basis.resources
     )
     unattributed = basis.annual_cost_won - attributed
-    if unattributed:
+    # ★ **편익 쪽 잔여도 같은 행이 싣는다 (R43-E2).** 자원에 귀속되지 않는
+    # 편익이 표에서 사라지면 「연 편익」 열의 합이 프로포마가 쓴 편익보다 작아
+    # 지고, 합계를 적지 않는 표에서 그 차이는 아무에게도 보이지 않는다 —
+    # 아래 비용 잔차가 R34 에 고치러 온 것과 **같은 형태**다.
+    names = {resource.name for resource in basis.resources}
+    unattributed_benefit = sum(
+        share.annual_won
+        for share in basis.benefit_attributions
+        if share.resource_name not in names
+    )
+    if unattributed or unattributed_benefit:
         lines.append(
-            f"| *자원 미귀속* | — | {_won(unattributed)} | — | — | — |"
+            f"| *자원 미귀속* | — | {_won(unattributed)} | "
+            f"{_won(unattributed_benefit)} | — | — |"
         )
     lines += [
         "",
         "- 「단순 회수」 산식 — 초기투자 ÷ 연 순편익 (**할인하지 않음** · 결론에 "
         "쓰는 지표는 4.1 의 할인 회수기간)",
-        "- 이 표의 성립 조건 — 편익이 자원에 1:1 로 귀속될 때 "
-        "(이 구성: PV→잉여판매 · ESS→첨두절감)",
-        "- 「자원 미귀속」 — 자원 하나에 귀속되지 않는 운영비 "
+        *_attribution_notes(basis),
+        "- 「자원 미귀속」 — 자원 하나에 귀속되지 않는 운영비와 편익 "
         "(항목별 금액·산식은 붙임 4). 자원 행의 회수기간에는 반영되지 않는다",
         "",
     ]
     return lines
+
+
+def _attribution_notes(basis: CaseBasis) -> list[str]:
+    """표 아래의 **성립 조건** — 실행이 실제로 한 귀속을 그대로 적는다 (R43-E2).
+
+    종전 이 자리는 *「편익이 자원에 1:1 로 귀속될 때」* 라는 **문장**이었고, 그
+    조건이 참인지는 아무도 재지 않았다. 이제 갈래마다 *누구에게 얼마가 · 어떤
+    수량 근거로* 갔는지를 적고, 마지막 줄이 **합계 항등식**을 적는다 — 귀속 합
+    ＝ 연 편익 합계. 그 줄이 표와 프로포마가 같은 편익을 말한다는 유일한 증거다.
+
+    ⚠ **「1:1」을 말할 수 있는지도 재어 짓는다.** 갈래가 자원 하나에만 갔으면
+    1:1 이 참이고, 여럿에 갈렸으면 그 사실과 몫을 적는다. 어느 쪽인지를 여기서
+    가정하지 않는다.
+    """
+    kinds = {resource.name: resource.kind for resource in basis.resources}
+    notes = ["- 편익 귀속 — **자원별 수량 몫으로 가른다** (선언이 아니라 운전 결과)"]
+    for line in basis.benefits:
+        shares = [s for s in basis.benefit_attributions if s.tag == line.tag]
+        rendered = " · ".join(
+            f"{kinds.get(share.resource_name, '자원 미귀속')} "
+            f"{_won(share.annual_won)} ({share.basis_note})"
+            for share in shares
+        )
+        one_to_one = " · **1:1 귀속**" if len(shares) == 1 else ""
+        notes.append(
+            f"  - {line.label} {_won(line.annual_won)} → {rendered}{one_to_one}"
+        )
+    total = sum(share.annual_won for share in basis.benefit_attributions)
+    notes.append(
+        f"  - 귀속 합계 **{_won(total)}** = 연 편익 합계 "
+        f"**{_won(basis.annual_benefit_won)}**"
+    )
+    return notes
+
+
+def _own_share_note(basis: CaseBasis, line: BenefitLine, resource_name: str) -> str:
+    """붙임 4 의 「만드는 편익」에 **이 자원 몫**을 덧붙인다 — 갈린 갈래만.
+
+    귀속이 갈리지 않았으면 빈 문자열이다. 조건 없이 적으면 갈래 금액과 같은
+    수가 한 줄에 두 번 실리고, 그 사본은 한쪽만 고쳐지는 자리가 된다.
+    """
+    share = sum(
+        s.annual_won
+        for s in basis.benefit_attributions
+        if s.tag == line.tag and s.resource_name == resource_name
+    )
+    if share == line.annual_won:
+        return ""
+    return f" · 그중 이 자원 몫 **{_won(share)}** (4.3)"
 
 
 def _one_off_section(basis: CaseBasis) -> list[str]:
@@ -396,9 +474,17 @@ def resource_detail_section(basis: CaseBasis) -> list[str]:
             "",
         ]
         if produced:
+            # ★ **「만드는」과 「번다」가 같지 않다 (R43-E2).** 이 목록은 자원이
+            # **선언한** 편익 갈래이고(`produces`), 그 갈래의 금액은 갈래
+            # 전체다 — 잉여 판매처럼 여러 자원의 송전이 만든 금액이면 이 자원
+            # 몫은 그보다 작다. 4.3 과 다른 수를 나란히 인쇄해 두면 검토자가
+            # 둘 중 어느 쪽이 틀렸는지 물을 자리가 없으므로, **갈린 갈래에만**
+            # 이 자원 몫을 함께 적는다(같으면 적지 않는다 — 같은 수를 두 번
+            # 적으면 그것이 새 사본이 된다).
             lines += ["**만드는 편익**", ""]
             lines += [
                 f"- {line.label} — {_won(line.annual_won)}/년 · `{line.formula}`"
+                f"{_own_share_note(basis, line, resource.name)}"
                 for line in produced
             ]
         else:

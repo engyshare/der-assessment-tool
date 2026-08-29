@@ -296,7 +296,7 @@
 |  |  | 1 | `FR-905-AC7` | 공유·중복 방지: 동일 데이터셋을 여러 시나리오·인스턴스가 참조하며 중복 저장하지 않는다. 데이터셋 삭제 시 참조 중인 시나리오를 먼저 안내한다 | 자동 | test_timeseries.py |
 |  |  | 1 | `FR-905-AC8` | 출처 메타데이터: 데이터셋도 (출처, 계측기간, 해상도, 신뢰도, 최종확인일) 을 보유하고 리포트에 표기한다 | 자동 | test_timeseries.py |
 | `FR-1001` | Must-have | 1 | `FR-1001-AC1` | (가) 영향 인자 우선 제시 — 각 결과 지표 옆에 그 값을 좌우한 상위 인자를 영향도 순으로 제시한다. 순위는 감이 아니라 민감도 계산 결과로 정한다 (FR-… | 자동 | test_phase1_dod.py, test_report.py |
-|  |  | 1 | `FR-1001-AC2` | (나) 산식 확인 — 임의 지표·프로포마 항목에서 그것을 만든 산식과 대입값을 그 자리에서 펼쳐볼 수 있다. 이동 횟수를 제약하지 않으며, "펼치면 보인다"가 … | 자동 | test_narrative.py 4건, test_operation_appendices.py 2건, test_report.py |
+|  |  | 1 | `FR-1001-AC2` | (나) 산식 확인 — 임의 지표·프로포마 항목에서 그것을 만든 산식과 대입값을 그 자리에서 펼쳐볼 수 있다. 이동 횟수를 제약하지 않으며, "펼치면 보인다"가 … | 자동 | test_benefit_attribution.py, test_narrative.py 6건, test_operation_appendices.py 2건, test_report.py |
 |  |  | 1 | `FR-1001-AC3` | (다) 3중 표기 — 각 산식은 자연어 설명 + 수식 + 대입값으로 표기한다 | 자동 | test_phase1_dod.py, test_from_resource_conventions.py, test_grid_purchase_cost_row.py 3건, test_lifecycle_wiring.py, test_surplus_sale_price_wiring.py, test_case_report.py, test_conclusion_gap.py 2건, test_report.py 3건 |
 |  |  | 1 | `FR-1001-AC4` | (라) 출처 동반 — 산식에 등장하는 모든 입력값에 출처·기준연도·신뢰도가 함께 표시된다 | 자동 | test_case_report.py, test_narrative.py, test_report.py |
 |  |  | 1 | `FR-1001-AC5` | (마) 판정 기준 — 비개발자 검토자가 리포트만 보고 "이 회수기간이 왜 이 값인지"와 "어떤 가정이 바뀌면 결론이 달라지는지"를 설명할 수 있다. 측정: 심의… | 수동 | test_report.py (스텁) + MC-1 (미수행) |

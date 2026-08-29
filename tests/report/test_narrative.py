@@ -299,6 +299,107 @@ def test_the_resource_table_carries_the_costs_that_belong_to_no_resource() -> No
     )
 
 
+#: ★ **밖에서 고정한 4.3 오라클** (R43-E2 · WP-E 가 실측했다). 검사가 스스로
+#: 계산하면 귀속 규칙이 바뀔 때 기대값도 함께 따라가 **아무것도 붙들지 않는다.**
+#:
+#:     계통 송전 18.80kWh = 태양광 10.80 + 저장장치 8.00   (붙임 7 대표일)
+#:     잉여 판매 754,820원 → 433,620원 / 321,200원
+#:     첨두 절감 199,680원 → 저장장치 전액
+#:     연 편익 몫  태양광 433,620원 · 저장장치 520,880원 (합 954,500원)
+_ATTRIBUTED_PAYBACK = (
+    ("태양광 (옥상 고정형)", "433,620원", "333,620원", "14.4년"),
+    ("에너지저장장치 (신품)", "520,880원", "420,880원", "11.9년"),
+)
+
+#: 종전 4.3 이 표 아래에 **문장으로 박아 두었던** 성립 조건. 이 실행에서
+#: 거짓이었고(잉여 판매의 근거 수량에 저장장치 방전분이 섞여 있다) 그 거짓을
+#: 재는 자리가 없었다. **되돌아오면 이 검사가 먼저 빨간불이 되어야 한다.**
+_RETIRED_ONE_TO_ONE_SENTENCE = "편익이 자원에 1:1 로 귀속될 때"
+
+
+@pytest.mark.req("FR-1001-AC2")
+def test_the_resource_table_splits_a_benefit_that_two_resources_earned() -> None:
+    """★★★ 4.3 이 **자기가 적어 둔 성립 조건을 지킨다** (R43-E2 · 문의사항 가-2).
+
+    표는 *「편익이 자원에 1:1 로 귀속될 때」* 를 성립 조건으로 적으면서 잉여
+    판매 754,820원 **전액**을 태양광 몫으로 실었다. 그 금액의 근거 수량은 계통
+    송전 18.80kWh 이고 그중 8.00kWh 는 **저장장치 방전분**이므로(붙임 7 대표일
+    13~16시) 조건이 이 실행에서 **거짓**이었다 — 태양광 단순 회수가 7.3년으로
+    인쇄됐고, 심의회에서 *「그럼 태양광만 하면 7년에 회수되는 것 아닌가」* 가
+    나오면 그 답이 틀린다.
+
+    ⚠ **결론축은 움직이지 않는다.** 바뀌는 것은 *이미 난 돈을 누구 몫으로
+    적는가* 뿐이며 연 편익 합계도 NPV 도 그대로다 — 아래 마지막 단언이 그
+    항등식을 잰다. 어느 편익을 켜고 끌지는 사람 판정이다
+    (`docs/evidence/판정요구-이중계상-2026-08-29.md`).
+    """
+    report = build_case_report(
+        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    section = "\n".join(cost_benefit_section(report.basis))
+    assert section in render_markdown(report), "4.3 절이 문서에 실리지 않았다"
+
+    for kind, earned, net, payback in _ATTRIBUTED_PAYBACK:
+        assert f"| {kind} |" in section, f"{kind} 행이 4.3 에서 사라졌다"
+        row = next(line for line in section.splitlines() if line.startswith(f"| {kind} |"))
+        assert row.endswith(f"| {earned} | {net} | {payback} |"), (
+            f"{kind} 의 연 편익·순편익·단순 회수가 밖에서 고정한 값과 다르다: {row}"
+        )
+
+    assert _RETIRED_ONE_TO_ONE_SENTENCE not in section, (
+        "4.3 이 「1:1 귀속」을 다시 무조건으로 선언한다 — 이 구성에서 그것은 "
+        "거짓이며, 그 거짓이 표 아래에 인쇄되던 것이 이 검사가 고치러 온 상태다"
+    )
+
+
+@pytest.mark.req("FR-1001-AC2")
+def test_the_resource_table_states_an_attribution_that_is_true_of_this_run() -> None:
+    """★★ 성립 조건을 **문장이 아니라 실행에서 짓는다** (R43-E2).
+
+    앞 검사가 *수*를 붙든다면 여기는 *문면이 그 수의 조건을 말하는가*를 붙든다.
+    갈래마다 **누구에게 얼마가 · 어떤 수량 근거로** 갔는지가 표 아래에 있어야
+    하고, 마지막 줄의 **귀속 합 = 연 편익 합계**가 4.3 과 프로포마가 같은
+    편익을 말한다는 유일한 증거다.
+
+    ⚠ 「1:1 귀속」이라는 말은 **자원 하나에만 간 갈래에만** 붙어야 한다. 이
+    단언이 없으면 표가 갈린 갈래에도 1:1 을 붙일 수 있고, 그것이 종전 상태다.
+    """
+    report = build_case_report(
+        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    basis = report.basis
+    section = "\n".join(cost_benefit_section(basis))
+
+    split = [
+        line for line in basis.benefits
+        if len([s for s in basis.benefit_attributions if s.tag == line.tag]) > 1
+    ]
+    assert split, (
+        "이 구성에는 두 자원이 함께 만든 편익이 있어야 한다 — 없으면 아래 "
+        "단언이 공허하다(계통 송전에 저장장치 방전분이 섞여 있다)"
+    )
+
+    for share in basis.benefit_attributions:
+        assert share.basis_note in section, (
+            f"{share.tag}/{share.resource_name} 의 안분 근거가 표 아래에 없다"
+        )
+    for line in split:
+        marked = next(
+            row for row in section.splitlines() if row.lstrip().startswith(f"- {line.label} ")
+        )
+        assert "1:1" not in marked, (
+            f"{line.tag} 은 두 자원에 갈렸는데 표가 1:1 귀속이라고 말한다: {marked}"
+        )
+
+    assert (
+        f"귀속 합계 **{basis.annual_benefit_won:,}원** = 연 편익 합계 "
+        f"**{basis.annual_benefit_won:,}원**"
+    ) in section, (
+        "귀속 합과 연 편익 합계가 같다는 줄이 없거나 두 수가 다르다 — 다르면 "
+        "4.3 의 「연 편익」 열이 프로포마가 쓴 편익과 다른 사업을 말한다"
+    )
+
+
 @pytest.mark.req("FR-1002-AC4")
 def test_the_flip_condition_table_is_never_left_empty() -> None:
     """★ 6.2 가 **머리만 남은 빈 표**로 인쇄되지 않는다 (R34 · 실물을 읽고 찾았다).

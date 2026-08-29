@@ -17,6 +17,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from decimal import Decimal
 
+from core.casegrid.attribution import attribute_benefits
 from core.casegrid.incentive_cases import (
     Viewpoint,
     build_capex_cashflows_for_all_cases,
@@ -517,12 +518,7 @@ def run_single_case_e2e(
     #
     # 이제 곱할지 말지는 **편익이 선언한다**(`scales_with_dispatch_window`).
     # 여기에 태그 목록을 두지 않은 이유는 그 목록이 편익이 늘 때 낡기 때문이다.
-    annualised: list[tuple[ValueStream, int]] = []
-    for stream in (*settlement_streams, peak):
-        value = float(stream.annual_value(grid_export_result, year=1))
-        if type(stream).scales_with_dispatch_window:
-            value *= DAYS_PER_YEAR
-        annualised.append((stream, int(value)))
+    annualised = _annualise((*settlement_streams, peak), grid_export_result)
     settlement_by_stream = annualised[:-1]
     peak_per_year = annualised[-1][1]
     annual_benefit = sum(value for _, value in annualised)
@@ -622,6 +618,7 @@ def run_single_case_e2e(
         # 곱해서 나온 합계만 보면 드러나지 않는다.
         dispatch=grid_export_result,
     )
+    resource_lines = _resource_lines(pv, pv_capex, ess, ess_capex, benefit_lines)
 
     return CaseOutcome(
         metrics=_metrics_for(initial_investment, all_rows, discount_rate),
@@ -642,8 +639,28 @@ def run_single_case_e2e(
             discount_rate=discount_rate,
             horizon_years=horizon_years,
             grid_purchase_price_won_per_kwh=grid_purchase_price,
-            resources=_resource_lines(pv, pv_capex, ess, ess_capex, benefit_lines),
+            resources=resource_lines,
             benefits=benefit_lines,
+            # ★★ **금액의 자원별 몫은 선언이 아니라 수량에서 나온다 (R43-E2).**
+            # 종전 4.3 은 `line.tag in resource.produces` 로 잉여 판매 전액을
+            # 태양광에 실었는데, 그 금액의 근거 수량인 계통 송전 18.80kWh 중
+            # 8.00kWh 는 **저장장치 방전분**이다 — 표가 스스로 적어 둔 성립
+            # 조건(「1:1 로 귀속될 때」)이 그 실행에서 거짓이었다.
+            #
+            # ⚠ **창을 읽는 편익의 목록을 여기 적지 않는다** — 편익이 선언한
+            # 것(`scales_with_dispatch_window`)을 모아 넘긴다. 목록을 적으면
+            # 편익이 늘 때 낡고, 낡아도 표는 그대로 인쇄된다(위 연간화 규약과
+            # 같은 근거).
+            benefit_attributions=attribute_benefits(
+                benefit_lines,
+                dispatch=dispatch,
+                export_window_tags=frozenset(
+                    stream.tag
+                    for stream, _ in annualised
+                    if type(stream).scales_with_dispatch_window
+                ),
+                resources=resource_lines,
+            ),
             # ★ **일회성 흐름은 갈라 담는다** (`OneOffLine` 독스트링 · 붙임 4
             # 판정). `costs` 는 「1년차 금액」의 자리이고 18년차 교체비를 그
             # 칸에 0원으로 적으면 *「합계만 있는 표에서는 빠진 행이 드러나지
@@ -665,6 +682,23 @@ def run_single_case_e2e(
             ).replace("{DAYS_PER_YEAR}", str(DAYS_PER_YEAR)),
         ),
     )
+
+
+def _annualise(
+    streams: Sequence[ValueStream], window: DispatchResult
+) -> list[tuple[ValueStream, int]]:
+    """편익마다 **자기가 선언한 대로** 연간화한다 — 위 호출부의 ★★★ 참조.
+
+    창을 읽는 편익만 대표일 금액에 `DAYS_PER_YEAR` 를 곱한다. 여기에 태그
+    목록을 두지 않은 이유가 그 별표에 있다 — 목록은 편익이 늘 때 낡는다.
+    """
+    annualised: list[tuple[ValueStream, int]] = []
+    for stream in streams:
+        value = float(stream.annual_value(window, year=1))
+        if type(stream).scales_with_dispatch_window:
+            value *= DAYS_PER_YEAR
+        annualised.append((stream, int(value)))
+    return annualised
 
 
 def _with_model_generation(
