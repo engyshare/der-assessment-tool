@@ -119,11 +119,16 @@ PV_FIXED_OM_WON_PER_YEAR = 100_000
 #:
 #: ⚠ **이 계수는 「설비단가의 실질(물가 제외) 추세」를 0 으로 두는 가정을 겸한다**
 #: — 교체비에 학습곡선 등으로 인한 실질 하락이 있다면 별도 대장 항목이 필요하다.
-#: ✔ **R41 이 그 항목을 세웠다**: `capex.replacement_real_trend`(`Q-17` ·
-#: 값 0 · 3수준 −2.0/0.0/+2.0). **값을 바꾸지 않았고 이 상수도 그대로다** —
-#: 바뀐 것은 *그 가정이 대장에서 보이는가* 뿐이다. ⏸ 아직 **스윕 축은 아니다**
-#: (`ledger_levels.py` 가 이 키를 읽지 않는다). 배선하면 하단 −2.0 이
-#: 「물가 계수를 태우지 않았다면」, 곧 **R40 이전 결론**을 다시 잰다.
+#: ✔ **R41 이 그 항목을 세웠고 R42 가 스윕 축으로 배선했다**:
+#: `capex.replacement_real_trend`(`Q-17` · 값 0 · 3수준 −2.0/0.0/+2.0).
+#: **이 상수는 그대로이며 기준수준의 수도 그대로다** — 대장의 base 가 0 이라
+#: 명목 변화율이 이 상수와 같기 때문이다. 바뀐 것은 *그 가정을 흔들어 볼 수
+#: 있는가* 다: 5.1 에 5위로 서고(변동폭 712,020원) 하단 −2.0 이
+#: 「물가 계수를 태우지 않았다면」, 곧 **R40 이전 결론**을 다시 잰다
+#: (결손 6,289,675 → 5,984,595원 · **차이 305,080원**).
+#: ⚠ **이 상수는 O&M 쪽 계수다.** 교체비가 보는 것은
+#: `replacement_escalation_rate`(= 이 상수 + 실질 추세)이며 아래
+#: `run_single_case_e2e` 가 만든다 — 위 ⓐ~ⓓ 중 교체비 갈래는 그쪽으로 갔다.
 #: ⚠ **값 자체가 대장에 없다.** 소스 상수이며 어느 케이스 축에도 없다 — 이
 #: 어긋남은 `PV_CAPACITY_FACTOR` 등과 같은 부채이고 리포트가 출처를 「소스
 #: 상수」로 표시해 그 사실을 드러낸다.
@@ -341,6 +346,27 @@ def run_single_case_e2e(
         "surplus_sale_price",
         level_map,
     )
+    # ★ **교체 설비단가의 명목 변화율** = 물가 계수 + 실질 추세 (`Q-17` · R42).
+    #
+    # **덧셈인 근거는 대장이 갖는다** — `capex.replacement_real_trend` 의
+    # `applicable_scope` 가 *「명목 교체단가의 연 변화율은 물가 계수 + 이 값」*
+    # 이라 적었다. 여기서 다시 정하지 않고 그 문면을 따른다(정하면 정본이 둘이
+    # 된다). 기준수준에서 그 값은 0 이므로 **이 배선은 지금 결론을 안 움직인다** —
+    # 움직이는 것은 스윕이 하단·상단을 물을 때다.
+    #
+    # ⚠ **O&M 에는 넘기지 않는다.** 같은 대장 항목이 적용범위를 스스로 좁혀
+    # *「고정·변동 O&M 은 대상이 아니다」* 라 적었고, 그래서 자원 계약이 계수를
+    # 둘로 나눠 갖는다(`DER.replacement_escalation_factor()`). 한 인자로 두면
+    # 하단 −2.0 이 「물가 계수를 태우지 않았다면」이 아니라 「O&M 물가까지 꺼
+    # 버렸다면」을 재게 된다.
+    #
+    # ⚠ **`Load` 에는 넘기지 않는다** — 위 적용범위가 대상을 `ESS` 배터리·PCS 와
+    # `PV` 인버터로 명시한다. 부하에 교체 자산이 들어오는 날 함께 본다.
+    replacement_escalation_rate = PRICE_ESCALATION_RATE + _resolve(
+        case_values.get("replacement_real_trend", "base"),
+        "replacement_real_trend",
+        level_map,
+    )
 
     # 1. Resources
     # ★ **형상이 오면 이용률 대신 시계열을 준다** (둘 다 주면 자원이 거부한다).
@@ -373,6 +399,7 @@ def run_single_case_e2e(
         unit_capex_won_per_kw=pv_capex,
         fixed_om_won_per_year=PV_FIXED_OM_WON_PER_YEAR,
         escalation_rate=PRICE_ESCALATION_RATE,
+        replacement_escalation_rate=replacement_escalation_rate,
         self_consumption_ratio=PV_SELF_CONSUMPTION_RATIO,
         operating_mode=OperatingMode.FULL_EXPORT,
     )
@@ -400,6 +427,7 @@ def run_single_case_e2e(
         # 그대로 교체 단가로 쓴다 — 「배터리만/시스템 전체」(`Q-2`)는 그 **값
         # 하나**를 바꾸는 물음이고 이 배선은 그것을 정하지 않는다.
         escalation_rate=PRICE_ESCALATION_RATE,
+        replacement_escalation_rate=replacement_escalation_rate,
     )
 
     # ★ **자원이 서자마자 분석기간을 잰다 (DV-5).** 수명은 자원이 갖고 있으므로

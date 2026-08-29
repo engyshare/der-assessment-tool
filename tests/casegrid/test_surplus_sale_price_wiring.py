@@ -82,6 +82,9 @@ def _level_map(surplus_sale_price: float) -> dict[str, Mapping[str, float]]:
         "discount_rate": MappingProxyType({"base": 0.045}),
         "grid_purchase_price": MappingProxyType({"base": 100.0}),
         _VARIABLE: MappingProxyType({"base": surplus_sale_price}),
+        # 교체 실질 추세 — 러너가 요구한다(R42). **0 은 중립값**이며 이 파일의
+        # 관심이 아니다: 0 이면 명목 교체단가가 물가 계수만 탄다.
+        "replacement_real_trend": MappingProxyType({"base": 0.0}),
         **design_levels(),
     }
 

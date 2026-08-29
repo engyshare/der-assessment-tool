@@ -62,6 +62,12 @@ def _level_map(grid_purchase_price: float) -> dict[str, Mapping[str, float]]:
         # 고정하되 **구매 단가와 다른 수**로 둔다: 같게 두면 단가를 0·200 으로
         # 흔드는 아래 검사들이 *판매* 단가도 함께 움직인 것처럼 읽힌다.
         "surplus_sale_price": MappingProxyType({"base": 90.0}),
+        # 교체 설비단가의 실질 추세 — 러너가 요구한다(R42 에 스윕 축으로 올렸다).
+        # **0 은 대장의 사본이 아니라 중립값이다** — 0 이면 명목 교체단가가 물가
+        # 계수만 타므로 이 축을 흔들지 않는 것과 같다. 이 파일은 그 축을 재지
+        # 않으므로 중립을 고른다(대장의 base 가 바뀌어도 여기는 따라오지 않아야
+        # 한다 — 따라오면 이 파일이 대장의 사본을 갖게 된다).
+        "replacement_real_trend": MappingProxyType({"base": 0.0}),
         **design_levels(),
     }
 

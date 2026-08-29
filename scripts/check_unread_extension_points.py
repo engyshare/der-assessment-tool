@@ -96,6 +96,12 @@ KNOWN_UNREAD: frozenset[str] = frozenset({
     "order",
     "payer_by_structure",
     "payload",
+    # R42 신설. **접근자를 통해서만 읽는 속성**이며 `end_of_life_action` 과 같은
+    # 갈래다 — 배포 코드가 읽는 것은 `replacement_escalation_factor()` 쪽이고
+    # (`pv.py`·`ess.py`·`ev_v2g.py`·`load.py`·`thermal_load.py` 의 교체 경로),
+    # 원시 속성을 밖에서 읽으면 「계수」와 「그 해의 계수」가 한 이름에 겹친다.
+    # 러너는 이 이름을 **생성자 인자로** 넘긴다(읽기가 아니다).
+    "replacement_escalation_rate",
     "require",
     "resource_tag",
     "salvage_hardware",

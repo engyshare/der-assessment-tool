@@ -57,8 +57,23 @@ def test_levels_come_from_the_ledger_not_from_a_copy() -> None:
             f"{var_name}: 수준 순서가 무너졌다 — {dict(levels)}"
         )
         # 배율을 여기서 다시 적지 않는다. 비율이 일정한지만 본다.
+        #
+        # ⚠ **0 인 수준은 비율을 낼 수 없다** — `Q-17`
+        # (`capex.replacement_real_trend`)의 `base` 가 0 이고, R42 가 그것을
+        # 스윕 축으로 올리며 이 자리를 처음 밟았다(`ZeroDivisionError`).
+        # 0 은 어떤 배율을 곱해도 0 이므로 그 수준으로는 「배율이 일정한가」를
+        # 물을 수 없다. **0 은 0 으로 오는 것만 확인**하고, 비율은 0 이 아닌
+        # 수준끼리 본다 — 확인 못 하는 것을 확인한 척하지 않는다.
+        zero_levels = [n for n in LEVEL_NAMES if float(sensitivity[n]) == 0.0]
+        for name in zero_levels:
+            assert levels[name] == 0.0, (
+                f"{var_name}: 대장의 {name} 이 0 인데 수준표가 "
+                f"{levels[name]} 을 냈다 — 환산이 0 을 0 이 아닌 것으로 바꿨다"
+            )
         ratios = {
-            name: levels[name] / float(sensitivity[name]) for name in LEVEL_NAMES
+            name: levels[name] / float(sensitivity[name])
+            for name in LEVEL_NAMES
+            if name not in zero_levels
         }
         assert len(set(round(r, 12) for r in ratios.values())) == 1, (
             f"{var_name}: 수준마다 다른 배율이 걸렸다 — {ratios}"
