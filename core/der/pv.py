@@ -91,6 +91,7 @@ class PV(DER):
         fixed_om_won_per_year: float = 0.0,
         variable_om_won_per_kwh: float = 0.0,
         escalation_rate: float = 0.0,
+        replacement_escalation_rate: float | None = None,
         self_consumption_ratio: float = 1.0,
         operating_mode: OperatingMode | str = OperatingMode.SELF_CONSUMPTION_FIRST,
         end_of_life_action: str = EOL_REPLACE,
@@ -110,6 +111,7 @@ class PV(DER):
             consumes_fuel=False,
             operating_mode=self._coerce_mode(mode=operating_mode, name=name),
             escalation_rate=escalation_rate,
+            replacement_escalation_rate=replacement_escalation_rate,
             end_of_life_action=end_of_life_action,
         )
 
@@ -570,7 +572,7 @@ class PV(DER):
         ):
             year = life + 1
             while year <= horizon:
-                cost = self.capacity_kw * unit_cost * self.escalation_factor(year=year)
+                cost = self.capacity_kw * unit_cost * self.replacement_escalation_factor(year=year)
                 # 같은 해에 본체와 인버터가 겹치면 더한다 — 덮어쓰면 한쪽이
                 # 조용히 사라진다
                 schedule[year] = to_won(to_won(cost) + schedule.get(year, Money(0)))
@@ -634,7 +636,7 @@ class PV(DER):
             acquired: dict[int, float] = {} if initial is None else {1: initial}
             year = life + 1
             while year <= horizon:
-                cost = self.capacity_kw * unit_cost * self.escalation_factor(year=year)
+                cost = self.capacity_kw * unit_cost * self.replacement_escalation_factor(year=year)
                 acquired[year] = float(to_won(cost))
                 year += life
             parts.append((life, acquired))

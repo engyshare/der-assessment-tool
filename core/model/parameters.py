@@ -146,6 +146,10 @@ UNIT_BY_NAME: Mapping[str, str] = MappingProxyType({
     # 연 단위로 적용되는 비율. 위와 갈라 적는다 — 같은 0.02 라도 뜻이 다르다.
     "degradation_rate": "비율/년",
     "escalation_rate": "비율/년",
+    # 교체 재취득 단가 전용 계수 (R42 · `Q-17`). 단위는 위와 **같고 뜻이 다르다** —
+    # 이름이 그 차이를 지므로 여기서는 단위만 준다. 왜 갈랐는지는
+    # `DER.replacement_escalation_factor()` 독스트링이 갖는다.
+    "replacement_escalation_rate": "비율/년",
     "annual_growth_rate": "비율/년",
     # 난방도일. `_days` 로 끝나지만 일(日)이 아니다 — 접미어 규칙을 두지 않은
     # 이유가 이 한 줄이다.

@@ -113,6 +113,7 @@ class ESS(DER):
         vat_rate: float = 0.0,
         fixed_om_won_per_year: float = 0.0,
         escalation_rate: float = 0.0,
+        replacement_escalation_rate: float | None = None,
         variable_om_won_per_kwh: float = 0.0,
         replacement_unit_won_per_kwh: float | None = None,
         pcs_lifetime: int | None = None,
@@ -220,6 +221,7 @@ class ESS(DER):
             carries_electric=True,
             operating_mode=operating_mode,
             escalation_rate=escalation_rate,
+            replacement_escalation_rate=replacement_escalation_rate,
             end_of_life_action=end_of_life_action,
         )
 
@@ -580,7 +582,7 @@ class ESS(DER):
             year = life + 1
             while year <= horizon:
                 acquired[year] = float(
-                    to_won(unit_cost * self.escalation_factor(year=year))
+                    to_won(unit_cost * self.replacement_escalation_factor(year=year))
                 )
                 year += life
             parts.append((life, acquired))

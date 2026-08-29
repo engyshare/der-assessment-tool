@@ -260,6 +260,7 @@ class ThermalLoad(DER):
         fixed_om_won_per_year: float = 0.0,
         variable_om_won_per_kwh: float = 0.0,
         escalation_rate: float = 0.0,
+        replacement_escalation_rate: float | None = None,
         subcomponents: Sequence[Subcomponent] = (),
         end_of_life_action: str = EOL_REPLACE,
     ) -> None:
@@ -272,6 +273,7 @@ class ThermalLoad(DER):
             degradation_rate=0.0,
             carries_heat=True,
             escalation_rate=escalation_rate,
+            replacement_escalation_rate=replacement_escalation_rate,
             end_of_life_action=end_of_life_action,
         )
         self._steps = steps_per_year(dt)
@@ -457,7 +459,7 @@ class ThermalLoad(DER):
                 continue
             year = life + 1
             while year <= horizon:
-                amount = to_won(cost * self.escalation_factor(year=year))
+                amount = to_won(cost * self.replacement_escalation_factor(year=year))
                 schedule[year] = Money(schedule.get(year, Money(0)) + amount)
                 year += life
         return schedule

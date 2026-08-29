@@ -78,6 +78,7 @@ class EV_V2G(DER):
         lifetime: int = 10,
         degradation_rate: float = 0.0,
         escalation_rate: float = 0.0,
+        replacement_escalation_rate: float | None = None,
         charger_count: int | None = None,
         charger_unit_cost_won: float = 0.0,
         ancillary_cost_won: float = 0.0,
@@ -97,6 +98,7 @@ class EV_V2G(DER):
                          degradation_rate=degradation_rate, carries_electric=True,
                          operating_mode=operating_mode,
                          escalation_rate=escalation_rate,
+                         replacement_escalation_rate=replacement_escalation_rate,
                          end_of_life_action=end_of_life_action)
         self.vehicle_count = int(vehicle_count)
         self.battery_kwh = float(battery_kwh)
@@ -466,7 +468,7 @@ class EV_V2G(DER):
         year = self.lifetime + 1
         while year <= horizon:
             schedule[year] = to_won(
-                self._replacement_cost_won() * self.escalation_factor(year=year))
+                self._replacement_cost_won() * self.replacement_escalation_factor(year=year))
             year += self.lifetime
         return schedule
 
@@ -481,8 +483,11 @@ class EV_V2G(DER):
         remaining = n - (y - install_year + 1)
         if remaining <= 0:
             return ZERO
-        base = (self._initial_cost_won() if install_year == 1
-                else self._replacement_cost_won() * self.escalation_factor(year=install_year))
+        base = (
+            self._initial_cost_won() if install_year == 1
+            else self._replacement_cost_won()
+            * self.replacement_escalation_factor(year=install_year)
+        )
         return to_won(base * remaining / n)
 
     def discounted_salvage_value(self, *, year: int, discount_rate: float) -> Money:

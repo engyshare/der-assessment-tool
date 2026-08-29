@@ -202,6 +202,15 @@ def _household_load_if_total_given(
     return Load(
         name="e2e-load",
         hourly_kwh=daily_shapes.load.spread(annual_load_kwh, days=DAYS_PER_YEAR),
+        # ★ **지금 어떤 수도 움직이지 않는다** — 이 `Load` 에는 비용 인자가 하나도
+        # 없어(단가·O&M·부속설비 전부 미지정) 곱할 것이 없다. 그런데도 넘기는
+        # 이유는 `test_escalation_debt.py` 래칫이 R42 에 **처음으로 이 자리를
+        # 보았기** 때문이다 — 그 래칫은 생성자 인자 이름에 `capex`·`replacement`
+        # 가 있는지로 「미래 지출을 갖는 자원」을 가리는데, `Load` 는 그 관례를
+        # 안 따르는 이름(`unit_cost_won_per_kw`)을 써서 여태 대상 밖이었다.
+        # 즉 **부채가 는 것이 아니라 사각이 드러난 것**이고, 비용 인자가 들어오는
+        # 날 조용히 실질 기준이 되지 않도록 지금 닫는다 (`DV-7`).
+        escalation_rate=PRICE_ESCALATION_RATE,
     )
 
 

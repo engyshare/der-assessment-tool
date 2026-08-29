@@ -62,6 +62,19 @@ MONEY_METHODS = ["capex", "capex_vat", "fixed_om", "variable_om", "salvage_value
 MEDIA_FLAGS = [flag for _media, flag in MEDIA]
 
 
+#: 교체비에 **교체 전용 물가 계수를 쓰지 않는** 자원 — 실측 부채 (R42).
+#:
+#: `HeatPump.replacement_schedule()` 은 계수를 아예 곱하지 않는다(R42 이전부터
+#: 그랬고 이 라운드가 재서 처음 드러냈다). `ReferencePV` 는 Wave 0 참조 구현이며
+#: 실행 경로가 아니다. **둘 다 러너의 구성에 없으므로 결론축을 움직이지 않는다** —
+#: 그래서 이 라운드에서 고치지 않고 부채로 세운다. 고치는 것은 「교체비가 물가를
+#: 타야 하는가」의 판단이며 `ESS` 에서 그것을 정할 때 `DV-7` 을 근거로 삼았다.
+#:
+#: 비어 있지 않다고 방치하지 않는다 — **줄면 빨간불**이 나서 목록을 함께 줄이라고
+#: 알린다(`KNOWN_ESCALATION_IGNORED_IN_REPLACEMENT` 와 같은 래칫이다).
+KNOWN_REPLACEMENT_RATE_IGNORED: frozenset[str] = frozenset({"HeatPump", "ReferencePV"})
+
+
 class DERContractTests:
     """자원 구현체가 상속해 통과시키는 계약 테스트."""
 
@@ -422,6 +435,59 @@ class DERContractTests:
             assert der.replacement_escalation_factor(year=year) == pytest.approx(
                 der.escalation_factor(year=year)
             ), f"{year}년차에서 두 계수가 갈렸습니다 (기본값은 같아야 합니다)"
+
+    @pytest.mark.contract
+    @pytest.mark.req("FR-701-AC3")
+    def test_replacement_follows_the_replacement_rate_and_om_does_not(self) -> None:
+        """★★ 계수를 **가른 것**과 자원이 **그것을 쓰는 것**은 다르다 (R42).
+
+        같은 자원을 복제해 `replacement_escalation_rate` 하나만 올리고 두 가지를
+        본다:
+
+            교체 스케줄  움직여야 한다  → 교체비가 그 계수를 실제로 읽는다
+            고정 O&M     움직이면 안 된다 → 대장이 O&M 을 적용범위에서 뺐다
+
+        뒤쪽이 이 검사의 절반이며 **부채를 허용하지 않는다.** 교체 계수가 O&M 에
+        새면 `Q-17` 하단 −2.0 이 *「물가 계수를 태우지 않았다면」* 이 아니라
+        *「O&M 물가까지 꺼 버렸다면」* 을 재게 되고, 그 오염은 5.1 의 한 행으로
+        나가 검토자가 틀린 것을 배워 간다.
+
+        ⚠ **금액이 0인 자원은 판정하지 않는다** — 계약 픽스처가 단가를 주지
+        않으면 스케줄이 전부 0원이라 무엇을 곱해도 0이다. 확인 못 한 것을 부채로
+        세면 다음 사람이 없는 일을 한다(ⓓ 래칫이 빈 스케줄에 대해 세운 원칙과
+        같다). 그 자원은 `tests/casegrid/test_lifecycle_wiring.py` ⓕ 가 **금액이
+        있는 탐침**으로 따로 잰다 — `PV` 가 실제로 그 갈래다.
+        """
+        import copy
+
+        horizon = 40
+        der = self.make()
+        base = {y: int(v) for y, v in der.replacement_schedule(horizon=horizon).items()}
+        om_before = der.fixed_om(year=10)
+
+        bumped = copy.copy(der)
+        bumped.replacement_escalation_rate = der.escalation_rate + 0.05
+        after = {y: int(v) for y, v in bumped.replacement_schedule(horizon=horizon).items()}
+
+        assert bumped.fixed_om(year=10) == om_before, (
+            f"{type(der).__name__}: 교체비 계수를 올렸는데 **고정 O&M 이 따라 "
+            "움직였습니다.** 대장(`capex.replacement_real_trend`)은 O&M 을 적용범위에서 "
+            "명시적으로 뺐습니다 — 이 누수는 스윕 한 축을 통째로 다른 것으로 만듭니다"
+        )
+
+        if not any(v != 0 for v in base.values()):
+            return  # 금액이 없다 — 판정 대상 아님 (위 ⚠)
+
+        ignores = base == after
+        name = type(der).__name__
+        assert (name in KNOWN_REPLACEMENT_RATE_IGNORED) == ignores, (
+            f"{name}: 교체비가 교체 계수를 쓰는지가 실측과 다릅니다.\n"
+            f"  실측: {'쓰지 않는다' if ignores else '쓴다'}\n"
+            f"  기대: {'쓰지 않는다' if name in KNOWN_REPLACEMENT_RATE_IGNORED else '쓴다'}\n"
+            "쓰기 시작했다면 KNOWN_REPLACEMENT_RATE_IGNORED 에서 빼고, 그 자원이 "
+            "결론에 들어와 있다면 **기준값을 재산출**하십시오. 반대로 늘었다면 "
+            "누군가 교체 경로를 O&M 계수로 되돌린 것입니다"
+        )
 
     @pytest.mark.contract
     @pytest.mark.req("FR-104-AC5")

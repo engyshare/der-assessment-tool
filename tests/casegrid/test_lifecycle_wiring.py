@@ -323,9 +323,23 @@ def test_resources_that_ignore_the_escalation_they_were_given_do_not_grow() -> N
     따로 드러난다(파일 머리 ③ 이 「PCS 를 준 ESS 는 재지 않았다 — 확인 못 함」
     으로 적어 두었던 자리다. R40 이 재고 그 문장을 뗐다).
 
-    ⚠ **붙들지 못하는 것**: 이 검사는 `replacement_schedule()` 만 본다.
-    `fixed_om()`·`variable_om()` 이 계수를 쓰는지는 재지 않고 `salvage_value()`
-    도 재지 않는다(그쪽은 각각 자원 검증 케이스와 ⓒ 가 갖는다).
+    ⚠⚠ **R42 부터 교체비가 보는 계수는 `replacement_escalation_rate` 다.**
+    그래서 이 검사는 그쪽을 눕힌다 — `escalation_rate` 를 눕히면 교체비는 이제
+    반응하지 않고, 그것은 결함이 아니라 **계수를 가른 결과**다(`Q-17` 이 O&M 을
+    적용범위에서 뺐다. 사유는 `DER.replacement_escalation_factor()`).
+    ★ 이 검사가 바로 그 변화를 **처음 잡았다** — 계수를 가르자마자 빨간불이 났고,
+    래칫이 설계대로 「무엇이 달라졌는지 사람이 보라」고 말한 자리다.
+
+    ★★ **함께 잰다: O&M 은 교체 계수에 반응하지 않는다.** 교체 계수가 O&M 으로
+    새면 `Q-17` 하단 −2.0 이 *「물가 계수를 태우지 않았다면」* 이 아니라 *「O&M
+    물가까지 꺼 버렸다면」* 을 재게 되고, 그 오염은 5.1 의 한 행으로 나간다.
+    여기 탐침은 **금액이 있는** 제원이라 그 누수가 수로 드러난다 —
+    `tests/contract/test_der_contract.py` 의 같은 단언은 계약 픽스처가 단가를
+    주지 않아 `PV` 에서 0원끼리 견주게 된다.
+
+    ⚠ **붙들지 못하는 것**: 이 검사는 `replacement_schedule()` 과 `fixed_om()`
+    만 본다. `variable_om()`·`salvage_value()` 는 재지 않는다(그쪽은 각각 자원
+    검증 케이스와 ⓒ 가 갖는다).
     ★ **종전 이 자리에 「`ESS._acquisitions()` 는 PCS 취득분을 아예 담지 않는다」가
     적혀 있었다** — R42 가 그것을 닫았고 ⓒ 의 `ESS(+PCS)` 갈래가 붙든다.
     """
@@ -343,11 +357,18 @@ def test_resources_that_ignore_the_escalation_they_were_given_do_not_grow() -> N
             continue  # 교체가 없다 — 판정 대상 아님
 
         flat = copy.copy(resource)
-        flat.escalation_rate = 0.0
+        flat.replacement_escalation_rate = 0.0
         without = flat.replacement_schedule(horizon=_HORIZON)
         # **해마다** 견준다 — 사전 전체를 견주면 한 항만 반응해도 통과한다
         if any(with_escalation[y] == without[y] for y in with_escalation):
             ignored.add(label)
+
+        # 교체 계수만 눕혔는데 O&M 이 따라 누웠다면 두 계수가 새고 있다
+        assert flat.fixed_om(year=10) == resource.fixed_om(year=10), (
+            f"{label}: 교체비 계수를 눕혔는데 **고정 O&M 이 따라 움직였습니다** — "
+            "대장(`capex.replacement_real_trend`)이 O&M 을 적용범위에서 뺐으므로, "
+            "이 누수는 스윕 한 축을 통째로 다른 것으로 만듭니다"
+        )
 
     assert ignored == set(KNOWN_ESCALATION_IGNORED_IN_REPLACEMENT), (
         f"교체비에 물가 계수를 쓰지 않는 자원의 목록이 실측과 다릅니다.\n"
