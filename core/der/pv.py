@@ -30,6 +30,13 @@ from core.contracts.validation import ValidationError
 
 #: 인버터 교체비 기본값 — 초기 설비비 대비 비율. 통상 10~20% 구간의 중앙을 쓴다.
 #: **기본값이지 오라클이 아니다** — 견적이 있으면 `inverter_unit_capex_won_per_kw` 로 준다.
+#:
+#: ⚠ **결론을 내는 경로는 이 상수를 읽지 않는다** (R43). 정본은 대장의
+#: `capex.pv.inverter_share`(`Q-18`)이고, `core/casegrid/e2e_runner.py` 가
+#: 그 값으로 단가를 지어 위 인자로 넘긴다 — 그래야 5.1 영향도 표에 서고
+#: *「0.15 를 골랐다」가 결론에 얼마를 넣었는지* 가 재어진다. 여기 남긴 것은
+#: **자원을 단독으로 세울 때의 기본값**이며, 지우면 인자를 생략한 호출이
+#: 인버터 교체를 통째로 잃는다(0원이 되어 아무 예외도 나지 않는다).
 DEFAULT_INVERTER_CAPEX_RATIO = 0.15
 
 #: kWh → MWh (REC 정산 단위). 1000을 산식에 흩어 두면 단위 환산인지 계수인지 모른다.

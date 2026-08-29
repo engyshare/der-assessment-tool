@@ -53,6 +53,11 @@ _LEVEL_MAP = {
     "grid_purchase_price": MappingProxyType({"base": 100.0}),
     "surplus_sale_price": MappingProxyType({"base": 90.0}),
     "replacement_real_trend": MappingProxyType({"base": 0.0}),
+    # PV 설비단가 중 인버터 몫 — 러너가 요구한다(R43 에 스윕 축으로 올렸다).
+    # **대장의 15 와 다른 수를 일부러 쓴다** — 같은 수를 쓰면 이 파일이 대장의
+    # 사본을 하나 갖게 되고, 대장이 바뀔 때 여기가 따라오지 않아도 아무 일이
+    # 없다(위 두 단가와 같은 규약이다). 이 파일은 이 축을 재지 않는다.
+    "pv_inverter_share": MappingProxyType({"base": 0.11}),
     **design_levels(),
 }
 

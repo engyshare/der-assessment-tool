@@ -13,6 +13,7 @@
     수준표는 읽기 전용이다             ← 병렬 실행이 서로를 바꾸지 않는다 (NFR-205)
     3수준이 없으면 거부한다            ← ±20% 로 조용히 메우지 않는다
     ★ 대장에 할인율이 생기면 빨간불    ← 사본이 남는 유일한 자리를 지킨다
+    ★ 설비단가 항목이 축을 잃으면 빨간불 ← 조용히 사라진 스윕 축을 잰다
 """
 from __future__ import annotations
 
@@ -155,3 +156,87 @@ def test_modelling_parameters_are_not_in_the_ledger() -> None:
             "값이 이제 사본입니다. core/casegrid/ledger_levels.py 의 "
             "_MODELLING_VARS 에서 그 줄을 지우고 _LEDGER_VARS 로 옮기십시오"
         )
+
+
+#: **설비 단가 대장 항목 중 스윕 축이 **아닌** 것과 그 사유.**
+#:
+#: 여기 적히지 않은 `capex.*` 항목은 `_LEDGER_VARS` 에 있어야 한다 — 아래
+#: 검사가 그것을 잰다. 사유를 **문자열로 요구하는 것이 요점**이다: 새 항목을
+#: 축으로 걸지 않기로 했다면 *왜* 를 한 번은 적게 된다.
+#:
+#: ⚠ **면제 사유는 전부 「평가 대상 모델에 그 자원이 없다」 한 가지다.**
+#: 러너(`core/casegrid/e2e_runner.py`)가 세우는 자원은 `PV`·`ESS`·`Load`
+#: 셋뿐이고, 없는 자원의 단가를 흔들면 변동폭 0원이 나와 **「진짜 무영향」과
+#: 「미배선」이 구별되지 않는다**(붙임 2 의 `파이프라인 미반영` 표기가 그
+#: 구별을 못 한다고 스스로 적는다). 자원이 서는 날 이 목록에서 지운다.
+_CAPEX_KEYS_OUTSIDE_THE_SWEEP: dict[str, str] = {
+    "capex.pv.bipv_wall": (
+        "러너는 옥상 고정형 PV 하나를 세운다 — 벽면 BIPV 변형이 서는 날 축이 된다"
+    ),
+    "capex.ess.second_life": "러너는 신품 ESS 하나를 세운다 — 재사용 배터리는 별개 변형이다",
+    "capex.ev_charger.v2g": (
+        "러너에 EV 충전기가 없다 — `Q-8`(제도 존부) 미확인으로 편익도 비활성이다"
+    ),
+    "capex.heatpump": "러너에 히트펌프가 없다 — 에너지자립가구 변형이 서는 날 축이 된다",
+    "capex.modular_house.premium": "러너에 모듈러 주택 증분이 없다 — 모듈러형 변형 전용이다",
+}
+
+
+@pytest.mark.req("NFR-202-M1")
+def test_every_capex_ledger_item_is_a_sweep_axis_or_says_why_not() -> None:
+    """★ **래칫.** 설비단가 항목이 **스윕 축에서 조용히 빠지면** 빨간불이다.
+
+    ## 무엇이 실제로 일어났는가
+
+    `_LEDGER_VARS` 가 대장 키를 읽지 않으면 그 항목은 **대장에는 보이는데
+    흔들리지는 않는** 상태가 된다. 그 상태는 아무 예외도 내지 않고, 리포트
+    5.1 은 *그 인자가 애초에 없었던 것처럼* 인쇄된다 — 즉 *「그 값을 골랐다」가
+    결론에 얼마를 넣었는지* 를 검토자가 물을 수도 없다.
+
+    실물이 둘 있다. `capex.replacement_real_trend`(`Q-17`)은 R41 이 대장에
+    세우고 **R42 가 배선할 때까지 한 라운드 동안** 그 상태였다.
+    `capex.pv.inverter_share`(`Q-18`)은 더 오래였다 — 소스 상수
+    (`DEFAULT_INVERTER_CAPEX_RATIO`)로 결론에 들어와 있으면서 대장에도
+    축에도 없었다.
+
+    ## 왜 「전부 축이어야 한다」가 아닌가
+
+    평가 대상 모델에 없는 자원의 단가는 흔들어도 **변동폭 0원**이고, 그것은
+    「진짜 무영향」과 「미배선」을 가르지 못한다(붙임 2 의
+    `파이프라인 미반영` 표기가 그 한계를 스스로 적는다). 그래서 면제를
+    허용하되 **사유를 적게 한다** — 목록에 없는 새 항목은 둘 중 하나를
+    고르지 않으면 통과하지 못한다.
+    """
+    ledger_keys = set(_ledger_items())
+    wired = set(ledger_backed_variables().values())
+
+    capex_keys = {key for key in ledger_keys if key.startswith("capex.")}
+    exempt = set(_CAPEX_KEYS_OUTSIDE_THE_SWEEP)
+
+    both = sorted(wired & exempt)
+    assert not both, (
+        f"{both} 가 스윕 축이면서 동시에 면제 목록에 있습니다 — 한쪽을 "
+        "지우십시오. 면제 목록이 낡으면 다음 사람은 그 항목이 축이 아니라고 "
+        "읽습니다"
+    )
+
+    stale = sorted(exempt - ledger_keys)
+    assert not stale, (
+        f"면제 목록의 {stale} 가 대장에 없습니다 — 항목이 지워졌거나 키가 "
+        "바뀌었습니다. tests/casegrid/test_ledger_levels.py 의 "
+        "_CAPEX_KEYS_OUTSIDE_THE_SWEEP 에서 그 줄을 지우십시오"
+    )
+
+    for key, reason in _CAPEX_KEYS_OUTSIDE_THE_SWEEP.items():
+        assert reason.strip(), f"{key}: 면제 사유가 비었습니다 — 사유 없는 면제는 면제가 아닙니다"
+
+    missing = sorted(capex_keys - wired - exempt)
+    assert not missing, (
+        f"설비단가 항목 {missing} 가 **스윕 축이 아닙니다.** 대장에는 보이는데 "
+        "흔들리지 않으므로 리포트 5.1 영향도 표에 서지 못하고, 그 값을 고른 "
+        "것이 결론에 얼마를 넣었는지 검토자가 물을 수 없습니다. "
+        "core/casegrid/ledger_levels.py 의 _LEDGER_VARS 에 줄을 더하고 러너가 "
+        "그 값을 읽게 하십시오 — 평가 대상 모델에 그 자원이 없어서 흔들 수 "
+        "없는 것이라면 이 파일의 _CAPEX_KEYS_OUTSIDE_THE_SWEEP 에 **사유와 "
+        "함께** 적으십시오"
+    )

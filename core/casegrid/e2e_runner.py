@@ -368,6 +368,24 @@ def run_single_case_e2e(
         "replacement_real_trend",
         level_map,
     )
+    # ★ **PV 설비단가 중 인버터 몫** (`capex.pv.inverter_share` · `Q-18` · R43).
+    #
+    # 종전에는 `core/der/pv.py::DEFAULT_INVERTER_CAPEX_RATIO = 0.15` 라는 모듈
+    # 상수였고 **어느 케이스 축에도 없었다** — R39-E 의 배선으로 결론에는
+    # 들어왔는데 흔들 수는 없는 상태였다(`ledger_levels.py::_LEDGER_VARS` 의
+    # 그 줄에 경위가 있다).
+    #
+    # ⚠ **비율을 여기서 단가로 짓는다.** 대장이 갖는 것은 *「설비단가의 몇
+    # %가 인버터인가」* 이고 `PV` 가 받는 것은 원/kW 이므로 환산이 한 번
+    # 필요하다 — 그 환산을 자원 안에 두면 자원이 대장 키를 알게 되고
+    # (`NFR-208-AC1` 위반), 리포트 쪽에 두면 사본이 된다.
+    # ⚠ **모듈 상수를 읽지 않는다.** 읽으면 이 축이 도는 동안에도 러너가
+    # 기준값을 계속 쓰고 **변동폭이 0원으로 나온다** — 「진짜 무영향」과
+    # 구별되지 않는 형태이며, 아래 `_resource_lines()` 가 *「세운 자원에서
+    # 읽는다」* 로 같은 함정을 적어 두었다. 기본값을 두지 않는 이유도 같다.
+    pv_inverter_share = _resolve(
+        case_values.get("pv_inverter_share", "base"), "pv_inverter_share", level_map
+    )
 
     # 1. Resources
     # ★ **형상이 오면 이용률 대신 시계열을 준다** (둘 다 주면 자원이 거부한다).
@@ -398,6 +416,7 @@ def run_single_case_e2e(
         capacity_factor=None if daily_shapes is not None else PV_CAPACITY_FACTOR,
         generation_profile_kwh=generation_profile,
         unit_capex_won_per_kw=pv_capex,
+        inverter_unit_capex_won_per_kw=pv_capex * pv_inverter_share,
         fixed_om_won_per_year=PV_FIXED_OM_WON_PER_YEAR,
         escalation_rate=PRICE_ESCALATION_RATE,
         replacement_escalation_rate=replacement_escalation_rate,
