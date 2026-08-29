@@ -38,6 +38,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from core.casegrid.models import (
+    COST_TAG_VARIABLE_OM,
     ONE_OFF_REPLACEMENT,
     ONE_OFF_SALVAGE,
     CaseBasis,
@@ -55,6 +56,11 @@ DIRECTION_UNKNOWN = "방향 미측정"
 #: 매 실행 재어 판정한 항목인가를 나타내는 라벨.
 JUDGED_MEASURED = "매 실행 측정"
 JUDGED_METHOD = "방법의 한계"
+
+#: 변동 O&M 항목의 이름. **본문 3.2 가 이 판정으로 자기 문면을 짓는다**
+#: (`core/report/method_sections.py` · `variable_om_unreflected`) — 리터럴을
+#: 양쪽에 적으면 한쪽만 바뀐다.
+LABEL_VARIABLE_OM = "변동 O&M"
 
 #: 자가소비 편익의 태그 (`core/valuestream/self_consumption.py`).
 _SELF_CONSUMPTION_TAG = "SelfConsumption"
@@ -391,6 +397,77 @@ def _purchase_item(
     ]
 
 
+def _variable_om_item(basis: CaseBasis) -> list[UnreflectedItem]:
+    """**변동 O&M 이 프로포마에 실렸는가** — 비용 항목으로 판정한다 (R43-C).
+
+    ## ★ 문장이던 자리다 — 그것이 이 판정을 만든 이유다
+
+    본문 3.2 의 비용 행 칸은 *「… (변동 O&M 미포함 · 3.4)」* 라 **박혀** 있었다.
+    같은 줄의 앞 절반은 실린 항목에서 짓는데(R34·R39-E 가 두 번 데인 뒤 세운
+    규약) 뒤 절반만 문장이었고, **그것이 낡는 날을 붙드는 것이 없었다** —
+    바로 앞 문면 *「교체 · 잔존가치 미포함」* 이 R39-E 배선 뒤 거짓이 된 것과
+    같은 형태다. 그리고 붙임 8 은 이 항목을 **아예 갖지 않아**, 3.2 만 지우면
+    미반영 사실 자체가 리포트에서 사라질 참이었다.
+
+    ## 판정 재료로 **비용 행 쪽**을 골랐다
+
+    후보가 둘이었다 — ⓐ 자원이 `variable_om_won_per_kwh > 0` 을 받았는가,
+    ⓑ 프로포마 비용 항목에 변동 O&M 행이 있는가. **ⓑ 다.**
+
+    ⓐ 는 *선언*이라 **「자원이 0 을 받았다」와 「배선이 없다」를 구별하지
+    못한다.** 지금 러너는 그 인자를 아예 넘기지 않으므로 일곱 자원의 기본값이
+    전부 0 이고, ⓐ 로 판정하면 단가가 0 인 정당한 구성에서도 「미반영」이 뜬다.
+    그리고 **애초에 닿지 않는다** — DER 객체는 `CaseOutcome` 에서 소비되고
+    `CaseReport` 로 건너오지 않는다(`case_report.py::dispatch_notes` 가 그
+    자리에서 다 쓴다). ⓐ 를 쓰려면 리포트가 자원 객체를 새로 나르게 해야 하고,
+    그것은 *결과로 드러난 사실로 판정한다* 는 이 파일의 규약과 반대 방향이다
+    (`_purchase_item` 이 비용 항목의 태그로, `_self_consumption_item` 이 편익
+    갈래로 판정하는 것과 같은 형태).
+
+    ⚠ **방향은 「악화」다.** 변동 O&M 을 세지 않으면 비용이 작아지므로 지금
+    수치는 **낙관 쪽**으로 기울어 있다. 이 저장소가 경계 지점으로 삼는 것이
+    *「보수적이라 안전하다」의 반대 형태*이며, 방향을 적지 않으면 붙임 8 에서
+    이 항목이 「모르는 것」으로 읽힌다.
+    """
+    if any(line.tag.endswith(COST_TAG_VARIABLE_OM) for line in basis.costs):
+        return []
+    return [
+        UnreflectedItem(
+            label=LABEL_VARIABLE_OM,
+            direction=DIRECTION_ADVERSE,
+            magnitude=(
+                # ⚠ **크기를 지어내지 않는다.** 처리량은 잴 수 있지만 단가가
+                # 대장에 없다 — 곱할 수를 하나 지으면 그 수가 붙임 8 의 유일한
+                # 정량이 되어 검토자에게 「확보된 값」으로 읽힌다.
+                f"미정량 · 프로포마 비용 항목에 변동 O&M 행 0건 · 평가 자원 "
+                f"{len(basis.resources)}건 전부 `variable_om()` 보유 "
+                "(`FR-101-AC2`) · 단가 대장 항목 없음"
+            ),
+            reason=(
+                "자원의 `variable_om()` 존재 (산식 `FR-101-AC5` · §13.2.2 C-3) · "
+                "`core/cba/proforma.py` 에 변동 O&M 행 생성기 없음 · 러너가 "
+                "`variable_om_won_per_kwh` 를 넘기지 않음"
+            ),
+            resolves_when=(
+                "`FR-701-AC1` (프로포마 변동 O&M 행) 실행 경로 배선 + "
+                "단가 대장 등재"
+            ),
+            measured=True,
+        )
+    ]
+
+
+def variable_om_unreflected(items: tuple[UnreflectedItem, ...]) -> bool:
+    """이 실행에서 변동 O&M 이 **미반영으로 판정됐는가** — 본문 3.2 가 묻는다.
+
+    3.2 의 비용 행 칸이 이 답으로 「(변동 O&M 미포함 · 3.4)」 단서를 붙이거나
+    붙이지 않는다. 배선되면 단서가 **저절로 사라지고** 같은 줄 앞 절반의
+    실린 항목 목록에 변동 O&M 행이 나타난다 — 두 자리가 한 판정에서 나오므로
+    엇갈릴 수 없다.
+    """
+    return any(item.label == LABEL_VARIABLE_OM for item in items)
+
+
 def _flat_generation_item(
     basis: CaseBasis, hours: tuple[DispatchHour, ...]
 ) -> list[UnreflectedItem]:
@@ -525,6 +602,9 @@ def build_unreflected(report: CaseReport) -> tuple[UnreflectedItem, ...]:
         *_unread_items(report),
         *_self_consumption_item(basis, assumed),
         *_purchase_item(basis, report.dispatch_hours, assumed),
+        # 바로 위와 **같은 갈래**다 — 프로포마 비용 행이 비었는가. 붙여 두어
+        # 검토자가 「빠진 비용 행」을 한 자리에서 읽게 한다.
+        *_variable_om_item(basis),
         *_flat_generation_item(basis, report.dispatch_hours),
         *_season_item(report.dispatch_hours),
         *_METHOD_LIMITS,

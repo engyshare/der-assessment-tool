@@ -26,7 +26,12 @@ from __future__ import annotations
 
 from core.casegrid.models import BenefitLine, CaseBasis, ResourceLine
 from core.report.case_report import CaseReport
-from core.report.unreflected import build_unreflected, unreflected_rows
+from core.report.unreflected import (
+    LABEL_VARIABLE_OM,
+    build_unreflected,
+    unreflected_rows,
+    variable_om_unreflected,
+)
 
 
 def _won(value: float) -> str:
@@ -134,11 +139,12 @@ def method_section(report: CaseReport) -> list[str]:
     으로 적으면 구성이 바뀔 때 틀린 문장이 계속 인쇄된다.
     """
     basis = report.basis
+    # ★ **3.2 의 단서와 3.4 의 표가 같은 판정 한 번에서 나온다 (R43-C).**
+    # 두 번 부르면 같은 실행 안에서 갈릴 자리가 생긴다.
+    unreflected = build_unreflected(report)
     # ★ **비용 행의 구성을 문장으로 박지 않는다 (R34 · R39-E).** 실린 항목에서
     # 지어 이 자리가 구성과 함께 움직이게 한다 — 종전 문면은 *「교체 · 잔존가치
-    # 미포함」* 이었고 R39-E 가 그 둘을 배선한 뒤로 **거짓이 됐다.** 남은 「변동
-    # O&M 미포함」은 지금 참이지만 **같은 형태의 문장**이며, 그것이 낡는 날을
-    # 붙드는 검사는 아직 없다(`.orch/R39/result_replacement_wiring.md` 구획 밖).
+    # 미포함」* 이었고 R39-E 가 그 둘을 배선한 뒤로 **거짓이 됐다.**
     cost_row_note = " · ".join(
         [
             f"연간 {' · '.join(line.label for line in basis.costs)}",
@@ -148,6 +154,16 @@ def method_section(report: CaseReport) -> list[str]:
                 else []
             ),
         ]
+    )
+    # ★★ **남은 절반도 사실에서 짓는다 (R43-C).** 종전에는 이 단서가 문자열
+    # 리터럴로 박혀 있었다 — 한 줄 안에서 앞 절반은 규약을 지키고 뒤 절반은
+    # 지키지 않는 상태였고, **그것이 낡는 날을 붙드는 검사가 없었다.** 이제
+    # 붙임 8 의 판정이 단서를 켜고 끈다: 변동 O&M 이 배선되면 단서가 저절로
+    # 사라지고 위 `cost_row_note` 에 항목으로 나타난다.
+    cost_row_caveat = (
+        f" ({LABEL_VARIABLE_OM} 미포함 · 3.4)"
+        if variable_om_unreflected(unreflected)
+        else ""
     )
     return [
         "## 3. 평가 방법",
@@ -178,7 +194,7 @@ def method_section(report: CaseReport) -> list[str]:
         # 됐다** — 규약 표는 검토자가 「무엇이 비용으로 세어졌는가」를 읽는
         # 자리이므로, 그 자리가 틀리면 붙임 4 의 항목 표와 서로 다른 사업을
         # 말한다. 실린 항목에서 지어 이 자리가 구성과 함께 움직이게 한다.
-        f"| 프로포마 비용 행 | {cost_row_note} (변동 O&M 미포함 · 3.4) |",
+        f"| 프로포마 비용 행 | {cost_row_note}{cost_row_caveat} |",
         "",
         "### 3.3 평가 관점",
         "",
@@ -193,7 +209,7 @@ def method_section(report: CaseReport) -> list[str]:
         "",
         "| 항목 | 방향 | 판정 |",
         "|---|---|---|",
-        *unreflected_rows(build_unreflected(report)),
+        *unreflected_rows(unreflected),
         "",
         "- 크기 · 비어 있는 자리 · 해소 조건 — 붙임 8",
         "",

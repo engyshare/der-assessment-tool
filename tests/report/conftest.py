@@ -46,6 +46,7 @@ from pathlib import Path
 import pytest
 import yaml  # type: ignore[import-untyped]
 
+from core.casegrid.models import COST_TAG_VARIABLE_OM, CostLine
 from core.casegrid.profiles import DailyShapes, load_daily_shapes
 
 
@@ -165,3 +166,33 @@ def recovery_probe_assumptions(tmp_path: Path) -> Path:
         yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8"
     )
     return path
+
+
+def with_variable_om_row(report):
+    """변동 O&M 이 **프로포마 비용 행으로 실린** 리포트 — 배선된 뒤의 모습 (R43-C).
+
+    「배선이 끊긴 구성」을 `unwired_report` 가 갖는 것과 **같은 이유로 여기
+    있다** — 이 구성을 두 검사가 쓰고(붙임 8 의 판정 · 본문 3.2 의 단서), 각자
+    지으면 둘이 갈린 채 한쪽만 초록불이 된다.
+
+    금액을 0 으로 둔다. 재는 것은 *판정이 비용 행의 존재를 보는가* 이고,
+    금액을 넣으면 `annual_cost_won` 항등식까지 함께 움직여 **무엇이 판정을
+    뒤집었는지**가 흐려진다.
+    """
+    basis = report.basis
+    return replace(
+        report,
+        basis=replace(
+            basis,
+            costs=(
+                *basis.costs,
+                CostLine(
+                    tag=f"PV{COST_TAG_VARIABLE_OM}",
+                    label="태양광 변동 운영비",
+                    annual_won=0,
+                    resource_code="PV",
+                    formula="배선 확인용",
+                ),
+            ),
+        ),
+    )

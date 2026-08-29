@@ -21,11 +21,12 @@ from core.report.appendix_sections import UNREAD_BY_PIPELINE
 from core.report.case_report import CONCLUSION_METRIC, build_case_report
 from core.report.method_sections import (
     cost_benefit_section,
+    method_section,
     resource_detail_section,
 )
 from core.report.narrative import NONE_IN_RANGE, render_markdown
 from core.report.unreflected import DIRECTION_ADVERSE, build_unreflected
-from tests.report.conftest import unwired_report
+from tests.report.conftest import unwired_report, with_variable_om_row
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -554,3 +555,53 @@ def test_appendix_four_prints_the_two_resource_conventions_side_by_side() -> Non
         assert f"| {line.resource_code} |" in benefit_text + text, (
             f"편익 갈래 귀속 자원 문면이 바뀌었다: {line.resource_code!r}"
         )
+
+
+#: 3.2 의 비용 행 단서 **문면 그대로**. ⚠ 여기서 조립하지 않는다 — 검사가
+#: 기대값을 스스로 지으면 문면이 바뀌어도 같이 바뀌어 아무것도 붙들지 않는다.
+_VARIABLE_OM_CAVEAT = "(변동 O&M 미포함 · 3.4)"
+
+
+def test_the_cost_row_caveat_is_built_from_the_judgement_not_from_a_sentence() -> None:
+    """★★ **3.2 의 「미포함」 단서가 붙임 8 의 판정에서 나온다** (R43-C).
+
+    한 줄 안에서 절반은 규약을 지키고 절반은 지키지 않았다 — 실린 항목은
+    재어 짓는데 뒤의 단서는 **리터럴로 박혀** 있었고, 종전 문면 *「교체 ·
+    잔존가치 미포함」* 은 R39-E 배선 뒤 **거짓이 된 채로 검토용 리포트에
+    실려 나갔다.** 남은 「변동 O&M 미포함」은 지금 참이지만 같은 형태이며,
+    그것이 낡는 날을 붙드는 자리가 여기다.
+
+    ⚠ **절을 만드는 함수에 직접 묻고, 그 결과가 문서에 실리는지 따로 본다** —
+    위 두 검사와 같은 이유다(렌더된 문면만 보면 `method_sections.py` 를 고치는
+    사람이 여기를 함께 보지 않는다).
+    """
+    report = build_case_report(
+        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    section = "\n".join(method_section(report))
+    assert section in render_markdown(report), "3절이 문서에 실리지 않았다"
+
+    (row,) = [line for line in section.splitlines() if "| 프로포마 비용 행 |" in line]
+    assert _VARIABLE_OM_CAVEAT in row, (
+        f"3.2 의 비용 행 칸에 「{_VARIABLE_OM_CAVEAT}」 단서가 없다 — 붙임 8 은 "
+        "이 항목을 미반영으로 판정했는데 규약 표는 말하지 않는다"
+    )
+    assert any(i.label == "변동 O&M" for i in build_unreflected(report)), (
+        "단서는 붙어 있는데 붙임 8 에 항목이 없다 — 두 자리가 갈렸다"
+    )
+
+    # ★ **배선되면 단서가 저절로 사라지고 항목으로 등장하는가.** 사라지지
+    # 않으면 이 자리는 여전히 문장이다.
+    wired = with_variable_om_row(report)
+    wired_section = "\n".join(method_section(wired))
+    (wired_row,) = [
+        line for line in wired_section.splitlines() if "| 프로포마 비용 행 |" in line
+    ]
+    assert _VARIABLE_OM_CAVEAT not in wired_row, (
+        "변동 O&M 을 비용 행으로 실었는데 「미포함」 단서가 남는다 — "
+        "R39-E 뒤의 「교체 · 잔존가치 미포함」과 같은 거짓 문면이다"
+    )
+    assert "태양광 변동 운영비" in wired_row, (
+        "단서는 사라졌는데 실린 항목 목록에 변동 O&M 이 없다 — 규약 표가 "
+        "붙임 4 와 서로 다른 사업을 말한다"
+    )

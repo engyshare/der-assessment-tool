@@ -21,6 +21,7 @@ from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
 
+from core.casegrid.models import COST_TAG_VARIABLE_OM
 from core.report.case_report import build_case_report
 from core.report.narrative import render_markdown
 from core.report.unreflected import (
@@ -33,7 +34,7 @@ from core.report.unreflected import (
     unreflected_rows,
     unreflected_section,
 )
-from tests.report.conftest import unwired_report
+from tests.report.conftest import unwired_report, with_variable_om_row
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -493,3 +494,46 @@ def test_a_shaped_generation_profile_removes_the_row() -> None:
         for i in build_unreflected(curved)
         if i.label.startswith("일중 발전 프로파일")
     ], "곡선을 주입했는데도 평탄 항목이 남았다 — 자원 이름으로 판정하고 있다"
+
+
+def test_variable_om_is_judged_from_the_cost_rows_not_from_the_resource_argument() -> None:
+    """★★ **「변동 O&M 미포함」이 낡는 날을 붙든다** (R43-C · `todo.md` 5-①).
+
+    본문 3.2 의 비용 행 칸은 한 줄 안에서 **앞 절반만** 규약을 지켰다 — 실린
+    항목은 재어 짓고 뒤의 *「(변동 O&M 미포함 · 3.4)」* 는 문장으로 박혀
+    있었으며, 붙임 8 은 이 항목을 **아예 갖지 않았다.** 바로 앞 문면
+    *「교체 · 잔존가치 미포함」* 이 R39-E 배선 뒤 거짓이 된 것과 같은 형태다.
+
+    ⚠ **판정 재료가 요점이다.** 자원의 `variable_om_won_per_kwh` 를 보면
+    *「자원이 0 을 받았다」* 와 *「배선이 없다」* 를 구별하지 못한다 — 지금
+    러너는 그 인자를 넘기지 않아 일곱 자원 전부 기본값 0 이다. 그래서 판정은
+    **뒤에 드러나는 사실**(프로포마 비용 항목)에서 나와야 하고, 이 검사는
+    비용 행 하나를 실어 판정이 실제로 갈리는지 본다. 갈리지 않으면 이 항목은
+    *「아무것도 붙들지 않는 음성 확인」* 이다.
+
+    ⚠ 방향은 **악화**다. 안 세면 비용이 작아지므로 지금 수치는 낙관 쪽이다.
+    """
+    report = _report()
+
+    (item,) = [i for i in build_unreflected(report) if i.label == "변동 O&M"]
+    assert item.direction == DIRECTION_ADVERSE, (
+        f"변동 O&M 의 방향이 {item.direction} 이다 — 세지 않으면 비용이 "
+        "작아지므로 지금 수치는 낙관 쪽이고, 그 사실을 붙임 8 이 말해야 한다"
+    )
+    assert item.judged == JUDGED_MEASURED, (
+        "변동 O&M 이 「방법의 한계」로 실린다 — 이것은 배선의 공백이며 "
+        "매 실행 재어 판정하는 항목이다"
+    )
+    assert not [
+        line for line in report.basis.costs if line.tag.endswith(COST_TAG_VARIABLE_OM)
+    ], "전제가 바뀌었다 — 이 구성에 이미 변동 O&M 비용 행이 있다"
+
+    # ★ 비용 행 하나로 판정이 **갈리는가**.
+    assert not [
+        i
+        for i in build_unreflected(with_variable_om_row(report))
+        if i.label == "변동 O&M"
+    ], (
+        "변동 O&M 비용 행을 실었는데도 미반영 항목으로 남는다 — 판정이 비용 "
+        "행을 보지 않는다(이 상태에서는 배선돼도 붙임 8 이 거짓을 계속 인쇄한다)"
+    )

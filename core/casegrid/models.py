@@ -273,6 +273,18 @@ class BenefitLine:
 ONE_OFF_REPLACEMENT = "replacement"
 ONE_OFF_SALVAGE = "salvage"
 
+#: 변동 O&M **비용 항목**의 태그 접미어 — 같은 사유로 자료형 모듈이 갖는다.
+#: 붙임 8(`core/report/unreflected.py::_variable_om_item`)이 *「변동 O&M 이
+#: 프로포마에 실렸는가」* 를 이 값으로 판정하고, 본문 3.2 의 「미포함」 단서가
+#: 그 판정에서 나온다. 배선하는 쪽이 다른 말을 쓰면 그 둘이 **반영된 뒤에도
+#: 「미반영」을 계속 인쇄한다.**
+#:
+#: ⚠ **태그가 아니라 접미어다.** 고정 O&M 이 자원마다 행을 갖듯
+#: (`PVFixedOM`·`ESSFixedOM`) 변동 O&M 도 자원마다 서므로 태그 하나로 고정할 수
+#: 없다 — 고정하면 `PVVariableOM` 이 판정에 걸리지 않는다. 접미어로 두면
+#: 자원별 행과 이 값 그대로인 태그가 **둘 다** 걸린다.
+COST_TAG_VARIABLE_OM = "VariableOM"
+
 
 @dataclass(frozen=True)
 class OneOffLine:
