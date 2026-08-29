@@ -524,10 +524,66 @@ def test_rc_all_c5_salvage_resets_after_replacement() -> None:
 
     교체를 무시하면 20년차 잔존가치가 0으로 잡혀, 16년차에 새로 산 설비의
     가치가 통째로 사라진다 — 회수기간이 실제보다 길게 나온다 (원칙 4-3).
+
+    ⚠ **교체 취득가는 명목이다** (R43 · WP-D2). 바로 위 `RC-ALL-C4` 가 16년차에
+    계상하는 금액이 `12,000,000 × 1.02^15 = 16,150,420원` 이므로, 그 설비를
+    되파는 값도 **같은 16,150,420원**에서 재야 한다. 종전에는 여기만 1년차
+    실질(12,000,000원)을 읽어 *「명목으로 산 것을 실질로 되판다」* 였고, 그
+    어긋남은 잔존가치를 **한 방향으로만** 줄여 「보수적이라 안전하다」로 읽혔다.
+
+    오라클은 **밖에서 고정한 리터럴**이다 — 여기서 계수를 다시 계산하지 않는다:
+
+        16년차 취득가  12,000,000 × 1.02^15 = 16,150,420
+        20년차 잔존가치 16,150,420 × 10/15   = 10,766,947
+
+    (`RC-ALL-C4` 오라클과 **같은 16,150,420** 이 양쪽에 서는 것이 「두 수가 한
+    출처에서 나온다」의 확인이다.)
     """
-    hp = make_hp(lifetime=15)   # 16년차 교체, 교체비 12,000,000원
+    hp = make_hp(lifetime=15)   # 16년차 교체, 명목 교체비 16,150,420원
+    assert hp.replacement_schedule(horizon=20)[16] == Money(16_150_420)
     # 16~20년 5년 사용 → 잔존 10년 / 총 15년
-    assert hp.salvage_value(year=20) == Money(8_000_000)
+    assert hp.salvage_value(year=20) == Money(10_766_947)
+
+
+@pytest.mark.req("FR-104-AC3")
+def test_rc_all_c5_retire_has_no_salvage_for_what_it_never_bought() -> None:
+    """★ **`retire` 면 사지 않은 설비의 잔존가치가 없다** (R43 · WP-D2).
+
+    `replacement_schedule()` 은 `retire` 에서 이미 비어 있었는데
+    `salvage_value()` 는 그 갈래를 보지 않아, **교체비는 안 내고 잔존가치만 있는**
+    상태였다(같은 제원에서 20년차 8,000,000원). `PV`(R39-E2)·`ESS`(R42)가 고친
+    것과 같은 결함이며, 이제 `retire` 조건은 `_acquisitions()` **한 곳**에만 있다.
+
+    본체 수명 15년이 20년차에 이미 끝났으므로 잔존수명은 0이다.
+    """
+    hp = make_hp(lifetime=15, end_of_life_action="retire")
+    assert hp.replacement_schedule(horizon=20) == {}
+    assert hp.salvage_value(year=20) == Money(0)
+
+
+@pytest.mark.req("FR-104-AC5")
+def test_rc_all_c5_initial_pump_is_not_a_second_acquisition() -> None:
+    """★ **최초 순환펌프를 취득분으로 두 번 세지 않는다** (R43 · WP-D2).
+
+    설비 단가는 *설치 완료 기준*이라 최초 순환펌프 값은 이미 `capex()` 안에 있다.
+    종전에는 `salvage_value()` 가 순환펌프 교체단가를 **1년차 취득분으로 한 번 더**
+    세어, 초기투자에 없는 지출의 잔존가치를 붙이고 있었다 — 1년차에서 크기가
+    `1,500,000 × 14/15 = 1,400,000원` 이었다. `ESS` 의 PCS · `PV` 의 인버터가 같은
+    자리이며 둘 다 최초분을 두지 않는다.
+
+    ⚠ 그래서 **순환펌프를 준 자원과 안 준 자원의 1년차 잔존가치가 같다.**
+    (본체 취득가 12,500,000 × 14/15 = 11,666,667원 — 원 단위 반올림)
+    """
+    without = make_hp(lifetime=15)
+    with_pump = make_hp(
+        lifetime=15, pump_lifetime=10, pump_replacement_cost_won=1_500_000.0
+    )
+
+    assert with_pump.salvage_value(year=1) == without.salvage_value(year=1)
+    assert with_pump.salvage_value(year=1) == Money(11_666_667)
+    # 순환펌프는 **11년차에 산 뒤부터** 잔존가치를 갖는다 (명목 1,828,492원)
+    assert with_pump.replacement_schedule(horizon=20)[11] == Money(1_828_492)
+    assert with_pump.salvage_value(year=11) > without.salvage_value(year=11)
 
 
 # ── FR-104-AC1 성능 저하 ─────────────────────────────────────────────

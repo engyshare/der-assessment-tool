@@ -78,6 +78,26 @@ MEDIA_FLAGS = [flag for _media, flag in MEDIA]
 KNOWN_REPLACEMENT_RATE_IGNORED: frozenset[str] = frozenset({"ReferencePV"})
 
 
+#: 잔존가치가 **재취득분을 실질(1년차) 단가로** 세는 자원 — 실측 부채 (R43 · WP-D2).
+#:
+#: 바로 위 래칫이 「교체비가 명목인가」를 재는데, 그 둘은 **따로 움직인다.** 교체비만
+#: 명목으로 바꾸면 자원은 *「명목으로 산 것을 실질로 되판다」* 는 상태가 되고, 그
+#: 어긋남은 **한 방향으로만**(잔존가치 과소 → 「보수적이라 안전하다」) 결론을 흔든다.
+#: `HeatPump` 가 실제로 그랬다 — R43 이 교체비를 명목으로 바꾼 바로 그 라운드에.
+#:
+#: **`Load`·`ThermalLoad` 는 이 검사를 세우면서 드러났다** (실측은
+#: `.orch/R43/result_D2.md` 의 자원 7종 표). 조용히 올린 것이 아니라 **크기를 재어
+#: 올렸고**, 고치는 것은 이 WP 의 범위 밖이라 부채로 남긴다 — 둘 다 부속설비를
+#: `(year-1) % life` 로 굴리는 **복합자산**이라 `_acquisitions()` 같은 한 출처가
+#: 없고, 세우면 그 자원의 수가 움직인다.
+#:
+#: `ReferencePV` 는 여기 없다 — 교체비도 잔존가치도 **둘 다 실질**이라 어긋나 있지
+#: 않다(위 래칫이 그 자원을 이미 들고 있다). 확인 못 한 것을 부채로 세지 않는다.
+#:
+#: **줄면 빨간불**이다 — 목록과 그 자원의 기준값을 함께 옮기라고 알린다.
+KNOWN_SALVAGE_IGNORES_REPLACEMENT_RATE: frozenset[str] = frozenset({"Load", "ThermalLoad"})
+
+
 class DERContractTests:
     """자원 구현체가 상속해 통과시키는 계약 테스트."""
 
@@ -563,6 +583,80 @@ class DERContractTests:
             assert set(series) == {0}, (
                 f"취득가가 0 인데 잔존가치가 있습니다: {sorted(set(series))}"
             )
+
+    @pytest.mark.contract
+    @pytest.mark.req("FR-104-AC5")
+    def test_salvage_reads_the_same_price_basis_as_the_replacement_it_paid_for(self) -> None:
+        """★★ **명목으로 산 것을 실질로 되팔지 않는다** (R43 · WP-D2).
+
+        위 `test_salvage_value_tracks_remaining_life_and_is_never_negative` 는
+        *「잔존 수명을 따라 움직이는가」* 만 본다 — **어느 가격 기준의 취득가로
+        재는가**는 보지 않는다. 그래서 교체비가 명목이고 잔존가치가 실질인
+        상태가 **계약을 통과한 채** 살아 있었다(`HeatPump`, R43 이 실측했다:
+        17년차 교체비 137,278,571원 명목 · 20년차 잔존가치 75,000,000원 실질).
+
+        재는 법은 ⓓ 래칫(`test_replacement_follows_the_replacement_rate_and_om_does_not`)
+        과 같다 — 자원을 복제해 `replacement_escalation_rate` 하나만 올리고
+        **교체 이후 연차의 잔존가치가 따라 움직이는가**를 본다. 교체비가 그 계수로
+        움직이는데 잔존가치가 가만히 있으면, 그 자원은 그 두 수를 **다른 가격
+        기준**으로 적고 있는 것이다.
+
+        ⚠ **어긋남의 방향이 한쪽뿐이라 위험하다.** 잔존가치가 과소 계상되면
+        결론이 나빠지고, 나빠진 결론은 「보수적이라 안전하다」로 읽혀 검출되지
+        않는다. 이 저장소가 반복해 경계해 온 형태다.
+
+        ⚠ **판정하지 않는 자원** — 셋 다 「확인 못 한 것을 초록불로 만들지
+        않는다」의 적용이다:
+          · 교체비가 0원이면 무엇을 곱해도 0이다 (계약 픽스처가 단가를 안 준 경우)
+          · **교체 스케줄 자체가 계수를 안 타면** 여기서 잴 것이 없다 — 그것은
+            `KNOWN_REPLACEMENT_RATE_IGNORED` 의 몫이고, 여기서 또 세면 한 부채가
+            두 목록에 앉는다 (`ReferencePV` 가 그 갈래다)
+          · 교체 이후 잔존가치가 어느 연차에서도 0이면 움직임을 볼 수 없다
+        """
+        import copy
+
+        horizon = 40
+        der = self.make()
+        base_schedule = {
+            y: int(v) for y, v in der.replacement_schedule(horizon=horizon).items()
+        }
+        paid = {y: v for y, v in base_schedule.items() if v != 0}
+        if not paid:
+            return  # 금액이 없다 — 판정 대상 아님 (위 ⚠)
+
+        bumped = copy.copy(der)
+        bumped.replacement_escalation_rate = der.escalation_rate + 0.05
+        after_schedule = {
+            y: int(v) for y, v in bumped.replacement_schedule(horizon=horizon).items()
+        }
+        if after_schedule == base_schedule:
+            return  # 교체비가 계수를 안 탄다 — 위쪽 래칫의 몫 (위 ⚠)
+
+        priced = [
+            y for y in range(min(paid) + 1, horizon + 1)
+            if int(der.salvage_value(year=y)) > 0
+        ]
+        if not priced:
+            return  # 교체 이후 잔존가치가 전부 0 — 움직임을 볼 수 없다 (위 ⚠)
+        year = priced[0]
+
+        before = int(der.salvage_value(year=year))
+        after = int(bumped.salvage_value(year=year))
+        ignores = before == after
+        name = type(der).__name__
+        listed = name in KNOWN_SALVAGE_IGNORES_REPLACEMENT_RATE
+        assert listed == ignores, (
+            f"{name}: 잔존가치가 교체비와 **같은 가격 기준**을 쓰는지가 실측과 "
+            f"다릅니다 ({year}년차).\n"
+            f"  교체 스케줄: 움직인다 (계수를 탄다)\n"
+            f"  잔존가치: {'안 움직인다 — 실질' if ignores else '움직인다 — 명목'} "
+            f"({before:,}원 → {after:,}원)\n"
+            f"  기대: {'실질(부채 목록에 있다)' if listed else '명목'}\n"
+            "명목으로 산 것을 실질로 되팔면 잔존가치가 과소 계상되고, 그 과소는 "
+            "**한 방향으로만** 결론을 나쁘게 만들어 「보수적이라 안전하다」로 "
+            "읽힙니다. 고쳤다면 KNOWN_SALVAGE_IGNORES_REPLACEMENT_RATE 에서 빼고, "
+            "그 자원이 결론에 들어와 있다면 **기준값을 재산출**하십시오"
+        )
 
     # ── 잔존가치는 명목액 (v1.1 명문화 · §13.2.2 C-5) ───────────────
     @pytest.mark.contract

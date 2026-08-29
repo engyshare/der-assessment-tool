@@ -32,7 +32,6 @@ from core.contracts.units import (
     Year,
     steps_per_year,
     to_won,
-    won_sum,
 )
 from core.contracts.validation import ValidationError
 
@@ -615,12 +614,100 @@ class HeatPump(DER):
         """
         return to_won(self.annual_operation(year).hp_heat_kwh * self.variable_om_won_per_kwh)
 
+    def _acquisitions(self, *, horizon: int) -> tuple[tuple[int, dict[int, float]], ...]:
+        """부품별 `(수명, {취득 연도: 취득가})` — 본체와 순환펌프를 **갈라** 담는다.
+        `replacement_schedule()` 과 `salvage_value()` 가 **둘 다 여기서** 나온다.
+
+        ## 왜 한 출처여야 하는가 (R43 · WP-D2)
+
+        R43 이 교체비에 `replacement_escalation_factor` 를 태운 뒤(`59530fc`),
+        `salvage_value()` 는 `replacement_cost_won` 을 **계수 없이** 읽고 있었다.
+        그 결과가 *「명목으로 산 것을 실질로 되판다」* 다 — 본체 16년·교체단가
+        1억·`escalation_rate=0.02` 에서 17년차 교체비는 **137,278,571원(명목)**
+        인데 20년차 잔존가치는 `100,000,000 × 12/16 = 75,000,000원`(**1년차
+        실질**)이었다. 명목이면 **102,958,928원**이다.
+
+        어긋남의 방향이 **한쪽뿐**이라 위험하다 — 잔존가치가 과소 계상되어
+        「보수적이라 안전하다」로 읽힌다. `ess.py::_acquisitions` 가 경계한 바로
+        그 형태이며, 두 함수가 각자 `(수명, 단가)` 짝을 돌던 **갈라짐**이 그것을
+        만들었다. `ESS`(R42)·`PV`(R39-E) 가 같은 자리에서 같은 답을 냈다:
+        **한 곳이 내고 다른 곳이 읽는다.**
+
+        ## `ESS` 가 아니라 `PV` 의 모양을 골랐다 — 그러나 파생은 `ESS` 를 따른다
+
+        `HeatPump` 는 **본체 + 순환펌프** 두 부품이고 `PV`(본체 + 인버터)와 같은
+        꼴이다 — 둘 다 *「본체 취득가 하나 + 수명이 다른 부속 하나」* 이고 부속의
+        최초 취득분이 본체 단가 안에 잠겨 있다. `ESS` 는 배터리가 **자기 단가를
+        따로 갖는**(`_battery_cost()`) 구조라 그쪽이 아니다. 다만 *`PV` 는
+        `replacement_schedule()` 을 아직 여기서 파생시키지 않으므로* 파생 방식은
+        `ESS`(R42)를 따랐다 — `PV` 는 그래서 두 곳이 여전히 갈려 있다.
+
+        ⚠ **접지 않는다.** 부품별로 남기지 않으면 (본체 16년·펌프 10년을 25년
+        분석할 때) 「마지막 취득 = 21년차 순환펌프」 하나만 남고 그 잔존수명을
+        **본체 수명 16년**으로 재게 되어, 순환펌프가 본체만큼 버티는 설비가
+        된다 (R42 가 `ESS` 에서 경고한 함정).
+
+        ⚠ **최초 순환펌프를 취득분으로 세지 않는다.** 대장의 설비 단가
+        (`capex_unit_won_per_kw`)는 *설치 완료 기준*이므로 최초 순환펌프 값은
+        이미 `_acquisition_won` 안에 있고, 여기서 또 세면 **초기투자에 없는
+        지출**의 잔존가치를 세게 된다. 반대로 본체 취득가에서 순환펌프 몫을
+        떼어내지도 않았다 — 떼려면 「단가의 몇 %가 순환펌프인가」를 새로 정해야
+        하고 **그 값이 대장에 없다**(`Q-2` 회신에 묶여 있다). **모르는 값을
+        채우지 않는다.** `ESS` 의 PCS · `PV` 의 인버터가 같은 자리다.
+
+        ⚠⚠ **`retire` 면 재취득이 없다** (`FR-104-AC3`). 종전 `salvage_value()`
+        는 그 갈래를 보지 않아 **사지도 않은 설비의 잔존가치**를 `retire` 자원에
+        붙이고 있었다(위 탐침 제원에서 20년차 **75,000,000원**). `replacement_schedule()`
+        은 이미 비어 있었으므로 두 곳이 **반대 방향으로** 갈려 있었던 것이다 —
+        `PV`(R39-E2)·`ESS`(R42)가 고친 것과 같은 결함이다. `retire` 조건을
+        **여기 한 곳에만** 두어 양쪽이 함께 본다.
+
+        ⚠ **단가가 0인 부품은 재취득하지 않는다** — 0원짜리 교체행을 프로포마에
+        내보내면 「교체가 있었다」로 읽힌다. 종전 `replacement_schedule()` 의
+        `cost <= 0.0` 갈래를 그대로 옮긴 것이다.
+        """
+        if self.retires_at_end_of_life():
+            # 다시 사지 않으므로 취득분은 **최초 본체 하나**다. 순환펌프를 여기
+            # 두면 `replacement_schedule()` 이 비어 있는데 잔존가치만 생긴다.
+            return ((self.lifetime, {1: self._acquisition_won}),)
+
+        parts: list[tuple[int, dict[int, float]]] = []
+        for life, unit_cost, initial in (
+            # 본체 — 최초 취득(1년차)은 `_acquisition_won`(부대비 포함)이고
+            # 재취득분은 `replacement_cost_won`(부대비 제외)을 쓴다.
+            (self.lifetime, self.replacement_cost_won, self._acquisition_won),
+            # 순환펌프 — 최초 취득분을 두지 않는다 (위 ⚠ 참조).
+            (self.pump_lifetime, self.pump_replacement_cost_won, None),
+        ):
+            if not life:
+                continue
+            acquired: dict[int, float] = {} if initial is None else {1: float(initial)}
+            if unit_cost > 0.0:
+                year = life + 1
+                while year <= horizon:
+                    acquired[year] = float(
+                        to_won(unit_cost * self.replacement_escalation_factor(year=year))
+                    )
+                    year += life
+            if not acquired:
+                continue
+            parts.append((life, acquired))
+        return tuple(parts)
+
     def replacement_schedule(self, *, horizon: int) -> dict[int, Money]:
         """C-4 교체비 — 수명 도달 **다음 연도 초**에 계상. 순환펌프 등 부속설비는
         본체와 **독립 수명**을 갖는다 (FR-104-AC4) — 본체 수명만 보면 15년
         히트펌프의 10년짜리 부속 교체비가 통째로 빠진다.
 
-        `retire` 면 교체하지 않으므로 빈 dict 를 돌려준다 (FR-104-AC3).
+        ⚠ **이 스케줄은 `_acquisitions()` 에서 파생된다** (R43 · WP-D2). 종전에는
+        여기와 `salvage_value()` 가 **각자** `(수명, 단가)` 짝을 돌았고, 그래서
+        *교체비는 명목인데 그 잔존가치는 실질*인 비대칭이 조용히 생겼다.
+        사유·선례·`retire` 갈래는 전부 `_acquisitions()` 독스트링에 있다 —
+        **같은 조건을 두 곳에 적지 않는다.**
+
+        `retire` 면 빈 dict 다 (FR-104-AC3) — 그 조건을 **여기 다시 적지 않는다.**
+        `_acquisitions()` 가 `retire` 에서 1년차 하나만 내고 그것은 아래에서
+        걸러지므로 이 함수는 저절로 빈다.
 
         ⚠ **두 항 다 `replacement_escalation_factor` 를 굴린다** (R43 · `DV-7`).
         대장이 `price_basis: "명목"` 을 **최상위에서 한 번** 선언하므로
@@ -647,20 +734,15 @@ class HeatPump(DER):
                 reason=f"분석기간은 1년 이상입니다 (받은 값 {horizon})",
                 action="분석기간(horizon)에 1 이상의 정수를 지정하십시오",
             )
-        if self.retires_at_end_of_life():
-            return {}
-
         schedule: dict[int, Decimal] = {}
-        for life, cost in ((self.lifetime, self.replacement_cost_won),
-                           (self.pump_lifetime, self.pump_replacement_cost_won)):
-            if not life or cost <= 0.0:
-                continue
-            year = life + 1
-            while year <= horizon:
-                schedule[year] = schedule.get(year, Decimal(0)) + to_won(
-                    cost * self.replacement_escalation_factor(year=year)
-                )
-                year += life
+        for _life, acquired in self._acquisitions(horizon=horizon):
+            for year, cost in acquired.items():
+                # 1년차 최초 취득은 CAPEX 이지 교체비가 아니므로 제외한다
+                if year == 1:
+                    continue
+                # 같은 해에 본체와 순환펌프가 겹치면 더한다 — 덮어쓰면 한쪽이
+                # 조용히 사라진다
+                schedule[year] = schedule.get(year, Decimal(0)) + to_won(cost)
         return {y: Money(v) for y, v in sorted(schedule.items())}
 
     def salvage_value(self, *, year: int) -> Money:
@@ -670,28 +752,21 @@ class HeatPump(DER):
         (NFR-103 계층 경계). 교체가 있었으면 교체 취득가와 교체 이후 경과년수로 다시
         센다 — 무시하면 16년차에 새로 산 설비가 20년차에 0으로 잡혀 회수기간이 실제보다
         길게 나온다 (원칙 4-3).
+
+        **부품마다 마지막 취득 시점부터 센다** (R43 · WP-D2) — 취득분은
+        `_acquisitions()` 하나가 낸다. 그래서 **교체비가 명목이면 잔존가치도
+        명목**이고, 종전처럼 *명목으로 산 것을 실질로 되파는* 상태가 될 수 없다.
+        `PV.salvage_value()`·`ESS.salvage_value()` 와 같은 셈이다.
         """
         if year < 1:
             raise ValueError(f"분석 연도는 1부터 셉니다: {year}")
-        pump = self.pump_replacement_cost_won
-        return won_sum([
-            self._component_salvage(self.lifetime, self._acquisition_won,
-                                    self.replacement_cost_won, year),
-            self._component_salvage(self.pump_lifetime, pump, pump, year),
-        ])
-
-    @staticmethod
-    def _component_salvage(
-        life: int | None, initial_won: float, replacement_won: float, year: int
-    ) -> Decimal:
-        if not life or initial_won <= 0.0:
-            return Decimal(0)
-
-        acquired_year, acquired_won = 1, initial_won
-        replaced = life + 1
-        while replaced <= year:
-            acquired_year, acquired_won = replaced, replacement_won
-            replaced += life
-
-        remaining = max(0, life - (year - acquired_year + 1))
-        return Decimal(str(acquired_won)) * remaining / life
+        total = 0.0
+        for life, acquired in self._acquisitions(horizon=year):
+            within = [y for y in acquired if y <= year]
+            if not within:
+                continue
+            last_year = max(within)
+            used = year - last_year + 1  # 취득 연도부터 센다 (1-base)
+            remaining = max(0, life - used)
+            total += acquired[last_year] * remaining / life
+        return to_won(total)
