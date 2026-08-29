@@ -16,11 +16,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.casegrid.ledger_levels import design_variables
+from core.contracts.validation import ValidationError
 from core.report.capacity import (
+    BLOCKED_BY_DESIGN,
+    BLOCKED_BY_FAILURE,
     SHAPE_DECREASING,
     SHAPE_INCREASING,
     SHAPE_INTERIOR,
     build_capacity_review,
+    capacity_appendix,
     capacity_section,
 )
 from core.report.case_report import build_case_report
@@ -98,7 +102,15 @@ def test_a_blocked_point_is_carried_not_dropped() -> None:
 
     def refusing(_variable: str, value: float) -> float:
         if value >= blocked_at:
-            raise ValueError("probe: 계획이 정격출력을 넘습니다. 출력을 키우십시오")
+            # ⚠ **`ValidationError` 로 던진다 (R43-H).** 실물이 그것이고
+            # (`ESS._check_power`), 이 예외형이 곧 「설계 제약」 판정의 근거다 —
+            # 평범한 `ValueError` 로 두면 이 검사가 **결함 갈래**를 재게 되고
+            # 「제약에 걸린 점」이라는 이름과 어긋난다.
+            raise ValidationError(
+                field="probe.power_kw",
+                reason="probe: 계획이 정격출력을 넘습니다",
+                action="출력을 키우십시오",
+            )
         return value * 1_000.0
 
     for finding in build_capacity_review(refusing, used={}):
@@ -145,7 +157,10 @@ def test_the_body_carries_the_shape_and_the_appendix_carries_the_points() -> Non
                 f"{finding.variable}: {point.value:g} 점이 붙임 10 에 없다"
             )
     # 점별 결론 축은 본문에 싣지 않는다 — 본문이 붙임이 되면 분량 규정이 깨진다.
-    assert "계산 불가" not in section, "제약 상세가 본문에 실렸다"
+    # ⚠ **문면을 상수에서 가져온다 (R43-H).** 종전 이 줄은 리터럴 「계산 불가」
+    # 였고, 그 문면이 사라지자 **검사가 조용히 아무것도 재지 않게 됐다.**
+    for banned in (BLOCKED_BY_DESIGN, BLOCKED_BY_FAILURE):
+        assert banned not in section, f"제약 상세({banned})가 본문에 실렸다"
 
 
 def test_the_section_carries_no_reading_instructions() -> None:
@@ -154,3 +169,89 @@ def test_the_section_carries_no_reading_instructions() -> None:
     assert not [line for line in lines if line.startswith(">")], "인용문이 남았다"
     for banned in ("읽지 말", "권고", "건의", "바람직"):
         assert not [line for line in lines if banned in line], f"{banned} 가 실렸다"
+
+
+def _blocked_review(error: Exception):
+    """세 점째부터 `error` 를 던지는 탐침의 검토 결과."""
+
+    def probe(_variable: str, value: float) -> float:
+        if value > 2.0:
+            raise error
+        return value * 1_000.0
+
+    return build_capacity_review(probe, used={})
+
+
+def test_a_design_refusal_and_a_real_failure_do_not_print_the_same_thing() -> None:
+    """★★ **「계산 불가」 하나로 둘을 인쇄하고 있었다** (문의사항 나-9).
+
+    붙임 10 의 30kWh 행은 *「e2e-ess: 방전 계획 6 kW 가 정격출력 5 kW 를
+    넘습니다」* 를 「계산 불가」 칸에 실었다. 검토자에게 그것은 **프로그램
+    결함**으로 보인다 — 실제로는 자원이 그 조합을 거부한 것이다.
+
+    ⚠ **문면만 바꾸면 반대 방향으로 거짓말이 된다.** 진짜 계산 실패에도
+    「설계 제약」이라 인쇄하면 결함이 정상으로 보인다. 그래서 여기서 재는 것은
+    *예쁜 문면*이 아니라 **둘이 갈리는가**다 — 같은 자리에 서로 다른 예외를
+    넣어 두 문면을 함께 본다.
+    """
+    design = _blocked_review(
+        ValidationError(
+            field="probe.power_kw",
+            reason="probe: 계획이 정격출력을 넘습니다",
+            action="출력을 키우십시오",
+        )
+    )
+    failure = _blocked_review(ZeroDivisionError("division by zero"))
+
+    for finding in design:
+        refused = [p for p in finding.points if p.conclusion is None]
+        assert refused, f"{finding.variable}: 거부된 점이 사라졌다"
+        assert all(p.by_design for p in refused), "입력 검증 실패가 결함으로 세어졌다"
+        assert all(p.blocked_field == "probe.power_kw" for p in refused), (
+            "거부한 필드가 실리지 않았다 — 「무엇을 함께 바꿔야 하는가」에 답할 수 없다"
+        )
+    for finding in failure:
+        refused = [p for p in finding.points if p.conclusion is None]
+        assert refused, f"{finding.variable}: 실패한 점이 사라졌다"
+        assert not any(p.by_design for p in refused), "결함이 설계 제약으로 세어졌다"
+
+    def rows(findings) -> str:
+        """**표의 행만** — 머리말 설명은 두 라벨을 둘 다 소개하므로 뺀다."""
+        return "\n".join(
+            line for line in capacity_appendix(findings) if line.startswith("| ")
+        )
+
+    design_text = "\n".join(capacity_appendix(design))
+    assert BLOCKED_BY_DESIGN in rows(design), "거부된 점이 설계 제약으로 인쇄되지 않았다"
+    assert BLOCKED_BY_FAILURE not in rows(design), (
+        "입력 검증 실패가 「계산 실패」로 인쇄됐다 — 검토자에게 결함으로 보인다"
+    )
+    assert BLOCKED_BY_FAILURE in rows(failure), "결함이 계산 실패로 인쇄되지 않았다"
+    assert BLOCKED_BY_DESIGN not in rows(failure), (
+        "결함이 「설계 제약」으로 인쇄됐다 — 이번에는 반대 방향으로 거짓말이 된다"
+    )
+
+    # ★ **원문은 지우지 않는다 — 주로 내려간다.** 우리 판정이 맞는지 검토자가
+    # 되짚을 수 있어야 하고, 그 근거는 자원이 실제로 한 말이다.
+    assert "계획이 정격출력을 넘습니다" in design_text, "거부 원문이 사라졌다"
+    assert "주1)" in design_text, "원문이 주로 내려가지 않았다"
+    # 조치 지시는 표에도 주에도 싣지 않는다 (양식 0절).
+    assert "십시오" not in design_text, "조치 지시가 표나 주에 실렸다"
+
+
+def test_a_real_failure_is_not_counted_as_a_capacity_bound() -> None:
+    """★★ **결함은 설계의 상한을 말해 주지 않는다.**
+
+    `binding_constraint` 가 `bounded`(적정 용량이 이 모델 안에서 정해지는가)를
+    정한다. 종전에는 `except Exception` 하나가 둘을 함께 받아, **예외가 나는
+    구간이 「제약에 걸렸다」로 세어져** 4.4 가 *「적정값이 정해진다」* 를
+    냈다 — 실제로 정해진 것은 아무것도 없고 계산이 깨진 것이다.
+    """
+    for finding in _blocked_review(ZeroDivisionError("division by zero")):
+        assert finding.binding_constraint is None, (
+            f"{finding.variable}: 계산 실패가 자원 제약으로 세어졌다 — "
+            f"{finding.binding_constraint}"
+        )
+        assert not finding.bounded, (
+            "결함이 났을 뿐인데 「적정 용량이 정해진다」로 나왔다"
+        )
