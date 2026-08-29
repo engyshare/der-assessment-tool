@@ -239,8 +239,9 @@ def test_yaml_expected_mirr_is_consistent_with_formula(case: YamlMap) -> None:
 # 반환**하고 있었는데도 오라클 전건이 초록불이었다.
 #
 # 그러나 실행 경로가 실제로 넘기는 것은 **한 해에 행이 여럿인 현금흐름**이다 —
-# `e2e_runner.net_operating_flows()` 가 편익 행과 **부호를 뒤집은 비용 행**을
-# 나란히 이어 붙인다. 아래 검사들이 그 형태를 만든다.
+# `core/casegrid/operating_lines.py::net_operating_flows()` 가 편익 행과 **부호를
+# 뒤집은 비용 행**을 나란히 이어 붙인다(선언은 그쪽이고, `e2e_runner` 가 재수출
+# 하므로 러너 경로로도 부를 수 있다). 아래 검사들이 그 형태를 만든다.
 #
 # 기대값의 출처는 **구현이 아니다**: 연 순현금흐름(편익 − 비용)을 이 파일이
 # 직접 세워 손계산으로 누적한다. 구현이 행을 어떻게 접든 그 수와 맞아야 한다.
