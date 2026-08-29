@@ -261,7 +261,24 @@ R41 은 **spec 을 v0.18 로 올렸으나 조항을 건드리지 않았고**(§1
 > gen_traceability.py             자동 290 · 수동 8 · 스텁 4 · 미매핑 9(전건 Phase 2·3)
 >                                 → **R40 과 같다**(`docs/traceability.md` diff 0).
 >                                    이 라운드는 조항을 건드리지 않았다
+> negtest_*.py                    11종 전건 rc=0 (실물 소스에 잔여 변이 없음)
+> Python 3.11 (CI 판) pytest -q   rc=0   실패 0
 > ```
+>
+> **커밋 뒤에만 되는 것 셋** (`2ebb2be..4f5af15` · `--base HEAD~4`):
+>
+> ```
+> check_coverage_inputs      rc=0   측정 230파일 / 변경 core 1건
+> check_test_accompaniment   rc=0   구현 변경 1건 전건 동반
+> diff-cover --fail-under=95 rc=0   **「대상 줄 없음」**
+> ```
+>
+> ⚠ **`diff-cover` 의 「대상 줄 없음」을 통과로 읽어도 되는 이유가 따로 있다.**
+> 그 도구는 판정할 수 없을 때도 `rc=0` 을 낸다 — 그래서 입력 검증
+> (`check_coverage_inputs`)이 **먼저** 온다(R40 이 낡은 `coverage.xml` 로 이 자리를
+> 밟았다). 이번에 줄이 없는 것은 **이 라운드의 `core/` 변경이 주석뿐**이기
+> 때문이며, 앞선 검사가 그 파일이 커버리지 산출물에 있음을 확인했다.
+> `coverage.xml` 은 이 라운드에서 다시 뽑았다(저장소에 추적되지 않는다).
 >
 > ## ⑦ 다음 라운드가 알아야 할 것
 >
