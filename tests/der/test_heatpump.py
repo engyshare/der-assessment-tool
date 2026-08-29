@@ -474,13 +474,25 @@ def test_rc_all_c3_throughput_is_heat_not_electricity() -> None:
 
 @pytest.mark.req("FR-104-AC4")
 def test_rc_all_c4_replacement_at_year_after_lifetime() -> None:
-    """수명 도달 **다음 연도 초**에 계상하고, 부속설비는 본체와 독립이다."""
+    """수명 도달 **다음 연도 초**에 계상하고, 부속설비는 본체와 독립이다.
+
+    ⚠ **금액은 명목이다** (R43 · `DV-7`). 대장이 `price_basis: "명목"` 을 최상위에서
+    한 번 선언하므로 교체비는 `replacement_escalation_factor` 를 탄다. 오라클은
+    **밖에서 고정한 리터럴**이며 여기서 계수를 다시 계산하지 않는다 — 계산하면
+    구현이 틀려도 기대값이 함께 틀려 검사가 아무것도 검사하지 않는다:
+
+        11년차 순환펌프  1,500,000 × 1.02^10 = 1,828,492
+        16년차 본체     12,000,000 × 1.02^15 = 16,150,420
+
+    **각 항이 자기 교체 연차의 계수를 받는다** — 두 부품의 지수가 10 과 15 로
+    다른 것이 그 확인이다.
+    """
     hp = make_hp(
         lifetime=15, pump_lifetime=10, pump_replacement_cost_won=1_500_000.0
     )
     schedule = hp.replacement_schedule(horizon=20)
 
-    assert schedule == {11: Money(1_500_000), 16: Money(12_000_000)}
+    assert schedule == {11: Money(1_828_492), 16: Money(16_150_420)}
 
 
 @pytest.mark.req("FR-104-AC4")

@@ -621,6 +621,25 @@ class HeatPump(DER):
         히트펌프의 10년짜리 부속 교체비가 통째로 빠진다.
 
         `retire` 면 교체하지 않으므로 빈 dict 를 돌려준다 (FR-104-AC3).
+
+        ⚠ **두 항 다 `replacement_escalation_factor` 를 굴린다** (R43 · `DV-7`).
+        대장이 `price_basis: "명목"` 을 **최상위에서 한 번** 선언하므로
+        (`docs/assumptions.yaml:76`) 17년차 지출을 오늘의 원으로 적으면 **그
+        지출만 실질이 되어** 선언과 어긋난다 — `ESS` 에서 R40 이 같은 자리에 서서
+        같은 근거로 정한 것을 그대로 따른다(`ess.py::_acquisitions`). 선언이 자원별이
+        아니라 대장 최상위 1회이므로 그 사유는 `HeatPump` 에도 그대로 성립한다.
+
+        ⚠ **O&M 계수(`escalation_factor`)로 되돌리지 않는다** — 대장의
+        `capex.replacement_real_trend`(`Q-17`)는 적용범위를 **재취득 단가로만**
+        좁혀 두었고 O&M 을 명시적으로 뺐다(`contracts/der.py`
+        `replacement_escalation_factor` 독스트링). 되돌리면
+        `test_replacement_follows_the_replacement_rate_and_om_does_not` 이 잡는다.
+
+        ⚠ **연차는 「그 부품의 교체가 일어나는 해」다.** 본체(16년)와 부속(10·20년)이
+        서로 다른 해에 걸리므로 각 항이 **자기 연차**로 계수를 받는다. 한 해에 둘이
+        겹치면 **각각 곱한 뒤** 더한다 — 합산 후 한 번 곱하면 같은 해에서는 우연히
+        맞지만, 단가가 다른 두 부품을 한 계수로 접는 셈이라 수명이 갈리는 순간
+        틀린다.
         """
         if horizon < 1:
             raise ValidationError(
@@ -638,7 +657,9 @@ class HeatPump(DER):
                 continue
             year = life + 1
             while year <= horizon:
-                schedule[year] = schedule.get(year, Decimal(0)) + to_won(cost)
+                schedule[year] = schedule.get(year, Decimal(0)) + to_won(
+                    cost * self.replacement_escalation_factor(year=year)
+                )
                 year += life
         return {y: Money(v) for y, v in sorted(schedule.items())}
 

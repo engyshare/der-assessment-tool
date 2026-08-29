@@ -64,15 +64,18 @@ MEDIA_FLAGS = [flag for _media, flag in MEDIA]
 
 #: 교체비에 **교체 전용 물가 계수를 쓰지 않는** 자원 — 실측 부채 (R42).
 #:
-#: `HeatPump.replacement_schedule()` 은 계수를 아예 곱하지 않는다(R42 이전부터
-#: 그랬고 이 라운드가 재서 처음 드러냈다). `ReferencePV` 는 Wave 0 참조 구현이며
-#: 실행 경로가 아니다. **둘 다 러너의 구성에 없으므로 결론축을 움직이지 않는다** —
-#: 그래서 이 라운드에서 고치지 않고 부채로 세운다. 고치는 것은 「교체비가 물가를
-#: 타야 하는가」의 판단이며 `ESS` 에서 그것을 정할 때 `DV-7` 을 근거로 삼았다.
+#: **`HeatPump` 는 R43 이 뺐다** — 이 래칫이 그 결함을 처음 드러냈고(R42 가 쟀다),
+#: `ESS` 와 같은 근거(대장 최상위 `price_basis: "명목"` 1회 선언 · `DV-7`)로
+#: 「탄다」로 판정해 `heatpump.py::replacement_schedule()` 에 배선했다.
+#:
+#: 남은 `ReferencePV` 는 Wave 0 참조 구현이며 **실행 경로가 아니다.** 러너의
+#: 구성에 없어 결론축을 움직이지 않고, 무엇보다 「참조 구현이 실물 자원과 같은
+#: 재무 규약을 져야 하는가」는 아직 판정된 적이 없다 — `DV-7` 을 근거로 삼은
+#: `ESS`·`HeatPump` 의 선례가 그대로 옮겨 간다고 **가정하지 않는다.**
 #:
 #: 비어 있지 않다고 방치하지 않는다 — **줄면 빨간불**이 나서 목록을 함께 줄이라고
 #: 알린다(`KNOWN_ESCALATION_IGNORED_IN_REPLACEMENT` 와 같은 래칫이다).
-KNOWN_REPLACEMENT_RATE_IGNORED: frozenset[str] = frozenset({"HeatPump", "ReferencePV"})
+KNOWN_REPLACEMENT_RATE_IGNORED: frozenset[str] = frozenset({"ReferencePV"})
 
 
 class DERContractTests:
