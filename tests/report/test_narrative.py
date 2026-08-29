@@ -849,16 +849,22 @@ def test_the_summary_and_the_verdict_carry_the_evaluation_perspective() -> None:
     발췌돼 인용되는 절은 3.3 이 아니라 그 둘이다. 한정이 없으면
     *「이 사업의 값어치가 −6,289,675원」* 이라는 진술이 되어 나가고, 지자체가
     지원하는 근거는 정확히 그 **「계상하지 않은」** 쪽에 있다.
+
+    ★ **행 둘을 함께 잰다** (R43-L). 「결론」 행만 재면 그 아래 「결론 축 ·
+    순현재가치」 행 — **실제로 발췌돼 인용되는 −숫자원이 있는 자리** — 은
+    한정 없이 나갈 수 있다. 나-6 이 지적한 형태가 바로 그것이므로 두 행을
+    같은 기준으로 붙든다.
     """
     text = _markdown()
     summary = text[text.index("## 1. 요약") : text.index("## 2. ")]
     verdict = text[text.index("### 6.1") : text.index("### 6.2")]
 
-    conclusion = [line for line in summary.splitlines() if line.startswith("| 결론 |")]
-    assert conclusion, "요약에 「결론」 행이 없다"
-    assert PERSPECTIVE_QUALIFIER in conclusion[0], (
-        f"요약 「결론」 행에 관점 한정이 없다 — {conclusion[0]}"
-    )
+    for prefix in ("| 결론 |", "| 결론 축 · 순현재가치 |"):
+        rows = [line for line in summary.splitlines() if line.startswith(prefix)]
+        assert rows, f"요약에 「{prefix.strip('| ')}」 행이 없다"
+        assert PERSPECTIVE_QUALIFIER in rows[0], (
+            f"요약 「{prefix.strip('| ')}」 행에 관점 한정이 없다 — {rows[0]}"
+        )
     assert PERSPECTIVE_QUALIFIER in verdict, "6.1 판정에 관점 한정이 없다"
 
 

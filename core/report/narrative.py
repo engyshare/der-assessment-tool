@@ -134,11 +134,19 @@ def _summary_section(report: CaseReport) -> list[str]:
         # 나간다 — 지자체가 지원하는 근거는 정확히 그 「계상하지 않은」 쪽에
         # 있다. **문면은 3.3 이 소유한다**(`PERSPECTIVE_QUALIFIER`) — 여기서
         # 새로 지으면 두 곳에 적히고 한쪽만 고쳐진다.
+        #
+        # ★ **아래 「결론 축」 행에도 병기한다 (R43-L · WP-H 판정 요구 1).**
+        # 실제로 발췌돼 인용되는 수는 「결론」 행의 말이 아니라 **그 아래 줄의
+        # −숫자원**이다. 한정을 「결론」 행에만 붙이면 그 수만 떼어 간 인용은
+        # 여전히 한정 없이 나간다 — 나-6 이 지적한 것이 정확히 그 형태다.
+        # **행 이름은 건드리지 않는다**(양식 【1】이 소유자이며 위 독스트링의
+        # 검사가 대조한다) — 값 칸에만 붙인다.
         f"| 결론 | 분석기간 {horizon}년 내 "
         f"**{_recovery(report.recovers_within_horizon)}** "
         f"({PERSPECTIVE_QUALIFIER}) |",
         f"| 주 지표 · 할인 회수기간 | **{_years(metrics[HEADLINE_METRIC])}** |",
-        f"| 결론 축 · 순현재가치 | **{_won(metrics[CONCLUSION_METRIC])}** |",
+        f"| 결론 축 · 순현재가치 | **{_won(metrics[CONCLUSION_METRIC])}** "
+        f"({PERSPECTIVE_QUALIFIER}) |",
         f"| 결론 전환 인자 (단독) | {_flip_names(report)} |",
         # ★ 값을 여기서 계산하지 않는다 — `break_even_subsidy_rate` 한 함수를
         # 본문 5.1 · 붙임 3 과 **함께** 쓴다. 요약이 스스로 환산하면 같은
