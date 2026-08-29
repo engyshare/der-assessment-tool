@@ -4,51 +4,60 @@
 아니다. … 이 3종이 통과한다는 것은 «계산이 어제와 같다» 는 뜻이지 «계산이 맞다»
 는 뜻이 아니다.」* 아래 대조가 초록불인 것은 그 뜻이며, 그 이상을 주장하지 않는다.
 
-## ① 이 골든이 넘기는 현금흐름의 모양 — 편익 **한 행**, 비용 행 없음
+## ① 이 골든이 재는 모양 — **실행 경로 그대로** (R39-F 가 옮겼다)
 
-`_reference_metrics()` 와 `_scenario_metrics()` 는 둘 다 `benefit_row` 하나만
-세운다. 한 해에 행이 하나뿐이므로 **행 단위 순회와 연 단위 순회가 같은 목록을
-낸다** — 그래서 `payback_simple` 이 R38 까지 한 해의 행을 합치지 않고 한 걸음씩
-세고 있었는데도 세 시나리오가 전건 초록불이었다. **이 골든은 그 결함의 파수꾼이
-아니다.** 그 자리를 보는 검사는 `tests/cba/test_indicators.py` 와
-`tests/cba/test_metrics.py` 의 「한 해에 행이 여럿」 구획에 있다.
+`_scenario_metrics()` 는 `core.report.case_report.build_case_report()` 를 부른다.
+그것이 대장에서 수준표를 만들고, 분석기간을 전제 층에서 받고, 시나리오의
+`subsidy_rate` 로 지원안을 세우고, 일사 곡선을 실어 `run_single_case_e2e()` 를
+돌리는 **하나뿐인 조립기**다. 즉 이 회귀는 **실물 산출물이 내는 수**를 붙든다 —
+편익 1행 + 부호를 뒤집은 비용 여러 행(고정 O&M 둘 · 전력 구매 · 정산 수수료 ·
+**교체비 · 잔존가치**)이 전부 들어간다.
 
-## ② 실행 경로의 모양은 다르다 — 여기가 재는 것이 아니다
+**손으로 행을 세우지 않는다.** 여기서 현금흐름을 흉내내면 실행 경로가 바뀔 때
+또 갈리고, 그 갈림을 아무도 못 본다 — 아래 ②가 그 상태였다.
 
-실물은 `core/casegrid/e2e_runner.py::net_operating_flows()` 를 지나며 **편익
-1행 + 부호를 뒤집은 비용 여러 행**(`PVFixedOM`·`ESSFixedOM`·`GridPurchase`·
-정산 수수료)을 만든다. 그 경계를 붙드는 것은 `tests/casegrid/test_e2e_cost_sign.py`
-다. 즉 **두 모양이 갈려 있고, 갈린 자리를 각각 다른 검사가 붙든다.** 이 갈림
-자체는 조항 위반이 아니다(위 16.4) — 다만 이 파일의 초록불을 「실행 경로가
-맞다」로 읽으면 안 된다.
+## ② 종전에는 갈려 있었다 — **다섯 라운드가 미룬 이동이고 R39 에 조건이 갖춰졌다**
 
-## ③ 왜 아직 옮기지 않는가 — 옮기는 조건
+R38-C2 까지 이 파일은 `benefit_row` **한 행**만 세웠다(비용 행 없음). 한 해에 행이
+하나뿐이라 **행 단위 순회와 연 단위 순회가 같은 목록을 냈고**, 그래서
+`payback_simple` 이 한 해의 행을 합치지 않고 세고 있었는데도 세 시나리오가 전건
+초록불이었다 — **이 골든은 그 결함의 파수꾼이 아니었다.**
 
-모양을 옮기면 `fixtures/golden/*.yaml` 의 `expected_values` 6개가 전부 바뀌고,
-무보조 시나리오의 `npv` 는 **부호가 뒤집힌다**(R38 실측. 단 `GridPurchase` 와
-정산 수수료 행을 채우지 못했으므로 그 실측은 변화폭의 **하한**이다). 「어제와
-같다」를 재는 자리의 기준점을 흔드는 일이므로 **한 번만** 해야 한다. 그런데 지금
-골든 안에는 `GridPurchase` 단가도 정산 구조도 없고, 교체비·잔존가치 배선이 비용
-행을 더 늘린다 — 지금 옮기면 옛 모양을 **또 다른 잠정 모양**으로 바꾸는 것이다.
+옮기는 조건은 *「비용 행 구성이 확정된 뒤에 **한 번**」* 이었다(R38 판정 ·
+`todo.md` 1번). R39-E 가 교체비·잔존가치를 배선해 그 조건이 갖춰졌고, 이동으로
+여섯 값이 전부 바뀌었다 — **무보조 `npv` 는 부호가 뒤집혔다**(+2,270,362 →
+**−6,066,881**). 그 크기는 「기준값이 틀렸었다」가 아니라 **재는 대상이 달라졌다**
+는 뜻이다.
 
-→ **옮기는 시점은 그 배선이 끝나 비용 행 구성이 확정된 뒤이며, 그때 위 6개를
-함께 재산출한다.** 세 yaml 머리글이 같은 조건을 가리킨다.
+## ③ ★ 주 지표의 **정체가 바뀌었다** — 같은 이름, 다른 수
 
-## ④ 세 yaml 이 선언한 출처는 위 두 수를 낼 수 없다 — 별개 축, 고치지 않았다
+`payback_period_years` 는 종전에 `payback_simple`(할인 없음)이었고, 지금은 실행
+경로가 내는 `payback_years` = **`payback_discounted`** 다. 이름 칸은 같지만 **다른
+지표**이므로 옛 값과 새 값을 견주면 안 된다. 실행 경로의 지표를 그대로 싣는 것이
+이 이동의 목적이다 — 골든이 자기만의 지표를 갖고 있으면 그것이 또 하나의 정본이
+된다.
+
+## ④ 미회수는 `.inf` 로 싣는다 — `null` 로 두면 **조용히 검사에서 빠진다**
+
+무보조·보조 20% 는 20년 안에 회수되지 않아 `payback_years` 가 `inf` 다. `null` 로
+적으면 `_expected_values()` 가 숫자가 아닌 값을 걸러 **그 지표가 대조 목록에서
+사라지고**, 회귀는 초록불인 채 한 지표를 잃는다. 실측으로 확인했다 —
+`yaml.safe_load(".inf")` 는 `float('inf')` 이고 `pytest.approx(inf)` 는 `inf` 에만
+참이다(유한값에는 거짓). 그래서 **`.inf` 는 대조되는 값**이며, 어느 날 회수가
+되기 시작하면 이 회귀가 빨간불이 된다.
+
+## ⑤ 세 yaml 이 선언한 출처는 별개 축이며 **고치지 않았다**
 
 세 yaml 은 오라클 순위 3(외부 공표 실적)과 출처 파일
-`tests/integration/test_wave2_end_to_end.py` 를 선언한다. 그 파일을 열어 보면
-**회수기간을 아예 계산하지 않고**, `npv` 에도 수치 단언이 없다(형과 정수 여부만
-본다). 게다가 행 구성이 편익 1행 + 고정 O&M 2행이며 `total_row()` 로 합쳐
-넘긴다 — 위 ①과 다른 모양이다. 즉 **선언된 출처는 세 yaml 의 두 수를 낼 수
-없다.**
-
-이것은 ①~③의 「모양」 축과 다른 **정박** 축이며, 정본이 이미 유예해 둔 자리다
-(작업목록 16.1b ④ — Q-4·Q-5 회신이 §13.3 판정을 연다). 기계로 적어 둔 자리는
+`tests/integration/test_wave2_end_to_end.py` 를 선언한다. 그 파일은 **회수기간을
+아예 계산하지 않고** `npv` 에도 수치 단언이 없다 — 즉 **선언된 출처는 이 두 수를
+낼 수 없다.** 이것은 ①~④의 「모양」 축과 다른 **정박** 축이고, 정본이 이미
+유예해 둔 자리다(작업목록 16.1b ④ — `Q-4`·`Q-5` 회신이 §13.3 판정을 연다).
+**R39-F 도 그 유예를 풀지 않았다** — 순위·출처 필드는 주석이 아니라 파서가 읽는
+값이므로 값을 고치지 않고 사실만 남긴다. 기계로 적어 둔 자리는
 `tests/ci/test_performance_and_golden.py` 의
 `test_repo_golden_files_are_readable_and_declare_an_oracle_rank_and_source`
-독스트링이다. 순위·출처 필드는 주석이 아니라 파서가 읽는 값이므로 R38-C2 는
-**값을 고치지 않고 사실만 남겼다.**
+독스트링이다.
 """
 
 from __future__ import annotations
@@ -59,22 +68,24 @@ from typing import Any
 import pytest
 import yaml
 
-from core.cba.metrics import npv, payback_simple
-from core.cba.proforma import benefit_row
-from core.contracts.der import DispatchContext, DispatchResult
-from core.contracts.units import Money
-from core.der.ess import ESS, ESSOperatingMode
-from core.der.pv import PV, OperatingMode
-from core.engine.rule_based import RuleBasedEngine
-from core.incentive.schemas import IncentiveScheme
-from core.valuestream import PeakShaving, SurplusSale
+from core.report.case_report import build_case_report
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GOLDEN_DIR = REPO_ROOT / "fixtures" / "golden"
-DISCOUNT_RATE = 0.045
-HORIZON_YEARS = 20
-HOURS_PER_DAY = 24
-DAYS_PER_YEAR = 365
+ASSUMPTIONS_PATH = REPO_ROOT / "docs" / "assumptions.yaml"
+
+#: 골든 yaml 의 지표 이름 → 실행 경로가 내는 지표 이름.
+#:
+#: **이름을 맞추려고 어느 한쪽을 고치지 않았다.** yaml 쪽은 2026-08-09 부터
+#: 세 파일에 적혀 있고 CI·DoD 7 검사가 그 이름으로 읽으며, 실행 경로 쪽은
+#: `_metrics_for()` 가 케이스와 변형에 함께 쓰는 이름이다. 어느 쪽을 고쳐도
+#: **이 파일 밖이 함께 움직인다** — 대신 그 대응을 여기 한 곳에 적는다.
+#:
+#: ⚠ `payback_period_years` 는 이제 **`payback_discounted`** 다(모듈 독스트링 ③).
+_METRIC_KEYS: tuple[tuple[str, str], ...] = (
+    ("npv_won", "npv"),
+    ("payback_period_years", "payback_years"),
+)
 
 
 def _load_case(path: Path) -> dict[str, Any]:
@@ -94,100 +105,28 @@ def _expected_values(case: dict[str, Any]) -> dict[str, float]:
     }
 
 
-def _reference_metrics() -> dict[str, float]:
-    pv = PV(
-        name="integration-pv",
-        capacity_kw=3.0,
-        capacity_factor=0.15,
-        unit_capex_won_per_kw=1_500_000,
-        fixed_om_won_per_year=100_000,
-        escalation_rate=0.02,
-        self_consumption_ratio=0.0,
-        operating_mode=OperatingMode.FULL_EXPORT,
-    )
-    ess = ESS(
-        name="integration-ess",
-        capacity_kwh=10.0,
-        power_kw=5.0,
-        rte_pct=90.0,
-        soc_min_pct=10.0,
-        soc_max_pct=90.0,
-        cycle_life=6_000,
-        calendar_life=20,
-        eol_soh_pct=80.0,
-        cycles_per_year=365.0,
-        operating_mode=ESSOperatingMode.PEAK_SHAVING,
-        capex_unit_won_per_kwh=500_000,
-        fixed_om_won_per_year=100_000,
-    )
+def _scenario_metrics(scenario_path: Path) -> dict[str, float]:
+    """시나리오 하나를 **실행 경로로 돌려** 골든이 대조할 지표를 낸다.
 
-    ctx = DispatchContext(steps=HOURS_PER_DAY, dt=3_600, year=1)
-    dispatch = RuleBasedEngine().run([pv, ess], ctx)
-    grid_export_result = DispatchResult(
-        electric=list(dispatch.grid_export),
-        heat=[0.0] * ctx.steps,
-        cool=[0.0] * ctx.steps,
-        fuel=[0.0] * ctx.steps,
-    )
+    `build_case_report()` 하나만 부른다 — 그것이 대장 → 수준표 → 분석기간 →
+    지원안 → 일사 곡선 → `run_single_case_e2e()` 를 잇는 **유일한 조립기**이고,
+    출구(라우터·CLI)도 같은 함수를 부른다. 여기서 그 조립을 다시 쓰면 **골든이
+    출구와 다른 것을 재게 된다.**
 
-    surplus = SurplusSale(sale_price_won_per_kwh=120.0).annual_value(
-        grid_export_result, year=1
-    )
-    peak = PeakShaving(
-        monthly_peak_reduction_kw=[ess.reducible_peak_kw(year=1)] * 12,
-        demand_charge_won_per_kw_month=8_320.0,
-    ).annual_value(grid_export_result, year=1)
-    annual_benefit = Money(surplus * DAYS_PER_YEAR + peak)
+    ⚠ **지원(`subsidy_rate`)은 `metrics` 에 이미 반영돼 있다** — 실측으로
+    확인했다: 보조 20% 는 `−4,106,881원`, 80% 는 `+1,773,119원`이며
+    `variants["as_planned"]` 와 같은 수다(`variants["unsupported"]` 는 세
+    시나리오 모두 무보조 값 `−6,066,881원`). 그러므로 여기서 지원을 **다시
+    계산하지 않는다** — 계산하면 두 번 반영되거나, 조립기가 바뀔 때 갈린다.
 
-    base_capex = Money(int(pv.capex(year=1) + ess.capex(year=1)))
-    # ⚠ **편익 한 행. 비용 행이 없다.** 이 모양이 무엇을 못 재는지와 언제
-    # 옮기는지는 **모듈 독스트링이 정본이다** — 여기에 다시 적지 않는다(같은
-    # 사실이 두 곳에 있으면 한쪽만 고쳐진다).
-    rows = [
-        benefit_row(
-            "annual_benefit",
-            {year: int(annual_benefit) for year in range(1, HORIZON_YEARS + 1)},
-        )
-    ]
-
+    ⚠ 시나리오 **경로**를 받는다(종전에는 `subsidy_rate` 숫자였다). 조립기가
+    파일에서 읽는 것이 지원율만이 아니기 때문이며, 지원율만 넘기면 같은 율을
+    가진 시나리오 둘을 구별할 수 없다.
+    """
+    report = build_case_report(scenario_path, assumptions_path=ASSUMPTIONS_PATH)
     return {
-        "annual_benefit_won": float(int(annual_benefit)),
-        "base_capex_won": float(int(base_capex)),
-        "npv_won": float(int(npv(base_capex, rows, DISCOUNT_RATE))),
-        "payback_period_years": float(payback_simple(base_capex, rows)),
-    }
-
-
-def _scenario_metrics(subsidy_rate: float) -> dict[str, float]:
-    metrics = _reference_metrics()
-    base_capex = int(metrics["base_capex_won"])
-    annual_benefit = int(metrics["annual_benefit_won"])
-
-    scheme = IncentiveScheme(
-        subsidy_rate=subsidy_rate,
-        loan_rate=0.0,
-        loan_interest=0.0,
-        loan_grace_years=0,
-        loan_repayment_years=0,
-        loan_repayment_type="\uc6d0\ub9ac\uae08\uade0\ub4f1",
-        tax_credit_rate=0.0,
-        sponsor="\uad6d\ube44",
-    )
-    equity = scheme.calculate_financing(base_capex)["equity"]
-    initial_investment = Money(int(equity))
-    # ⚠ 여기도 **편익 한 행**이다. 그리고 **실제로 대조에 쓰이는 것은 이쪽이다**
-    # — 아래 회귀 검사와 `tests/acceptance2/test_17_7_dod7.py` 가 부르는 함수가
-    # 이 함수다. 이 모양이 못 재는 것은 모듈 독스트링 ①·②를 볼 것.
-    rows = [
-        benefit_row(
-            "annual_benefit",
-            {year: annual_benefit for year in range(1, HORIZON_YEARS + 1)},
-        )
-    ]
-
-    return {
-        "npv_won": float(int(npv(initial_investment, rows, DISCOUNT_RATE))),
-        "payback_period_years": float(payback_simple(initial_investment, rows)),
+        golden_key: float(report.metrics[metric_key])
+        for golden_key, metric_key in _METRIC_KEYS
     }
 
 
@@ -221,5 +160,5 @@ def test_golden_scenarios_match_current_regression_snapshot(path: Path) -> None:
         print(f"SKIP {path.name}: expected_values are all null")
         pytest.skip(f"{path.name}: expected_values are all null")
 
-    actual = _scenario_metrics(float(case["subsidy_rate"]))
+    actual = _scenario_metrics(path)
     _compare(path, expected, actual)

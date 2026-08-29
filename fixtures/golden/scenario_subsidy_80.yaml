@@ -3,38 +3,43 @@
 # changes; until then, mismatches are expected and are not defects.
 # Calculated on 2026-08-09 with docs/assumptions.yaml version 1.
 #
-# ── 이 기준값의 «모양» (R38-C2) ──────────────────────────────────────────
-# 아래 두 수는 **편익 한 행뿐인 현금흐름**에서 나왔다 — 비용 행이 없다. 실행
-# 경로(`core/casegrid/e2e_runner.py::net_operating_flows()`)는 편익 1행 + 부호를
-# 뒤집은 비용 여러 행을 만들므로 **이 기준값은 실물 산출물의 모양이 아니다.**
-# 그래서 이 회귀가 초록불인 것은 「계산이 어제와 같다」는 뜻이며(작업목록 16.4),
-# 「실행 경로가 맞다」는 뜻이 아니다. 자세한 것은
-# `tests/golden/test_regression_scenarios.py` 모듈 독스트링이 정본이다.
+# ── 이 기준값의 «모양» (R39-F 가 옮겼다) ──────────────────────────────────
+# 아래 두 수는 **실행 경로**(`core.report.case_report.build_case_report()`)가 낸
+# 것이다 — 편익 1행 + 부호를 뒤집은 비용 여러 행(고정 O&M 둘 · 전력 구매 · 정산
+# 수수료 · 교체비 · 잔존가치)이 전부 들어간다. R38-C2 까지는 **편익 한 행뿐인**
+# 현금흐름에서 나왔고 그래서 「실물 산출물의 모양이 아니다」라고 적혀 있었다.
+# 그 이동의 조건(비용 행 구성 확정)이 R39-E 의 교체비·잔존가치 배선으로 갖춰져
+# **한 번** 옮겼고, 여섯 값이 전부 바뀌었다.
 #
-# 옮기는 조건: 교체비·잔존가치 배선이 끝나 비용 행 구성이 확정된 뒤에 **한 번**
-# 옮기고, 그때 세 파일의 `expected_values` 를 함께 재산출한다. 지금 옮기면
-# `GridPurchase` 단가와 정산 수수료 구조가 골든 안에 없어 또 다른 잠정 모양을
-# 고정하게 된다.
+# ⚠ `payback_period_years` 는 이제 **할인 회수기간**이다(종전 `payback_simple`).
+#    이름 칸은 같지만 다른 지표이므로 옛 값과 견주지 말 것. `.inf` 는 「20년 안에
+#    회수되지 않음」이며 **대조되는 값**이다(`null` 로 두면 그 지표가 조용히
+#    검사에서 빠진다).
+#
+# 이 회귀가 초록불인 것은 「계산이 어제와 같다」는 뜻이며(작업목록 16.4),
+# 「계산이 맞다」는 뜻이 아니다. 자세한 것은
+# `tests/golden/test_regression_scenarios.py` 모듈 독스트링이 정본이다.
 #
 # 위 3행의 「mismatches … are not defects」는 **대장 판이 올라간 뒤의 어긋남**을
 # 말한다 — 어긋남을 무시해도 된다는 뜻이 아니다. 회귀가 어긋나면 검사는 빨간불이
 # 되고 머지가 막힌다(`FR-1103-AC1`).
 #
 # `oracle_rank: 3`(외부 공표 실적)은 **아직 정박되지 않은 선언**이다 — §13.3
-# 판정은 Q-4·Q-5 회신까지 유예돼 있다(작업목록 16.1b ④). 그 사실을 기계로 적어
-# 둔 자리는 `tests/ci/test_performance_and_golden.py` 의
+# 판정은 Q-4·Q-5 회신까지 유예돼 있다(작업목록 16.1b ④). R39-F 도 그 유예를 풀지
+# 않았다. 그 사실을 기계로 적어 둔 자리는
+# `tests/ci/test_performance_and_golden.py` 의
 # `test_repo_golden_files_are_readable_and_declare_an_oracle_rank_and_source`
 # 독스트링이다.
 
 scenario: "energy_independent_household"
 subsidy_rate: 0.80
 
-generated_at: "2026-08-09"
+generated_at: "2026-08-29"
 assumptions_version: 1
 oracle_rank: 3
 oracle_source: "tests/integration/test_wave2_end_to_end.py"
 error_tolerance: "0.1%"
 
 expected_values:
-  npv_won: 9870362
-  payback_period_years: 2.0997723404725592
+  npv_won: 1773119
+  payback_period_years: 6.507374076238821

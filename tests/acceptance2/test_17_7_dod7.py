@@ -55,10 +55,14 @@ def test_dod7_golden_regression_actually_compares_computed_values() -> None:
     직접 대조한다 — CI 가 어딘가에서 돌린다는 것과 이 구획 스스로가 실제
     회귀 대조를 실행해 통과를 확인하는 것은 다르다.
 
-    ⚠ 이 대조가 지나는 현금흐름은 **편익 한 행뿐**이다 — 실물 산출물
-    전체가 아니다. 그 모양이 무엇을 재고 무엇을 못 재는지는 사본을 두지
-    않는다 — `tests/golden/test_regression_scenarios.py` 모듈 독스트링이
-    정본이다.
+    ⚠ **이 대조가 지나는 현금흐름이 R39-F 에 바뀌었다** — 종전에는 편익 한
+    행뿐이었고 지금은 **실행 경로 전체**(`build_case_report()`)다. 그 모양이
+    무엇을 재고 무엇을 못 재는지는 사본을 두지 않는다 —
+    `tests/golden/test_regression_scenarios.py` 모듈 독스트링이 정본이다.
+
+    ⚠ `_scenario_metrics()` 가 **시나리오 경로**를 받는다(종전에는 지원율
+    숫자였다). 조립기가 파일에서 읽는 것이 지원율만이 아니기 때문이며, 사유는
+    그 함수 독스트링에 있다.
     """
     mod = _load_golden_regression_module()
     for name in GOLDEN_SCENARIO_FILES:
@@ -66,7 +70,7 @@ def test_dod7_golden_regression_actually_compares_computed_values() -> None:
         case = mod._load_case(path)
         expected = mod._expected_values(case)
         assert expected, f"{name}: expected_values 가 비어 있어 대조가 성립하지 않습니다"
-        actual = mod._scenario_metrics(float(case["subsidy_rate"]))
+        actual = mod._scenario_metrics(path)
         mod._compare(path, expected, actual)
 
 
