@@ -269,17 +269,49 @@ def _unread_items(report: CaseReport) -> list[UnreflectedItem]:
 
 
 def _self_consumption_item(
-    basis: CaseBasis, assumed: _AssumedQuantities | None
+    basis: CaseBasis,
+    hours: tuple[DispatchHour, ...],
+    assumed: _AssumedQuantities | None,
 ) -> list[UnreflectedItem]:
     """자가소비를 세었는가 — **편익 갈래에 그 태그가 있는가**로 판정한다.
 
     모듈 상수(`PV_SELF_CONSUMPTION_RATIO`)를 읽지 않는 이유는 그것이 러너의
     내부이기 때문이다. 결과로 드러난 사실(편익 갈래)로 판정하면 자가소비를
     켜는 경로가 어디에 생기든 이 판정이 따라간다.
+
+    ## ★★ 방향을 적는다 (R43-H · 문의사항 나-5)
+
+    종전 이 행은 자가소비 수량과 「단가 120원/kWh 적용 시 연 238,234원」까지
+    재어 놓고 **순 방향은 「두 단가의 차이가 정한다」에서 멈췄다.** 두 단가는
+    같은 실행이 들고 있고(`CaseBasis` 의 두 칸), 상쇄 요인인 수전 증가는 붙임
+    7 이 이미 재어 두었다 — **재료가 다 있는데 담당자가 스스로 빼기를 해야
+    방향을 알았다.** 그 빼기를 여기서 한다.
+
+    ## 왜 세 항으로 갈라 적는가
+
+    한 수로 합치면 **부호가 어디서 왔는지 사라진다.** 셋은 서로 다른 물음의
+    답이다:
+
+        판매 감소   배타 규칙이 가져가는 것 — 같은 전력을 두 번 못 센다
+        구매 회피   자가소비가 벌어 주는 것 — 사지 않아서 아낀 돈
+        수전 증가   형상을 태우면 함께 오는 것 — 부하가 PV 로 못 덮는 몫
+
+    ⚠ **셋을 「자가소비량 × 단가차」 한 줄로 줄이지 않았다.** 그 축약은
+    *자가소비한 만큼 송전이 줄었다* 는 항등식을 전제하는데, 그것은 이 실행에서
+    참일 뿐 구성이 바뀌면(저장장치가 부하를 먹는 경로 등) 깨진다. 깨져도
+    **표는 그대로 인쇄되고 수만 틀린다** — 그래서 붙임 7 이 싣는 **두 차이를
+    그대로** 쓴다.
+
+    ⚠ **계상이 아니라 설명이다.** 자가소비를 실제로 켜지 않는다 —
+    `docs/exclusion-rules.yaml` 첫 규칙(유형 A)이 잉여판매와의 동시 계상을
+    막는다. 여기서 하는 것은 *반영하면 어느 쪽으로 얼마나 움직이는가*를
+    적는 일이며, 결론 축은 움직이지 않는다.
     """
     if any(line.tag == _SELF_CONSUMPTION_TAG for line in basis.benefits):
         return []
     sized = "미정량 · 편익 갈래에 `SelfConsumption` 없음 (전량 판매)"
+    direction = DIRECTION_UNKNOWN
+    net: float | None = None
     if assumed is not None:
         # ★ **금액을 잰다 (R34).** 구매 단가가 배선되기 전에는 이 칸이 「금액
         # 미정량 (소매 단가 없음)」이었다. 자가소비 절감은 *사지 않아서 아낀
@@ -288,26 +320,54 @@ def _self_consumption_item(
         # (NSPM 대칭성. 양식 4절이 금지하는 형태다).
         annual_kwh = assumed.self_consumption * 365
         price = basis.grid_purchase_price_won_per_kwh
+        sale = basis.surplus_sale_price_won_per_kwh
+        # 붙임 7 이 싣는 **두 차이** 그대로 (파이프라인 → 형상 가정).
+        export_delta = (
+            sum(hour.grid_export for hour in hours) - assumed.grid_export
+        ) * 365
+        import_delta = (
+            assumed.grid_import - sum(hour.grid_import for hour in hours)
+        ) * 365
+        lost_sale = -export_delta * sale
+        avoided_purchase = annual_kwh * price
+        added_purchase = -import_delta * price
+        net = lost_sale + avoided_purchase + added_purchase
+        direction = DIRECTION_FAVORABLE if net > 0 else DIRECTION_ADVERSE
         sized = (
             "편익 갈래에 `SelfConsumption` 없음 (전량 판매) · **형상 가정 시** "
             f"자가소비 {assumed.self_consumption:,.2f}kWh/일 "
             f"(연간화 {annual_kwh:,.0f}kWh) · "
-            f"단가 {price:,.0f}원/kWh 적용 시 연 {annual_kwh * price:,.0f}원 · "
-            "붙임 7"
+            f"단가 {price:,.0f}원/kWh 적용 시 연 {avoided_purchase:,.0f}원 · "
+            f"**순 방향** — 구매 회피 {avoided_purchase:+,.0f}원/년 · 판매 감소 "
+            f"{lost_sale:+,.0f}원/년 (배타 상대 · 송전 {export_delta:,.0f}kWh/년 "
+            # RUF001: 「×」는 검토자가 읽는 문면이다 (`_flat_generation_item` 과
+            # 같은 판단 — 산식 자리에 라틴 x 를 쓰면 변수 이름으로 읽힌다).
+            f"× 판매단가 {sale:,.0f}원/kWh) · 수전 증가 "  # noqa: RUF001
+            f"{added_purchase:+,.0f}원/년 ({import_delta:+,.0f}kWh/년 × 구매단가) "  # noqa: RUF001
+            f"= **연 {net:+,.0f}원** · 붙임 7"
         )
     return [
         UnreflectedItem(
             label="자가소비 편익",
-            # ⚠ **개선으로 적지 않는다.** 자가소비는 잉여판매와 배타(유형 A)라
-            # 켜는 순간 판매 수익이 그만큼 사라진다 — 순 방향은 구매 단가와
-            # 판매 단가의 차이, 그리고 부하 형상이 정한다. 지금 두 단가가
-            # 우연히 같아 지금 구성에서는 상쇄에 가깝다(대장 항목
-            # `tariff.hv_single_contract.energy_only` 부기).
-            direction=DIRECTION_UNKNOWN,
+            # ★ **방향을 재어 적는다 (R43-H).** 종전에는 「방향 미측정」이
+            # 박혀 있었고 그 사유가 *「두 단가가 우연히 같아 상쇄에 가깝다」*
+            # 였다 — **R35 에 거짓이 됐다**(판매 110 · 구매 120 으로 갈렸다).
+            # 그러면서도 이 자리는 그대로였다: 붙임 8 이 *「모른다」* 고 적는
+            # 동안 재료는 세 칸 다 차 있었다.
+            #
+            # ⚠ **형상을 재지 못한 실행에서는 여전히 「방향 미측정」이다.**
+            # 그때는 상쇄 요인(수전 증가)을 잴 수 없고, 한쪽만 반영한 방향은
+            # 사업에 유리한 쪽으로 틀린다(NSPM 대칭성 · 양식 4절).
+            direction=direction,
             magnitude=sized,
             reason=(
                 "파이프라인 운전에 가구 부하 없음 (전량 판매) · "
                 "잉여판매와 배타이므로 순 방향은 두 단가의 차이가 정한다"
+                + (
+                    ""
+                    if net is None
+                    else f" — 재어 적었다(연 {net:+,.0f}원 · 크기 칸)"
+                )
             ),
             resolves_when=(
                 "가구 부하 `Q-3` 확보 (§16.3 개인정보 절차 선행) "
@@ -600,7 +660,7 @@ def build_unreflected(report: CaseReport) -> tuple[UnreflectedItem, ...]:
     return (
         *_replacement_items(basis),
         *_unread_items(report),
-        *_self_consumption_item(basis, assumed),
+        *_self_consumption_item(basis, report.dispatch_hours, assumed),
         *_purchase_item(basis, report.dispatch_hours, assumed),
         # 바로 위와 **같은 갈래**다 — 프로포마 비용 행이 비었는가. 붙여 두어
         # 검토자가 「빠진 비용 행」을 한 자리에서 읽게 한다.

@@ -79,6 +79,7 @@ from core.report.dispatch_sections import (
     dispatch_rule_section,
 )
 from core.report.method_sections import (
+    PERSPECTIVE_QUALIFIER,
     cost_benefit_section,
     method_section,
     model_section,
@@ -125,8 +126,17 @@ def _summary_section(report: CaseReport) -> list[str]:
         "",
         "| 항목 | 값 |",
         "|---|---|",
+        # ★ **관점 한정을 결론 옆에 붙인다 (R43-H · 문의사항 나-6).**
+        #
+        # 3.3 은 관점을 사업주로 두고 사회적 편익을 계상하지 않는다고 적는데
+        # **요약에는 그 한정이 없었다.** 요약은 발췌돼 인용되는 절이므로,
+        # 한정이 없으면 *「이 사업의 값어치가 마이너스」* 라는 진술이 되어
+        # 나간다 — 지자체가 지원하는 근거는 정확히 그 「계상하지 않은」 쪽에
+        # 있다. **문면은 3.3 이 소유한다**(`PERSPECTIVE_QUALIFIER`) — 여기서
+        # 새로 지으면 두 곳에 적히고 한쪽만 고쳐진다.
         f"| 결론 | 분석기간 {horizon}년 내 "
-        f"**{_recovery(report.recovers_within_horizon)}** |",
+        f"**{_recovery(report.recovers_within_horizon)}** "
+        f"({PERSPECTIVE_QUALIFIER}) |",
         f"| 주 지표 · 할인 회수기간 | **{_years(metrics[HEADLINE_METRIC])}** |",
         f"| 결론 축 · 순현재가치 | **{_won(metrics[CONCLUSION_METRIC])}** |",
         f"| 결론 전환 인자 (단독) | {_flip_names(report)} |",
@@ -510,6 +520,10 @@ def _judgement_section(report: CaseReport) -> list[str]:
         f"| 지원이 순현재가치에 미친 폭 | "
         f"{_won(report.metrics[CONCLUSION_METRIC] - report.baseline_metrics[CONCLUSION_METRIC])}"
         f" (보조율 {report.subsidy_rate:.0%} · 4.2) |",
+        # ★ **6.1 도 한정을 갖는다 (R43-H · 문의사항 나-6).** 요약과 같은
+        # 이유이며 문면도 같은 곳에서 온다 — 「판정」 표에 관점이 없으면
+        # 순현재가치 한 칸만 떼어 인용된다.
+        f"| 평가 관점 | {PERSPECTIVE_QUALIFIER} |",
         "",
         "### 6.2 결론 전환 조건",
         "",

@@ -22,6 +22,9 @@ from core.report._format import _recovery
 from core.report.appendix_sections import UNREAD_BY_PIPELINE
 from core.report.case_report import CONCLUSION_METRIC, build_case_report
 from core.report.method_sections import (
+    PERSPECTIVE,
+    PERSPECTIVE_QUALIFIER,
+    UNCOUNTED_BENEFITS,
     cost_benefit_section,
     method_section,
     resource_detail_section,
@@ -836,3 +839,49 @@ def _percent_after(text: str, marker: str) -> str:
     match = re.search(r"-?\d+\.\d%", text[start : start + 200])
     assert match is not None, f"{marker!r} 뒤에 지원율이 없다"
     return match.group(0)
+
+
+def test_the_summary_and_the_verdict_carry_the_evaluation_perspective() -> None:
+    """★★ **관점 한정이 결론 옆에 있다** (R43-H · 문의사항 나-6).
+
+    3.3 은 관점을 사업주로 두고 *「계상하지 않는 편익 — 사회적 편익」* 이라
+    분명히 적는다. 그런데 **1. 요약과 6.1 에는 그 한정이 없었다** — 그리고
+    발췌돼 인용되는 절은 3.3 이 아니라 그 둘이다. 한정이 없으면
+    *「이 사업의 값어치가 −6,289,675원」* 이라는 진술이 되어 나가고, 지자체가
+    지원하는 근거는 정확히 그 **「계상하지 않은」** 쪽에 있다.
+    """
+    text = _markdown()
+    summary = text[text.index("## 1. 요약") : text.index("## 2. ")]
+    verdict = text[text.index("### 6.1") : text.index("### 6.2")]
+
+    conclusion = [line for line in summary.splitlines() if line.startswith("| 결론 |")]
+    assert conclusion, "요약에 「결론」 행이 없다"
+    assert PERSPECTIVE_QUALIFIER in conclusion[0], (
+        f"요약 「결론」 행에 관점 한정이 없다 — {conclusion[0]}"
+    )
+    assert PERSPECTIVE_QUALIFIER in verdict, "6.1 판정에 관점 한정이 없다"
+
+
+def test_the_perspective_wording_has_exactly_one_owner() -> None:
+    """★ **한정구가 3.3 에서 온다** — 두 곳에 적으면 한쪽만 고쳐진다.
+
+    요약·6.1 이 자기 문장을 지으면 관점이 **세 자리에 각각** 적히고, 3.3 을
+    고치는 날 나머지 둘은 옛 관점을 계속 인쇄한다. 그것을 막는 방법은 3.3 이
+    쓰는 문면 그 자체로 한정구를 짓는 것이며, **여기서 재는 것은 그 관계**다.
+
+    ⚠ 문면을 이 파일에 베끼지 않는다 — 베끼면 사본이 하나 더 는다. 상수를
+    가져와 **3.3 표가 그 상수를 인쇄하는지**만 본다: 상수를 고치면 3.3 도
+    함께 움직이고, 그래서 한정구와 3.3 이 갈릴 수 없다.
+    """
+    text = _markdown()
+    method = text[text.index("### 3.3 평가 관점") : text.index("### 3.4")]
+
+    assert PERSPECTIVE in method, "3.3 이 관점 상수를 인쇄하지 않는다"
+    assert UNCOUNTED_BENEFITS in method, "3.3 이 미계상 편익 상수를 인쇄하지 않는다"
+
+    for piece in (PERSPECTIVE, UNCOUNTED_BENEFITS):
+        head = piece.split("(", maxsplit=1)[0].strip()
+        assert head and head in PERSPECTIVE_QUALIFIER, (
+            f"한정구가 3.3 의 「{head}」에서 오지 않는다 — 따로 지은 문장이면 "
+            "3.3 을 고쳐도 요약·6.1 은 옛 관점을 계속 인쇄한다"
+        )

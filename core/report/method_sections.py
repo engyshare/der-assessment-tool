@@ -25,12 +25,38 @@
 from __future__ import annotations
 
 from core.casegrid.models import BenefitLine, CaseBasis, ResourceLine
+from core.report._format import _unit_head
 from core.report.case_report import CaseReport
 from core.report.unreflected import (
     LABEL_VARIABLE_OM,
     build_unreflected,
     unreflected_rows,
     variable_om_unreflected,
+)
+
+#: 3.3 「평가 관점」이 정한 **관점**과 **계상하지 않는 편익**.
+#:
+#: ★ **1. 요약 「결론」 행과 6.1 이 이것을 병기한다 (R43-H · 문의사항 나-6).**
+#: 3.3 은 관점을 사업주로 두고 사회적 편익을 계상하지 않는다고 분명히 적는데
+#: **요약과 6.1 에는 그 한정이 없었다.** 그래서 발췌 인용하면 *「이 사업의
+#: 값어치가 −6,289,675원」* 이 되고, 지자체가 지원하는 근거는 정확히 그
+#: 「계상하지 않은」 쪽에 있다.
+#:
+#: ⚠ **문면을 요약 쪽에 새로 짓지 않는다.** 두 곳에 적으면 한쪽만 고쳐지고,
+#: 그때 검토자는 같은 보고서 안에서 관점이 둘이라고 읽는다. 3.3 이 이미
+#: 소유자이므로 여기서 내놓는다.
+PERSPECTIVE = "사업주 (설비 소유·운영 주체)"
+UNCOUNTED_BENEFITS = "사회적 편익 (온실가스 감축 · 계통 혼잡 완화 등)"
+
+#: 요약·6.1 이 결론 옆에 붙이는 **한정구** — 위 둘의 **머리만** 이어 짓는다.
+#:
+#: ⚠ 괄호 안 부연(「설비 소유·운영 주체」·「온실가스 감축 …」)을 떼는 이유는
+#: `_unit_head` 의 그것과 같다 — 표에서는 부연이 맞지만 **문장 안에서는 읽기를
+#: 끊는다**(그대로 이으면 괄호가 세 겹으로 겹친다). 부연은 3.3 표에 그대로
+#: 남으며, 한정구가 그 절 번호를 들고 있으므로 찾아갈 수 있다.
+PERSPECTIVE_QUALIFIER = (
+    f"{_unit_head(PERSPECTIVE)} 관점 · {_unit_head(UNCOUNTED_BENEFITS)} "
+    "미계상 (3.3)"
 )
 
 
@@ -200,10 +226,10 @@ def method_section(report: CaseReport) -> list[str]:
         "",
         "| 항목 | 내용 |",
         "|---|---|",
-        "| 관점 | 사업주 (설비 소유·운영 주체) |",
+        f"| 관점 | {PERSPECTIVE} |",
         "| 계상하는 편익 | 사업주에게 귀속되는 현금흐름 (잉여 전력 판매 수입 · "
         "요금 절감) |",
-        "| 계상하지 않는 편익 | 사회적 편익 (온실가스 감축 · 계통 혼잡 완화 등) |",
+        f"| 계상하지 않는 편익 | {UNCOUNTED_BENEFITS} |",
         "",
         "### 3.4 이 평가가 하지 않은 것",
         "",

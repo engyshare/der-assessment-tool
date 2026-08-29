@@ -691,6 +691,7 @@ def run_single_case_e2e(
             discount_rate=discount_rate,
             horizon_years=horizon_years,
             grid_purchase_price_won_per_kwh=grid_purchase_price,
+            surplus_sale_price_won_per_kwh=surplus_sale_price,
             resources=resource_lines,
             benefits=benefit_lines,
             # ★★ **금액의 자원별 몫은 선언이 아니라 수량에서 나온다 (R43-E2).**

@@ -537,3 +537,99 @@ def test_variable_om_is_judged_from_the_cost_rows_not_from_the_resource_argument
         "변동 O&M 비용 행을 실었는데도 미반영 항목으로 남는다 — 판정이 비용 "
         "행을 보지 않는다(이 상태에서는 배선돼도 붙임 8 이 거짓을 계속 인쇄한다)"
     )
+
+
+def _self_consumption_row(report):
+    (row,) = [
+        item
+        for item in build_unreflected(report)
+        if item.label == "자가소비 편익"
+    ]
+    return row
+
+
+def test_the_self_consumption_row_says_which_way_and_by_how_much() -> None:
+    """★★ **방향이 없던 자리에 방향이 있다** (R43-H · 문의사항 나-5).
+
+    종전 이 행은 자가소비 수량과 「단가 120원/kWh 적용 시 연 238,234원」까지
+    재어 놓고 방향은 **「방향 미측정」** 이었고, 사유가 *「순 방향은 두 단가의
+    차이가 정한다」* 였다. 두 단가는 같은 실행이 들고 있고 상쇄 요인(수전
+    증가)은 붙임 7 이 재어 두었으므로 — **담당자가 스스로 빼기를 해야 방향을
+    아는** 상태였다.
+
+    ## 기대 수치를 여기 적지 않는다
+
+    금액은 전부 대장에서 오므로 이 파일에 적으면 **사본**이 되고, 대장이
+    바뀔 때 여기가 따라오지 않아도 아무 일이 없다. 그래서 보는 것은 셋이다:
+    ⓐ 방향이 「미측정」이 아니다 ⓑ **두 단가가 모두** 크기 칸에 있다(차이가
+    방향을 정하므로 한쪽만으로는 지을 수 없다) ⓒ 부호가 붙은 항이 양쪽으로
+    있다(합쳐 놓기만 하면 부호가 어디서 왔는지 사라진다).
+    """
+    report = _report()
+    row = _self_consumption_row(report)
+
+    assert row.direction != DIRECTION_UNKNOWN, (
+        "형상 가정 운전이 있는데 방향이 「미측정」이다 — 재료가 다 있는 채로 "
+        "담당자에게 빼기를 시킨다"
+    )
+    assert row.direction in (DIRECTION_FAVORABLE, DIRECTION_ADVERSE)
+    assert row.measured, "재어 판정한 항목이어야 한다"
+
+    for label, price in (
+        ("구매", report.basis.grid_purchase_price_won_per_kwh),
+        ("판매", report.basis.surplus_sale_price_won_per_kwh),
+    ):
+        assert f"{price:,.0f}원/kWh" in row.magnitude, (
+            f"{label} 단가가 크기 칸에 없다 — 두 단가의 차이가 방향을 정하므로 "
+            "한쪽만으로는 그 방향을 지을 수 없다"
+        )
+
+    signed = re.findall(r"[+-][\d,]+원", row.magnitude)
+    assert len([s for s in signed if s.startswith("+")]) >= 1, "개선 항이 없다"
+    assert len([s for s in signed if s.startswith("-")]) >= 1, "악화 항이 없다"
+
+
+def test_a_higher_sale_price_moves_the_self_consumption_row_the_other_way() -> None:
+    """★★ **부호가 코드 안에 있는가** — 판매단가를 올려 확인한다.
+
+    ⓐ 방향 라벨이 박혀 있어도 ⓑ 세 항을 인쇄만 해도 위 검사는 통과한다.
+    그래서 **오라클을 밖에 둔다**: 자가소비는 잉여판매와 배타(유형 A)이므로
+    파는 값이 비싸질수록 *포기하는 수입*이 커지고 순액은 **작아져야** 한다.
+    같은 방향으로 움직이면 배타 규칙이 계산에 들어 있지 않은 것이다.
+
+    ⚠ 기대 **크기**를 적지 않는다 — 재는 것은 **부호 관계**다.
+    """
+    report = _report()
+    base = _self_consumption_row(report)
+
+    dearer = replace(
+        report,
+        basis=replace(
+            report.basis,
+            surplus_sale_price_won_per_kwh=(
+                report.basis.surplus_sale_price_won_per_kwh * 2
+            ),
+        ),
+    )
+    moved = _self_consumption_row(dearer)
+
+    def net(row) -> float:
+        (tail,) = re.findall(r"= \*\*연 ([+-][\d,]+)원\*\*", row.magnitude)
+        return float(tail.replace(",", ""))
+
+    assert net(moved) < net(base), (
+        f"판매단가를 두 배로 올렸는데 순액이 {net(base):,.0f} → "
+        f"{net(moved):,.0f} 로 줄지 않았다 — 배타 상대가 가져가는 몫이 "
+        "계산에 들어 있지 않다"
+    )
+
+
+def test_without_a_shape_the_self_consumption_row_goes_back_to_unmeasured() -> None:
+    """★ **잴 수 없으면 「미측정」으로 돌아간다** — 방향을 지어내지 않는다.
+
+    형상 가정 운전이 없으면 상쇄 요인(수전 증가)을 잴 수 없고, 그때 한쪽만
+    반영한 방향은 **사업에 유리한 쪽으로** 틀린다(NSPM 대칭성 · 양식 4절).
+    라벨을 박아 두면 그 실행에서도 방향이 인쇄되므로 여기서 잡는다.
+    """
+    blind = replace(_report(), assumed_hours=())
+    assert _self_consumption_row(blind).direction == DIRECTION_UNKNOWN
