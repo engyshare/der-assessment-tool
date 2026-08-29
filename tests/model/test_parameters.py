@@ -203,6 +203,52 @@ def test_every_numeric_parameter_in_the_catalogue_has_a_unit() -> None:
     assert unitless == []
 
 
+def test_both_escalation_rates_reach_the_screen_with_the_same_unit() -> None:
+    """★ 물가 계수가 **둘**이 됐다 — 화면이 둘 다 그리고 단위가 같다 (R42).
+
+    `Q-17`(교체 설비단가의 실질 추세)을 스윕 축으로 배선하면서 자원 계약이
+    `escalation_rate`(O&M)와 `replacement_escalation_rate`(교체 재취득)를 갈라
+    갖게 됐다. 고급 모드 화면(UI-1-AC1)은 **열거한 것만 그리므로**, 자원
+    생성자가 새 인자를 이름으로 내놓지 않으면 사용자는 그 값을 넣을 통로가
+    없는 채 그 존재도 모른다.
+
+    ⚠ **단위가 같고 뜻이 다르다** — 둘 다 `비율/년` 이며 구별은 **이름이**
+    진다. 그래서 접미어 규칙에 맡기지 않고 `UNIT_BY_NAME` 에 갈라 적었고,
+    여기서 *같은 단위로 함께 나온다*는 것을 못 박는다: 한쪽만 단위를 잃으면
+    화면에 단위 없는 입력이 생기고(UI-2-AC1), 한쪽이 아예 빠지면 그 축을
+    흔들 수 없다.
+
+    ⚠ **붙들지 못하는 것**: 화면이 두 값을 **구별해 설명하는가**는 재지 않는다
+    (그것은 라벨·도움말의 몫이다). 여기서 재는 것은 열거와 단위뿐이다.
+    """
+    wired = {"PV", "ESS"}  # `Q-17` 적용범위가 명시한 둘 — 대장 항목의 applicable_scope
+    seen: dict[str, set[str]] = {}
+
+    for tag, specs in catalogue().items():
+        by_name = {spec.name: spec for spec in specs}
+        found = {
+            name for name in ("escalation_rate", "replacement_escalation_rate")
+            if name in by_name
+        }
+        seen[tag] = found
+        for name in found:
+            assert by_name[name].kind is ParameterKind.NUMBER, (
+                f"{tag}.{name} 이 수치로 그려지지 않습니다"
+            )
+            assert by_name[name].unit == "비율/년", (
+                f"{tag}.{name} 의 단위가 `비율/년` 이 아닙니다: "
+                f"{by_name[name].unit!r} — 두 계수는 단위가 같고 뜻이 다르며, "
+                "구별은 이름이 집니다"
+            )
+
+    missing = sorted(tag for tag in wired if len(seen.get(tag, set())) != 2)
+    assert not missing, (
+        f"{missing}: 교체 계수를 생성자 인자로 내놓지 않습니다 — 대장의 "
+        "`capex.replacement_real_trend` 가 적용 대상으로 명시한 자원이며, "
+        "열거하지 않으면 고급 모드 화면에 나타나지 않습니다 (UI-1-AC1)"
+    )
+
+
 # ── ④ 단위표 둘이 겹치지 않는다 ───────────────────────────────────────
 
 def test_unit_tables_do_not_overlap() -> None:
