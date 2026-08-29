@@ -249,23 +249,22 @@ def test_body_marks_the_single_variable_table_as_a_solo_sweep() -> None:
 
 
 @pytest.mark.req("FR-1002-AC2", "FR-1002-AC4")
-def test_solo_rows_still_carry_the_label_when_the_table_is_not_empty(
-    flip_probe_assumptions: Path,
-) -> None:
+def test_solo_rows_still_carry_the_label_when_the_table_is_not_empty() -> None:
     """★ **행이 있을 때 라벨이 행에 붙는가** — 위 검사의 빈 표 갈래를 메운다.
 
-    실물 대장에서는 5.1 의 1변수 표가 비어 있다(전환 인자 0건 — R34 에 구매
-    비용이 배선된 뒤). 그러면 위 검사의 **행 순회가 0회 돌아** 「행마다 라벨이
-    붙는가」를 아무도 보지 않게 된다. 라벨을 행에서 지우는 변이가 그때 초록불이
-    되므로, 전환 인자가 존재하는 탐침 대장에서 그 갈래를 따로 붙든다.
+    위 검사는 표가 **빌 때**의 갈래를 본다. 그때 행 순회가 0회 돌아 「행마다
+    라벨이 붙는가」를 아무도 보지 않게 되므로, 행이 있는 갈래를 여기서 따로
+    붙든다 — 라벨을 행에서 지우는 변이가 그 갈래에서만 빨간불이 된다.
 
-    ⚠ 탐침이 바꾸는 것은 **검토 범위 하나**이며 기준선 수치는 실물과 같다
-    (`conftest.py`).
+    ✔ **실물 대장으로 돈다 (R41).** R34 는 이 자리에 탐침 대장을 세웠고 사유는
+    *「실물 대장에서는 5.1 의 1변수 표가 비어 있다」* 였다 — **그 사유는 두 번
+    낡았다.** ⓐ R35 ② 가 5.1 을 고쳐 전환 인자가 0건이어도 **거리 행**을 싣게
+    했고(무보조도 5행이다) ⓑ 결론축이 세 번 내려가 보조 80% 는 전환 인자를
+    실제로 갖는다. R41 실측: 두 시나리오 모두 **단독 행 5건**이다.
     """
     text = render_markdown(
         build_case_report(
-            _GOLDEN / "scenario_subsidy_80.yaml",
-            assumptions_path=flip_probe_assumptions,
+            _GOLDEN / "scenario_subsidy_80.yaml", assumptions_path=_ASSUMPTIONS
         )
     )
     flip = text.index("### 5.1 불확실 인자")
@@ -275,8 +274,7 @@ def test_solo_rows_still_carry_the_label_when_the_table_is_not_empty(
         line for line in text[flip:combined].splitlines() if line.startswith("| `")
     ]
     assert solo_rows, (
-        "탐침 대장에서도 5.1 에 단독 인자 행이 없다 — 이 검사가 0회 순회로 "
-        "통과한다. `conftest.py` 의 탐침 범위를 넓힐 것"
+        "실물 대장에서 5.1 에 단독 인자 행이 없다 — 이 검사가 0회 순회로 통과한다"
     )
     for row in solo_rows:
         _assert_method_label(row)
@@ -284,7 +282,7 @@ def test_solo_rows_still_carry_the_label_when_the_table_is_not_empty(
 
 @pytest.mark.req("FR-1002-AC4")
 def test_summary_carries_the_combined_case_not_only_the_solo_ones(
-    flip_probe_assumptions: Path,
+    recovery_probe_assumptions: Path,
 ) -> None:
     """★ **요약(1절)이 결합 결과를 함께 말한다.**
 
@@ -296,13 +294,16 @@ def test_summary_carries_the_combined_case_not_only_the_solo_ones(
     ⚠ 요약이 **제 손으로 계산하지 않았는지**도 함께 본다. 요약의 수는 5.1 의
     결합 행에서 그대로 와야 하며, 갈라지면 두 표를 대조할 때에야 드러난다.
 
-    ⚠ **탐침 대장으로 돈다 (R34).** 구매 비용이 배선된 뒤 실물 범위에서는
-    동반 하락도 −3,196,392원이라 **회수되는 결합 행이 0건**이고, 그러면 이
-    검사가 아무것도 순회하지 않는다 — 「요약이 결합 결과를 말하지 않는다」를
-    잡으려는 검사가 정작 결합 결과가 없을 때 초록불이 되는 형태다. 탐침은
-    설비단가 하단만 넓혀 **동반 하락에서만** 회수되게 한다(`conftest.py`).
+    ⚠ **탐침 대장으로 돈다 (R34 · R41 에 확인).** 실물 범위에서는 무보조의
+    **결합 회수 행이 0건**이고(R41 실측 · 결론축 −6,289,675원), 그러면 이 검사가
+    아무것도 순회하지 않는다 — 「요약이 결합 결과를 말하지 않는다」를 잡으려는
+    검사가 정작 결합 결과가 없을 때 초록불이 되는 형태다. 탐침은 설비단가 하단
+    둘만 넓혀 **동반 하락에서만** 회수되게 한다(`conftest.py`).
+
+    ★ **R41 이 탐침을 뗄 수 있는지 재고 남겼다** — 나머지 셋은 실물로 옮겼고
+    **이 검사 하나가 탐침의 유일한 사용자다.** 뗄 수 없는 이유는 위 실측이다.
     """
-    report = _report(assumptions=flip_probe_assumptions)
+    report = _report(assumptions=recovery_probe_assumptions)
     text = render_markdown(report)
     summary = text[text.index("## 1. 요약") : text.index("## 2. 평가 개요")]
 

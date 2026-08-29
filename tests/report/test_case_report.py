@@ -93,9 +93,7 @@ def test_conclusion_reads_the_supported_variant_not_the_case_metric() -> None:
 
 
 @pytest.mark.req("FR-1002-AC2", "FR-607-AC1")
-def test_the_sweep_follows_the_supported_variant_too(
-    flip_probe_assumptions: Path,
-) -> None:
+def test_the_sweep_follows_the_supported_variant_too() -> None:
     """★ **영향도 스윕도 지원을 반영한다.**
 
     결론 한 줄과 스윕은 **서로 다른 줄**에서 변형을 읽는다. 결론만 고치면
@@ -105,15 +103,20 @@ def test_the_sweep_follows_the_supported_variant_too(
     변이로 확인했다: 스윕 쪽만 케이스 지표로 되돌리면 위 결론 검사는 **전건
     초록불**이었다. 무보조 시나리오에서는 두 값이 같아서 드러나지 않는다.
 
-    ⚠ **탐침 대장으로 돈다 (R34).** 실물 대장에서는 구매 비용이 배선된 뒤
-    **어느 시나리오에도 전환 인자가 없어졌고**(무보조 −5,156,392원 · 보조 80%
-    +2,683,608원, 어느 인자도 검토 범위 안에서 0 선을 넘기지 못한다), 그러면 이
-    검사가 `set() != set()` 로 **정당한 상태를 빨간불**로 만든다. 범위를 넓힌
-    탐침에서는 보조 80% 만 전환을 갖는다 — 스윕이 변형을 읽지 않고 케이스
-    지표로 돌면 **양쪽이 다시 같아져** 이 검사가 빨간불이 된다(`conftest.py`).
+    ✔ **실물 대장으로 돈다 (R41).** R34~R40 동안은 탐침 대장이 필요했다 —
+    구매 비용이 배선된 뒤 **어느 시나리오에도 전환 인자가 없어져**(무보조
+    −5,156,392원 · 보조 80% +2,683,608원) 이 검사가 `set() != set()` 로 정당한
+    상태를 빨간불로 만들었기 때문이다. 결론축이 세 번 내려가 **그 전제가
+    무너졌다** — R41 실측: 보조 80% 는 실물 범위 안에서 전환 인자 **2건**
+    (`grid_purchase_price` 임계 156.73 · `surplus_sale_price` 임계 92.63)이고
+    무보조는 **0건**이다. 지어낸 범위가 아니라 **실물에서** 잰다.
+
+    ⚠ 그러므로 이 검사는 이제 **결론축이 다시 올라가면 죽는다** — 보조 80% 가
+    실물 범위 안에서 전환을 잃으면 두 집합이 다시 같아진다. 그때 죽는 방식은
+    **빨간불**이며(0회 순회가 아니다) 그것이 옳다: 전제가 바뀐 것을 알려야 한다.
     """
-    plain = _report("scenario_unsubsidized", flip_probe_assumptions)
-    subsidised = _report("scenario_subsidy_80", flip_probe_assumptions)
+    plain = _report("scenario_unsubsidized")
+    subsidised = _report("scenario_subsidy_80")
 
     plain_flips = {entry.variable for entry in plain.flipping}
     subsidised_flips = {entry.variable for entry in subsidised.flipping}
@@ -130,30 +133,32 @@ def test_the_sweep_follows_the_supported_variant_too(
 
 
 @pytest.mark.req("FR-1002-AC2", "FR-1002-AC4")
-def test_reported_flip_threshold_actually_flips_the_conclusion(
-    flip_probe_assumptions: Path,
-) -> None:
+def test_reported_flip_threshold_actually_flips_the_conclusion() -> None:
     """★★ **보고된 임계값으로 다시 돌려 결론이 실제로 뒤집히는지 본다.**
 
     이 검사가 없으면 임계값을 **표시만** 하는 구현이 통과한다 — 검토자는
     리포트에서 *「단가가 이 값을 넘으면 사업성이 뒤집힌다」* 를 읽고 정책
     판단을 하는데, 그 값이 계산과 무관해도 아무도 모른다.
 
-    ⚠ **탐침 대장 + 보조 80% 로 돈다 (R34).** 실물 대장에서는 전환 인자가
-    0건이고, 그러면 아래 순회가 **0회 돌면서 초록불**이 된다 — 이 저장소가
-    반복해서 경계해 온 *조용한 통과*이며, 이 검사가 잡으려는 결함(R33 의
-    `_find_flip_threshold` 허용오차)은 **전환 인자가 있었기 때문에** 잡혔다.
-    그래서 순회 대상이 비면 그것 자체를 빨간불로 만든다.
+    ✔ **실물 대장 + 보조 80% 로 돈다 (R41).** R34~R40 동안은 탐침 대장이
+    필요했다 — 실물 범위에 전환 인자가 0건이라 아래 순회가 **0회 돌면서
+    초록불**이 되었기 때문이다. 결론축이 세 번 내려가 실물이 스스로 전환 인자
+    **2건**을 낸다(R41 실측 · 아래 `assert flipping` 이 그 사실을 붙든다).
+
+    ⚠ **순회 대상이 비면 그것 자체를 빨간불로 만든다** — 이 검사가 잡으려는
+    결함(R33 의 `_find_flip_threshold` 허용오차)은 **전환 인자가 있었기 때문에**
+    잡혔다. 조용한 통과는 이 저장소가 반복해서 경계해 온 형태다.
     """
     subsidy_rate = 0.8
-    report = _report("scenario_subsidy_80", flip_probe_assumptions)
+    report = _report("scenario_subsidy_80")
     flipping = report.flipping
     assert flipping, (
-        "탐침 대장에서도 전환 인자가 없다 — 이 검사가 0회 순회로 통과한다. "
-        "`conftest.py` 의 탐침 범위를 넓힐 것"
+        "실물 대장에서 전환 인자가 없다 — 이 검사가 0회 순회로 통과한다. "
+        "결론축이 올라가 실물 범위가 전환을 못 내게 됐다면 탐침 대장을 다시 "
+        "세울 것 (`conftest.py` 가 그 경위를 든다)"
     )
 
-    level_map = build_level_map(flip_probe_assumptions)
+    level_map = build_level_map(_ASSUMPTIONS)
     horizon = report.basis.horizon_years
     # ⚠ **지원 조건을 함께 넘긴다.** 넘기지 않으면 재실행은 무보조 사업의
     # 결론을 내고, 보조 80% 리포트의 임계값을 **다른 사업의 0 선**에 대고
