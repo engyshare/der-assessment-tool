@@ -503,10 +503,39 @@ class ESS(DER):
         """
         return to_won(self._replacement_unit * self.capacity_kwh)
 
-    def _acquisitions(self, *, horizon: int) -> dict[int, Money]:
-        """{취득 연도: 취득가} — 최초 취득(1년차)과 배터리 교체분. 잔존가치를
-        **마지막 취득 시점**부터 세기 위한 것이다 — 최초 취득만 보면 교체
-        직후에도 잔존가치가 0으로 잡혀 새 배터리가 통째로 사라진다.
+    def _acquisitions(
+        self, *, horizon: int
+    ) -> tuple[tuple[int, dict[int, float]], ...]:
+        """부품별 `(수명, {취득 연도: 취득가})` — 배터리와 PCS 를 **갈라** 담는다.
+        잔존가치를 **마지막 취득 시점**부터 세기 위한 것이다 — 최초 취득만 보면
+        교체 직후에도 잔존가치가 0으로 잡혀 새 배터리가 통째로 사라진다.
+
+        ## 왜 부품별로 갈랐는가 (R42 · R40 ② 가 남긴 비대칭)
+
+        R40 이 PCS **교체비**를 `replacement_schedule()` 에 배선하면서 이 함수는
+        건드리지 않아, **교체비는 계상되는데 그 잔존가치는 없는** 상태가 됐다 —
+        `tests/casegrid/test_lifecycle_wiring.py` ⓒ 가 *「스케줄에만 있다 → 교체비는
+        냈는데 그 설비의 잔존가치가 사라진다」* 로 경고한 바로 그 방향이고, 결론을
+        **한 방향으로만** 나쁘게 만들어 「보수적이라 안전하다」로 읽히는 형태다.
+
+        접어서 담을 수는 없다 — 배터리와 PCS 는 **수명이 다르다.** 사전 하나로
+        접으면 20년차에 「마지막 취득 = 15년차 PCS」가 되고 그 잔존가치를 **배터리
+        수명**으로 재게 되어, PCS 가 배터리만큼 버티는 설비가 된다. `PV` 가 본체·
+        인버터에 대해 같은 이유로 갈라 담았고 **그쪽이 정본이다**
+        (`pv.py::_acquisitions` 독스트링).
+
+        ⚠ **최초 PCS 를 취득분으로 세지 않는다.** 대장의 설비 단가
+        (`capex.ess.new`)는 설치 완료 기준이므로 최초 PCS 값은 이미
+        `_gross_capex_won()` 안에 있고, 여기서 또 세면 **초기투자에 없는 지출**의
+        잔존가치를 세게 된다. 반대로 본체 취득가에서 PCS 몫을 떼어내지도 않았다 —
+        떼려면 「설비 단가의 몇 %가 PCS 인가」를 새로 정해야 하고 **그 값이 대장에
+        없다**(`Q-2` 회신에 묶여 있다 · `status-human.md`). **모르는 값을 채우지
+        않는다.** 그 결과 최초 PCS 몫이 배터리 몫의 잔존가치에 남아 있으나, 그것은
+        배터리를 아직 교체하지 않은 해까지만이다 — 교체하는 순간 「마지막 취득
+        시점부터」 규약이 리셋한다. `PV` 의 인버터가 같은 자리에 있다.
+
+        ⚠ **`replacement_schedule()` 이 이 함수에서 파생된다** — 두 곳이 갈리면
+        위 비대칭이 조용히 다시 생기므로 **같은 조건을 두 곳에 적지 않는다.**
 
         ⚠⚠ **`retire` 면 재취득이 없다** (`FR-104-AC3` · R39-E2 가 고쳤다).
         `replacement_schedule()` 은 `retire` 에서 **빈 사전**을 내는데 이 함수가
@@ -517,6 +546,9 @@ class ESS(DER):
 
         ⚠ **위 `retire` 갈래는 실행 경로의 수를 움직이지 않는다** — 러너의 `ESS` 는
         `replace` 이므로 그 갈래를 타지 않는다(아래 물가 계수는 **움직인다**).
+        ★ **PCS 갈래도 마찬가지다** — 러너의 `ESS` 에는 PCS 가 없어 결론축이
+        움직이지 않는다. 그래서 급하지 않았고, PCS 를 쓰는 케이스가 들어오는 날
+        조용히 틀리는 것을 막으려고 지금 닫는다.
 
         ## 재취득분에 **물가 계수를 곱한다** (R40 · `DV-7`)
 
@@ -524,23 +556,35 @@ class ESS(DER):
         원으로 적으면 **그 지출만 실질이 되어** 선언과 어긋난다. R39 까지 이 함수는
         계수를 받고도 쓰지 않았고, 러너의 주석(`e2e_runner.py` ⓑ)은 *「배터리
         교체비에 굴린다」* 고 이미 **선언하고 있었다** — 이 저장소가 거듭 만나 온
-        「선언과 구현이 갈린」 형태다. `PV` 는 `replacement_schedule()`·
-        `_acquisitions()` 두 곳에서 같은 계수를 굴리며 그쪽이 정본이다.
+        「선언과 구현이 갈린」 형태다.
 
         **`salvage_value()` 가 같은 사전을 읽으므로 잔존가치도 함께 움직인다** —
         그래야 「명목으로 산 것을 실질로 되판다」가 되지 않는다.
         """
         if self.retires_at_end_of_life():
-            return {1: self.capex(year=1)}
+            # 다시 사지 않으므로 취득분은 **최초 본체 하나**다. PCS 를 여기 두면
+            # `replacement_schedule()` 이 비어 있는데 잔존가치만 생긴다.
+            return ((self.lifetime, {1: float(self.capex(year=1))}),)
 
-        acquired: dict[int, Money] = {1: self.capex(year=1)}
-        year = self.lifetime + 1
-        while year <= horizon:
-            acquired[year] = to_won(
-                int(self._battery_cost()) * self.escalation_factor(year=year)
-            )
-            year += self.lifetime
-        return acquired
+        parts: list[tuple[int, dict[int, float]]] = []
+        for life, unit_cost, initial in (
+            # 배터리 — 최초 취득(1년차)은 `_gross_capex_won()`(부대비·PCS 포함)이고
+            # 재취득분은 배터리 교체 단가만 쓴다(부대비는 재취득하지 않는다).
+            (self.lifetime, float(self._battery_cost()), float(self.capex(year=1))),
+            # PCS — 최초 취득분을 두지 않는다(위 ⚠ 참조).
+            (self._pcs_lifetime, self._pcs_cost, None),
+        ):
+            if life is None or (initial is None and unit_cost <= 0.0):
+                continue
+            acquired: dict[int, float] = {} if initial is None else {1: initial}
+            year = life + 1
+            while year <= horizon:
+                acquired[year] = float(
+                    to_won(unit_cost * self.escalation_factor(year=year))
+                )
+                year += life
+            parts.append((life, acquired))
+        return tuple(parts)
 
     def _first_eol_year(self) -> int:
         """본체·PCS 중 **먼저** 수명이 끝나는 해 (`retire` 의 의미 ⑤).
@@ -559,40 +603,54 @@ class ESS(DER):
         같은 해에 겹치면 합산한다.
 
         **`retire` 면 아무것도 사지 않는다** (FR-104-AC3) — 본체도 PCS도.
+        그 갈래를 **여기 다시 적지 않는다** — `_acquisitions()` 가 `retire` 에서
+        1년차 하나만 내고 그것은 아래에서 걸러지므로 이 함수는 저절로 빈다.
+        같은 조건을 두 곳에 적으면 한쪽만 고쳐진다.
 
-        ⚠ **두 항 다 물가 계수를 굴린다** (R40 · `DV-7`). 배터리 쪽은
-        `_acquisitions()` 가 곱하고 PCS 는 여기서 곱한다 — 한쪽만 굴리면 같은
+        ⚠ **이 스케줄은 `_acquisitions()` 에서 파생된다** (R42). 종전에는 PCS 항을
+        여기서 따로 굴렸고, 그래서 **교체비는 계상되는데 그 잔존가치는 없는**
+        비대칭이 조용히 생겼다(R40 ②). 두 곳이 같은 `(수명, 단가)` 짝을 돌게
+        두는 것보다, **한 곳이 내고 다른 곳이 읽는** 편이 그 어긋남을 구조적으로
+        막는다 — `tests/casegrid/test_lifecycle_wiring.py` ⓒ 가 대조하는 두 경로가
+        이제 **같은 출처**를 본다.
+
+        ⚠ **두 항 다 물가 계수를 굴린다** (R40 · `DV-7`) — 한쪽만 굴리면 같은
         해의 지출 두 개가 **서로 다른 가격 기준**으로 한 칸에 합산되고, 그
         합계는 어느 기준으로도 읽을 수 없다. 그리고 ⓓ 래칫(스케줄 전체를
         견준다)은 **한쪽만 반응해도 통과하므로** 그 어긋남을 잡지 못한다 —
         그래서 PCS 를 준 자원을 그 래칫의 탐침에 함께 세웠다.
         """
-        if self.retires_at_end_of_life():
-            return {}
-
-        # 1년차 최초 취득은 CAPEX 이지 교체비가 아니므로 제외한다
-        schedule: dict[int, Money] = {
-            y: cost for y, cost in self._acquisitions(horizon=horizon).items() if y != 1
-        }
-
-        if self._pcs_lifetime is not None and self._pcs_cost > 0:
-            year = self._pcs_lifetime + 1
-            while year <= horizon:
-                cost = to_won(self._pcs_cost * self.escalation_factor(year=year))
-                schedule[year] = Money(schedule.get(year, to_won(0)) + cost)
-                year += self._pcs_lifetime
-
+        schedule: dict[int, Money] = {}
+        for _life, acquired in self._acquisitions(horizon=horizon):
+            for year, cost in acquired.items():
+                # 1년차 최초 취득은 CAPEX 이지 교체비가 아니므로 제외한다
+                if year == 1:
+                    continue
+                # 같은 해에 배터리와 PCS 가 겹치면 더한다 — 덮어쓰면 한쪽이
+                # 조용히 사라진다
+                schedule[year] = Money(schedule.get(year, to_won(0)) + to_won(cost))
         return schedule
 
     def salvage_value(self, *, year: int) -> Money:
         """`RC-ALL-C5` — `취득가 × 잔존수명 / 총수명`. `year` 년에 분석이 끝난다고
         볼 때의 값이며 **할인은 하지 않는다** — 할인은 CBA 계층(WP-7)의 몫이고,
-        여기서 함께 하면 두 번 할인되어 "보수적으로 보여서" 검출되지 않는다."""
-        acquired = self._acquisitions(horizon=year)
-        last_year = max(y for y in acquired if y <= year)
-        used = year - last_year + 1  # 취득 연도부터 센다 (1-base)
-        remaining = max(0, self.lifetime - used)
-        return to_won(int(acquired[last_year]) * remaining / self.lifetime)
+        여기서 함께 하면 두 번 할인되어 "보수적으로 보여서" 검출되지 않는다.
+
+        **부품마다 마지막 취득 시점부터 센다** (R42) — 근거는 `_acquisitions()`
+        독스트링. PCS 는 배터리와 수명이 다르므로 각자의 수명으로 재야 하고,
+        접어서 하나로 보면 15년차에 새로 산 PCS 의 잔존수명을 **배터리 수명**으로
+        재게 된다. `PV.salvage_value()` 와 같은 셈이다.
+        """
+        total = 0.0
+        for life, acquired in self._acquisitions(horizon=year):
+            within = [y for y in acquired if y <= year]
+            if not within:
+                continue
+            last_year = max(within)
+            used = year - last_year + 1  # 취득 연도부터 센다 (1-base)
+            remaining = max(0, life - used)
+            total += acquired[last_year] * remaining / life
+        return to_won(total)
 
     # ── 디스패치 (FR-301) ──────────────────────────────────────────
 

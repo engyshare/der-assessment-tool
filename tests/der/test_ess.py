@@ -743,6 +743,74 @@ def test_rc_all_c5_salvage_counts_from_the_latest_acquisition() -> None:
     assert ess.salvage_value(year=20) == to_won(4_000_000 * 1 / 3)
 
 
+@pytest.mark.req("FR-104-AC5", "FR-104-AC4")
+def test_rc_all_c5_salvage_counts_the_pcs_it_paid_to_replace() -> None:
+    """★ **PCS 교체비를 냈으면 그 PCS 의 잔존가치도 선다** — R42.
+
+    R40 이 PCS 교체비를 `replacement_schedule()` 에 배선하면서 취득분은
+    건드리지 않아, **교체비만 있고 잔존가치가 없는** 비대칭이 남아 있었다.
+    결론을 **한 방향으로만** 나쁘게 만들어 「보수적이라 안전하다」로 읽히는
+    형태이며, 그래서 지표가 아니라 **여기서** 붙든다.
+
+    제원 (물가 계수 0 — 이 검사가 재는 것은 계수가 아니라 **부품 배분**이다):
+
+        배터리  달력 25년 · 사이클 20,000회 → 수명 25년 (20년 안에 교체 없음)
+                취득가 500,000 × 10 + 1,000,000 = 6,000,000원 (1년차)
+        PCS     수명 7년 · 2,100,000원 → 교체 **8년차 · 15년차** (22년차는 밖)
+
+    20년 말:
+
+        배터리  6,000,000 × (25 − 20)/25          = 1,200,000원
+        PCS     2,100,000 × (7 − 6)/7             =   300,000원
+                                                  ─────────────
+                                                    1,500,000원
+
+    ⚠⚠ **부품마다 자기 수명으로 잰다.** 접어서 사전 하나로 보면 「마지막 취득 =
+    15년차 PCS」가 되고 그 잔존수명을 **배터리 수명 25년**으로 재게 되어
+    2,100,000 × 19/25 = 1,596,000원이 되며, 배터리 몫 1,200,000원은 통째로
+    사라진다. 위 합계가 그 갈래와 **다른 수**인 것이 이 오라클의 요점이다.
+
+    ⚠ **붙들지 못하는 것**: 최초 PCS 취득분은 여기서 세지 않는다 — 대장의 설비
+    단가가 설치 완료 기준이라 이미 `_gross_capex_won()` 안에 있고, 떼어내려면
+    「설비 단가의 몇 %가 PCS 인가」가 필요한데 **그 값이 대장에 없다**(`Q-2`).
+    그래서 배터리를 아직 교체하지 않은 해까지는 최초 PCS 몫이 배터리 몫의
+    잔존가치에 남는다. 사유는 `ESS._acquisitions()` 독스트링.
+    """
+    ess = _p1_ess(
+        cycle_life=20000, calendar_life=25,
+        capex_unit_won_per_kwh=500_000.0, capex_extra_won=1_000_000.0,
+        pcs_lifetime=7, pcs_cost_won=2_100_000.0,
+    )
+
+    # 낸 것 — 교체비가 실제로 계상되는 해 (이것이 없으면 아래는 공허하다)
+    assert sorted(ess.replacement_schedule(horizon=20)) == [8, 15]
+
+    # 센 것 — 그 마지막 취득분(15년차 PCS)이 잔존가치에 들어온다
+    assert ess.salvage_value(year=20) == 1_500_000
+
+    # PCS 를 주지 않으면 배터리 몫만 남는다 — 차액이 곧 PCS 몫이다
+    without_pcs = _p1_ess(
+        cycle_life=20000, calendar_life=25,
+        capex_unit_won_per_kwh=500_000.0, capex_extra_won=1_000_000.0,
+    )
+    assert without_pcs.salvage_value(year=20) == 1_200_000
+
+    # 21년 말이면 15년차 PCS 는 수명 7년을 다 썼다 → PCS 몫 0, 배터리만 남는다
+    assert ess.salvage_value(year=21) == 6_000_000 * 4 // 25
+    assert ess.salvage_value(year=21) == without_pcs.salvage_value(year=21)
+
+    # ★ 반대 방향 — **사지 않은 PCS 의 잔존가치는 서지 않는다.** 수명이 분석기간
+    # 밖이면 교체가 없고, 최초 PCS 는 이미 취득가(`_gross_capex_won()`) 안에
+    # 있으므로 PCS 몫을 따로 세우면 **초기투자에 없는 지출**의 잔존가치가 된다.
+    never_replaced = _p1_ess(
+        cycle_life=20000, calendar_life=25,
+        capex_unit_won_per_kwh=500_000.0, capex_extra_won=1_000_000.0,
+        pcs_lifetime=30, pcs_cost_won=2_100_000.0,
+    )
+    assert never_replaced.replacement_schedule(horizon=20) == {}
+    assert never_replaced.salvage_value(year=20) == without_pcs.salvage_value(year=20)
+
+
 # ── FR-105-AC1 운전 방법 선언 ───────────────────────────────────────
 @pytest.mark.req("FR-105-AC1")
 def test_operating_modes_declared_match_spec_list() -> None:

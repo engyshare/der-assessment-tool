@@ -40,9 +40,9 @@ R39-E 가 `core/casegrid/e2e_runner.py::_lifecycle_rows()` 로 교체비·잔존
 ② **이 설명이 이 검사에 걸리는가** — 아니다. 소스 문면을 보지 않는다.
 ③ **이름보다 넓게 주장하는가** — 아래 각 검사의 독스트링이 **붙들지 못하는
    것**을 갈라 적는다. 특히 ⓒ 는 *이 파일이 세우는 구성*에 대해서만 성립한다
-   (PCS 를 준 ESS·부속설비를 더 준 PV 는 재지 않았다 — 확인 못 함).
-   ⚠ **ⓓ 는 R40 에 PCS 를 준 ESS 까지 잰다** — 그 한 갈래만 확인된 것이며
-   ⓐ~ⓒ·ⓔ 는 여전히 위 괄호 그대로다.
+   (부속설비를 더 준 PV 는 재지 않았다 — 확인 못 함).
+   ⚠ **ⓒ·ⓓ 는 PCS 를 준 ESS 까지 잰다** — ⓓ 는 R40 이, ⓒ 는 R42 가 세웠다.
+   ⓐ·ⓑ·ⓔ 는 여전히 위 괄호 그대로다.
 ④ **수와 그 조건의 짝** — 이 파일은 **금액을 오라클로 적지 않는다.** 자원
    제원은 관계를 드러내기 위한 탐침값이며 대장에서 오지 않는다(대장값을 적으면
    대장이 바뀔 때마다 이 파일이 낡는다). 재는 것은 전부 **두 산출물 사이의
@@ -224,7 +224,18 @@ def test_one_off_lines_carry_the_same_signed_amount_as_the_proforma_rows() -> No
 @pytest.mark.req("FR-104-AC5")
 @pytest.mark.parametrize(
     "resource_factory",
-    [pytest.param(_pv, id="PV"), pytest.param(_ess, id="ESS")],
+    [
+        pytest.param(_pv, id="PV"),
+        pytest.param(_ess, id="ESS"),
+        #: PCS 를 준 갈래 — **R42 가 세웠다.** 이 줄이 없으면 배터리 하나뿐인
+        #: 구성만 재게 되고, 「PCS 교체비는 계상되는데 잔존가치는 없다」가 그
+        #: 사각에 그대로 남는다(R40 ② 가 실제로 그렇게 남겼다). ⓓ 래칫은
+        #: 이미 이 갈래를 재고 있었으나 **`replacement_schedule()` 만** 본다.
+        pytest.param(
+            lambda **kw: _ess(pcs_lifetime=7, pcs_cost_won=2_000_000.0, **kw),
+            id="ESS(+PCS)",
+        ),
+    ],
 )
 def test_salvage_counts_exactly_the_acquisitions_that_were_paid_for(
     resource_factory,
@@ -243,9 +254,19 @@ def test_salvage_counts_exactly_the_acquisitions_that_were_paid_for(
     붙였다(`replacement_schedule()` 은 그때 이미 비어 있었다). 그래서 아래
     `retire` 갈래가 이 검사의 첫 실물이다.
 
-    ⚠ **붙들지 못하는 것**: 이 파일이 세우는 제원에 대해서만 성립한다. PCS 를
-    준 `ESS`·부속설비를 더 준 `PV` 는 **재지 않았다**(확인 못 함) — 그 구성에서
-    두 경로가 같은지는 이 검사가 아무 말도 하지 않는다.
+    ⚠⚠ **앞쪽도 실제로 있었다** (R42). R40 ② 가 PCS **교체비**만
+    `replacement_schedule()` 에 배선하고 `_acquisitions()` 를 건드리지 않아,
+    PCS 를 준 `ESS` 는 *교체비를 내고도 그 잔존가치가 없는* 상태였다 — 결론을
+    **한 방향으로만** 나쁘게 만드는 형태다. 그 갈래를 위 `ESS(+PCS)` 가 잰다.
+
+    ⚠ **붙들지 못하는 것**: 이 파일이 세우는 제원에 대해서만 성립한다.
+    부속설비를 더 준 `PV` 는 **재지 않았다**(확인 못 함) — 그 구성에서 두 경로가
+    같은지는 이 검사가 아무 말도 하지 않는다.
+
+    ⚠ **`ESS` 는 이제 두 경로가 같은 출처를 본다** — `replacement_schedule()` 이
+    `_acquisitions()` 에서 파생되므로 이 검사는 그쪽에서 **동어반복에 가깝다**
+    (1년차를 거르는 규약만 남는다). 그것을 알고 남긴다: `PV` 는 여전히 두 곳이
+    각자 `(수명, 단가)` 짝을 돌고, 새 자원이 어느 모양을 고를지 모른다.
     """
     for resource in (
         resource_factory(),
@@ -303,10 +324,10 @@ def test_resources_that_ignore_the_escalation_they_were_given_do_not_grow() -> N
     으로 적어 두었던 자리다. R40 이 재고 그 문장을 뗐다).
 
     ⚠ **붙들지 못하는 것**: 이 검사는 `replacement_schedule()` 만 본다.
-    `fixed_om()`·`variable_om()` 이 계수를 쓰는지는 재지 않는다(그쪽은
-    자원 검증 케이스가 갖는다). 그리고 **`salvage_value()` 도 재지 않는다** —
-    `ESS._acquisitions()` 는 PCS 취득분을 아예 담지 않으므로 PCS 교체비는
-    계상되는데 그 잔존가치는 없다. 그 어긋남은 `todo.md` 가 든다.
+    `fixed_om()`·`variable_om()` 이 계수를 쓰는지는 재지 않고 `salvage_value()`
+    도 재지 않는다(그쪽은 각각 자원 검증 케이스와 ⓒ 가 갖는다).
+    ★ **종전 이 자리에 「`ESS._acquisitions()` 는 PCS 취득분을 아예 담지 않는다」가
+    적혀 있었다** — R42 가 그것을 닫았고 ⓒ 의 `ESS(+PCS)` 갈래가 붙든다.
     """
     ignored: set[str] = set()
     #: PCS 를 준 갈래를 **별도 이름**으로 센다 — 같은 `ESS` 이름으로 접으면
