@@ -31,6 +31,14 @@
 # `test_repo_golden_files_are_readable_and_declare_an_oracle_rank_and_source`
 # 독스트링이다.
 
+# ── R40 이 여섯 값 중 셋(`npv_won`)을 다시 뽑았다 ────────────────────────
+# `ESS._acquisitions()` 가 배터리 재취득분에 **물가 계수를 곱하지 않고** 있었다
+# (`DV-7` 명목 기준 · R39 가 부채로 남긴 한 줄). 그것을 고치니 18년차 교체비와
+# 20년차 잔존가치가 함께 움직여 세 시나리오의 `npv_won` 이 **각각 −222,794원**
+# 만큼 내려갔다. `payback_period_years` 는 셋 다 그대로다 — 움직인 두 흐름이
+# 전부 회수 시점(보조 80% 는 6.5년차) **뒤**에 있기 때문이다.
+# **손으로 고치지 않았다** — `_scenario_metrics()` 를 돌려 그대로 옮겼다.
+#
 scenario: "energy_independent_household"
 subsidy_rate: 0.0
 
@@ -41,5 +49,5 @@ oracle_source: "tests/integration/test_wave2_end_to_end.py"
 error_tolerance: "0.1%"
 
 expected_values:
-  npv_won: -6066881
+  npv_won: -6289675
   payback_period_years: .inf
