@@ -1703,7 +1703,8 @@ PYTHONUTF8=1 ~/miniconda3/envs/r31py311/python.exe -m pytest -q # CI 는 3.11 �
 
 ## 이력
 
-라운드별 경위(R0~R31) · 해소된 항목 · 낡은 절차는 **`status-history.md`** 에 있다.
+라운드별 경위(R0~R31 **및 R38**) · 해소된 항목 · 낡은 절차는
+**`status-history.md`** 에 있다 — R40 이 R38 블록 둘을 그 머리로 내렸다.
 **새 세션은 그것을 읽지 않는다** — 현재 상태를 그 파일에서 읽으면 낡은 수를 쓴다.
 
 `docs/decisions-2026-08-14-R31.md` · `-R32.md` 는 이력이 아니라 **판정 정본**이며,
