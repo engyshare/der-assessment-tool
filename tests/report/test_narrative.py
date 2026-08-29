@@ -11,10 +11,12 @@
 """
 from __future__ import annotations
 
+import copy
 import re
 from pathlib import Path
 
 import pytest
+import yaml  # type: ignore[import-untyped]
 
 from core.report._format import _recovery
 from core.report.appendix_sections import UNREAD_BY_PIPELINE
@@ -706,3 +708,131 @@ def test_the_cost_row_caveat_is_built_from_the_judgement_not_from_a_sentence() -
         "단서는 사라졌는데 실린 항목 목록에 변동 O&M 이 없다 — 규약 표가 "
         "붙임 4 와 서로 다른 사업을 말한다"
     )
+
+
+# ── R43-G — **검토자가 거꾸로 읽은 자리 둘**을 검사가 붙든다 ─────────────────
+#
+# 두 검사가 재는 것은 문면의 예쁨이 아니라 **수의 출처**다. 지방정부 담당자가
+# 리포트를 읽고 잘못 읽은 자리 다섯 중 셋(나-3·4·7)은 순수 문면이라 붙들 것이
+# 없고, 아래 둘만 *「그 수가 어디서 왔는가」* 를 잴 수 있다
+# (`docs/evidence/문의사항-지방정부담당자-2026-08-29.md`).
+
+_LEDGER_TALLY = re.compile(r"전제 (\d+)건 중 (\d+)건은 신뢰도 `가정`")
+
+
+def _ledger_tally(text: str) -> tuple[int, int]:
+    """리포트가 인쇄한 (전제 건수, `가정` 건수)."""
+    match = _LEDGER_TALLY.search(text)
+    assert match is not None, (
+        "「전제 N 건 중 M 건은 신뢰도 `가정`」이 리포트에 없다 — 잠정성 칸이 "
+        "대장의 신뢰도 구성을 싣지 않으면 「전환 인자에 `가정` 없음」이 "
+        "「이 결론은 가정에 기대지 않는다」로 읽힌다"
+    )
+    return int(match.group(1)), int(match.group(2))
+
+
+def _ledger_with_one_more_assumed_row(tmp_path: Path) -> Path:
+    """실물 대장 + **신뢰도 `가정` 한 건** 을 더한 사본의 경로.
+
+    손으로 적은 대장을 두지 않는 이유는 `conftest.py` 의 탐침과 같다 — 사본은
+    대장이 바뀌어도 조용히 옛 값을 들고 있다. 씨앗도 실물에서 고른다.
+
+    ⚠ `track` 을 `fixed` 로 낮추고 `sensitivity` 를 비운다. 스윕 축을 하나
+    늘리면 이 사본이 **다른 사업**을 재게 되고, 이 검사가 보려는 것은 사업이
+    아니라 **세는 방식**이다.
+    """
+    data = yaml.safe_load(_ASSUMPTIONS.read_text(encoding="utf-8"))
+    seed = next(
+        item for item in data["assumptions"] if item.get("confidence") == "가정"
+    )
+    probe = copy.deepcopy(seed)
+    probe["key"] = f"{seed['key']}.probe_one_more_assumption"
+    probe["track"] = "fixed"
+    probe["sensitivity"] = None
+    data["assumptions"].append(probe)
+    path = tmp_path / "assumptions-one-more-assumed.yaml"
+    path.write_text(
+        yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8"
+    )
+    return path
+
+
+def test_the_provisional_cell_counts_the_ledger_instead_of_quoting_a_number(
+    tmp_path: Path,
+) -> None:
+    """★ 「전제 N 건 중 M 건이 `가정`」이 **대장을 세어 지어진 값인가** (R43-G).
+
+    ## 무엇이 이 검사를 부르는가
+
+    1. 요약 「잠정성」 칸은 *「전환 인자에 신뢰도 `가정` 없음」* 한 줄이었고,
+    검토자가 그것을 **「이 결론은 가정에 기대지 않는다」**로 읽었다 — 실제로는
+    전환 인자가 아예 없어 그중에 `가정` 도 없는 것이며 대장은 대부분 `가정`
+    이다. 문의사항은 *「이 22 라는 합계는 자료에 없고 내가 절별 소계를 더한
+    것이다」* 라고 적는다(나-1).
+
+    그래서 그 합계를 리포트가 싣게 했는데, **문장에 박으면 대장이 늘어난 날
+    문장만 참인 채로 남는다.** 이 검사가 그것을 막는다 — 대장에 `가정` 한 건을
+    더하고 **두 수가 함께 움직이는가**를 본다. 리터럴이면 움직이지 않는다.
+    """
+    text = _markdown()
+    total, assumed = _ledger_tally(text)
+    assert 0 < assumed < total, (
+        f"전제 {total}건 중 {assumed}건 — 「일부가 가정」이라는 사실을 재는 "
+        "검사인데 전건이거나 0건이면 리터럴과 구별되지 않는다"
+    )
+    # 요약(1절)과 판정(6.1)이 **같은 문면**을 쓴다. 갈리면 두 자리가 서로 다른
+    # 대장을 말하는 것으로 읽힌다.
+    assert text.count(f"전제 {total}건 중 {assumed}건") == 2, (
+        "잠정성 칸과 6.1 「전환 인자의 신뢰도」 칸이 같은 문면을 쓰지 않는다"
+    )
+
+    probe = build_case_report(
+        _GOLDEN / "scenario_unsubsidized.yaml",
+        assumptions_path=_ledger_with_one_more_assumed_row(tmp_path),
+    )
+    moved = _ledger_tally(render_markdown(probe))
+    assert moved == (total + 1, assumed + 1), (
+        f"대장에 신뢰도 `가정` 한 건을 더했는데 수가 {(total, assumed)} → "
+        f"{moved} 다 — 이 문장은 대장을 세지 않고 수를 박아 두었다"
+    )
+
+
+def test_the_break_even_subsidy_rate_is_one_number_in_four_places() -> None:
+    """★ 64.2% 가 **요약 · 5.1 · 6.2 · 붙임 3 에서 같은 수인가** (R43-G).
+
+    ## 무엇이 이 검사를 부르는가
+
+    6.2 「결론 전환 조건」은 *「없음 (검토 범위 내)」* 한 줄이었고, 종합만 떼어
+    인용한 검토자가 그것을 **「무엇을 해도 회수 못 한다」**로 읽었다 — 같은
+    자료의 1. 요약과 5.1 은 *지원율 64.2% 면 전환된다*고 적는데도 그렇다
+    (문의사항 나-2). 그래서 6.2 에 지원 행을 넣었다.
+
+    ⚠ **네 번째 자리가 생겼다는 것이 이 검사의 이유다.** 같은 물음에 답하는
+    자리가 늘수록 **한 곳이 스스로 환산할 위험**이 커지고, 그 어긋남은 검토자가
+    두 표를 대조할 때에야 드러난다. 값의 옳고 그름은 여기서 재지 않는다 —
+    그쪽은 `test_conclusion_gap.py` 다.
+    """
+    report = build_case_report(
+        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    text = render_markdown(report)
+    formula_at = text.index("`s* = s - NPV / I_total`")
+    printed = {
+        "1. 요약": _percent_after(text, "| 결론 전환 지원율 |"),
+        "5.1": _percent_after(text, "- 결론 전환 지원율 — "),
+        "6.2": _percent_after(text, "| 지원 (보조율) |"),
+        "붙임 3": _percent_after(text[formula_at:], "- 대입값 — "),
+    }
+    expected = f"{report.break_even_subsidy_rate:.1%}"
+    assert set(printed.values()) == {expected}, (
+        f"결론 전환 지원율이 자리마다 다르다: {printed} (환산 한 곳이 내는 "
+        f"값은 {expected}) — 어느 자리가 스스로 환산했다"
+    )
+
+
+def _percent_after(text: str, marker: str) -> str:
+    """`marker` 뒤에 처음 나오는 백분율 문면."""
+    start = text.index(marker)
+    match = re.search(r"-?\d+\.\d%", text[start : start + 200])
+    assert match is not None, f"{marker!r} 뒤에 지원율이 없다"
+    return match.group(0)

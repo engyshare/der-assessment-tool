@@ -53,10 +53,12 @@ from __future__ import annotations
 from core.report._format import NO_VALUE, _num, _recovery, _unit_head, _won, _years
 from core.report.appendix_sections import (
     UNREAD_BY_PIPELINE,
+    UNREAD_NOTE,
     appendix_section,
     formula_section,
     glossary_section,
     influence_section,
+    ledger_confidence_note,
     reproduction_section,
 )
 from core.report.capacity import (
@@ -177,10 +179,29 @@ def _summary_combined(report: CaseReport) -> str:
 
 
 def _provisional_cell(report: CaseReport) -> str:
+    """1. 요약 「잠정성」 · 6.1 「전환 인자의 신뢰도」 칸.
+
+    ## ★★ 「없음」이 **거꾸로 읽힌 자리다** (R43-G)
+
+    종전 이 칸은 전환 인자가 0건일 때 *「전환 인자에 신뢰도 `가정` 없음」*
+    한 줄이었다. 참이지만 **검토자가 그것을 「이 결론은 가정에 기대지
+    않는다」로 읽었다** — 사유와 근거는 `ledger_confidence_note()` 에 있다.
+
+    그래서 두 사실을 **함께** 싣는다. 앞은 *전환 인자가 없다*, 뒤는 *대장은
+    대부분 `가정` 이다* 이며, 둘 다 관측이지 판정이 아니다.
+
+    ⚠ **뒤 절을 여기서 짓지 않는다** — 붙임 1 을 세는 함수가 그것의 소유자다.
+    """
     if not report.provisional_warning:
-        return "전환 인자에 신뢰도 `가정` 없음"
+        return (
+            "검토 범위 안에서 결론을 뒤집는 인자가 없다. "
+            f"{ledger_confidence_note(report)}"
+        )
     names = " · ".join(f"`{e.variable}`" for e in report.provisional_warning)
-    return f"전환 인자 중 신뢰도 `가정` — {names}"
+    return (
+        f"전환 인자 중 신뢰도 `가정` — {names}. "
+        f"{ledger_confidence_note(report)}"
+    )
 
 
 def _flip_section(report: CaseReport) -> list[str]:
@@ -300,6 +321,12 @@ def _remaining_gap_table(report: CaseReport) -> list[str]:
             f"{_won(abs(end_npv))} | {entry.confidence} | {method} |"
         )
     lines.append("")
+    # ★ **라벨의 뜻을 표 바로 아래에 단다 (R43-G).** 종전에는 붙임 2 각주와
+    # 붙임 8 에만 있었고, *「표를 인용해 가는 사람은 거기까지 가지 않는다」*
+    # 가 실제로 일어났다(문의사항 2026-08-29 나-3). 문면의 소유자는
+    # `UNREAD_NOTE` 한 곳이다 — 여기서 다시 적지 않는다.
+    if any(entry.unread_by_pipeline for entry in rows):
+        lines += [UNREAD_NOTE, ""]
     return lines
 
 
@@ -488,6 +515,9 @@ def _judgement_section(report: CaseReport) -> list[str]:
         "",
         "| 조건 | 값 | 산출 |",
         "|---|---|---|",
+        # ★★ **지원 행이 맨 위다 (R43-G).** 아래 `_subsidy_flip_row()` 참조 —
+        # 이 표에서 「없음」만 떼어 인용된 기록이 있다.
+        _subsidy_flip_row(report),
     ]
     for entry in report.flipping:
         direction = "이하" if (entry.threshold or 0) < entry.used_value else "이상"
@@ -512,8 +542,12 @@ def _judgement_section(report: CaseReport) -> list[str]:
     # 검토자에게 빈 표는 *「없다」* 와 *「싣지 못했다」* 를 구별해 주지 않는다 —
     # 1절 요약은 같은 사실을 이미 「없음 (검토 범위 내)」로 적고 있으므로,
     # 여기만 비면 두 자리가 다른 말을 하는 것처럼 읽힌다.
-    if lines[-1] == "|---|---|---|":
-        lines.append(f"| {NONE_IN_RANGE} | — | — |")
+    #
+    # ⚠ **비었는지는 지원 행 위에서 잰다 (R43-G).** 지원 행이 늘 서므로 표는
+    # 다시는 비지 않는데, 그렇다고 「단독·결합으로는 없음」이 사라지면 종전에
+    # 「없음」이 말하던 사실이 표에서 지워진다.
+    if lines[-1] == _subsidy_flip_row(report):
+        lines.append(f"| 지원 외의 단일·결합 인자 | {NONE_IN_RANGE} | — |")
 
     lines += ["", "### 6.3 미해소 항목", "", "| 구분 | 항목 | 해소 조건 |", "|---|---|---|"]
     for entry in report.flipping:
@@ -526,6 +560,28 @@ def _judgement_section(report: CaseReport) -> list[str]:
         lines.append(f"| 미반영 | {item.label} | {item.resolves_when} |")
     lines += ["", "- 상세 — 자료 확보는 붙임 2, 미반영 항목은 붙임 8", ""]
     return lines
+
+
+def _subsidy_flip_row(report: CaseReport) -> str:
+    """6.2 의 **지원 행** — 「전환 조건 없음」이 홀로 인용된 자리다 (R43-G).
+
+    ## 무엇이 어긋나 있었나
+
+    6.2 는 *「없음 (검토 범위 내)」* 한 줄이었다. 같은 자료의 1. 요약과 5.1 은
+    **지원율 64.2% 면 전환된다**고 적는데, 종합만 떼어 인용하는 사람에게는
+    그 표가 *「무엇을 해도 회수 못 한다」* 로 읽힌다 — 지방정부 담당자가 실제로
+    그렇게 읽었다(`docs/evidence/문의사항-지방정부담당자-2026-08-29.md` 나-2).
+    담당자가 심의회에서 답해야 하는 것이 정확히 그 지원율이다.
+
+    ⚠ **여기서 새 수를 만들지 않는다.** 1. 요약·5.1·붙임 3 이 쓰는
+    `break_even_subsidy_rate` **한 함수**를 그대로 부른다. 자리수도 같은
+    `:.1%` 다 — 네 자리가 같은 물음에 다른 수를 내면 그 어긋남은 검토자가
+    표를 대조할 때에야 드러난다.
+    """
+    return (
+        f"| 지원 (보조율) | **{report.break_even_subsidy_rate:.1%}** "
+        f"(현 지원율 {report.subsidy_rate:.1%}) | 붙임 3 |"
+    )
 
 
 def render_markdown(report: CaseReport) -> str:

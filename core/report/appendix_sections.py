@@ -25,7 +25,29 @@ SOLO_SWEEP = "1변수 스윕"
 #:
 #: ⚠ **「영향 없음」이 아니다.** 기계는 「진짜 무영향」과 「미배선」을 가를 수
 #: 없으므로 판정하지 않고 **관측한 것을 그대로** 적는다.
-UNREAD_BY_PIPELINE = "파이프라인 미반영 (변동폭 0원)"
+#:
+#: ## ★★ 문면을 R43-G 가 바꿨다 — **「0원」이 거꾸로 읽혔다**
+#:
+#: 종전 표기는 `파이프라인 미반영 (변동폭 0원)` 이었고, 붙임 2 판단용 표는
+#: 그 인자의 `결론 변동폭` 칸에 **`0원`** 을 실었다. 지방정부 담당자가 그
+#: 표를 읽고 *「영향이 없다」* 로 받아 적었다(문의사항 2026-08-29 나-3):
+#: 같은 열의 다른 값(6,248,231원 등)은 **재어 본 크기**인데 이 0 만
+#: **재지 않았다는 표시**여서, 한 열에 서면 둘이 구별되지 않는다.
+#:
+#: 그래서 ① 「0원」을 이 라벨로 **대체**하고(아래 `influence_section`),
+#: ② 심의 자료의 말이 아닌 「파이프라인」을 문면에서 뺐다. 상수 이름은
+#: 코드의 것이므로 그대로 둔다.
+UNREAD_BY_PIPELINE = "미반영 — 측정 안 됨"
+#: 위 라벨이 붙은 칸 아래 다는 **정의 한 줄** (양식 0절 「규약은 나열한다」).
+#:
+#: ⚠ **두 자리가 이 한 줄을 함께 쓴다** — 본문 5.1 「전환까지 남는 거리」 표와
+#: 붙임 2 판단용 표. 각자 적으면 한쪽만 낡는다.
+UNREAD_NOTE = (
+    f"- 「{UNREAD_BY_PIPELINE}」 — 범위를 끝에서 끝까지 흔들어도 결론 축이 "
+    "0원 움직인 인자. 그 0 은 **이 값이 이 평가의 계산에 아직 들어가지 "
+    "않았다는 표시**이며, 영향의 유무는 이 평가가 말하지 않는다 "
+    "(자리와 해소 조건은 붙임 8)"
+)
 
 #: 전제 대장 키의 **접두어 → 주제** (검토 「1차 의견」 5 · 2026-08-15).
 #:
@@ -52,6 +74,9 @@ _TOPIC_UNCLASSIFIED = "미분류"
 
 #: 신뢰도 표기 순서. 뒤로 갈수록 확인이 필요하다.
 _CONFIDENCE_ORDER: tuple[str, ...] = ("확정", "추정", "가정")
+
+#: 신뢰도 `가정` 의 표기. 대장이 쓰는 낱말이며 여기서 짓지 않는다.
+ASSUMED_CONFIDENCE = _CONFIDENCE_ORDER[-1]
 
 
 def topic_of(key: str) -> str:
@@ -91,10 +116,15 @@ def influence_section(report: CaseReport) -> list[str]:
     for rank, entry in enumerate(report.uncertain_influences, start=1):
         flips = "**뒤집힘**" if entry.flips_conclusion else NO_VALUE
         method = UNREAD_BY_PIPELINE if entry.unread_by_pipeline else SOLO_SWEEP
+        # ★ **변동폭 칸에 `0원` 을 적지 않는다 (R43-G).** 위 `UNREAD_BY_PIPELINE`
+        # 참조 — 재어 본 크기와 재지 않은 자리가 한 열에 서면 구별되지 않는다.
+        delta = UNREAD_BY_PIPELINE if entry.unread_by_pipeline else _won(
+            entry.delta_won
+        )
         lines.append(
             f"| {rank} | `{entry.variable}` | {_num(entry.used_value)} | "
             f"{_unit_head(entry.value_unit) or NO_VALUE} | "
-            f"{_num(entry.low)}~{_num(entry.high)} | {_won(entry.delta_won)} | "
+            f"{_num(entry.low)}~{_num(entry.high)} | {delta} | "
             f"{flips} | {method} |"
         )
     lines += [
@@ -111,12 +141,7 @@ def influence_section(report: CaseReport) -> list[str]:
             f"{entry.base_year or NO_VALUE} | {_date(entry.verified_at)} | "
             f"{_first_sentence(entry.derivation_method)} |"
         )
-    lines += [
-        "",
-        f"- `{UNREAD_BY_PIPELINE}` — 범위를 끝에서 끝까지 흔들어도 결론 축이 "
-        "0원 움직인 인자. 미반영 항목으로 붙임 8 에 함께 실린다",
-        "",
-    ]
+    lines += ["", UNREAD_NOTE, ""]
     return lines
 
 
@@ -213,6 +238,34 @@ def appendix_section(report: CaseReport) -> list[str]:
     return lines
 
 
+def ledger_confidence_note(report: CaseReport) -> str:
+    """「전제 N 건 중 M 건은 신뢰도 `가정`」 — **대장을 세어 짓는다** (R43-G).
+
+    ## 왜 이 한 줄이 생겼는가 — **거꾸로 읽힌 기록이 있다**
+
+    1. 요약 「잠정성」 칸과 6.1 「전환 인자의 신뢰도」 칸은 전환 인자가 0건일 때
+    *「전환 인자에 신뢰도 `가정` 없음」* 한 줄이었다. 지방정부 담당자가 그것을
+    **「이 결론은 가정에 기대지 않는다」**로 읽었고, 문의사항 끝에 *「그대로
+    심의회에 가져갔으면 『전제는 튼튼합니다』라고 말했을 것」* 이라고 적었다
+    (`docs/evidence/문의사항-지방정부담당자-2026-08-29.md` 나-1 · 덧).
+
+    실제는 정반대다 — **전환 인자가 아예 없어서** 그중에 `가정` 도 없는 것이고,
+    대장 전건은 대부분 `가정` 이다. 그래서 같은 칸이 **대장의 신뢰도 구성**을
+    함께 싣는다.
+
+    ⚠ **수를 리터럴로 적지 않는다.** 문의사항 자신이 *「이 22 라는 합계는
+    자료에 없고 내가 절별 소계를 더한 것이다」* 라고 적는다 — 그 합계를 문장에
+    박으면 대장이 늘어난 날 문장만 참인 채로 남는다. 붙임 1 이 세는 것과 같은
+    `report.assumptions` 를 세어 짓는 이유가 그것이다.
+    """
+    rows = report.assumptions
+    assumed = sum(1 for row in rows if row.confidence == ASSUMED_CONFIDENCE)
+    return (
+        f"전제 {len(rows)}건 중 {assumed}건은 신뢰도 "
+        f"`{ASSUMED_CONFIDENCE}` (붙임 1)"
+    )
+
+
 def glossary_section() -> list[str]:
     """붙임 9 — 용어 설명.
 
@@ -232,6 +285,11 @@ def glossary_section() -> list[str]:
         "|---|---|",
         "| **순현재가치(NPV)** | 미래 현금흐름을 현재 가치로 할인해 더한 뒤 "
         "초기투자를 뺀 값. 0 이상이면 분석기간 내 회수 |",
+        # ★ 아래 둘은 R43-G 가 넣었다. 5.1 의 *「결론까지 남은 거리 — …원
+        # (결손 · 총사업비 …의 …%)」* 이 이 자료에서 가장 많이 인용될 문장인데
+        # 그 안의 두 낱말이 이 붙임에 없었다 (문의사항 2026-08-29 나-7).
+        "| **결론 축** | 이 평가가 결론을 재는 자. 여기서는 순현재가치 |",
+        "| **결손** | 결론 축이 0 에 못 미치는 금액. 반대쪽은 「여유」 |",
         "| **할인율** | 미래의 돈을 현재 가치로 환산할 때 쓰는 비율 |",
         "| **할인 회수기간** | 할인한 누적 현금흐름이 초기투자에 도달하는 데 "
         "걸리는 시간. 분석기간 내 미도달이면 「미회수」 |",
