@@ -358,7 +358,7 @@
 | `NFR-402` | Must-have | 1 | `NFR-402-AC1` | 모든 통신은 TLS 1.2 이상 | 자동 | test_phase1_measurements.py |
 | `NFR-403` | Must-have | 1 | `NFR-403-AC1` | 사용자는 타인 시나리오에 접근 불가 (유효 공유 토큰 제외) | 자동 | test_authorization.py 2건 |
 | `NFR-404` | Must-have | 1 | `NFR-404-AC1` | 업로드 CSV는 크기(10MB)·행수(100,000)·MIME 검증 | 자동 | test_timeseries.py |
-| `NFR-405` | Should-have | 1 | `NFR-405-AC1` | 의존성 취약점 CI 자동 스캔 (pip-audit / Dependabot) | 자동 | test_phase1_measurements.py |
+| `NFR-405` | Should-have | 1 | `NFR-405-AC1` | 의존성 취약점 CI 자동 스캔 (pip-audit / Dependabot) | 자동 | test_phase1_measurements.py 2건 |
 | `NFR-501` | Should-have | 1 | `NFR-501-AC1` | 동시 사용자 20명, 등록 200명, 시나리오 5,000건 규모에서 정상 동작 | 자동 | test_phase1_measurements.py |
 | `NFR-502` | Must-have | 1 | `NFR-502-AC1` | SQLite 파일 일 1회 이상 자동 백업, 분기 1회 복원 리허설 | 자동 | test_backup_restore.py 6건 |
 | `NFR-503` | Must-have | 1 | `NFR-503-AC1` | 단일 컨테이너로 로컬 실행 가능 (docker run 1회) | 자동 | test_phase1_measurements.py |

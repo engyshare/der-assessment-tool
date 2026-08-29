@@ -180,17 +180,31 @@ jobs:
       # 여기서 지켜야 할 것은 후자다. 출력이 비면 스캔이 돌지 않은 것이고
       # 그때는 멈춘다 — `|| true` 로 종료 코드만 버리면 도구가 없어도
       # 초록불이 된다(2.7 에서 닫은 구멍과 같은 형태).
+      #
+      # ## ★ R42 — 「발견은 경고」가 **취약점을 초록불 안에 숨겼다**
+      #
+      # 위 판단은 옳았으나 절반이었다. `::warning::` 은 **상태를 갖지 않는다** —
+      # 어제의 한 건과 오늘 새로 생긴 두 건이 같은 노란 줄로 보이고, 아무도
+      # 열어 보지 않으면 영영 그대로다. 실제로 `PYSEC-2026-3447` 이 두 라운드를
+      # 그렇게 지났고 인계 문서를 읽던 사람이 로그를 직접 열어서야 찾았다.
+      #
+      # 그래서 **경고 대 차단이 아니라 「판정된 것 대 판정 안 된 것」으로
+      # 가른다**(`scripts/check_dependency_audit.py`). 판정은
+      # `docs/accepted-vulnerabilities.yaml` 에 사유·재검토 조건과 함께 있고,
+      # 거기 있는 것은 조용하다. **위 반론(「통과할 수 없는 검사는 꺼진다」)은
+      # 여전히 유효하며, 그래서 빠져나갈 문을 함께 두었다** — 상류가 안 고친
+      # 취약점이라도 사유를 적으면 통과한다. 막는 것은 취약점이 아니라
+      # **아무도 안 본 취약점**이다.
       - name: 의존성 취약점 스캔 (NFR-405)
         run: |
           set -uo pipefail
           pip-audit --progress-spinner off | tee audit.txt || true
-          if [ ! -s audit.txt ]; then
-            echo "::error::pip-audit 이 아무 출력도 내지 않았습니다 — 스캔이 돌지 않았습니다"
-            exit 1
+          python scripts/check_dependency_audit.py
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            echo "::error::의존성 취약점 판정이 갱신되지 않았습니다 (위 목록) — docs/accepted-vulnerabilities.yaml 에 사유와 재검토 조건을 적으십시오"
           fi
-          if grep -qiE "GHSA-|PYSEC-|CVE-" audit.txt; then
-            echo "::warning::의존성 취약점이 있습니다 (위 목록). NFR-405 는 Should-have 이므로 차단하지 않습니다"
-          fi
+          exit $rc
 
       - name: ruff
         run: python -m ruff check core tests scripts

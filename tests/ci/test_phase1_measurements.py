@@ -160,6 +160,53 @@ def test_ci_runs_dependency_vulnerability_scan() -> None:
     assert "audit.txt" in commands
 
 
+@pytest.mark.req("NFR-405-AC1")
+def test_ci_holds_every_found_advisory_against_a_written_judgement() -> None:
+    """★ **스캔이 도는 것만으로는 부족하다** — 찾은 것이 판정됐는지까지 본다 (R42).
+
+    종전 CI 는 발견을 `::warning::` 하나로 흘렸고, 그래서 `PYSEC-2026-3447` 이
+    **두 라운드 동안 초록불 안에 숨어** 있었다. 경고는 상태를 갖지 않는다 —
+    어제의 한 건과 오늘 새로 생긴 두 건이 같은 노란 줄로 보인다.
+
+    그래서 판정을 **대장**(`docs/accepted-vulnerabilities.yaml`)에 두고 CI 가
+    스캔 출력과 대조한다. 여기서 재는 것은 두 가지다:
+
+        ① CI 가 그 대조를 **실제로 부르는가** (문면)
+        ② 그 대조가 **판정 안 된 권고를 잡는가** (행동)
+
+    ② 를 함께 재는 이유는 ① 만으로는 *부르기는 하는데 아무것도 안 잡는*
+    상태와 구별되지 않기 때문이다 — 이 저장소가 반복해서 만난
+    「검사가 통과했다 ≠ 검사가 무언가를 검사했다」이다.
+
+    ⚠ **붙들지 못하는 것**: `pip-audit` 가 찾지 못한 취약점은 여기서도 안
+    보인다. 그리고 대장에 적힌 **판정의 내용이 옳은지**는 재지 않는다 —
+    그것은 사람의 몫이고 `revisit_when` 이 그 자리를 갖는다.
+    """
+    from scripts.check_dependency_audit import check, load_ledger
+
+    commands = " ".join(_workflow_commands())
+    assert "check_dependency_audit.py" in commands, (
+        "CI 가 스캔 결과를 판정 대장과 대조하지 않습니다 — 발견이 경고로만 남으면 "
+        "취약점이 초록불 안에 숨습니다"
+    )
+
+    items = load_ledger(REPO_ROOT / "docs" / "accepted-vulnerabilities.yaml")
+    accepted = [str(item["id"]) for item in items]
+
+    # 대장 자신은 깨끗해야 한다 — 부기가 빠진 판정은 판정이 아니다
+    assert check(accepted, items) == []
+
+    # 판정 안 된 권고 하나가 들어오면 **결함으로 잡힌다**
+    assert check([*accepted, "GHSA-zzzz-zzzz-zzzz"], items), (
+        "판정된 적 없는 권고를 통과시키고 있습니다"
+    )
+
+    # 상류가 고쳐 사라진 판정도 잡는다 — 래칫은 **줄어도** 말한다
+    assert accepted and check(accepted[1:], items), (
+        "대장에만 남은 판정을 통과시키고 있습니다 — 다음 사람이 없는 위험을 봅니다"
+    )
+
+
 @pytest.mark.req("NFR-503-AC1")
 def test_dockerfile_defines_one_container_run_path() -> None:
     """Spec oracle: a single Dockerfile with one FROM and a CMD supports one docker run."""
