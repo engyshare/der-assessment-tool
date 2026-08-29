@@ -718,7 +718,7 @@ class HeatPump(DER):
 
         ⚠ **O&M 계수(`escalation_factor`)로 되돌리지 않는다** — 대장의
         `capex.replacement_real_trend`(`Q-17`)는 적용범위를 **재취득 단가로만**
-        좁혀 두었고 O&M 을 명시적으로 뺐다(`contracts/der.py`
+        좁혀 두었고 O&M 을 명시적으로 뺐다(`core/contracts/der.py`
         `replacement_escalation_factor` 독스트링). 되돌리면
         `test_replacement_follows_the_replacement_rate_and_om_does_not` 이 잡는다.
 

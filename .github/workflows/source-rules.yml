@@ -358,3 +358,25 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: 도구 감지 능력 확인 (음성 테스트 — 차단)
         run: python scripts/negtest_task_mapping.py
+
+  # ── 독스트링·주석이 가리키는 이름이 실재하는가 (R43-L 신설) ────────
+  #
+  # R43 이 이 형태를 **두 번** 고쳤다 — 없는 함수 이름 2곳(WP-A) · 옮겨진
+  # 선언 자리 3곳(WP-F3). 두 번 다 사람이 눈으로 찾았고, R38·R39 는 같은
+  # 오기를 신고하고도 **두 라운드를 살아남았다.** 재는 것이 없으면 다시 쌓인다.
+  #
+  # **차단이다.** 「통과할 수 없는 검사는 꺼진다」는 반론은 여기서 성립하지
+  # 않는다 — 경위를 적느라 옛 이름을 쓰는 문장은 `KNOWN_STALE` 에 **사유와
+  # 함께** 올리면 통과한다(R42 `check_dependency_audit` 가 세운 형태). 막는
+  # 것은 옛 이름이 아니라 **아무도 모르는 옛 이름**이다.
+  docstring-references:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 독스트링·주석 참조 실재 검사
+        run: python scripts/check_docstring_references.py
