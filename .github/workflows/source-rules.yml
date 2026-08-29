@@ -25,6 +25,7 @@ on:
       - "docs/manual-checks.yaml"
       - "docs/traceability.md"
       - "docs/assumptions.yaml"
+      - "status.md"
       - "tests/**"
       - "scripts/**"
       - ".github/workflows/source-rules.yml"
@@ -380,3 +381,32 @@ jobs:
 
       - name: 독스트링·주석 참조 실재 검사
         run: python scripts/check_docstring_references.py
+
+  # ── 「지금 할 일」에 라운드 종료 블록이 쌓이는가 (R43-J 신설) ──────
+  #
+  # `status.md` 는 스스로 *「라운드가 끝날 때 이전 블록을 내린다」* 고 적어
+  # 두었는데 **그것을 재는 것이 없었다.** R43 이 열어 보니 아홉 판이었고,
+  # 파일이 1,638줄까지 자란 결과 「산출물 현황」 절이 **두 판본 뒤처졌다** —
+  # 낡은 수가 다음 라운드의 계획으로 따라 들어가는 경로다.
+  #
+  # **차단이다.** 고치는 데 필요한 것은 블록을 옮기는 것뿐이라 「통과할 수
+  # 없는 검사는 꺼진다」가 여기서는 성립하지 않는다.
+  #
+  # ⚠ `on.push.paths` 에 `status.md` 를 함께 넣었다 — 넣지 않으면 이 파일만
+  # 고친 푸시에서 잡이 아예 돌지 않고, 그것이 정확히 이 검사가 막으려는 상태다.
+  status-round-blocks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 라운드 종료 블록 수 검사
+        run: python scripts/check_status_round_blocks.py
+
+      - name: 도구 감지 능력 확인 (음성 3 + 양성 2)
+        # 실물이 상한 이내라 이 검사는 늘 초록불이다. 그 초록불이 «지킨다» 인지
+        # «세지 않는다» 인지는 결과만으로 구분되지 않는다 (§13.0.1 ④).
+        run: python scripts/negtest_status_round_blocks.py
