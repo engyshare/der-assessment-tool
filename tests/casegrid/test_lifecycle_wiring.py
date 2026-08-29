@@ -12,6 +12,7 @@ R39-E 가 `core/casegrid/e2e_runner.py::_lifecycle_rows()` 로 교체비·잔존
     ⓑ `OneOffLine` 의 금액이 프로포마 행과 **같은 부호·같은 수**다
     ⓒ 잔존가치가 세는 취득분이 `replacement_schedule()` 과 **일치**한다
     ⓓ 자원이 물가 계수를 받고도 **교체비에 곱하지 않는** 자리의 목록(래칫)
+      — **해마다** 견주므로 「배터리만 굴리고 PCS 는 안 굴린다」도 잡는다(R40)
     ⓔ 그 행들이 **지표까지 닿는다** — 붙임 4 가 인쇄하는 것과 NPV 가 센 것이 같다
 
 ## 왜 지표로는 잡히지 않는가
@@ -40,6 +41,8 @@ R39-E 가 `core/casegrid/e2e_runner.py::_lifecycle_rows()` 로 교체비·잔존
 ③ **이름보다 넓게 주장하는가** — 아래 각 검사의 독스트링이 **붙들지 못하는
    것**을 갈라 적는다. 특히 ⓒ 는 *이 파일이 세우는 구성*에 대해서만 성립한다
    (PCS 를 준 ESS·부속설비를 더 준 PV 는 재지 않았다 — 확인 못 함).
+   ⚠ **ⓓ 는 R40 에 PCS 를 준 ESS 까지 잰다** — 그 한 갈래만 확인된 것이며
+   ⓐ~ⓒ·ⓔ 는 여전히 위 괄호 그대로다.
 ④ **수와 그 조건의 짝** — 이 파일은 **금액을 오라클로 적지 않는다.** 자원
    제원은 관계를 드러내기 위한 탐침값이며 대장에서 오지 않는다(대장값을 적으면
    대장이 바뀔 때마다 이 파일이 낡는다). 재는 것은 전부 **두 산출물 사이의
@@ -269,14 +272,14 @@ def test_salvage_counts_exactly_the_acquisitions_that_were_paid_for(
 #: 따라가야 해서(`replacement_schedule` → `_acquisitions` → `_battery_cost`)
 #: **문면으로는 볼 수 없다.** 그래서 여기서 **행동으로** 잰다.
 #:
-#: 지금 `ESS` 가 여기 있다 — `_battery_cost()` 가 `escalation_factor()` 를
-#: 거치지 않아 18년차 배터리 교체비가 **오늘의 원**으로 적힌다. 대장이
-#: `price_basis: "명목"` 을 선언한 사업에서 그 지출만 실질이 된다.
-#: **고치는 것은 이 라운드가 아니다** — `core/der/ess.py` 한 줄이 결론축을
-#: −6,066,881 → −6,289,675원으로 움직이므로 **골든 재산출과 한 단위로** 가야
-#: 한다(사유·크기는 `.orch/R39/result_replacement_wiring.md` §6 ①).
-#: 고치는 날 이 래칫이 빨간불이 되어 목록을 함께 줄이라고 알린다.
-KNOWN_ESCALATION_IGNORED_IN_REPLACEMENT: frozenset[str] = frozenset({"ESS"})
+#: **지금은 비어 있다** — R40 이 `ESS` 를 여기서 뺐다. 그 한 줄(`_acquisitions()`
+#: 가 재취득분에 계수를 곱한다)이 결론축을 **−6,066,881 → −6,289,675원**으로
+#: 움직였고 골든 여섯 값을 같은 단위에서 다시 뽑았다. 래칫이 설계대로 동작한
+#: 자리다 — **줄어도 빨간불**이 나서 목록과 기준값을 함께 옮기라고 알렸다.
+#:
+#: 비어 있다고 지우지 않는다. 새 자원이 계수를 받고도 무시하면 이 검사가 그것을
+#: **늘어난 쪽으로** 잡는다.
+KNOWN_ESCALATION_IGNORED_IN_REPLACEMENT: frozenset[str] = frozenset()
 
 
 @pytest.mark.contract
@@ -292,20 +295,38 @@ def test_resources_that_ignore_the_escalation_they_were_given_do_not_grow() -> N
     「안 쓴다」로 잘못 세어진다. 확인 못 한 것을 부채로 세면 다음 사람이 없는
     일을 한다.
 
+    ⚠⚠ **스케줄 전체를 견주므로 「한 항만 굴린다」는 잡지 못한다** — `ESS` 는
+    배터리와 PCS 두 항을 같은 사전에 넣고 같은 해면 **합산**한다. 한쪽만 계수를
+    받아도 사전은 달라지므로 이 검사는 초록불이다. 그래서 **PCS 를 준 `ESS` 를
+    탐침에 함께 세운다** — 배터리 없이 PCS 만 교체되는 해가 생겨 그 해의 금액이
+    따로 드러난다(파일 머리 ③ 이 「PCS 를 준 ESS 는 재지 않았다 — 확인 못 함」
+    으로 적어 두었던 자리다. R40 이 재고 그 문장을 뗐다).
+
     ⚠ **붙들지 못하는 것**: 이 검사는 `replacement_schedule()` 만 본다.
     `fixed_om()`·`variable_om()` 이 계수를 쓰는지는 재지 않는다(그쪽은
-    자원 검증 케이스가 갖는다).
+    자원 검증 케이스가 갖는다). 그리고 **`salvage_value()` 도 재지 않는다** —
+    `ESS._acquisitions()` 는 PCS 취득분을 아예 담지 않으므로 PCS 교체비는
+    계상되는데 그 잔존가치는 없다. 그 어긋남은 `todo.md` 가 든다.
     """
     ignored: set[str] = set()
-    for resource in (_pv(), _ess()):
+    #: PCS 를 준 갈래를 **별도 이름**으로 센다 — 같은 `ESS` 이름으로 접으면
+    #: 한쪽만 반응해도 「반응했다」가 되어 위 ⚠⚠ 가 도로 열린다.
+    probes: tuple[tuple[str, PV | ESS], ...] = (
+        ("PV", _pv()),
+        ("ESS", _ess()),
+        ("ESS(+PCS)", _ess(pcs_lifetime=7, pcs_cost_won=2_000_000.0)),
+    )
+    for label, resource in probes:
         with_escalation = resource.replacement_schedule(horizon=_HORIZON)
         if not with_escalation:
             continue  # 교체가 없다 — 판정 대상 아님
 
         flat = copy.copy(resource)
         flat.escalation_rate = 0.0
-        if with_escalation == flat.replacement_schedule(horizon=_HORIZON):
-            ignored.add(type(resource).__name__)
+        without = flat.replacement_schedule(horizon=_HORIZON)
+        # **해마다** 견준다 — 사전 전체를 견주면 한 항만 반응해도 통과한다
+        if any(with_escalation[y] == without[y] for y in with_escalation):
+            ignored.add(label)
 
     assert ignored == set(KNOWN_ESCALATION_IGNORED_IN_REPLACEMENT), (
         f"교체비에 물가 계수를 쓰지 않는 자원의 목록이 실측과 다릅니다.\n"

@@ -495,7 +495,12 @@ class ESS(DER):
         )
 
     def _battery_cost(self) -> Money:
-        """배터리 교체 단가 × 용량. 부대비(설치·계통연계)는 재취득하지 않는다."""
+        """배터리 교체 단가 × 용량. 부대비(설치·계통연계)는 재취득하지 않는다.
+
+        **1년차 기준(실질) 가격이다** — 물가 계수는 부르는 쪽(`_acquisitions()`)이
+        교체 연도를 알고 곱한다. 여기서 곱하려면 이 함수가 연도를 받아야 하고,
+        그러면 「단가」와 「그 해의 지출」이 한 이름에 겹친다.
+        """
         return to_won(self._replacement_unit * self.capacity_kwh)
 
     def _acquisitions(self, *, horizon: int) -> dict[int, Money]:
@@ -510,8 +515,20 @@ class ESS(DER):
         때 세운 그물(`tests/casegrid/test_lifecycle_wiring.py` ⓒ)이 **이쪽을
         곧바로 잡았다** — 같은 형태가 자원마다 따로 있었다는 뜻이다.
 
-        ⚠ **지금 실행 경로의 수는 움직이지 않는다** — 러너의 `ESS` 는
-        `replace` 이므로 이 갈래를 타지 않는다.
+        ⚠ **위 `retire` 갈래는 실행 경로의 수를 움직이지 않는다** — 러너의 `ESS` 는
+        `replace` 이므로 그 갈래를 타지 않는다(아래 물가 계수는 **움직인다**).
+
+        ## 재취득분에 **물가 계수를 곱한다** (R40 · `DV-7`)
+
+        대장이 `price_basis: "명목"` 을 **한 번** 선언하므로 18년차 지출을 오늘의
+        원으로 적으면 **그 지출만 실질이 되어** 선언과 어긋난다. R39 까지 이 함수는
+        계수를 받고도 쓰지 않았고, 러너의 주석(`e2e_runner.py` ⓑ)은 *「배터리
+        교체비에 굴린다」* 고 이미 **선언하고 있었다** — 이 저장소가 거듭 만나 온
+        「선언과 구현이 갈린」 형태다. `PV` 는 `replacement_schedule()`·
+        `_acquisitions()` 두 곳에서 같은 계수를 굴리며 그쪽이 정본이다.
+
+        **`salvage_value()` 가 같은 사전을 읽으므로 잔존가치도 함께 움직인다** —
+        그래야 「명목으로 산 것을 실질로 되판다」가 되지 않는다.
         """
         if self.retires_at_end_of_life():
             return {1: self.capex(year=1)}
@@ -519,7 +536,9 @@ class ESS(DER):
         acquired: dict[int, Money] = {1: self.capex(year=1)}
         year = self.lifetime + 1
         while year <= horizon:
-            acquired[year] = self._battery_cost()
+            acquired[year] = to_won(
+                int(self._battery_cost()) * self.escalation_factor(year=year)
+            )
             year += self.lifetime
         return acquired
 
@@ -540,6 +559,13 @@ class ESS(DER):
         같은 해에 겹치면 합산한다.
 
         **`retire` 면 아무것도 사지 않는다** (FR-104-AC3) — 본체도 PCS도.
+
+        ⚠ **두 항 다 물가 계수를 굴린다** (R40 · `DV-7`). 배터리 쪽은
+        `_acquisitions()` 가 곱하고 PCS 는 여기서 곱한다 — 한쪽만 굴리면 같은
+        해의 지출 두 개가 **서로 다른 가격 기준**으로 한 칸에 합산되고, 그
+        합계는 어느 기준으로도 읽을 수 없다. 그리고 ⓓ 래칫(스케줄 전체를
+        견준다)은 **한쪽만 반응해도 통과하므로** 그 어긋남을 잡지 못한다 —
+        그래서 PCS 를 준 자원을 그 래칫의 탐침에 함께 세웠다.
         """
         if self.retires_at_end_of_life():
             return {}
@@ -550,9 +576,9 @@ class ESS(DER):
         }
 
         if self._pcs_lifetime is not None and self._pcs_cost > 0:
-            cost = to_won(self._pcs_cost)
             year = self._pcs_lifetime + 1
             while year <= horizon:
+                cost = to_won(self._pcs_cost * self.escalation_factor(year=year))
                 schedule[year] = Money(schedule.get(year, to_won(0)) + cost)
                 year += self._pcs_lifetime
 
