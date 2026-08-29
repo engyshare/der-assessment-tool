@@ -203,7 +203,15 @@ class _Index:
             self.by_stem[path.stem].append(path)
 
     def by_path_text(self, text: str) -> tuple[Path | None, str]:
-        """경로가 적힌 표기. **경로에 `/` 가 있을 때만** 부재를 단언한다."""
+        """경로가 적힌 표기. **경로에 `/` 가 있을 때만** 부재를 단언한다.
+
+        ★ **꼬리만 적은 경로를 인정한다** — `contracts/der.py` 는
+        `core/contracts/der.py` 를 가리키며, 그렇게 읽히는 실물이 **하나뿐이면
+        어느 파일인지 말할 수 있다.** 인정하지 않으면 이 검사가 앞뒤로
+        어긋난다: 접두를 통째로 뺀 `ledger_levels.py` 는 이미 인정하면서
+        일부만 뺀 것은 거짓으로 세게 된다. 이 검사가 재는 것은 **이름과 자리가
+        실재하는가**이지 경로를 몇 마디로 적었는가가 아니다.
+        """
         rel = text.replace("\\", "/")
         if "/" in rel:
             hit = self.by_rel.get(rel)
@@ -211,6 +219,11 @@ class _Index:
                 return hit, "ok"
             if (ROOT / rel).exists() or (ROOT / rel).with_suffix("").is_dir():
                 return None, "skip"
+            tails = [p for q, p in self.by_rel.items() if q.endswith(f"/{rel}")]
+            if len(tails) == 1:
+                return tails[0], "ok"
+            if tails:
+                return None, "skip"  # 여럿이면 어느 것인지 말할 수 없다
             return None, "absent"
         found = self.by_name.get(rel, [])
         return (found[0], "ok") if len(found) == 1 else (None, "skip")
