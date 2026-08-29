@@ -123,7 +123,7 @@ def _by_year(operating: list[CashFlowRow]) -> list[tuple[int, float]]:
     """operating 을 **연도별 순현금흐름 한 수**로 접는다, year 오름차순.
 
     한 해에 행이 여럿인 것(편익 행 + 부호를 뒤집은 비용 행)은 이 저장소의
-    **정상 형태**다 — `e2e_runner._net_operating_rows()` 가 그렇게 넘긴다.
+    **정상 형태**다 — `e2e_runner.net_operating_flows()` 가 그렇게 넘긴다.
     누적을 한 걸음씩 보는 지표는 그 행들을 **먼저 합쳐야** 한다. 합치지 않으면
     편익 행만 누적한 지점에서 0 선을 넘고 **행 순서가 값을 바꾼다.**
 
