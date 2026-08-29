@@ -501,7 +501,21 @@ class ESS(DER):
     def _acquisitions(self, *, horizon: int) -> dict[int, Money]:
         """{취득 연도: 취득가} — 최초 취득(1년차)과 배터리 교체분. 잔존가치를
         **마지막 취득 시점**부터 세기 위한 것이다 — 최초 취득만 보면 교체
-        직후에도 잔존가치가 0으로 잡혀 새 배터리가 통째로 사라진다."""
+        직후에도 잔존가치가 0으로 잡혀 새 배터리가 통째로 사라진다.
+
+        ⚠⚠ **`retire` 면 재취득이 없다** (`FR-104-AC3` · R39-E2 가 고쳤다).
+        `replacement_schedule()` 은 `retire` 에서 **빈 사전**을 내는데 이 함수가
+        그것을 보지 않아 **사지도 않은 배터리의 잔존가치**를 `retire` 자원에
+        붙이고 있었다. `PV._acquisitions()` 가 같은 결함을 가졌고 그쪽을 고칠
+        때 세운 그물(`tests/casegrid/test_lifecycle_wiring.py` ⓒ)이 **이쪽을
+        곧바로 잡았다** — 같은 형태가 자원마다 따로 있었다는 뜻이다.
+
+        ⚠ **지금 실행 경로의 수는 움직이지 않는다** — 러너의 `ESS` 는
+        `replace` 이므로 이 갈래를 타지 않는다.
+        """
+        if self.retires_at_end_of_life():
+            return {1: self.capex(year=1)}
+
         acquired: dict[int, Money] = {1: self.capex(year=1)}
         year = self.lifetime + 1
         while year <= horizon:

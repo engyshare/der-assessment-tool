@@ -29,12 +29,33 @@
 """
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 import yaml  # type: ignore[import-untyped]
 
 from core.casegrid.profiles import DailyShapes, load_daily_shapes
+
+
+def unwired_report(report):
+    """일회성 흐름을 **비운** 리포트 — 「배선이 끊긴 구성」 (R39-E).
+
+    R39-E 가 교체비·잔존가치를 실행 경로에 배선했으므로, **실물 리포트에는 그
+    두 항목이 더는 「미반영」으로 나오지 않는다.** 그러면 그 항목의 방향·조항
+    인용·3.4 표기를 재던 검사들은 대상이 없어 무너진다 — 그렇다고 검사를
+    지우면 *배선이 끊기는 날 아무도 그것을 붙들지 않는다*(R34 가 전력 구매를
+    배선한 뒤에도 `_purchase_item` 을 남긴 것과 같은 자리다).
+
+    그래서 **판정이 걸리는 구성을 검사가 만든다.** `one_off_flows` 를 비우는
+    것은 *「자원은 그대로인데 실행 경로가 그 흐름을 싣지 않는다」* 이며, 그것이
+    배선 전 상태의 정확한 재현이다. 수명·분석기간은 건드리지 않는다 — 그쪽을
+    건드리면 「교체가 일어나지 않는 구성」이 되어 다른 것을 재게 된다.
+
+    ⚠ **여기 있는 이유**: 두 파일(`test_unreflected.py`·`test_narrative.py`)이
+    같은 구성을 만든다. 각자 갖고 있으면 배선 방식이 바뀔 때 한쪽만 고쳐진다.
+    """
+    return replace(report, basis=replace(report.basis, one_off_flows=()))
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -70,10 +91,25 @@ def report_shapes() -> DailyShapes:
 #:                        한다(실물 범위에서 동반 하락은 −3,324,586원이며
 #:                        회수하지 못한다). 단독으로는 여전히 넘지 못하므로
 #:                        「결합에서만 회수된다」는 대조가 유지된다
+#:
+#: ⚠ **설비단가 하단을 R39-E2 가 한 번 더 넓혔다** (800,000/200,000 →
+#: 600,000/150,000). 교체비·잔존가치 배선으로 결론축이 −5,284,586 →
+#: −6,066,881원이 되면서 **옛 탐침의 동반 하락이 0 선에 −337,396원 못 미쳤고**,
+#: 그 순간 `test_summary_carries_the_combined_case…` 가 순회할 회수 행을 잃었다.
+#: 넓힌 값의 실측(2026-08-29 · 무보조):
+#:
+#:     단독 PV 하단  −3,072,511원   ← 미회수
+#:     단독 ESS 하단 −2,177,227원   ← 미회수
+#:     **동반 하락    +817,143원**   ← 회수 (「결합에서만」이 유지된다)
+#:
+#: **여유를 종전보다 크게 잡았다**(옛 탐침의 배선 전 여유는 약 +445,000원).
+#: 0 선에 붙여 두면 결론축이 조금만 움직여도 이 탐침이 다시 죽는다 — 그때
+#: 죽는 방식이 **빨간불이 아니라 「순회 0회」** 라서 더 나쁘다(그것을 막는 것이
+#: 아래 `assert recovering` 이다).
 _WIDENED: tuple[tuple[str, str, float], ...] = (
     ("tariff.hv_single_contract.energy_only", "high", 400.0),
-    ("capex.pv.rooftop", "low", 800_000.0),
-    ("capex.ess.new", "low", 200_000.0),
+    ("capex.pv.rooftop", "low", 600_000.0),
+    ("capex.ess.new", "low", 150_000.0),
 )
 
 

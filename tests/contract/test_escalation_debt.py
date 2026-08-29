@@ -7,15 +7,16 @@
 
 **① 자원 생성자 경로** — `core/casegrid/e2e_runner.py` 가 `PV`·`ESS` 를 만들
 때 `escalation_rate=` 를 넘기는가. 이 값은 그 자원의 `replacement_schedule()`
-(교체비, 먼 미래 연도)과 `variable_om()` 에 **연차별로** 걸린다. `PV` 는
-`PV_ESCALATION_RATE` 를 받고 `ESS` 는 받지 않는다(기본값 `0.0`).
+(교체비, 먼 미래 연도)과 `variable_om()` 에 **연차별로** 걸린다. R39-E 배선
+이후 **둘 다 `PRICE_ESCALATION_RATE` 를 받는다**(상수 이름이 두 번 움직였다 —
+`PV_OM_ESCALATION` → `PV_ESCALATION_RATE` → 지금 이름. 이유는 그 상수의 주석).
 
 **② 프로포마 행 경로** — `core/cba/proforma.py` 의 `fixed_om_row()` 는 **자기
 `escalation_rate` 인자로 직접** 연차를 굴린다(`current *= (1+i)` 루프,
 `proforma.py:85-89`) — 자원의 `escalation_factor()` 를 거치지 않는다.
-`e2e_runner.py` 의 `cost_rows` 조립부가 `fixed_om_row("PVFixedOM", ...,
-escalation_rate=0.02)` 는 넘기고 `fixed_om_row("ESSFixedOM", ...)` 는 넘기지
-않는다.
+R39-E 이전에는 `e2e_runner.py` 의 `cost_rows` 조립부가
+`fixed_om_row("PVFixedOM", ..., escalation_rate=0.02)` 는 넘기고
+`fixed_om_row("ESSFixedOM", ...)` 는 넘기지 않았다. **지금은 둘 다 넘긴다.**
 
 **① 과 ② 가 독립인 이유(실측):** `cost_rows` 가 넘기는 `annual_amount_won` 은
 `ess.fixed_om(year=1)` 처럼 **`year=1` 로 고정 평가한 값**이다. `fixed_om()`
@@ -48,10 +49,13 @@ escalation_rate=0.02)` 는 넘기고 `fixed_om_row("ESSFixedOM", ...)` 는 넘�
 ## 이 래칫이 결함을 고정하는 것이 아닌 이유
 
 **목록에 있는 자리는 정상이 아니라 「배선 라운드가 아직 닫지 않은 어긋남」이다.**
-`ESS` 에 물가 계수를 넘기는 배선이 들어가면 `("resource", "ESS")` 를, `ESS
-FixedOM` 행에 넘기는 배선이 들어가면 `("row", "ESSFixedOM")` 을 목록에서
-**각각** 빼야 하고, 그 순간 이 검사가 빨개져 그 사실을 놓치지 않게 한다. 이
-파일이 이관을 대신하지는 않는다 — 배선은 별도 라운드다.
+이 파일이 이관을 대신하지는 않는다 — 배선은 별도 라운드다.
+
+**그것이 실제로 일어났다(R38 → R39).** R38 이 두 항을 등재하고, R39-E 가
+배선하자 이 검사가 **줄어든 방향으로 빨간불**을 냈다 — 설계대로다. 목록을
+줄이는 것이 「검사를 통과시키려고 규칙을 고치는 것」이 아닌 이유는, 줄이기
+전에 **무엇이 그 항을 닫았는지**를 위 상수 주석이 사유와 함께 적기 때문이다.
+목록이 다시 늘면 새 자원/행이 같은 구멍으로 샌 것이다.
 
 ## 세는 방법 — 손으로 세지 않는다
 
@@ -126,11 +130,23 @@ from core.contracts.registry import discover
 #: 않는 자리의 **실측 목록** — 자리마다 `("resource", 자원태그)` 또는
 #: `("row", 행태그)` 로 구별해 적는다. 늘어도 줄어도 빨간불이어야 한다(위
 #: 독스트링 참조). **이 목록에 있는 것은 어긋남이며, 각 배선 라운드가 그
-#: 항목을 지운다.** 지금은 정상이 아니라 부채다.
-KNOWN_ESCALATION_DEBT: frozenset[tuple[str, str]] = frozenset({
-    ("resource", "ESS"),
-    ("row", "ESSFixedOM"),
-})
+#: 항목을 지운다.**
+#:
+#: **지금은 비어 있다** — R39-E 가 두 항을 **함께** 닫았다
+#: (`("resource","ESS")` · `("row","ESSFixedOM")`). 갈라 닫지 않은 이유:
+#: ⓐ 대장이 `price_basis: "명목"` 을 **한 번** 선언하고 리포트 3.2 가 「가격
+#: 기준 · 명목 (전 항목 공통)」을 인쇄한다 — 같은 자원의 고정 O&M 만 실질로
+#: 두면 그 문면이 거짓이 된다. ⓑ `PV` 는 이미 자원 계수와 `PVFixedOM` 행
+#: **양쪽**을 받으므로 `ESS` 만 반쪽이면 **같은 항목이 자원마다 다른 가격
+#: 기준**으로 선다(붙임 4 가 실제로 그 어긋남을 인쇄하고 있었다 — PV 「연
+#: 100,000원 (1년차 · 연 2% 상승)」 vs ESS 「연 100,000원」).
+#:
+#: ⚠⚠ **비었다는 것이 「명목 기준이 지켜진다」가 아니다.** 이 래칫이 재는 것은
+#: **인자가 넘어가는가**뿐이다. 자원이 계수를 받고도 그것을 **곱하지 않는**
+#: 자리가 따로 있고(실측: `ESS._acquisitions()` 가 교체비에 곱하지 않는다),
+#: 그것은 `ast` 로 볼 수 없어 **행동으로** 재야 한다 —
+#: `tests/casegrid/test_lifecycle_wiring.py` 의 셋째 래칫이 그 자리다.
+KNOWN_ESCALATION_DEBT: frozenset[tuple[str, str]] = frozenset()
 
 #: 생성자 매개변수 이름이 이 부분 문자열 중 하나를 포함하면 그 자원은 「미래
 #: 연도의 취득/교체 지출」을 가질 수 있다고 본다 — `RC-ALL-C1`(capex)과

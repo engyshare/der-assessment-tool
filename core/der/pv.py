@@ -577,20 +577,102 @@ class PV(DER):
                 year += life
         return schedule
 
+    def _acquisitions(self, *, horizon: int) -> tuple[tuple[int, dict[int, float]], ...]:
+        """부품별 `(수명, {취득 연도: 취득가})` — 본체와 인버터를 **갈라** 담는다.
+
+        ## 왜 부품별로 갈라야 하는가 (R39-E · 갈래 ④)
+
+        `ESS._acquisitions()` 가 이미 세운 규약이 *「잔존가치를 **마지막 취득
+        시점**부터 센다」* 다 — 최초 취득만 보면 교체 직후에도 잔존가치가 0으로
+        잡혀 **새로 산 설비가 통째로 사라진다.** `PV` 는 그 규약을 따르지 않고
+        있었고(`salvage_value()` 가 `_gross_capex_won()` 만 봤다), 그래서 13년차에
+        새로 산 인버터가 20년차 잔존가치에서 사라졌다.
+
+        ⚠ **`ESS` 를 그대로 베낄 수는 없다.** `ESS` 는 취득분을 **연도 하나의
+        사전**으로 접고 마지막 것 하나만 쓰는데(배터리 한 부품만 재취득하므로
+        그것으로 충분하다), `PV` 는 **수명이 다른 부품 둘**을 갖는다 — 인버터
+        12년·본체 25년. 접어 버리면 20년차에 「마지막 취득 = 13년차 인버터」가
+        되고 그 잔존가치를 **본체 수명 25년**으로 재게 되어, 인버터가 25년
+        버티는 설비가 된다. 그래서 접지 않고 부품별로 남긴다.
+
+        ⚠ **최초 인버터를 취득분으로 세지 않는다.** 대장의 설비 단가
+        (`capex.pv.rooftop`)는 *「원/kW (설치 완료 기준)」* 이므로 최초 인버터
+        값은 이미 `_gross_capex_won()` 안에 있고, 여기서 또 세면 **초기투자에
+        없는 지출**의 잔존가치를 세게 된다. 반대로 본체 취득가에서 인버터 몫을
+        떼어내지도 않았다 — 떼려면 「설비 단가의 몇 %가 인버터인가」를 새로
+        정해야 하고 그 값은 대장에 없다(`DEFAULT_INVERTER_CAPEX_RATIO` 는
+        *교체비* 비율로 선언된 상수이며 취득가의 구성비가 아니다). **모르는 값을
+        채우지 않는다** — 그 결과 최초 인버터 몫이 본체 잔존가치에 남아 있다는
+        어긋남은 `.orch/R39/result_replacement_wiring.md` 에 크기와 함께 올렸다.
+
+        ⚠ **`replacement_schedule()` 과 같은 `(수명, 단가)` 짝을 돈다.** 두 곳이
+        갈리면 *교체비는 계상되는데 그 취득분의 잔존가치는 안 세어지는* 상태가
+        조용히 생긴다 — `tests/casegrid/test_lifecycle_wiring.py` 가 둘을 대조해
+        붙든다. **`retire` 갈래가 그 대조의 첫 실물이다** — 아래 참조.
+
+        ⚠⚠ **`retire` 면 재취득이 없다** (`FR-104-AC3` · R39-E2 가 고쳤다).
+        `replacement_schedule()` 은 `retire` 에서 **빈 사전**을 내는데 이 함수는
+        그것을 보지 않아 **사지도 않은 인버터의 잔존가치**를 `retire` 자원에
+        붙이고 있었다(20년차 900,000 → 1,185,354원). 두 곳이 갈리면 *교체비는
+        없는데 그 취득분의 잔존가치는 있는* 상태가 되며, 그것은 위 ⚠ 가 경고한
+        어긋남의 **반대 방향**이다. 그래서 같은 조건을 **두 곳에 적지 않고**
+        `retires_at_end_of_life()` 하나를 양쪽이 함께 본다.
+        """
+        if self.retires_at_end_of_life():
+            # 다시 사지 않으므로 취득분은 **최초 본체 하나**다. 인버터를 여기
+            # 두면 `replacement_schedule()` 이 비어 있는데 잔존가치만 생긴다.
+            return ((self.lifetime, {1: self._gross_capex_won()}),)
+
+        parts: list[tuple[int, dict[int, float]]] = []
+        for life, unit_cost, initial in (
+            # 본체 — 최초 취득(1년차)은 `_gross_capex_won()`(부대비 포함)이고
+            # 재취득분은 `replacement_schedule()` 과 같은 단가를 쓴다.
+            (self.lifetime, self.unit_capex_won_per_kw, self._gross_capex_won()),
+            # 인버터 — 최초 취득분을 두지 않는다(위 ⚠ 참조).
+            (self.inverter_lifetime, self.inverter_unit_capex_won_per_kw, None),
+        ):
+            acquired: dict[int, float] = {} if initial is None else {1: initial}
+            year = life + 1
+            while year <= horizon:
+                cost = self.capacity_kw * unit_cost * self.escalation_factor(year=year)
+                acquired[year] = float(to_won(cost))
+                year += life
+            parts.append((life, acquired))
+        return tuple(parts)
+
     def salvage_value(self, *, year: int) -> Money:
         """`RC-ALL-C5` 잔존가치 = `취득가 × 잔존수명 / 총수명` (§13.2.2).
 
-        오라클: 4,500,000 × 5/25 = 900,000원 (20년차 **명목액**).
+        **부품마다 마지막 취득 시점부터 센다** (R39-E) — 근거는
+        `_acquisitions()` 독스트링. 20년 분석에서 13년차에 새로 산 인버터는
+        4년치 잔존수명을 갖는데, 종전 구현은 최초 취득(`_gross_capex_won()`)만
+        보아 그것을 **0으로** 두었다.
+
+        ⚠ **오라클이 움직였다.** §13.2.2 C-5 의 `4,500,000 × 5/25 = 900,000원`
+        은 취득분이 **하나**라는 전제의 수다. 인버터 재취득분을 세면 같은 제원에서
+        `900,000 + 225,000 = 1,125,000원` 이 된다. 조항 문면(§1918 C-5)은
+        *「어느 취득가」* 를 **말하지 않으며**(침묵), `ESS` 는 그 침묵을 「취득
+        시점 리셋」으로 메우고 사유를 적어 두었다 — 정본이 이미 있고 `PV` 가
+        따르지 않았던 것이다. **조항의 오라클과 이 구현이 갈린 상태**이며 조항에
+        「어느 취득가」를 명문화하는 것은 사람 몫이다(§16.5). 그 어긋남은
+        `.orch/R39/result_replacement_wiring.md` 가 크기와 함께 올렸다.
 
         **할인은 여기서 하지 않는다.** 할인율은 사업 단위 전제(FR-701)이지 자원의
         속성이 아니다. 자원이 할인율을 들고 있으면 같은 설비가 시나리오마다 다른
         잔존가치를 갖고, 관점별(FR-704) 할인율 차이도 적용할 수 없다. 할인 후
         값은 `discounted_salvage_value()` 가 준다.
         """
-        remaining = self.lifetime - int(year)
-        if remaining <= 0:
-            return Money(0)
-        return to_won(self._gross_capex_won() * remaining / self.lifetime)
+        horizon = int(year)
+        total = 0.0
+        for life, acquired in self._acquisitions(horizon=horizon):
+            within = [y for y in acquired if y <= horizon]
+            if not within:
+                continue
+            last_year = max(within)
+            used = horizon - last_year + 1  # 취득 연도부터 센다 (1-base, ESS 와 같다)
+            remaining = max(0, life - used)
+            total += acquired[last_year] * remaining / life
+        return to_won(total)
 
     def discounted_salvage_value(self, *, year: int, discount_rate: float) -> Money:
         """최종연도 잔존가치의 현재가치 — 오라클 `900,000 / 1.045^20` = 373,179원."""

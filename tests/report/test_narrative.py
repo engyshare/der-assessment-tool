@@ -25,6 +25,7 @@ from core.report.method_sections import (
 )
 from core.report.narrative import NONE_IN_RANGE, render_markdown
 from core.report.unreflected import DIRECTION_ADVERSE, build_unreflected
+from tests.report.conftest import unwired_report
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -388,15 +389,23 @@ def test_resources_outliving_the_horizon_are_flagged_as_uncosted() -> None:
     리포트가 밝히는가**다. 마커를 달면 「교체비를 계상한다」가 검증된 것으로
     세어지고, 실제로는 계상되지 않는다.
 
-    실측: `ESS.replacement_schedule()` · `core/cba/salvage.py::salvage_value()`
-    는 있으나 **프로포마에 넣는 배포 코드가 0곳**이다(비용 행은 고정 O&M 뿐).
-    R32 가 세 번, R33 이 앞서 두 번 만난 「부품은 있는데 읽는 쪽이 없다」와
-    같은 형태이며, `status.md` 미해결에 올렸다. 배선되면 이 검사는 `else`
-    가지로 넘어가 그대로 통과한다.
+    ## ★ R39-E 가 배선했다 — 그래서 **두 방향**을 함께 잰다
 
-    지금 구성은 ESS 수명 17년 · 분석기간 20년이라 **교체가 한 번 필요한데
-    프로포마에 교체 비용 행이 없다.** 즉 현 결과는 그 자원에 관대하며, 그
-    사실을 말하지 않으면 검토자는 완결된 비용 구조를 읽었다고 믿는다.
+    종전 실측은 *「`ESS.replacement_schedule()`·`salvage_value()` 는 있으나
+    프로포마에 넣는 배포 코드가 0곳」* 이었고, 이 검사는 그 결손이 3.4 에
+    **드러나는가**만 보았다. R39-E 가 실행 경로에 배선하면서 그 전제가 깨졌다 —
+    **지금 실물 리포트에는 교체비 행이 없어야 맞다.**
+
+    ⚠ **한 방향만 재면 이 검사는 두 번 다 무의미해진다.** 「없어야 한다」만
+    재면 *배선이 끊겨도* 초록불이고(3.4 는 그때 행을 내놓는데 아무도 안 본다),
+    「있어야 한다」만 재면 지금이 빨간불이다. 그래서 **배선된 리포트와 흐름을
+    비운 리포트를 둘 다 렌더링해** 행이 조건 따라 움직이는지를 본다 —
+    `test_unreflected.py` 가 같은 배선에 대해 세운 방식과 같고, 헬퍼도 같은
+    것(`conftest.unwired_report`)을 쓴다.
+
+    지금 구성은 ESS 수명 17년 · 분석기간 20년이라 **교체가 한 번 일어난다** —
+    즉 「대상이 아예 없어서 조용한 것」과 구별해야 하는 구성이며, 그 구별이
+    아래 `short` 판정이다.
 
     ⚠ **문면을 고정하지 않는다.** 「ESS 는 교체비가 빠졌다」로 박아 두면 제원이
     바뀔 때(수명 25년 ESS) 리포트가 틀린 경고를 계속 인쇄하고, 분석기간을
@@ -410,20 +419,42 @@ def test_resources_outliving_the_horizon_are_flagged_as_uncosted() -> None:
     limits = text[text.index("### 3.4 이 평가가 하지 않은 것") : text.index("## 4. 평가 결과")]
 
     basis = report.basis
-    detail = text[text.index("## 붙임 8. 미반영 항목") : text.index("## 붙임 9.")]
     short = [r for r in basis.resources if r.lifetime_years < basis.horizon_years]
-    if short:
-        assert "| 교체비 |" in limits, (
-            "분석기간 안에 수명이 끝나는 자원이 있는데 3.4 에 교체비 행이 없다"
-        )
-        assert DIRECTION_ADVERSE in limits, "교체비의 방향이 3.4 에 없다"
-        for resource in short:
-            assert resource.kind in detail, (
-                f"{resource.kind}(수명 {resource.lifetime_years}년)이 붙임 8 에 없다"
-            )
-    else:
+
+    if not short:
+        # 수명이 넉넉하면 대상 자체가 없다 — 배선 여부와 무관하게 조용해야 한다.
         assert "| 교체비 |" not in limits, (
             "수명이 넉넉한데도 「교체비 미계상」 행을 계속 인쇄한다"
+        )
+        return
+
+    # ① 배선된 지금 — 계상됐으므로 3.4 가 「하지 않은 것」으로 적으면 안 된다.
+    assert basis.one_off_flows, (
+        "ESS 수명 17년 < 분석기간 20년인데 실행 경로가 일회성 흐름을 하나도 "
+        "싣지 않는다 — 배선이 끊겼다면 `_lifecycle_rows` 를 먼저 볼 것"
+    )
+    assert "| 교체비 |" not in limits, (
+        "교체비가 프로포마에 계상됐는데 3.4 가 여전히 「하지 않은 것」으로 "
+        "적는다 — 검토자가 반영된 비용을 결손으로 두 번 읽는다"
+    )
+
+    # ② 배선이 끊긴 구성 — 그때는 반드시 드러나야 한다.
+    unwired_text = render_markdown(unwired_report(report))
+    unwired_limits = unwired_text[
+        unwired_text.index("### 3.4 이 평가가 하지 않은 것") : unwired_text.index(
+            "## 4. 평가 결과"
+        )
+    ]
+    unwired_detail = unwired_text[
+        unwired_text.index("## 붙임 8. 미반영 항목") : unwired_text.index("## 붙임 9.")
+    ]
+    assert "| 교체비 |" in unwired_limits, (
+        "실행 경로가 교체 흐름을 싣지 않는데 3.4 에 교체비 행이 없다"
+    )
+    assert DIRECTION_ADVERSE in unwired_limits, "교체비의 방향이 3.4 에 없다"
+    for resource in short:
+        assert resource.kind in unwired_detail, (
+            f"{resource.kind}(수명 {resource.lifetime_years}년)이 붙임 8 에 없다"
         )
 
 

@@ -134,6 +134,21 @@ def method_section(report: CaseReport) -> list[str]:
     으로 적으면 구성이 바뀔 때 틀린 문장이 계속 인쇄된다.
     """
     basis = report.basis
+    # ★ **비용 행의 구성을 문장으로 박지 않는다 (R34 · R39-E).** 실린 항목에서
+    # 지어 이 자리가 구성과 함께 움직이게 한다 — 종전 문면은 *「교체 · 잔존가치
+    # 미포함」* 이었고 R39-E 가 그 둘을 배선한 뒤로 **거짓이 됐다.** 남은 「변동
+    # O&M 미포함」은 지금 참이지만 **같은 형태의 문장**이며, 그것이 낡는 날을
+    # 붙드는 검사는 아직 없다(`.orch/R39/result_replacement_wiring.md` 구획 밖).
+    cost_row_note = " · ".join(
+        [
+            f"연간 {' · '.join(line.label for line in basis.costs)}",
+            *(
+                [f"일회성 {' · '.join(line.label for line in basis.one_off_flows)}"]
+                if basis.one_off_flows
+                else []
+            ),
+        ]
+    )
     return [
         "## 3. 평가 방법",
         "",
@@ -163,8 +178,7 @@ def method_section(report: CaseReport) -> list[str]:
         # 됐다** — 규약 표는 검토자가 「무엇이 비용으로 세어졌는가」를 읽는
         # 자리이므로, 그 자리가 틀리면 붙임 4 의 항목 표와 서로 다른 사업을
         # 말한다. 실린 항목에서 지어 이 자리가 구성과 함께 움직이게 한다.
-        f"| 프로포마 비용 행 | {' · '.join(line.label for line in basis.costs)} "
-        "(변동 O&M · 교체 · 잔존가치 미포함 · 3.4) |",
+        f"| 프로포마 비용 행 | {cost_row_note} (변동 O&M 미포함 · 3.4) |",
         "",
         "### 3.3 평가 관점",
         "",
@@ -266,6 +280,41 @@ def cost_benefit_section(basis: CaseBasis) -> list[str]:
     return lines
 
 
+def _one_off_section(basis: CaseBasis) -> list[str]:
+    """붙임 4 의 **일회성 흐름** 표 — 교체비·잔존가치 (R39-E).
+
+    ⚠ **부호를 여기서 뒤집지 않는다.** `OneOffLine.amount_won` 은 프로포마
+    비용 행과 **같은 수**이며(양수 = 지출 · 음수 = 유입) 그대로 인쇄한다.
+    표시 층이 「보기 좋게」 뒤집으면 붙임 4 와 프로포마가 서로 다른 부호를
+    말하고, 검토자는 어느 쪽이 계산에 들어갔는지 가릴 수 없다.
+
+    ⚠ **비면 「없음」이라 적는다.** 표를 지우면 *「교체·잔존이 없는 구성」* 과
+    *「배선이 끊긴 구성」* 이 붙임 4 에서 똑같이 보인다 — 그 둘을 가르는 판정은
+    붙임 8 이 지고(`core/report/unreflected.py`), 이 자리는 **비었다는 사실**을
+    싣는 데까지만 책임진다.
+    """
+    lines = [
+        "### 일회성 흐름 (교체비 · 잔존가치)",
+        "",
+    ]
+    if not basis.one_off_flows:
+        return [*lines, "- 해당 없음 · 분석기간 내 교체·잔존 흐름 없음 (붙임 8)", ""]
+    net = sum(line.amount_won for line in basis.one_off_flows)
+    return [
+        *lines,
+        "| 항목 | 귀속 자원 | 연차 | 금액 | 산식 |",
+        "|---|---|---|---|---|",
+        *(
+            f"| {line.label} | `{line.from_resource}` | {line.year}년차 | "
+            f"{_won(line.amount_won)} | {line.formula} |"
+            for line in basis.one_off_flows
+        ),
+        f"| **순액** | | | **{_won(net)}** | 양수 = 순지출 · 음수 = 순유입 "
+        "(명목 · 할인 전) |",
+        "",
+    ]
+
+
 def resource_detail_section(basis: CaseBasis) -> list[str]:
     """붙임 4 — 평가 대상 제원 상세.
 
@@ -303,6 +352,17 @@ def resource_detail_section(basis: CaseBasis) -> list[str]:
         ),
         f"| **합계** | | **{_won(basis.annual_cost_won)}** | |",
         "",
+        # ★★ **표를 둘로 갈랐다 (R39-E).** 교체비(18년차)·잔존가치(20년차)는
+        # 위 표의 「연 금액」 칸에 담을 수 없다 — 담으면 0원 행이 되고
+        # *「합계만 있는 표에서는 빠진 행이 드러나지 않는다」* 가 그대로
+        # 되돌아온다(`OneOffLine` 독스트링이 판정 근거다). **연차 칸이 필수인
+        # 표를 따로 두는 것**이 그 판정의 실물이다.
+        #
+        # ⚠ **합계를 순액으로 낸다.** 교체비(지출)와 잔존가치(유입)를 한 표에
+        # 싣고 합계를 절대값으로 적으면 두 방향이 상쇄된 뒤의 크기를 검토자가
+        # 알 수 없다 — 그 순액이 *「이 결손을 배선하면 결론이 얼마 움직이는가」*
+        # 이며, 배선 전 붙임 8 이 「미정량」으로 적고 있던 자리다.
+        *_one_off_section(basis),
     ]
     for resource in basis.resources:
         produced = [line for line in basis.benefits if line.tag in resource.produces]

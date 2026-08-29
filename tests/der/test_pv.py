@@ -24,6 +24,14 @@ DISCOUNT_RATE = 0.045
 ESCALATION_RATE = 0.02
 HORIZON = 20
 
+#: §13.2.2 `C-5` 오라클 — `4,500,000 × 5/25`. **취득분이 하나라는 전제**에서만
+#: 성립한다(조항의 예시는 본체가 분석기간보다 오래 사는 경우만 다룬다). 분석기간
+#: 안에서 부속설비를 **재취득**하면 그 취득분의 잔존가치가 더 붙으므로 이 수는
+#: 총액이 아니라 **본체 몫**이 된다 — 아래 두 검사가 그 갈래를 나눠 붙든다.
+#: 조항이 「어느 취득가인가」를 말하지 않는 것은 사람 몫이며 `status-human.md`
+#: 7단계에 등재돼 있다.
+RC_ALL_C5_BODY_ONLY_WON = Money(900_000)
+
 
 def make_pv_1kw(**overrides: object) -> PV:
     """`RC-PV-P1`~`B3` 기준 자원 — 1kW · 이용률 15%. 다른 효과는 전부 끈다(§13.2.1)."""
@@ -324,31 +332,102 @@ def test_rc_all_c4_body_replacement_appears_in_long_horizon() -> None:
 
 @pytest.mark.req("FR-104-AC5")
 def test_rc_all_c5_salvage_value_at_horizon_end() -> None:
-    """`RC-ALL-C5` 오라클(§13.2.2): 4,500,000 × 5/25 = **900,000원**.
+    """`RC-ALL-C5` — **본체 몫은 조항의 오라클 그대로**이고 재취득분이 더 붙는다.
 
     산식은 `취득가 × 잔존수명 / 총수명` 을 최종연도에 계상 후 할인이며,
     `salvage_value()` 는 그중 **할인 전 명목액**을 돌려준다. 할인율은 사업 단위
     전제(FR-701)이지 자원의 속성이 아니므로, 자원이 할인율을 알면 같은 자원이
     시나리오마다 다른 잔존가치를 갖는다.
+
+    ## ⚠ 오라클이 움직였다 — 조항이 「어느 취득가」인지 말하지 않는다 (R39-E)
+
+    조항의 예시 수 `4,500,000 × 5/25 = 900,000원` 은 **취득분이 하나**라는
+    전제다(§13.2.2 `C-5` 는 본체가 분석기간보다 오래 사는 경우만 다룬다).
+    20년 분석에서 이 자원은 **13년차에 인버터를 새로 사고**, 그 인버터는
+    20년차에 4년치 수명이 남아 있다 — 그것을 세지 않으면 *새로 산 설비가
+    통째로 사라진다.* `ESS._acquisitions()` 가 *「마지막 취득 시점부터 센다」*
+    를 사유와 함께 이미 정본으로 세워 두었고 `PV` 가 따르지 않고 있었다.
+
+    **그래서 두 항을 갈라 단언한다** — 조항의 수를 지우지 않고 남긴다:
+
+        본체    4,500,000 × 5/25            = 900,000원   ← 조항 오라클 그대로
+        인버터    856,063 × 4/12            = 285,354원   ← 13년차 재취득분
+                                              ─────────
+                                              1,185,354원
+
+    인버터 취득가 856,063원은 `replacement_schedule()` 이 13년차에 계상하는
+    금액과 **같은 수**여야 한다(두 곳이 갈리면 *교체비는 계상되는데 그 취득분의
+    잔존가치는 안 세어지는* 상태가 조용히 생긴다). 그 일치는 여기서 단언하지
+    않는다 — `tests/casegrid/test_lifecycle_wiring.py` 가 자원 전체를 돌며 잰다.
+
+    ⚠ **조항 문면(spec `:1918`)은 고치지 않았다.** 「어느 취득가인가」의
+    명문화는 §16.5 절차이며 `status-human.md` 7단계에 등재돼 있다.
     """
     pv = make_pv_3kw(lifetime=25)
-    assert pv.salvage_value(year=HORIZON) == Money(900_000)
+    inverter_share = pv.salvage_value(year=HORIZON) - RC_ALL_C5_BODY_ONLY_WON
+
+    assert pv.salvage_value(year=HORIZON) == Money(1_185_354)
+    assert inverter_share == Money(285_354)
+    # 13년차 재취득분이 잔존가치의 근거다 — 교체가 없으면 이 몫도 없다.
+    assert set(pv.replacement_schedule(horizon=HORIZON)) == {13}
 
 
 @pytest.mark.req("FR-104-AC5")
 def test_rc_all_c5_discounted_salvage_value() -> None:
-    """`RC-ALL-C5` 할인 후 잔존가치 — 오라클 `900,000 / 1.045^20` = **373,179원**."""
+    """`RC-ALL-C5` 할인 후 잔존가치 — `1,185,354 / 1.045^20` = **491,499원**.
+
+    ⚠ **조항의 예시 수는 `900,000 / 1.045^20 = 373,179원` 이다.** 갈린 이유는
+    위 검사(`..._salvage_value_at_horizon_end`)가 갖는다 — **명목액이 움직였고
+    할인은 그것을 따라온 것뿐**이다. 두 곳에 사유를 적지 않는다.
+
+    이 검사가 붙드는 것은 **할인 그 자체**다: 명목액이 어떻게 바뀌든
+    `명목 / (1+r)^year` 라는 관계가 유지되는지를 본다.
+    """
     pv = make_pv_3kw(lifetime=25)
     discounted = pv.discounted_salvage_value(year=HORIZON, discount_rate=DISCOUNT_RATE)
-    assert discounted == Money(373_179)
+    assert discounted == Money(491_499)
+    # 할인 관계 자체 — 명목액이 다시 움직여도 이 단언은 그것을 따라간다.
+    assert discounted == to_won(
+        pv.salvage_value(year=HORIZON) / Money((1 + DISCOUNT_RATE) ** HORIZON)
+    )
 
 
 @pytest.mark.req("FR-104-AC5")
 def test_rc_all_c5_zero_when_lifetime_exhausted() -> None:
-    """수명을 다 쓴 자원의 잔존가치는 0이다 — 음수가 되면 편익이 된다."""
+    """수명을 다 쓴 **취득분**의 잔존가치는 0이다 — 음수가 되면 편익이 된다.
+
+    ## ⚠ 「다 썼다」는 **재취득이 없을 때만** 자원 전체에 대해 성립한다 (R39-E2)
+
+    종전 문면은 *「수명을 다 쓴 **자원**」* 이었고 25·30년차에 0을 기대했다.
+    그 기대는 취득분이 하나라는 전제 위에 서 있었다 — 재취득이 있으면 25년차에
+    **그 해에 새로 산 인버터**가 남아 있고, 30년차에는 26년차에 새로 산 본체가
+    거의 새것이다. 0을 기대하는 것은 *산 것이 사라졌다고 적는 것*이다.
+
+    ⚠ **`core/cba/salvage.py::salvage_value()` 의 「수명 종료 자원의 잔존가치는
+    0」 과 갈리지 않는다.** 그 함수는 **취득분 하나**를 받고 그 문면 바로 위에서
+    *「교체 시점이면 elapsed 가 0에 가깝게 리셋된다」* 를 이미 선언한다. 갈렸던
+    것은 조항이 아니라 이 검사가 그 선언을 **자원 전체**로 읽은 것이다.
+
+    **그래서 두 갈래를 갈라 잰다** — 원래 걱정(음수 금지)은 양쪽에 그대로 건다.
+    """
+    # ⓐ 재취득이 없는 구성 — 종전 오라클이 그대로 성립하는 자리다.
+    retire_pv = make_pv_3kw(lifetime=25, end_of_life_action=EOL_RETIRE)
+    assert retire_pv.replacement_schedule(horizon=30) == {}
+    assert retire_pv.salvage_value(year=25) == Money(0)
+    assert retire_pv.salvage_value(year=30) == Money(0)
+
+    # ⓑ 재취득이 있는 구성 — 그 해에 산 설비가 남아 있다.
+    #      25년차: 25년차 인버터 1,085,695 × 11/12                 =   995,220원
+    #      30년차: 26년차 본체 7,382,727 × 20/25 + 인버터 × 6/12   = 6,449,029원
     pv = make_pv_3kw(lifetime=25)
-    assert pv.salvage_value(year=25) == Money(0)
-    assert pv.salvage_value(year=30) == Money(0)
+    assert set(pv.replacement_schedule(horizon=30)) == {13, 25, 26}
+    assert pv.salvage_value(year=25) == Money(995_220)
+    assert pv.salvage_value(year=30) == Money(6_449_029)
+
+    # ⓒ 이 검사의 원래 걱정 — 어느 해에도 음수가 되지 않는다(되면 편익이 된다).
+    for year in range(1, 41):
+        assert retire_pv.salvage_value(year=year) >= Money(0)
+        assert pv.salvage_value(year=year) >= Money(0)
 
 
 # ── 수명 도달 선택 — `retire` (FR-104-AC3) ────────────────────────────
@@ -421,17 +500,52 @@ def test_retire_output_matches_replace_up_to_the_end_of_life_year() -> None:
 
 
 @pytest.mark.req("FR-104-AC3")
-def test_retire_salvage_value_unchanged_before_end_of_life() -> None:
-    """`retire` 는 **미래의 선택**이므로 EOL 전 잔존가치는 `replace` 와 같다
-    (`core/contracts/der.py` 「retire의 의미」③ — 이 구획은 잔존가치를
-    건드리지 않는다). 분석기간(20년)이 EOL(본체 25년) 前에 끝나므로 두
-    선택의 잔존가치가 같아야 한다 — 오라클 `RC-ALL-C5`: 4,500,000 × 5/25 =
-    900,000원.
+def test_retire_salvage_matches_the_body_only_oracle_and_diverges_from_replace() -> None:
+    """`retire` 의 잔존가치는 **본체 몫뿐**이고, 그래서 `replace` 와 갈린다.
+
+    ## 무엇이 확정이고 무엇이 미정인가
+
+    **확정** — `retire` 는 *「다시 사지 않는다」* 이므로 `replacement_schedule()`
+    이 비고(`FR-104-AC3`), 취득분은 최초 본체 하나다. 그러면 20년차 잔존가치는
+    조항의 단일취득 오라클 `4,500,000 × 5/25` 와 **정확히 같다.** R39-E 가
+    배선하며 이 갈래를 빠뜨려 *사지도 않은 인버터의 잔존가치*를 `retire` 자원에
+    붙였고(1,185,354원) R39-E2 가 `PV._acquisitions()` 에서 닫았다.
+
+    **미정 (사람 몫)** — 조항 `FR-104-AC3`(spec §414 ③)은 *「EOL 前에는 `retire`
+    와 `replace` 의 잔존가치가 같다」* 고 적는데 **「어느 EOL 인가」를 말하지
+    않는다.** 이 자원의 첫 EOL 은 **인버터 12년**이고 분석기간은 20년이므로,
+    「본체 EOL(25년)」로 읽으면 20년차는 EOL 前이라 둘이 같아야 하고, 「첫
+    EOL(12년)」로 읽으면 20년차는 이미 EOL 後라 갈리는 것이 맞다. **지금 구현은
+    뒤쪽이다.**
+
+    ## 그래서 이 검사는 「같음」이 아니라 **갈림을 부채로 고정한다**
+
+    조항이 침묵하는 자리를 우리가 정해 통과시키지 않는다(*정박점을 우리가
+    만들지 않는다*). 대신 **갈리는 크기와 그 출처를 못 박는다** — 차액은
+    13년차 인버터 재취득분 하나이며 다른 어떤 것도 아니다. 조항이 개정되어
+    「같아야 한다」로 정해지면 이 검사가 **빨간불이 되어 그 사실을 알린다.**
+    등재 자리는 `status-human.md` 7단계다.
+
+    ⚠ **`xfail` 을 쓰지 않았다.** `tests/der/` 는 DoD 8 검사
+    (`tests/acceptance2/test_17_8_dod8.py`)가 `skip`·`xfail` 을 **금지**하는
+    구획이다 — 「케이스가 있다」가 「실행·통과한다」와 같아야 하기 때문이다.
     """
     retire_pv = make_pv_3kw(lifetime=25, end_of_life_action=EOL_RETIRE)
     replace_pv = make_pv_3kw(lifetime=25)
-    assert retire_pv.salvage_value(year=HORIZON) == Money(900_000)
-    assert retire_pv.salvage_value(year=HORIZON) == replace_pv.salvage_value(year=HORIZON)
+
+    # 확정 — 재취득이 없으므로 조항의 단일취득 오라클 그대로다.
+    assert retire_pv.replacement_schedule(horizon=HORIZON) == {}
+    assert retire_pv.salvage_value(year=HORIZON) == RC_ALL_C5_BODY_ONLY_WON
+
+    # 부채 래칫 — 갈리는 크기는 13년차 인버터 재취득분 **하나**다.
+    divergence = replace_pv.salvage_value(year=HORIZON) - retire_pv.salvage_value(
+        year=HORIZON
+    )
+    assert divergence == Money(285_354), (
+        "`retire` 와 `replace` 의 잔존가치 차이가 13년차 인버터 재취득분과 "
+        "다릅니다 — 조항 §414 ③ 의 「어느 EOL 인가」 판정이 내려졌다면 "
+        "`status-human.md` 7단계를 보고 이 검사를 그 판정에 맞추십시오"
+    )
 
 
 # ── 운전 방법 (FR-105) ───────────────────────────────────────────────

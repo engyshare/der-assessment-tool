@@ -33,6 +33,7 @@ from core.report.unreflected import (
     unreflected_rows,
     unreflected_section,
 )
+from tests.report.conftest import unwired_report
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -50,25 +51,59 @@ def _report():
     )
 
 
+#: 「배선이 끊긴 구성」의 정본은 `conftest` 가 갖는다 — 같은 구성을
+#: `test_narrative.py` 도 만든다(사유는 그 함수 독스트링).
+_unwired = unwired_report
+
+
 def test_replacement_item_appears_only_when_a_resource_outlives_nothing() -> None:
-    """★ 교체비 항목이 **수명과 분석기간을 견주어** 나타나고 사라진다.
+    """★ 교체비 항목이 **재어** 나타나고 사라진다 — 두 축을 함께 본다.
 
     「ESS 는 교체비가 빠졌다」로 박아 두면 수명 25년 ESS 를 쓰는 날 리포트가
-    틀린 항목을 계속 인쇄한다. 여기서는 분석기간을 **자원 수명보다 짧게**
-    바꾼 리포트에서 그 행이 사라지는지 본다 — 사라지지 않으면 판정이 아니라
-    문장인 것이다.
+    틀린 항목을 계속 인쇄한다. 판정이려면 **구성이 바뀔 때 행이 움직여야** 하고,
+    움직이는 축이 R39-E 에 하나 늘었다:
+
+    ① **계상됐는가** — 실행 경로가 그 자원의 일회성 흐름을 싣는가.
+       배선된 지금은 행이 **없어야** 하고, 흐름을 비우면 **돌아와야** 한다.
+    ② **생기는가** — 수명과 분석기간을 견준다. 분석기간이 가장 짧은 수명보다
+       짧으면 교체 대상 자체가 없으므로, 배선이 끊겨 있어도 교체비 행은 없다.
+
+    ①만 재면 「배선 여부」만 붙들고 ②만 재면 배선 뒤에 **거짓을 인쇄하는 판정**을
+    통과시킨다(그것이 R39-E 전의 상태다). 그래서 둘을 함께 재는 것이 요점이다.
     """
     report = _report()
     basis = report.basis
     shortest = min(r.lifetime_years for r in basis.resources)
 
-    assert any(i.label == "교체비" for i in build_unreflected(report)), (
-        "지금 구성(ESS 17년 < 분석기간 20년)에서 교체비 행이 없다"
+    # ① 배선됐으므로 지금은 없다 — 이 단언이 곧 「배선이 살아 있다」의 리포트 쪽 증거다.
+    labels_now = [item.label for item in build_unreflected(report)]
+    assert "교체비" not in labels_now, (
+        "교체비가 프로포마에 실렸는데(붙임 4 일회성 흐름) 붙임 8 이 여전히 "
+        "「미반영」으로 싣는다 — 판정이 배선을 보지 않는다"
+    )
+    assert "잔존가치" not in labels_now, (
+        "잔존가치가 프로포마에 실렸는데 붙임 8 이 여전히 「미반영」으로 싣는다"
     )
 
-    # 분석기간을 가장 짧은 수명보다 짧게 두면 교체 대상이 사라진다.
-    shortened = replace(report, basis=replace(basis, horizon_years=shortest - 1))
-    labels = [item.label for item in build_unreflected(shortened)]
+    # ① 흐름을 비우면 둘 다 돌아온다 — 판정이 살아 있다.
+    unwired = [item.label for item in build_unreflected(_unwired(report))]
+    assert "교체비" in unwired, (
+        f"실행 경로가 교체 흐름을 싣지 않는 구성(ESS {shortest}년 < 분석기간 "
+        f"{basis.horizon_years}년)인데 교체비 행이 없다"
+    )
+    assert "잔존가치" in unwired, (
+        "실행 경로가 잔존 흐름을 싣지 않는데 잔존가치 행이 없다"
+    )
+
+    # ② 분석기간을 가장 짧은 수명보다 짧게 두면 교체 대상이 사라진다.
+    #    (흐름도 함께 비운다 — 비우지 않으면 ① 에서 이미 걸러져 ② 를 재지 못한다.)
+    shortened = replace(
+        _unwired(report).basis, horizon_years=shortest - 1
+    )
+    labels = [
+        item.label
+        for item in build_unreflected(replace(report, basis=shortened))
+    ]
     assert "교체비" not in labels, (
         "분석기간 안에 수명이 끝나는 자원이 없는데 교체비 행이 남았다"
     )
@@ -133,7 +168,11 @@ def test_the_clause_cited_for_each_item_is_the_one_the_spec_gives_it() -> None:
     criteria = _fr104_criteria()
     assert len(criteria) == 5, f"spec 의 FR-104 수용기준이 5건이 아니다: {criteria}"
 
-    items = {item.label: item for item in build_unreflected(_report())}
+    # ⚠ **배선이 끊긴 구성에서 재는다** (R39-E · `_unwired` 독스트링). 실물
+    # 리포트에는 두 항목이 더는 나오지 않는다 — 배선됐기 때문이다. 그런데 조항
+    # 인용이 어긋난 채로 남아 있으면 배선이 끊기는 날 **그 어긋난 라벨이 다시
+    # 검토용 리포트로 실려 나간다**(실제로 2건 나갔다. 위 독스트링).
+    items = {item.label: item for item in build_unreflected(_unwired(_report()))}
     for label in ("교체비", "잔존가치"):
         assert label in items, f"붙임 8 에 {label} 항목이 없다 — 전제가 바뀌었다"
         cited = _CITED_FR104.findall(items[label].resolves_when)
@@ -161,7 +200,8 @@ def test_replacement_and_salvage_point_in_opposite_directions() -> None:
     둘 다 「미반영」이지만 하나는 결과를 좋게, 하나는 나쁘게 만든다. 방향을
     적지 않고 항목만 나열하면 검토자는 그것을 한쪽 방향의 여유로 읽는다.
     """
-    items = {item.label: item for item in build_unreflected(_report())}
+    # 배선이 끊긴 구성에서 잰다 — 사유는 `_unwired` 독스트링.
+    items = {item.label: item for item in build_unreflected(_unwired(_report()))}
     assert items["교체비"].direction == DIRECTION_ADVERSE
     assert items["잔존가치"].direction == DIRECTION_FAVORABLE
 

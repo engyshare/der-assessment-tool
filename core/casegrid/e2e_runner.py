@@ -21,6 +21,7 @@ from core.casegrid.incentive_cases import (
     Viewpoint,
     build_capex_cashflows_for_all_cases,
 )
+from core.casegrid.lifecycle import lifecycle_rows as _lifecycle_rows
 from core.casegrid.models import (
     BenefitLine,
     CaseBasis,
@@ -95,22 +96,34 @@ HOURS_PER_YEAR = DAYS_PER_YEAR * STEPS_PER_DAY
 # 남기면 수준표를 고쳐도 러너가 옛 용량을 쓰고 **NPV 만 조용히 달라진다**.
 PV_CAPACITY_FACTOR = 0.15
 PV_FIXED_OM_WON_PER_YEAR = 100_000
-#: **PV 의 물가 계수 — 이름을 `PV_OM_ESCALATION` 에서 바꿨다(R38-D2).** 옛 이름은
-#: 「O&M 전용」이라 주장했지만 실제로는 그러지 않는다. `PV` 는 `escalation_rate`
-#: 슬롯을 하나만 가지므로(계약 층 설계 — 비용 항목별로 나뉘어 있지 않다), 이 값
-#: 하나가 아래 **세 자리**를 함께 굴린다:
-#:   ⓐ `pv.py:499` 고정 O&M · `pv.py:531` 변동 O&M · `pv.py:563` 교체비(인버터·본체) capex
-#: **`ESS` 는 이 값을 받지 않는다** — 아래 `ESS(...)` 호출에 `escalation_rate` 인자가
-#: 없어 기본값 `0.0` 으로 서고, 그래서 ESS 의 18년차 배터리 교체비는 **오늘의
-#: 원**으로 적힌다. 대장은 `price_basis: "명목"` 을 한 번 선언하는데(`DV-7`) 그
-#: 선언은 자원마다 값을 넣으라는 뜻이지, 넣지 않아도 된다는 뜻이 아니다. 이
-#: 어긋남은 `tests/contract/test_escalation_debt.py::KNOWN_ESCALATION_DEBT` 가
-#: 부채로 고정해 붙든다 — **이 값을 여기서 조용히 「고치지」 말 것.** 배선 판단은
-#: 오케스트레이터가 내리고(§1) 등재는 별도 절차를 거친다.
-#: **또한 이 계수는 「설비단가의 실질(물가 제외) 추세」를 0 으로 두는 가정을 겸한다**
+#: **물가 계수 — 자원의 속성이 아니라 사업 전제다.** 이름이 두 번 움직였다:
+#: `PV_OM_ESCALATION`(「O&M 전용」이라 주장했지만 아니었다) → `PV_ESCALATION_RATE`
+#: (R38-D2, 「PV 의 것」이라 주장했지만 그것도 아니다) → 지금 이름(R39-E).
+#:
+#: 대장은 `price_basis: "명목"` 을 **한 번** 선언하고(`DV-7`) 그 선언은 자원마다
+#: 값을 넣으라는 뜻이다 — 그러므로 이 계수를 「PV 의 것」으로 두면 다른 자원에
+#: 넘길 때마다 *「PV 의 상수를 전용한다」* 가 되고, 그 어색함이 실제로 ESS 를
+#: 다섯 라운드 동안 `0.0` 으로 세워 두었다. 이름을 사업 전제로 올려 그 자리를
+#: 없앤다. **값은 `0.02` 그대로이며 사본을 만들지 않았다.**
+#:
+#: 이 값 하나가 **네 자리**를 함께 굴린다(전수 — `Grep` 으로 이 이름을 세면
+#: 선언 1 + 호출 4 다):
+#:   ⓐ `PV(escalation_rate=)` → `pv.py` 고정 O&M · 변동 O&M · 교체비(인버터·본체)
+#:   ⓑ `ESS(escalation_rate=)` → `ess.py` 고정 O&M · 변동 O&M · 배터리 교체비
+#:   ⓒ `fixed_om_row("PVFixedOM", escalation_rate=)` — **행이 자기 물가를 직접
+#:      굴린다**(`proforma.py:85-89`). 자원의 계수를 보지 않으므로 ⓐ 와 별개다
+#:   ⓓ `fixed_om_row("ESSFixedOM", escalation_rate=)` — 같은 이유로 ⓑ 와 별개다
+#: ⓒ 는 R38 까지 리터럴 `0.02` 였다(사본. 값이 **우연히** 같아 어긋나지 않았다)
+#: 고 ⓓ 는 아예 없었다. 넷을 한 이름에 묶은 것이 R39-E 의 절반이다 — 나머지
+#: 절반은 교체비·잔존가치 행 자체다(`_lifecycle_rows`).
+#:
+#: ⚠ **이 계수는 「설비단가의 실질(물가 제외) 추세」를 0 으로 두는 가정을 겸한다**
 #: — 교체비에 학습곡선 등으로 인한 실질 하락이 있다면 별도 대장 항목이 있어야
 #: 하는데 지금 그 항목이 없다(`Q-` 신설 검토 대상, `result_escalation_debt.md` §6).
-PV_ESCALATION_RATE = 0.02
+#: ⚠ **값 자체가 대장에 없다.** 소스 상수이며 어느 케이스 축에도 없다 — 이
+#: 어긋남은 `PV_CAPACITY_FACTOR` 등과 같은 부채이고 리포트가 출처를 「소스
+#: 상수」로 표시해 그 사실을 드러낸다.
+PRICE_ESCALATION_RATE = 0.02
 PV_SELF_CONSUMPTION_RATIO = 0.0
 
 #: ESS **정격출력**(kW). 용량과 달리 설계 변수로 올리지 않았다 — 이 값이
@@ -346,7 +359,7 @@ def run_single_case_e2e(
         generation_profile_kwh=generation_profile,
         unit_capex_won_per_kw=pv_capex,
         fixed_om_won_per_year=PV_FIXED_OM_WON_PER_YEAR,
-        escalation_rate=PV_ESCALATION_RATE,
+        escalation_rate=PRICE_ESCALATION_RATE,
         self_consumption_ratio=PV_SELF_CONSUMPTION_RATIO,
         operating_mode=OperatingMode.FULL_EXPORT,
     )
@@ -364,6 +377,16 @@ def run_single_case_e2e(
         operating_mode=ESSOperatingMode.PEAK_SHAVING,
         capex_unit_won_per_kwh=ess_capex,
         fixed_om_won_per_year=ESS_FIXED_OM_WON_PER_YEAR,
+        # ★★ **명목 기준을 ESS 에도 물린다 (R39-E · R38 판정 ②나).** 이 인자가
+        # 없는 동안 `ess.escalation_factor()` 는 1.0 이었고, 그래서 18년차
+        # 배터리 교체비가 **오늘의 원**으로 적혔다 — 대장이 `price_basis:
+        # "명목"` 을 선언한 사업에서 그 지출만 실질이 된다.
+        #
+        # ⚠ **교체 단가에 새 값을 정하지 않았다.** `replacement_unit_won_per_kwh`
+        # 를 여기서 넘기지 않으므로 `ess.py` 가 취득 단가(`capex.ess.new`)를
+        # 그대로 교체 단가로 쓴다 — 「배터리만/시스템 전체」(`Q-2`)는 그 **값
+        # 하나**를 바꾸는 물음이고 이 배선은 그것을 정하지 않는다.
+        escalation_rate=PRICE_ESCALATION_RATE,
     )
 
     # ★ **자원이 서자마자 분석기간을 잰다 (DV-5).** 수명은 자원이 갖고 있으므로
@@ -480,6 +503,9 @@ def run_single_case_e2e(
     annual_purchase_won = int(annual_grid_import_kwh * grid_purchase_price)
 
     initial_investment = Money(pv.capex(year=1) + ess.capex(year=1))
+    lifecycle_rows, one_off_flows = _lifecycle_rows(
+        pv=pv, ess=ess, horizon_years=horizon_years
+    )
     benefit_rows = [
         benefit_row(
             "E2EBenefit",
@@ -492,13 +518,21 @@ def run_single_case_e2e(
             start_year=1,
             end_year=horizon_years,
             annual_amount_won=int(pv.fixed_om(year=1)),
-            escalation_rate=PV_ESCALATION_RATE,
+            escalation_rate=PRICE_ESCALATION_RATE,
         ),
         fixed_om_row(
             "ESSFixedOM",
             start_year=1,
             end_year=horizon_years,
             annual_amount_won=int(ess.fixed_om(year=1)),
+            # ★ **행이 자기 물가를 직접 굴린다** — 위 자원 생성자의
+            # `escalation_rate` 를 넣어도 이 행은 따라오지 않는다
+            # (`proforma.py:85-89` 의 `current *= (1+i)` 루프이며
+            # `annual_amount_won` 은 `year=1` 로 고정 평가한 값이라 지수가 0
+            # 이다). 그래서 부채가 **두 항**이었고, 한 항만 닫으면 같은 자원의
+            # 고정 O&M 과 교체비가 서로 다른 가격 기준으로 선다 — 리포트의
+            # 「가격 기준 · 명목 (전 항목 공통)」이 그 순간 거짓이 된다.
+            escalation_rate=PRICE_ESCALATION_RATE,
         ),
         energy_purchase_row(
             "GridPurchase",
@@ -515,6 +549,10 @@ def run_single_case_e2e(
             )
             for cost in settlement_costs
         ),
+        # ★★★ **교체비·잔존가치 (R39-E).** 판정 근거는 `_lifecycle_rows`
+        # 독스트링 — 특히 *왜 잔존가치가 편익 행이 아닌가* 와 *왜 갈라 넣을 수
+        # 없는가*. 이 별표 하나가 다섯 라운드 미뤄진 자리다.
+        *lifecycle_rows,
     ]
     all_rows = net_operating_flows(benefit_rows, cost_rows)
 
@@ -565,6 +603,11 @@ def run_single_case_e2e(
             grid_purchase_price_won_per_kwh=grid_purchase_price,
             resources=_resource_lines(pv, pv_capex, ess, ess_capex, benefit_lines),
             benefits=benefit_lines,
+            # ★ **일회성 흐름은 갈라 담는다** (`OneOffLine` 독스트링 · 붙임 4
+            # 판정). `costs` 는 「1년차 금액」의 자리이고 18년차 교체비를 그
+            # 칸에 0원으로 적으면 *「합계만 있는 표에서는 빠진 행이 드러나지
+            # 않는다」* 가 되돌아온다.
+            one_off_flows=one_off_flows,
             costs=_cost_lines(
                 pv_fixed_om=int(pv.fixed_om(year=1)),
                 ess_fixed_om=int(ess.fixed_om(year=1)),
@@ -629,6 +672,8 @@ def _with_model_generation(
             "빼고 넘기십시오"
         )
     return replace(inputs, annual_generation_kwh=generation)
+
+
 
 
 def _cost_lines(

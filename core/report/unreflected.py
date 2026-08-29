@@ -37,7 +37,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from core.casegrid.models import CaseBasis
+from core.casegrid.models import (
+    ONE_OFF_REPLACEMENT,
+    ONE_OFF_SALVAGE,
+    CaseBasis,
+)
 from core.report.case_report import CaseReport
 from core.report.dispatch_notes import DispatchHour
 
@@ -141,16 +145,53 @@ def _assumed_quantities(
     )
 
 def _replacement_items(basis: CaseBasis) -> list[UnreflectedItem]:
-    """수명과 분석기간을 견주어 **교체비·잔존가치**를 판정한다.
+    """교체비·잔존가치가 **프로포마에 실렸는가** — 실린 흐름으로 판정한다.
 
-    둘은 조건이 다르다 — 교체비는 *수명이 분석기간보다 짧을 때*, 잔존가치는
-    *길 때* 생긴다. 한 항목으로 뭉치면 PV(25년)와 ESS(17년)가 함께 있는 지금
-    구성에서 둘 중 하나가 사라진다.
+    ## ★★ R39-E 에 배선됐다 — 그래서 판정을 **다시 세웠다**
+
+    종전 판정은 *수명과 분석기간만* 견주었다. 그것은 「이 구성에서 교체·잔존이
+    **생기는가**」를 재는 것이지 「그것이 **계상됐는가**」를 재는 것이 아니다.
+    배선이 들어오면 그 판정은 **참인 조건 위에서 거짓을 계속 인쇄한다** — 붙임 8
+    이 이미 계상된 항목을 「미반영」으로 싣게 된다. 이 저장소가 `_purchase_item`
+    에서 한 번 지나온 자리이며, 그쪽이 세운 규약이 *「러너의 상수·인자를 읽지
+    않고 결과로 드러난 사실로 판정한다」* 다. 여기서 그 규약을 따른다:
+    **`basis.one_off_flows` 에 그 자원의 흐름이 있는가**로 판정한다.
+
+    ⚠ **판정 자체를 지우지 않았다.** 행을 만드는 것은 러너의 한 함수이고
+    (`_lifecycle_rows`), 그것이 조건부가 되거나 다른 진입점이 생기면 **교체가
+    일어나는데 비용 행이 없는** 상태가 다시 만들어진다 — R34 가 전력 구매를
+    배선한 뒤에도 `_purchase_item` 을 남긴 것과 같은 이유다.
+
+    ⚠ **둘의 조건이 다르다.** 교체비는 *수명이 분석기간보다 짧을 때* 생기고,
+    잔존가치는 *길 때* — **또는 분석기간 내에 교체해 새 설비를 들였을 때** 생긴다.
+    뒤쪽 갈래를 빼면 ESS(수명 17년·18년차 교체)의 잔존가치 400만원이 판정에서
+    통째로 빠진다. 한 항목으로 뭉치면 PV(25년)와 ESS(17년) 중 하나가 사라진다.
     """
     items: list[UnreflectedItem] = []
     horizon = basis.horizon_years
-    short = [r for r in basis.resources if r.lifetime_years < horizon]
-    outliving = [r for r in basis.resources if r.lifetime_years > horizon]
+    replaced = {
+        line.from_resource
+        for line in basis.one_off_flows
+        if line.kind == ONE_OFF_REPLACEMENT
+    }
+    salvaged = {
+        line.from_resource
+        for line in basis.one_off_flows
+        if line.kind == ONE_OFF_SALVAGE
+    }
+    short = [
+        r
+        for r in basis.resources
+        if r.lifetime_years < horizon and r.name not in replaced
+    ]
+    # 분석 종료 시점에 잔존가치가 **확실히 남는** 자원: 수명이 분석기간보다
+    # 길거나, 분석기간 내에 교체해 새 설비를 들인 자원.
+    outliving = [
+        r
+        for r in basis.resources
+        if r.name not in salvaged
+        and (r.lifetime_years > horizon or r.name in replaced)
+    ]
 
     if short:
         listed = " · ".join(f"{r.kind} {r.lifetime_years}년" for r in short)
@@ -163,11 +204,11 @@ def _replacement_items(basis: CaseBasis) -> list[UnreflectedItem]:
                     f"{len(short)}건 ({listed}) · 각 1회 교체"
                 ),
                 reason=(
-                    # ⚠ 종전 문면은 「비용 행은 고정 운영비뿐」이었다. R34 에
-                    # 전력 구매 행이 생겨 **거짓이 됐다.** 비용 행의 구성을
-                    # 세어 적으면 다음에 또 낡으므로, 없는 것만 적는다.
-                    "`ESS.replacement_schedule()` 존재 · 실행 경로 "
-                    "(`e2e_runner`) 호출 없음 · 비용 행에 교체 항목 없음"
+                    # ⚠ 자원 이름을 문면에 박지 않는다 — 종전 문면은 「`ESS.
+                    # replacement_schedule()` 존재」였고, 판정에 걸리는 자원이
+                    # 달라지면 틀린 자원을 가리킨다.
+                    "자원의 `replacement_schedule()` 존재 · 실행 경로"
+                    "(`e2e_runner::_lifecycle_rows`)가 이 자원의 흐름을 싣지 않음"
                 ),
                 resolves_when="`FR-104-AC2` (교체비 계상) 실행 경로 배선",
                 measured=True,
@@ -180,12 +221,12 @@ def _replacement_items(basis: CaseBasis) -> list[UnreflectedItem]:
                 label="잔존가치",
                 direction=DIRECTION_FAVORABLE,
                 magnitude=(
-                    f"미정량 · 분석기간 {horizon}년 초과 수명 자원 "
+                    f"미정량 · 분석 종료 시 잔존가치가 남는 자원 "
                     f"{len(outliving)}건 ({listed})"
                 ),
                 reason=(
-                    "`core/cba/salvage.py::salvage_value()` 존재 · 실행 경로 "
-                    "호출 없음"
+                    "자원의 `salvage_value()`·`core/cba/salvage.py` 존재 · "
+                    "실행 경로가 이 자원의 흐름을 싣지 않음"
                 ),
                 resolves_when="`FR-104-AC5` (잔존가치) 실행 경로 배선",
                 measured=True,
