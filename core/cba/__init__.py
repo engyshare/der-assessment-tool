@@ -43,6 +43,7 @@ from core.cba.proforma import (
     fixed_om_row,
     loan_repayment_row,
     replacement_row,
+    salvage_row,
     tax_row,
     total_row,
 )
@@ -68,6 +69,7 @@ __all__ = (  # noqa: RUF022
     "capex_row",
     "fixed_om_row",
     "replacement_row",
+    "salvage_row",
     "loan_repayment_row",
     "benefit_row",
     "tax_row",

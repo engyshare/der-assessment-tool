@@ -230,6 +230,85 @@ def replacement_row(
     return rows
 
 
+def salvage_row(
+    tag: str,
+    *,
+    label: str,
+    salvage_year: int,
+    salvage_won: int,
+    asset_lifetime_years: int,
+    analysis_end_year: int,
+) -> list[CashFlowRow]:
+    """잔존가치 — 분석 종료 시점의 회수분을 **비용 행에 음수로** 계상 (10.8 / `FR-104-AC5`).
+
+    ``replacement_row`` 의 짝이다. 두 규약을 그쪽과 똑같이 진다:
+
+    - **분석 종료 연도를 넘는 항은 만들지 않는다** — ``salvage_year >
+      analysis_end_year`` 면 빈 목록을 낸다. 분석기간 밖의 흐름이 지표에 들어가면
+      «분석기간을 늘리지 않고 늘린 효과» 가 생긴다.
+    - ``asset_lifetime_years <= 0`` 이면 ``ValidationError`` — 잔존 수명 비례가
+      정의되지 않는다(``core/cba/salvage.py::salvage_value`` 와 같은 문턱).
+
+    ## ★★ 부호를 뒤집는 자리는 **이 함수 하나**다
+
+    잔존가치는 **유입**인데 이 행은 **비용 행**으로 실린다. 그래서 어딘가 한 번은
+    부호가 뒤집혀야 하고, **그 한 번이 여기다** — 호출자는 명목 잔존가치를
+    **양수 그대로** 넘기고(``salvage_won``), 음수로 만드는 것은 이 함수가 한다.
+    음수를 넘기면 거부한다.
+
+    ⚠ **호출자가 미리 뒤집어 넘기면 안 된다.** 두 곳에서 뒤집으면 다시 양수가
+    되고, 그때 잔존가치는 **비용**이 되어 결론을 잔존가치의 두 배만큼 나쁘게
+    만든다 — 아무 예외도 나지 않는다.
+    ``core/casegrid/e2e_runner.py::net_operating_flows`` 독스트링이 적은 그
+    형태다(*「부호를 뒤집을 자리는 순현금흐름을 만드는 경계 하나여야 하고, 두
+    곳에서 뒤집으면 다시 양수가 된다」*). 이 행은 그 경계를 지나며 **한 번 더**
+    뒤집혀 최종적으로 유입이 된다 — 즉 뒤집기는 **층마다 정확히 하나씩** 둘이고,
+    어느 층에서든 하나가 늘거나 줄면 부호가 반대가 된다.
+
+    ⚠ **편익 행(`benefit_row`)으로 만들지 않는 이유**는 여기가 아니라
+    ``core/casegrid/lifecycle.py::lifecycle_rows`` 독스트링에 있다 — ``bcr()`` 의
+    분모가 갈리기 때문이다.
+
+    ## ⚠ 0원이어도 행을 싣는다 (교체 행과 다르다)
+
+    잔존가치의 연차는 **언제나 분석 종료연도**이므로 「0원을 몇 년차에 적을
+    것인가」가 열리지 않는다. 그래서 잔존가치가 0인 자원도 행을 만든다 — 「남은
+    게 없어서 0」과 「행이 없어서 0」이 프로포마에서 갈린다
+    (``energy_purchase_row`` 가 수전 0에 대해 세운 것과 같은 규약).
+
+    ## ⚠ ``label`` 을 ``tag`` 에서 짓지 않는다 — ``replacement_row`` 와 갈리는 한 점
+
+    태그는 ``"PVSalvage"`` 인데 표시 문면은 ``"PV 잔존가치 (20년차)"`` 로 **짧은
+    코드**를 쓴다. 태그에서 지으려면 ``"Salvage"`` 를 잘라내야 하고, 그 문자열
+    수술은 태그 규약이 바뀌는 날 조용히 틀린 라벨을 인쇄한다. 그래서 둘을 **각각
+    받는다** — 두 문면 다 붙임 8·리포트가 보는 문자열이다.
+    """
+    if asset_lifetime_years <= 0:
+        raise ValidationError(
+            field="proforma.asset_lifetime_years",
+            reason=f"자산 수명은 양수여야 합니다: {asset_lifetime_years}",
+            action="asset_lifetime_years 를 1 이상의 정수(년)로 지정하십시오",
+        )
+    if salvage_won < 0:
+        raise ValidationError(
+            field="proforma.salvage_won",
+            reason=f"잔존가치가 음수입니다: {salvage_won}",
+            action=(
+                "잔존가치는 유입이므로 양수 명목액으로 넘기십시오. 부호를 "
+                "뒤집는 것은 이 함수가 합니다 — 미리 뒤집어 넘기면 두 번 "
+                "뒤집혀 잔존가치가 비용이 됩니다"
+            ),
+        )
+    if salvage_year > analysis_end_year:
+        # 분석 종료 이후의 잔존가치는 계상 안 함 (교체 행과 같은 규약)
+        return []
+    return [CashFlowRow(
+        label=label,
+        tag=tag,
+        amounts={salvage_year: Decimal(-salvage_won)},
+    )]
+
+
 def loan_repayment_row(
     tag: str, schedule: dict[int, int]
 ) -> CashFlowRow:

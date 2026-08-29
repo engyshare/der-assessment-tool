@@ -17,14 +17,12 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
-
 from core.casegrid.models import (
     ONE_OFF_REPLACEMENT,
     ONE_OFF_SALVAGE,
     OneOffLine,
 )
-from core.cba.proforma import replacement_row
+from core.cba.proforma import replacement_row, salvage_row
 from core.contracts.schemas import CashFlowRow
 from core.der.ess import ESS
 from core.der.pv import PV
@@ -123,12 +121,17 @@ def lifecycle_rows(
                 ),
             ))
         # 잔존가치는 **유입**이므로 비용 행에 음수로 담는다(위 독스트링).
+        # ⚠ **여기서 뒤집지 않는다** — 명목액을 양수 그대로 넘기고 부호는
+        # `salvage_row()` 가 뒤집는다(그쪽 독스트링의 「뒤집는 자리 하나」).
         salvage = int(resource.salvage_value(year=horizon_years))
-        rows.append(CashFlowRow(
+        rows += salvage_row(
+            f"{short}Salvage",
             label=f"{short} 잔존가치 ({horizon_years}년차)",
-            tag=f"{short}Salvage",
-            amounts={horizon_years: Decimal(-salvage)},
-        ))
+            salvage_year=horizon_years,
+            salvage_won=salvage,
+            asset_lifetime_years=int(resource.lifetime),
+            analysis_end_year=horizon_years,
+        )
         lines.append(OneOffLine(
             tag=f"{short}Salvage",
             label=f"{short} 잔존가치",
