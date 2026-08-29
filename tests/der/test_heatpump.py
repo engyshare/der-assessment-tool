@@ -645,7 +645,11 @@ def test_rejects_bool_heat_load() -> None:
         make_hp(heat_load_kwh=False)
 
 
-@pytest.mark.req("FR-101-AC2")
+# ⚠ **마커를 뗐다 (R39-G · 거짓 인용).** 이 검사가 재는 것은 §7.5 의
+# `Year` **1-base 규약**이고 `FR-101-AC2`(자원이 요구 메서드를 갖는가)와
+# 무관하다. 옮길 곳이 없어 **제거만 했다** — 그 규약에는 조항 ID 가 없고,
+# 없는 자리에 억지로 붙이면 다음 사람이 그 조항을 「검증됨」으로 센다.
+# 「조항이 없는 검증 대상」은 `status-human.md` 7단계에 등재돼 있다.
 def test_annual_operation_enforces_one_based_year() -> None:
     """`annual_operation()` 의 연도는 **1-base 규약을 통과한다** (`Year`).
 
