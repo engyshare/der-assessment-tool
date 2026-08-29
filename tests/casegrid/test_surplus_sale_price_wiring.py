@@ -316,3 +316,29 @@ def _quantity_kwh(formula: str) -> float:
     match = re.search(r"([\d,]+\.\d+)kWh", formula)
     assert match, f"산식에서 kWh 수량을 못 읽었다 — 「{formula}」"
     return float(match.group(1).replace(",", ""))
+
+
+def test_the_basis_carries_the_price_the_runner_actually_used() -> None:
+    """★★ **붙임 8 이 방향을 지으려면 파는 값을 알아야 한다** (R43-H · 나-5).
+
+    자가소비 편익은 잉여판매와 **배타(유형 A)** 라, 켜는 순간 같은 전력의 판매
+    수입이 사라진다 — 즉 *「자가소비를 반영하면 좋아지는가」* 의 답이 **두 단가의
+    차이**다. `CaseBasis` 가 구매 단가만 들고 있던 동안 붙임 8 은 그 차이를 지을
+    수 없었고, 그래서 *「순 방향은 두 단가의 차이가 정한다」* 에서 멈춘 채
+    담당자에게 빼기를 시켰다.
+
+    ⚠ **기대값을 여기 적지 않는다** — 탐침이 준 값이 그대로 오는지만 본다.
+    금액을 적으면 그것이 사본이 되고, 러너가 다른 단가를 쓰기 시작해도 이
+    검사는 초록불이다.
+    """
+    probe = 137.0
+    outcome = run_single_case_e2e(
+        {}, level_map=_level_map(probe), horizon_years=_PROBE_HORIZON
+    )
+    assert outcome.basis.surplus_sale_price_won_per_kwh == probe, (
+        "러너가 쓴 판매단가가 `CaseBasis` 에 오지 않는다 — 붙임 8 은 편익 금액 ÷ "
+        "송전량으로 되계산하게 되고, 송전이 0 인 구성에서 그 나눗셈이 깨진다"
+    )
+    assert outcome.basis.grid_purchase_price_won_per_kwh != probe, (
+        "두 단가가 같은 수다 — 차이가 0 이면 이 검사는 방향을 재지 못한다"
+    )

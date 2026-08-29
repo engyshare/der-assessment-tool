@@ -243,3 +243,33 @@ def test_unknown_rule_is_named_not_blanked() -> None:
     assert set(RULE_TEXT) == set(DEFAULT_RULE_ORDER), (
         "규칙 문면표가 엔진 선언과 어긋났다 — 새 규칙에 문면을 붙일 것"
     )
+
+
+def test_appendix_seven_and_the_unreflected_row_use_the_same_two_differences() -> None:
+    """★★ **붙임 7 의 차이와 붙임 8 의 방향이 같은 수인가** (R43-H · 나-5).
+
+    붙임 8 의 자가소비 행은 이제 방향을 적는데, 그 계산의 재료는 **붙임 7 이
+    싣는 두 차이**(계통 송전·수전의 파이프라인 → 형상 가정 변화)다. 두 자리가
+    서로 다른 수를 쓰면 검토자는 *어느 쪽이 틀렸는지 물을 자리가 없다* — 표
+    하나를 보고 다른 표의 방향을 되짚을 수 없다.
+
+    ⚠ **여기서 방향을 다시 계산하지 않는다.** 계산을 베끼면 오라클이 구현의
+    사본이 된다. 재는 것은 **붙임 7 이 인쇄한 연간화 수전 차이가 붙임 8 의
+    크기 칸에도 같은 문면으로 있는가** 다.
+    """
+    report = _report()
+    assert report.assumed_hours, "이 시나리오는 형상 가정 운전을 가져야 한다"
+    text = render_markdown(report)
+
+    seven = text[text.index("### 부하·일사 형상을 가정한 운전") : text.index("## 붙임 8.")]
+    eight = text[text.index("## 붙임 8.") : text.index("## 붙임 9.")]
+
+    rows = [line for line in seven.splitlines() if line.startswith("| 계통 수전 (연간화")]
+    assert len(rows) == 1, f"붙임 7 에 연간화 수전 차이 행이 {len(rows)}개다"
+    delta = rows[0].split("|")[-2].strip()
+    assert delta.startswith(("+", "-")), f"차이가 부호를 갖지 않는다 — {delta}"
+
+    assert f"{delta}kWh/년" in eight, (
+        f"붙임 7 의 수전 차이 {delta} 가 붙임 8 의 자가소비 행에 없다 — 두 붙임이 "
+        "서로 다른 수로 같은 사실을 말하고 있다"
+    )
