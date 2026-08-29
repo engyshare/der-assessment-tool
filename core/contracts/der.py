@@ -408,6 +408,9 @@ class DER(ABC):
     operating_mode: str
     #: 비용 물가상승률 — **소수(0~1)** 다 (§7.5). `%` 로 받는 인자를 두지 않는다
     escalation_rate: float
+    #: **교체 재취득 단가의** 물가상승률 — 소수. 안 주면 `escalation_rate` 와 같다.
+    #: 자리를 가른 이유는 `replacement_escalation_factor()` 독스트링에 있다.
+    replacement_escalation_rate: float
     #: 수명 도달 시 처리 — `"replace"`(교체) 또는 `"retire"`(폐기). `FR-104-AC3`.
     #: **기본값이 `"replace"` 인 이유는 §「retire 의 의미」 참조.**
     end_of_life_action: str
@@ -425,6 +428,7 @@ class DER(ABC):
         consumes_fuel: bool = False,
         operating_mode: str | None = None,
         escalation_rate: float = 0.0,
+        replacement_escalation_rate: float | None = None,
         end_of_life_action: str = EOL_REPLACE,
     ) -> None:
         # `field` 는 `<tag소문자>.<필드>` — `_check_operating_mode` 와 같은 방식
@@ -475,6 +479,15 @@ class DER(ABC):
         self.consumes_fuel = consumes_fuel
         self.operating_mode = self._check_operating_mode(operating_mode)
         self.escalation_rate = self._check_escalation_rate(escalation_rate)
+        # **안 주면 같은 값이다** — 이 계약을 넓히는 것만으로는 어떤 자원의 어떤
+        # 수도 움직이지 않는다. 움직이는 것은 호출부가 다른 값을 줄 때뿐이다.
+        self.replacement_escalation_rate = (
+            self.escalation_rate
+            if replacement_escalation_rate is None
+            else self._check_escalation_rate(
+                replacement_escalation_rate, field="replacement_escalation_rate"
+            )
+        )
         self.end_of_life_action = self._check_end_of_life_action(end_of_life_action)
 
     def _check_end_of_life_action(self, action: str) -> str:
@@ -566,12 +579,18 @@ class DER(ABC):
             )
         return mode
 
-    def _check_escalation_rate(self, rate: float) -> float:
+    def _check_escalation_rate(
+        self, rate: float, *, field: str = "escalation_rate"
+    ) -> float:
         """물가상승률은 **소수**다 (§7.5 — 코드 내부는 소수로 정규화).
 
         `1.0` 이상을 거부하는 이유: 2%를 `2.0`(=200%) 으로 넘기는 실수가 20년
         프로포마에서 비용을 3.6×10⁹ 배로 만든다. 큰 수는 눈에 띄지만, `0.5`
         (=50%) 로 넘긴 실수는 그럴듯한 숫자로 남는다 — 그래서 상한을 둔다.
+
+        `field` 를 받는 이유는 **어느 계수가 거부됐는지** 오류 문면이 말해야
+        하기 때문이다. 자원이 계수를 둘 들고 있는데 메시지가 하나만 이름 대면,
+        같은 문면이 두 원인에서 나오고 받는 사람은 어느 인자를 고칠지 모른다.
         """
         r = float(rate)
         if not -1.0 < r < 1.0:
@@ -579,8 +598,8 @@ class DER(ABC):
                 getattr(type(self), "tag", None) or type(self).__name__
             ).lower()
             raise ValidationError(
-                field=f"{prefix}.escalation_rate",
-                reason=f"{self.name}: escalation_rate 는 -1~1 소수입니다 "
+                field=f"{prefix}.{field}",
+                reason=f"{self.name}: {field} 는 -1~1 소수입니다 "
                        f"(받은 값 {r})",
                 action="2%는 0.02 로 지정하십시오 (§7.5 — %(0~100)는 입력·표시 "
                        "경계에서만 씁니다)",
@@ -595,6 +614,39 @@ class DER(ABC):
         수 %의 차이이고, 어느 자원이 어긋났는지는 프로포마에 드러나지 않는다.
         """
         return (1.0 + self.escalation_rate) ** (int(Year(year)) - 1)
+
+    def replacement_escalation_factor(self, *, year: int) -> float:
+        """**교체 재취득 단가의** `year` 년차 계수 = `(1 + 그 계수)^(year−1)`.
+
+        ## 왜 계수를 둘로 가르는가 (R42 · `Q-17`)
+
+        v1.1 까지 자원은 계수를 **하나**만 들었고, 그 하나가 고정 O&M · 변동
+        O&M · 교체비를 함께 굴렸다. R38 ② 가 그 상태를 *「상수의 이름이 실제
+        쓰임보다 좁게 주장한다」* 로 잡았고 이름을 넓혀 봉합했는데, **넓힌 이름은
+        갈라야 할 것을 갈라 주지 않는다** — 세 항목이 같은 계수를 받는다는 사실
+        자체는 그대로 남았다.
+
+        그 사실이 대장과 어긋난다. `capex.replacement_real_trend`(`Q-17`)는
+        적용범위를 스스로 좁혀 두었다 — *「분석기간 안에 교체가 일어나는 설비의
+        **재취득 단가**에만 걸린다. 최초 취득가에는 걸리지 않고 고정·변동 O&M 도
+        대상이 아니다」*. 계수가 하나뿐이면 그 항목을 흔들 때 **O&M 까지 함께
+        움직이고**, 그러면 하단 −2.0 이 *「물가 계수를 태우지 않았다면」* 이 아니라
+        *「O&M 물가까지 꺼 버렸다면」* 을 재게 된다. 즉 **대장이 선언한 것과 다른
+        것을 재는 축**이 된다.
+
+        ## 무엇이 움직이고 무엇이 안 움직이는가
+
+        **안 주면 `escalation_rate` 와 같은 값이다.** 이 자리를 만드는 것만으로는
+        어떤 자원의 어떤 수도 움직이지 않는다 — 움직이는 것은 호출부가 다른 값을
+        줄 때뿐이며, 그 값은 `e2e_runner` 가 대장에서 만든다
+        (`물가 계수 + 실질 추세`. 덧셈인 근거는 그 대장 항목의
+        `applicable_scope` 문면이다).
+
+        ⚠ **1년차 기준은 `escalation_factor()` 와 같다** (계수 1.0). 두 계수가
+        서로 다른 기준연도를 잡으면 같은 해의 O&M 과 교체비가 한 해 어긋난
+        기준으로 한 프로포마에 실리고, 그 어긋남은 합계에 드러나지 않는다.
+        """
+        return (1.0 + self.replacement_escalation_rate) ** (int(Year(year)) - 1)
 
     def check_context(self, ctx: DispatchContext) -> None:
         """`dispatch()` 진입부에서 호출한다 — 해상도 규약을 한 곳에서 검사한다.

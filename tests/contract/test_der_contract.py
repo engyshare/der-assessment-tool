@@ -393,6 +393,37 @@ class DERContractTests:
             )
 
     @pytest.mark.contract
+    @pytest.mark.req("FR-701-AC3")
+    def test_replacement_escalation_defaults_to_the_same_rate(self) -> None:
+        """교체 재취득 단가의 계수가 **따로 있고, 안 주면 같은 값이다** (R42).
+
+        v1.1 까지 계수는 하나였고 고정 O&M·변동 O&M·교체비가 그것을 함께 받았다.
+        대장의 `capex.replacement_real_trend`(`Q-17`)는 적용범위를 *「재취득
+        단가에만 걸리고 O&M 은 대상이 아니다」* 로 좁혀 두었으므로, 계수가
+        하나뿐이면 **그 항목을 흔들 때 대장이 선언하지 않은 것까지 움직인다.**
+
+        ★ **이 계약이 넓어져도 지금 수는 한 자리도 안 움직인다** — 기본값이
+        같기 때문이다. 그 「같음」 자체를 여기서 붙든다: 기본값이 갈리는 순간
+        모든 자원의 교체비가 조용히 다른 기준으로 서고, 그 차이는 합계에
+        드러나지 않는다.
+
+        ⚠ **붙들지 못하는 것**: *자원이 교체 경로에서 그 계수를 실제로 쓰는가*
+        는 여기서 재지 않는다(계약은 자리를 고정하지 손을 잡아끌지 않는다).
+        그것은 `tests/casegrid/test_lifecycle_wiring.py` ⓕ 가 **행동으로** 잰다.
+        """
+        der = self.make()
+
+        assert isinstance(der.replacement_escalation_rate, float)
+        assert der.replacement_escalation_rate == der.escalation_rate, (
+            "주지 않았는데 교체비 계수가 O&M 계수와 다릅니다 — 기본값이 갈리면 "
+            "모든 자원의 교체비가 조용히 다른 기준으로 섭니다"
+        )
+        for year in (1, 2, 20):
+            assert der.replacement_escalation_factor(year=year) == pytest.approx(
+                der.escalation_factor(year=year)
+            ), f"{year}년차에서 두 계수가 갈렸습니다 (기본값은 같아야 합니다)"
+
+    @pytest.mark.contract
     @pytest.mark.req("FR-104-AC5")
     def test_salvage_value_tracks_remaining_life_and_is_never_negative(self) -> None:
         """잔존가치가 **잔존 수명을 따라 움직이고 음수가 되지 않는다** (FR-104-AC5).
