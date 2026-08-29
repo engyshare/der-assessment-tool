@@ -176,6 +176,37 @@ def _freeze_variants(
     })
 
 
+# ── 리포트 자료형이 자원을 가리키는 **두 규약** (R43-B) ────────────────────
+#
+# 종전에는 셋 다 칸 이름이 `from_resource` 하나였는데, **담기는 값이 두 갈래**
+# 였다. 이름이 같으니 두 규약이 하나로 보이고, 실제로는 **서로 조인되지 않는
+# 두 이름공간**이다:
+#
+#   ① 자원 이름(`resource_name`) — `ResourceLine.name` 과 같은 키(`"e2e-pv"`).
+#      `OneOffLine` 이 이 규약이며 **붙임 8 이 조인한다**
+#      (`core/report/unreflected.py::_replacement_items`).
+#   ② 짧은 코드(`resource_code`) — `"PV"` · `"ESS"` · 귀속 없으면 `""`.
+#      `CostLine`·`BenefitLine` 이 이 규약이며, 붙임 4 가 **표시**하고 러너가
+#      같은 코드 리터럴끼리 조인한다(`_resource_lines::produced_by`).
+#
+# ## ⚠ 지금은 틀린 값을 인쇄하지 않는다 — 그래서 더 위험하다
+#
+# 붙임 8 은 `OneOffLine` 쪽만 조인하고 그쪽 규약은 맞다. 무너지는 것은 **다음
+# 사람이 `CostLine` 으로 같은 조인을 쓰는 날**이다: 짧은 코드와 자원 이름은
+# 절대 같지 않으므로 **아무 예외 없이 빈 교집합**이 나오고, 붙임 8 의 판정은
+# 조용히 *「미반영」* 쪽으로 넘어간다. `unreflected.py` 독스트링이 이미 그
+# 형태를 적어 두었다 — *「배선이 들어오면 그 판정은 참인 조건 위에서 거짓을
+# 계속 인쇄한다」*.
+#
+# **그래서 주석이 아니라 칸 이름으로 갈랐다.** 규약을 주석으로만 적으면 조인을
+# 쓰는 자리에서는 보이지 않는다 — 이름으로 갈라 두면 `resource_code` 를
+# `ResourceLine.name` 과 맞춰 보는 코드가 **읽는 순간 어긋나 보인다.**
+#
+# 붙드는 것: `tests/casegrid/test_from_resource_conventions.py` — 실행 경로를
+# 한 번 돌려 ① 이 자원 이름 집합에 **속하고** ② 가 **속하지 않는지**를 잰다.
+# 짧은 코드 목록은 그 검사가 계산하지 않고 밖에서 고정한다.
+
+
 @dataclass(frozen=True)
 class ResourceLine:
     """**무엇을 평가했는가** — 리포트 0절의 한 행 (`FR-1001-AC2`).
@@ -224,8 +255,12 @@ class BenefitLine:
     label: str
     #: 1년차 금액(원).
     annual_won: int
-    #: 이 편익을 만든 자원 이름. 규약이 아니라 **이 파이프라인의 실제 귀속**이다.
-    from_resource: str
+    #: 이 편익을 만든 자원의 **짧은 코드** — `"PV"` · `"ESS"` (위 「두 규약」).
+    #: 러너가 같은 코드 리터럴로 조인한다
+    #: (`e2e_runner._resource_lines::produced_by`), 그리고 붙임 4 가 표시한다
+    #: (`core/report/method_sections.py`). **자원 이름이 아니다** —
+    #: `ResourceLine.name` 과 조인하면 빈 교집합이 나온다.
+    resource_code: str
     #: 산식 문면 — 대입값까지 (`FR-1001-AC3`).
     formula: str
 
@@ -274,10 +309,13 @@ class OneOffLine:
     year: int
     #: 그 연차의 금액(원). **양수 = 지출 · 음수 = 유입.**
     amount_won: int
-    #: 이 흐름을 낸 자원의 이름 — `ResourceLine.name` 과 **같은 키**로 적는다.
-    #: 붙임 8 이 자원별로 「이 자원의 교체비가 계상됐는가」를 묻기 때문이며,
-    #: 조인 키가 없으면 그 판정이 건수만 세다 어느 자원인지를 잃는다.
-    from_resource: str
+    #: 이 흐름을 낸 자원의 **이름** — `ResourceLine.name` 과 **같은 키**다
+    #: (위 「두 규약」). 붙임 8 이 자원별로 「이 자원의 교체비가 계상됐는가」를
+    #: 묻기 때문이며(`core/report/unreflected.py::_replacement_items`), 조인 키가
+    #: 없으면 그 판정이 건수만 세다 어느 자원인지를 잃는다.
+    #: **짧은 코드가 아니다** — `"PV"` 를 적으면 그 조인이 빈 교집합을 내고
+    #: 붙임 8 이 조용히 「미반영」으로 넘어간다.
+    resource_name: str
     #: 산식 문면 — 단가·수량·물가 계수까지 (`FR-1001-AC3`).
     formula: str
 
@@ -307,8 +345,11 @@ class CostLine:
     label: str
     #: 1년차 금액(원). **양수 = 비용.**
     annual_won: int
-    #: 이 비용을 일으킨 자원 이름. 자원에 귀속되지 않는 거래 비용은 빈 문자열.
-    from_resource: str
+    #: 이 비용을 일으킨 자원의 **짧은 코드** — `"PV"` · `"ESS"` (위 「두 규약」).
+    #: 자원에 귀속되지 않는 거래 비용은 **빈 문자열**이다(수전·정산 수수료).
+    #: 읽는 곳은 붙임 4 의 표시 하나뿐이며(`method_sections.py`) **조인 키가
+    #: 아니다** — `ResourceLine.name` 과 맞춰 보면 빈 교집합이 나온다.
+    resource_code: str
     #: 산식 문면 — 수량·단가까지 (`FR-1001-AC3`).
     formula: str
 

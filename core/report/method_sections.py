@@ -208,7 +208,7 @@ def _benefit_row(line: BenefitLine, total: int) -> str:
     """
     share = f"{line.annual_won / total:.0%}" if total else "—"
     return (
-        f"| {line.label} | {line.from_resource} | {_won(line.annual_won)} | "
+        f"| {line.label} | {line.resource_code} | {_won(line.annual_won)} | "
         f"{share} |"
     )
 
@@ -305,7 +305,7 @@ def _one_off_section(basis: CaseBasis) -> list[str]:
         "| 항목 | 귀속 자원 | 연차 | 금액 | 산식 |",
         "|---|---|---|---|---|",
         *(
-            f"| {line.label} | `{line.from_resource}` | {line.year}년차 | "
+            f"| {line.label} | `{line.resource_name}` | {line.year}년차 | "
             f"{_won(line.amount_won)} | {line.formula} |"
             for line in basis.one_off_flows
         ),
@@ -346,7 +346,7 @@ def resource_detail_section(basis: CaseBasis) -> list[str]:
         "| 항목 | 귀속 자원 | 연 금액 | 산식 |",
         "|---|---|---|---|",
         *(
-            f"| {line.label} | {line.from_resource or '—'} | "
+            f"| {line.label} | {line.resource_code or '—'} | "
             f"{_won(line.annual_won)} | `{line.formula}` |"
             for line in basis.costs
         ),

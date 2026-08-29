@@ -170,12 +170,12 @@ def _replacement_items(basis: CaseBasis) -> list[UnreflectedItem]:
     items: list[UnreflectedItem] = []
     horizon = basis.horizon_years
     replaced = {
-        line.from_resource
+        line.resource_name
         for line in basis.one_off_flows
         if line.kind == ONE_OFF_REPLACEMENT
     }
     salvaged = {
-        line.from_resource
+        line.resource_name
         for line in basis.one_off_flows
         if line.kind == ONE_OFF_SALVAGE
     }

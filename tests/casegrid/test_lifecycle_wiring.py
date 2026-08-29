@@ -144,8 +144,8 @@ def test_every_replacement_flow_is_accompanied_by_a_salvage_flow() -> None:
     """
     _rows, lines = _lifecycle_rows(pv=_pv(), ess=_ess(), horizon_years=_HORIZON)
 
-    replaced = {ln.from_resource for ln in lines if ln.kind == ONE_OFF_REPLACEMENT}
-    salvaged = {ln.from_resource for ln in lines if ln.kind == ONE_OFF_SALVAGE}
+    replaced = {ln.resource_name for ln in lines if ln.kind == ONE_OFF_REPLACEMENT}
+    salvaged = {ln.resource_name for ln in lines if ln.kind == ONE_OFF_SALVAGE}
 
     assert replaced, (
         "이 구성에서 교체 흐름이 하나도 없다 — 탐침 제원이 바뀌어 "

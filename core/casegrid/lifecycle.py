@@ -101,7 +101,7 @@ def lifecycle_rows(
                 kind=ONE_OFF_REPLACEMENT,
                 year=year,
                 amount_won=amount,
-                from_resource=resource.name,
+                resource_name=resource.name,
                 # ⚠ **물가 계수를 이 문면에 적지 않는다.** 자원의
                 # `escalation_factor(year=)` 를 여기서 적으면 *그 계수가 이 금액에
                 # 실렸다* 로 읽히는데, **실렸는지는 자원이 정한다.**
@@ -138,7 +138,7 @@ def lifecycle_rows(
             kind=ONE_OFF_SALVAGE,
             year=horizon_years,
             amount_won=-salvage,
-            from_resource=resource.name,
+            resource_name=resource.name,
             formula=(
                 f"분석 종료 {horizon_years}년차 · 수명 {int(resource.lifetime)}년 · "
                 f"취득 시점부터 잔존 수명 비례 (`RC-ALL-C5`) · "

@@ -738,14 +738,14 @@ def _cost_lines(
             tag="PVFixedOM",
             label="태양광 고정 운영비",
             annual_won=pv_fixed_om,
-            from_resource="PV",
+            resource_code="PV",
             formula=f"연 {pv_fixed_om:,}원 (1년차 · 연 2% 상승)",
         ),
         CostLine(
             tag="ESSFixedOM",
             label="저장장치 고정 운영비",
             annual_won=ess_fixed_om,
-            from_resource="ESS",
+            resource_code="ESS",
             formula=f"연 {ess_fixed_om:,}원",
         ),
         CostLine(
@@ -755,7 +755,7 @@ def _cost_lines(
             # ⚠ 자원 이름을 「ESS」로 적지 않는다. 수전은 **부하와 충전의 합**이
             # 발전을 넘을 때 생기므로 어느 한 자원의 것이 아니다 — 지금 구성에서
             # 충전이 대부분이라는 것은 붙임 7 이 스텝별로 보여 준다.
-            from_resource="",
+            resource_code="",
             formula=(
                 f"대표일 수전 {daily_grid_import_kwh:,.2f}kWh × "  # noqa: RUF001
                 f"{DAYS_PER_YEAR}일 × "  # noqa: RUF001
@@ -769,7 +769,7 @@ def _cost_lines(
             tag=cost.tag,
             label=cost.label,
             annual_won=int(cost.annual_amount_won),
-            from_resource="",
+            resource_code="",
             formula=f"연 {int(cost.annual_amount_won):,}원 (정산 구조가 만드는 비용)",
         )
         for cost in settlement_costs
@@ -843,7 +843,7 @@ def _benefit_line(
         tag=stream.tag,
         label=f"{stream.name} ({stream.tag})",
         annual_won=annual_won,
-        from_resource=resource,
+        resource_code=resource,
         formula=formula,
     )
 
@@ -858,7 +858,9 @@ def _resource_lines(
     """평가 대상 자원 제원 — 리포트 0절의 재료 (`ResourceLine` 독스트링)."""
 
     def produced_by(resource: str) -> tuple[str, ...]:
-        return tuple(line.tag for line in benefits if line.from_resource == resource)
+        return tuple(
+            line.tag for line in benefits if line.resource_code == resource
+        )
 
     return (
         ResourceLine(
