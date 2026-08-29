@@ -217,7 +217,17 @@ R40 은 조항을 건드리지 않았고 `docs/traceability.md` 의 diff 가 0 �
 > gen_traceability.py             자동 290 · 수동 8 · 스텁 4 · 미매핑 9(전건 Phase 2·3)
 >                                 → **R39 와 같다**(파일 diff 0). 이 라운드는 조항을
 >                                    건드리지 않았다
+> check_coverage_inputs --base HEAD~4   rc=0   측정 230파일 / 변경 core 2건
+> diff-cover --fail-under=95            rc=0   **변경 2줄 · 100%**
+> check_test_accompaniment --base HEAD~4 rc=0  구현 변경 2건 전건 동반
 > ```
+>
+> ⚠ **게이트 ①은 `coverage.xml` 을 먼저 다시 뽑아야 돌아간다.** 그 파일은 저장소에
+> 추적되지 않고 로컬 것은 08-17 판이라 **R39 가 만든 `core/casegrid/lifecycle.py` 를
+> 담고 있지 않았다** — 그 상태의 `check_coverage_inputs` 는 `rc=2` 이며 **그것이
+> 옳다**(diff-cover 는 판정할 수 없을 때 **rc=0 을 낸다**. 입력 검증이 먼저 오는
+> 이유가 그것이다). `pytest --cov=core --cov-report=xml` 을 배경으로 돌린 뒤 위 수를
+> 얻었다.
 >
 > ## ⑦ 다음 라운드가 알아야 할 것
 >
