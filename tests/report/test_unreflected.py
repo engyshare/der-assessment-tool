@@ -112,6 +112,46 @@ def test_replacement_item_appears_only_when_a_resource_outlives_nothing() -> Non
     )
 
 
+def test_the_replacement_judgement_joins_on_the_resource_name_convention() -> None:
+    """★ 붙임 8 의 조인이 **자원 이름 규약 위에서만** 성립한다 (R43-B).
+
+    `_replacement_items()` 는 `OneOffLine.resource_name` 과 `ResourceLine.name`
+    을 맞춰 「이 자원의 교체비가 계상됐는가」를 판정한다. 그 칸에 **짧은
+    코드**(`CostLine.resource_code` 의 규약)가 들어오면 두 이름공간이 겹치지
+    않으므로 **아무 예외 없이 빈 교집합**이 나오고, 판정은 이미 계상된 항목을
+    조용히 「미반영」으로 넘긴다.
+
+    ⚠ **이것이 판정을 「배선이 끊긴 것」과 구별하지 못한다는 뜻은 아니다** —
+    구별하지 못하는 것이 요점이다. `_unwired()` 와 **똑같은 붙임 8** 이 나오는데
+    프로포마에는 흐름이 그대로 실려 있다. 그래서 어느 지표도 움직이지 않고,
+    검토자는 계상된 사업을 미반영으로 읽는다.
+
+    생산자 쪽 규약은 `tests/casegrid/test_from_resource_conventions.py` 가
+    본다. 이 검사는 **읽는 쪽**이 그 규약에 기대고 있다는 사실을 고정한다.
+    """
+    report = _report()
+    assert "교체비" not in [item.label for item in build_unreflected(report)], (
+        "전제가 깨졌다 — 배선된 구성에서는 교체비가 미반영이 아니어야 한다"
+    )
+
+    # 자원 이름 칸에 **짧은 코드**를 넣는다 — 러너가 규약을 갈아탄 상태의 재현.
+    miswired = replace(
+        report.basis,
+        one_off_flows=tuple(
+            replace(line, resource_name="ESS" if "ess" in line.resource_name else "PV")
+            for line in report.basis.one_off_flows
+        ),
+    )
+    labels = [
+        item.label for item in build_unreflected(replace(report, basis=miswired))
+    ]
+
+    assert "교체비" in labels and "잔존가치" in labels, (
+        "조인 키를 짧은 코드로 바꿨는데 붙임 8 이 그대로다 — 그렇다면 이 판정은 "
+        "`resource_name` 을 실제로 보고 있지 않다"
+    )
+
+
 def _spec_module(stem: str) -> ModuleType:
     """`scripts/` 의 spec 파서를 그대로 쓴다 — 여기서 다시 쓰지 않는다.
 

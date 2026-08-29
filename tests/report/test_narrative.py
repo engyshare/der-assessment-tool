@@ -504,3 +504,53 @@ def test_summary_section_stands_alone_for_the_committee() -> None:
     if unreflected:
         assert str(len(unreflected)) in summary, "미반영 건수가 요약에 없다"
         assert "붙임 8" in summary, "미반영 전문의 자리를 가리키지 않는다"
+
+
+def test_appendix_four_prints_the_two_resource_conventions_side_by_side() -> None:
+    """★ 붙임 4 의 「귀속 자원」 칸이 **표마다 다른 규약**을 인쇄한다 (R43-B).
+
+    같은 붙임의 표 셋이 자원을 가리키는데 문면이 둘로 갈린다:
+
+        편익 갈래 · 비용 항목   →  짧은 코드   `PV` · `ESS` · `—`
+        일회성 흐름            →  자원 이름   `` `e2e-pv` ``
+
+    **그것이 정상이다** — 두 자료형의 규약이 다르고
+    (`core/casegrid/models.py` 「두 규약」), 붙임 8 이 조인하는 것은 뒤쪽뿐이다.
+    이 검사가 고정하는 것은 *어느 쪽이 옳은가* 가 아니라 **문면이 지금 그대로
+    라는 사실**이다: 「일관되게 만들자」로 한쪽을 다른 쪽에 맞추면 골든·수용
+    검사가 보는 표가 바뀌고, 그 전에 붙임 8 의 조인이 조용히 빈 교집합이 된다.
+
+    읽는 값이 규약을 지키는지는 `tests/casegrid/test_from_resource_conventions.py`
+    가, 조인 쪽은 `tests/report/test_unreflected.py` 가 본다. 여기는 **인쇄된
+    문면**만 본다.
+    """
+    report = build_case_report(
+        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    basis = report.basis
+    text = "\n".join(resource_detail_section(basis))
+    names = {r.name for r in basis.resources}
+
+    assert basis.one_off_flows, "일회성 흐름이 없다 — 아래 단언이 공허하다"
+    for line in basis.one_off_flows:
+        assert f"| `{line.resource_name}` |" in text, (
+            f"일회성 흐름의 귀속 자원이 자원 이름 {line.resource_name!r} 로 "
+            "인쇄되지 않는다"
+        )
+
+    for line in basis.costs:
+        printed = line.resource_code or "—"
+        assert f"| {printed} |" in text, f"비용 항목 귀속 자원 문면이 바뀌었다: {printed!r}"
+        assert line.resource_code not in names, (
+            f"비용 항목에 자원 이름이 인쇄된다: {line.resource_code!r} — "
+            "짧은 코드 규약이 무너졌다"
+        )
+
+    benefit_text = "\n".join(cost_benefit_section(basis))
+    for line in basis.benefits:
+        assert line.resource_code not in names, (
+            f"편익 갈래에 자원 이름이 인쇄된다: {line.resource_code!r}"
+        )
+        assert f"| {line.resource_code} |" in benefit_text + text, (
+            f"편익 갈래 귀속 자원 문면이 바뀌었다: {line.resource_code!r}"
+        )

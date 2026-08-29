@@ -19,6 +19,7 @@ from core.cba import (
     capex_row,
     fixed_om_row,
     replacement_row,
+    salvage_row,
     total_row,
 )
 from core.cba.proforma import check_analysis_period, energy_purchase_row
@@ -238,7 +239,10 @@ def test_proforma_row_types_all_available() -> None:
     assert tax.tag == "VAT"
     assert tax.label == "VAT 세금"
 
-    # 8. 잔존가치 (salvage_value)
+    # 8. 잔존가치 — **금액**(`salvage_value`)과 **행**(`salvage_row`)이 갈린다.
+    #    R43-B 까지 여기에는 금액만 있었다: 행 빌더가 없어서 배선 자리가
+    #    `CashFlowRow(...)` 를 직접 지었고, 그래서 이 「8종」 목록의 여덟째만
+    #    다른 일곱과 층이 달랐다.
     from core.cba.salvage import salvage_as_final_year_flow, salvage_value
     salvage = salvage_value(
         capex_won=10_000_000,
@@ -246,12 +250,26 @@ def test_proforma_row_types_all_available() -> None:
         elapsed_years_at_analysis_end=20,
     )
     assert int(salvage) > 0  # 5년 수명 남음
-    salvage_row = salvage_as_final_year_flow(
+    final_year_flow = salvage_as_final_year_flow(
         capex_won=10_000_000,
         asset_lifetime_years=25,
         elapsed_years_at_analysis_end=20,
     )
-    assert int(salvage_row) == int(salvage)
+    assert int(final_year_flow) == int(salvage)
+
+    rows = salvage_row(
+        "PVSalvage",
+        label="PV 잔존가치 (20년차)",
+        salvage_year=20,
+        salvage_won=int(salvage),
+        asset_lifetime_years=25,
+        analysis_end_year=20,
+    )
+    assert len(rows) == 1
+    assert rows[0].tag == "PVSalvage"
+    # 유입이므로 비용 행에는 **음수**로 담긴다 — 뒤집는 자리는 빌더 하나다
+    # (규약 전체는 `tests/cba/test_salvage_row.py`).
+    assert int(rows[0].amounts[20]) == -int(salvage)
 
 
 def test_salvage_value_rejects_non_positive_asset_lifetime() -> None:
