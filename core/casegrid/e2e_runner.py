@@ -27,9 +27,17 @@ from core.casegrid.models import (
     BenefitLine,
     CaseBasis,
     CaseOutcome,
-    CostLine,
     ResourceLine,
 )
+from core.casegrid.operating_lines import DAYS_PER_YEAR, net_operating_flows
+from core.casegrid.operating_lines import annualise as _annualise
+
+# 이 파일은 `_benefit_line` 을 부르지 않는다. **밖에서 이 경로로 부르므로
+# 재수출한다** — `tests/casegrid/test_benefit_line_rendering.py` 가 그 이름을
+# 붙든다(`lifecycle.py` 의 `_lifecycle_rows` 와 같은 재수출이다).
+from core.casegrid.operating_lines import benefit_line as _benefit_line  # noqa: F401
+from core.casegrid.operating_lines import benefit_lines as _benefit_lines
+from core.casegrid.operating_lines import cost_lines as _cost_lines
 from core.casegrid.profiles import DailyShapes
 from core.cba.metrics import npv, payback_discounted
 from core.cba.proforma import (
@@ -52,7 +60,24 @@ from core.incentive.schemas import IncentiveScheme
 from core.regulation.tariff import TariffEngine
 from core.valuestream import PeakShaving, SurplusSale
 from core.valuestream.exclusion_table import assert_no_exclusions
-from core.valuestream.settlement import SettlementCost, SettlementInputs, assemble
+from core.valuestream.settlement import SettlementInputs, assemble
+
+#: 이 모듈이 **밖으로 내보내는 이름**. R43-F2 가 `operating_lines.py` 를
+#: 갈라내면서 필요해졌다 — `DAYS_PER_YEAR` 와 `net_operating_flows` 는 이제
+#: 저쪽이 선언하고 이 파일이 받아 넘기는데, mypy strict 는 import 로 들어온
+#: 이름의 **암묵 재수출을 거부한다**(`no_implicit_reexport`). 넘긴다는 사실을
+#: 여기에 적어야 `core/report/dispatch_sections.py:32` 의
+#: `from core.casegrid.e2e_runner import DAYS_PER_YEAR` 가 성립한다.
+#: ⚠ **목록을 줄이지 말 것** — 이 이름들은 밖이 이 경로로 부르고 있고
+#: (`tests/report/test_assumed_operation.py` 가 넷 중 셋을 함께 읽는다),
+#: 줄이면 그 호출이 조용히 끊긴다.
+__all__ = (
+    "DAYS_PER_YEAR",
+    "HOURS_PER_YEAR",
+    "PV_CAPACITY_FACTOR",
+    "net_operating_flows",
+    "run_single_case_e2e",
+)
 
 # ⚠ **`HORIZON_YEARS = 20` 상수가 여기 있었다. R31 이 지웠다.**
 #
@@ -70,8 +95,11 @@ from core.valuestream.settlement import SettlementCost, SettlementInputs, assemb
 # `tests/casegrid/test_e2e_analysis_period_wiring.py` 가 시그니처를 붙든다.
 STEPS_PER_DAY = 24
 SECONDS_PER_HOUR = 3_600
-DAYS_PER_YEAR = 365
 MONTHS_PER_YEAR = 12
+#: ⚠ **`DAYS_PER_YEAR` 는 `operating_lines.py` 가 소유한다** — 연간화 계수와
+#: 그것을 쓰는 표시줄 조립을 한 파일에 둔다(R43-F2). 아래 `HOURS_PER_YEAR`
+#: 와 이 파일의 나머지는 위 import 로 들어온 그 이름 하나를 읽는다.
+
 #: 대표일을 되풀이해 한 해를 덮는 스텝 수. `LEAP_YEAR_POLICY` 가 평년 고정을
 #: 선언하며(`DV-4`) 자원들이 8,760 을 요구한다.
 HOURS_PER_YEAR = DAYS_PER_YEAR * STEPS_PER_DAY
@@ -703,23 +731,6 @@ def run_single_case_e2e(
     )
 
 
-def _annualise(
-    streams: Sequence[ValueStream], window: DispatchResult
-) -> list[tuple[ValueStream, int]]:
-    """편익마다 **자기가 선언한 대로** 연간화한다 — 위 호출부의 ★★★ 참조.
-
-    창을 읽는 편익만 대표일 금액에 `DAYS_PER_YEAR` 를 곱한다. 여기에 태그
-    목록을 두지 않은 이유가 그 별표에 있다 — 목록은 편익이 늘 때 낡는다.
-    """
-    annualised: list[tuple[ValueStream, int]] = []
-    for stream in streams:
-        value = float(stream.annual_value(window, year=1))
-        if type(stream).scales_with_dispatch_window:
-            value *= DAYS_PER_YEAR
-        annualised.append((stream, int(value)))
-    return annualised
-
-
 def _with_model_generation(
     inputs: SettlementInputs | None, pv: PV
 ) -> SettlementInputs:
@@ -766,139 +777,6 @@ def _with_model_generation(
             "빼고 넘기십시오"
         )
     return replace(inputs, annual_generation_kwh=generation)
-
-
-
-
-def _cost_lines(
-    *,
-    pv_fixed_om: int,
-    ess_fixed_om: int,
-    daily_grid_import_kwh: float,
-    grid_purchase_price: float,
-    annual_purchase_won: int,
-    settlement_costs: Sequence[SettlementCost],
-) -> tuple[CostLine, ...]:
-    """운영비를 **항목별로** 갈라 담는다 (`CostLine` 독스트링 참조).
-
-    ⚠ **연간화 규약이 항목마다 다르다** — 편익 쪽과 같은 함정이다. 고정 O&M 은
-    이미 연간액이고, 전력 구매는 **대표일 수량**에 365를 곱해야 한다. 산식
-    문면에 그 곱을 그대로 적는다: 수량과 단가 중 어느 쪽이 틀렸는지 검토자가
-    가릴 수 있어야 하고, 둘은 서로 다른 사람이 고친다(단가는 대장, 수량은 운전).
-    """
-    lines = [
-        CostLine(
-            tag="PVFixedOM",
-            label="태양광 고정 운영비",
-            annual_won=pv_fixed_om,
-            resource_code="PV",
-            formula=f"연 {pv_fixed_om:,}원 (1년차 · 연 2% 상승)",
-        ),
-        CostLine(
-            tag="ESSFixedOM",
-            label="저장장치 고정 운영비",
-            annual_won=ess_fixed_om,
-            resource_code="ESS",
-            formula=f"연 {ess_fixed_om:,}원",
-        ),
-        CostLine(
-            tag="GridPurchase",
-            label="계통 전력 구매",
-            annual_won=annual_purchase_won,
-            # ⚠ 자원 이름을 「ESS」로 적지 않는다. 수전은 **부하와 충전의 합**이
-            # 발전을 넘을 때 생기므로 어느 한 자원의 것이 아니다 — 지금 구성에서
-            # 충전이 대부분이라는 것은 붙임 7 이 스텝별로 보여 준다.
-            resource_code="",
-            formula=(
-                f"대표일 수전 {daily_grid_import_kwh:,.2f}kWh × "  # noqa: RUF001
-                f"{DAYS_PER_YEAR}일 × "  # noqa: RUF001
-                f"{grid_purchase_price:,.0f}원/kWh "
-                f"= {annual_purchase_won:,}원"
-            ),
-        ),
-    ]
-    lines.extend(
-        CostLine(
-            tag=cost.tag,
-            label=cost.label,
-            annual_won=int(cost.annual_amount_won),
-            resource_code="",
-            formula=f"연 {int(cost.annual_amount_won):,}원 (정산 구조가 만드는 비용)",
-        )
-        for cost in settlement_costs
-    )
-    return tuple(lines)
-
-
-def _benefit_lines(
-    settlement_by_stream: Sequence[tuple[ValueStream, int]],
-    *,
-    peak: ValueStream,
-    peak_per_year: int,
-    dispatch: DispatchResult,
-) -> tuple[BenefitLine, ...]:
-    """편익을 **갈래별로** 갈라 담는다 (`BenefitLine` 독스트링 참조).
-
-    ⚠ **연간화 규약이 갈래마다 다르다.** 창에서 읽는 편익은 대표일 1일치라
-    365를 곱하고, 생성자에서 연간 수량을 받는 편익은 곱하지 않는다. 이 차이는
-    합계만 보면 보이지 않으므로 **산식 문면에 그대로 적는다** — 검토자가 곱하기
-    하나를 잘못 짚으면 365배가 틀린다. 어느 쪽인지는 편익이 선언하며
-    (`scales_with_dispatch_window`) 여기서 짐작하지 않는다.
-
-    ⚠ **이름을 인스턴스에서 읽는다.** 종전에는 라벨이 `f"잉여 전력 판매 ({tag})"`
-    로 박여 있었고, 그래서 「집합 PPA」·「분산특구 직접거래」가 배선되면
-    **전량 판매·직접거래가 「잉여 전력 판매」로 인쇄된다**. 자원 귀속도 마찬가지다.
-
-    ★ **첨두 절감도 같은 통로를 지난다** (R36). 종전에는 이 편익만 라벨과 산식이
-    여기에 박여 있었고, 그래서 위 규칙의 예외로 남아 있었다 — 라벨은
-    「첨두 수요 절감」으로 고정(인스턴스 이름은 「기본요금(피크) 절감」)이고
-    산식은 러너가 지었다. 자원 귀속만 다르므로 그것만 인자로 받는다.
-    """
-    return tuple(
-        _benefit_line(stream, annual_won, resource, dispatch)
-        for stream, annual_won, resource in (
-            *((s, v, "PV") for s, v in settlement_by_stream),
-            (peak, int(peak_per_year), "ESS"),
-        )
-    )
-
-
-def _benefit_line(
-    stream: ValueStream, annual_won: int, resource: str, dispatch: DispatchResult
-) -> BenefitLine:
-    """편익 한 줄 — **산식은 편익이 내고 연간화는 여기가 붙인다**.
-
-    ## ★★★ 왜 산식을 여기서 짓지 않는가 (R36)
-
-    종전 이 자리는 창을 읽는 편익에 **`대표일 1,771원 × 365일`** 을 적었다.
-    곱해서 나온 금액만 있고 **무엇에 얼마를 곱했는지가 없다** — 같은 리포트의
-    비용 쪽은 `대표일 수전 6.19kWh × 365일 × 120원/kWh` 로 수량과 단가를 갈라
-    적는데(`_cost_lines`), 편익 쪽만 그러지 못했다. 그래서 **영향도 1위 인자인
-    잉여 판매단가의 값이 붙임 4 어디에도 없었다.**
-
-    대입값을 아는 것은 그 값을 생성자에서 받은 **편익 자신**이므로 문면을
-    `ValueStream.formula()` 가 낸다. 여기서 지으려면 태그별 분기를 들게 되고
-    그 목록은 편익이 늘 때 낡는다 — 위 연간화와 같은 근거다.
-
-    ⚠ **연간화와 합계는 여기가 붙인다.** 편익은 자기 대입값까지만 알고,
-    *「이 창이 대표일인가」* 는 호출측의 사정이다. 두 곳이 다 적으면 갈릴 수
-    있고 갈린 쪽이 365배다.
-    """
-    # RUF001: 「×」는 검토자가 읽는 산식 문면이다. `x` 로 바꾸면 곱셈이 변수
-    # 이름처럼 보인다 — 대상을 좁히는 면제이지 규칙을 넓히는 것이 아니다.
-    body = stream.formula(dispatch, year=1)
-    formula = (
-        f"대표일 {body} × {DAYS_PER_YEAR}일 = {annual_won:,}원"  # noqa: RUF001
-        if type(stream).scales_with_dispatch_window
-        else f"{body} = {annual_won:,}원 (연간 수량으로 산정 · 연간화 없음)"
-    )
-    return BenefitLine(
-        tag=stream.tag,
-        label=f"{stream.name} ({stream.tag})",
-        annual_won=annual_won,
-        resource_code=resource,
-        formula=formula,
-    )
 
 
 def _resource_lines(
@@ -950,44 +828,6 @@ def _resource_lines(
             produces=produced_by("ESS"),
         ),
     )
-
-
-def net_operating_flows(
-    benefit_rows: Sequence[CashFlowRow],
-    cost_rows: Sequence[CashFlowRow],
-) -> list[CashFlowRow]:
-    """편익·비용 행을 `npv()` 가 받는 **순현금흐름**으로 만든다 — 비용의 부호를
-    여기서 **한 번만** 뒤집는다 (R32).
-
-    ## ★★ 이것이 없어서 비용이 NPV 를 늘리고 있었다
-
-    `CashFlowRow` 는 **부호 규약을 갖지 않는다** — 「비용은 양수, 편익도 양수」이며
-    가르는 것은 소비자다(`capex_row` 독스트링). `bcr()` 은 그래서 편익 목록과 비용
-    목록을 **따로** 받는다. 그런데 `npv()` 는 목록 하나를 받아 `_pv()` 로 **부호
-    있는 합**을 낸다. 즉 그 하나는 순현금흐름이어야 한다.
-
-    종전 이 파일은 `benefit_rows + cost_rows` 를 **그대로** 넘겼다. 고정 O&M 이
-    양수이므로 **비용이 편익으로 더해졌고**, NPV 는 O&M 현가의 두 배만큼 과대
-    계상됐다. 아무 예외도 나지 않고, 두 배 오차는 「그럴듯한 큰 수」로 보인다.
-
-    R32 가 관리 수수료를 비용 행으로 넣자 **수수료율을 올릴수록 NPV 가 커져서**
-    드러났다 — 새 항목이 기존 결함을 밟은 형태이며, 그 결함은 비용 항목이
-    O&M 둘뿐일 때는 아무도 밟지 않았다.
-
-    ⚠ **`fee_row`·`fixed_om_row` 를 음수로 바꾸는 것으로 고치지 않았다.** 그러면
-    프로포마 표시와 `bcr()` 의 분모가 함께 뒤집힌다 — 부호를 뒤집을 자리는 **순
-    현금흐름을 만드는 이 경계 하나**여야 하고, 두 곳에서 뒤집으면 다시 양수가 된다.
-    """
-    negated = [
-        CashFlowRow(
-            label=row.label,
-            tag=row.tag,
-            amounts={year: -amount for year, amount in row.amounts.items()},
-            assumption_refs=row.assumption_refs,
-        )
-        for row in cost_rows
-    ]
-    return [*benefit_rows, *negated]
 
 
 def _metrics_for(
