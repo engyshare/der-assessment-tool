@@ -207,11 +207,34 @@ def test_every_capex_ledger_item_is_a_sweep_axis_or_says_why_not() -> None:
     허용하되 **사유를 적게 한다** — 목록에 없는 새 항목은 둘 중 하나를
     고르지 않으면 통과하지 못한다.
     """
+    _assert_prefix_is_swept_or_says_why_not(
+        prefix="capex.",
+        what="설비단가",
+        exemptions=_CAPEX_KEYS_OUTSIDE_THE_SWEEP,
+        exemption_name="_CAPEX_KEYS_OUTSIDE_THE_SWEEP",
+    )
+
+
+def _assert_prefix_is_swept_or_says_why_not(
+    *,
+    prefix: str,
+    what: str,
+    exemptions: dict[str, str],
+    exemption_name: str,
+) -> None:
+    """대장의 한 접두사 무리가 **전부 스윕 축이거나 사유를 갖는가.**
+
+    ## 왜 함수로 뽑았는가
+
+    같은 판정을 무리마다 베끼면 **사본이 늘고 한쪽만 고쳐진다** — 이 저장소가
+    반복해 만난 형태다. 접두사만 다른 네 개의 단정을 두 번 적는 대신 여기서
+    한 번 적고, 무리 이름과 면제 목록만 받는다. 실패 메시지가 무리 이름을
+    들고 있어야 「어느 표를 고치라는 것인지」가 남는다.
+    """
     ledger_keys = set(_ledger_items())
     wired = set(ledger_backed_variables().values())
-
-    capex_keys = {key for key in ledger_keys if key.startswith("capex.")}
-    exempt = set(_CAPEX_KEYS_OUTSIDE_THE_SWEEP)
+    keys = {key for key in ledger_keys if key.startswith(prefix)}
+    exempt = set(exemptions)
 
     both = sorted(wired & exempt)
     assert not both, (
@@ -224,19 +247,82 @@ def test_every_capex_ledger_item_is_a_sweep_axis_or_says_why_not() -> None:
     assert not stale, (
         f"면제 목록의 {stale} 가 대장에 없습니다 — 항목이 지워졌거나 키가 "
         "바뀌었습니다. tests/casegrid/test_ledger_levels.py 의 "
-        "_CAPEX_KEYS_OUTSIDE_THE_SWEEP 에서 그 줄을 지우십시오"
+        f"{exemption_name} 에서 그 줄을 지우십시오"
     )
 
-    for key, reason in _CAPEX_KEYS_OUTSIDE_THE_SWEEP.items():
+    for key, reason in exemptions.items():
         assert reason.strip(), f"{key}: 면제 사유가 비었습니다 — 사유 없는 면제는 면제가 아닙니다"
 
-    missing = sorted(capex_keys - wired - exempt)
+    missing = sorted(keys - wired - exempt)
     assert not missing, (
-        f"설비단가 항목 {missing} 가 **스윕 축이 아닙니다.** 대장에는 보이는데 "
+        f"{what} 항목 {missing} 가 **스윕 축이 아닙니다.** 대장에는 보이는데 "
         "흔들리지 않으므로 리포트 5.1 영향도 표에 서지 못하고, 그 값을 고른 "
         "것이 결론에 얼마를 넣었는지 검토자가 물을 수 없습니다. "
         "core/casegrid/ledger_levels.py 의 _LEDGER_VARS 에 줄을 더하고 러너가 "
-        "그 값을 읽게 하십시오 — 평가 대상 모델에 그 자원이 없어서 흔들 수 "
-        "없는 것이라면 이 파일의 _CAPEX_KEYS_OUTSIDE_THE_SWEEP 에 **사유와 "
-        "함께** 적으십시오"
+        f"그 값을 읽게 하십시오 — 흔들 수 없는 것이라면 이 파일의 "
+        f"{exemption_name} 에 **사유와 함께** 적으십시오"
+    )
+
+
+#: **요금 대장 항목 중 스윕 축이 **아닌** 것과 그 사유** (R43-H).
+#:
+#: 설비단가 쪽과 같은 형태이나 면제 사유의 성질이 다르다 — 설비단가는
+#: *「러너가 그 자원을 세우지 않는다」* 였고, 여기는 *「러너 기본 경로가 정산
+#: 구조를 세우지 않는다」* 다. 두 값은 `core/valuestream/settlement.py` 가
+#: `provider` 로 **직접** 읽으며(`TARIFF_KEY`·`PPA_RATIO_KEY`), 구조를 준
+#: 실행에서만 결론에 들어온다. 그래서 `level_map` 축으로 걸 자리가 없고,
+#: 걸어도 기본 경로에서는 변동폭 0원이 나와 **「진짜 무영향」과 「미배선」이
+#: 구별되지 않는다.**
+#:
+#: ⚠ **첨두 기본요금은 이 목록에 없다** — R43-H 에 축이 됐다. 그것이 이
+#: 래칫을 세운 이유다: 그 값은 대장에도 축에도 **없이** 결론의 21% 를 정하고
+#: 있었고, 어느 검사도 그 상태를 재지 않았다(문의사항 나-8).
+_TARIFF_KEYS_OUTSIDE_THE_SWEEP: dict[str, str] = {
+    "tariff.hv_single_contract.avg": (
+        "러너 기본 경로는 정산 구조를 세우지 않는다 — 이 실효단가는 상계"
+        "(`_net_metering`)가 «회피한 요금»으로 읽으며, 구조를 준 실행에서만 "
+        "결론에 들어온다"
+    ),
+    # ⚠ **이 항목은 애초에 축이 될 수 없다** — `track: fixed` 이고
+    # `sensitivity` 가 `null` 이라 `build_level_map()` 이 3수준을 찾지 못해
+    # 거부한다. 대장 항목 자신이 사유를 적는다: *「정해진 값에 범위를 주면
+    # «정해졌다»와 «범위가 있다»가 한 항목에 공존한다」*.
+    "tariff.power_fund_rate": (
+        "법정 부담금률(`track: fixed`)이며 `sensitivity` 가 없다 — 3수준이 "
+        "없으므로 스윕 축이 될 수 없고, 요금 엔진"
+        "(`core/regulation/tariff.py`)이 `provider` 로 직접 읽는다"
+    ),
+    "tariff.aggregated_ppa.ratio": (
+        "러너 기본 경로에 집합 PPA 구조가 없다 — `settlement.py` 가 그 구조를 "
+        "고른 실행에서만 이 비율을 읽는다"
+    ),
+}
+
+
+@pytest.mark.req("NFR-202-M1")
+def test_every_tariff_ledger_item_is_a_sweep_axis_or_says_why_not() -> None:
+    """★ **래칫.** 요금 단가 항목이 **축 없이 결론에 들어오면** 빨간불이다.
+
+    ## 무엇이 실제로 일어났는가 (문의사항 나-8)
+
+    `tariff.hv_single_contract.demand_charge`(첨두 기본요금 8,320원/kW·월)은
+    R43 까지 **대장에도 축에도 없었다.** 그러면서 첨두 절감 편익 199,680원 —
+    **전체 편익의 21%** — 을 혼자 정했다. 즉 결론의 5분의 1이 *출처를 말하지
+    않는 소스 상수* 위에 서 있었고, 붙임 1 의 어느 행도 그 값의 신뢰도·기준
+    연도를 말하지 않았다.
+
+    ⚠ **`check_hardcoded_params` 로는 잡히지 않는 형태다.** 그 검사는 *대장의
+    값이 소스에 복제되었는가*를 재므로 **대장에 없는 값은 대조할 상대가
+    없다** — 문턱(|값| ≥ 1,000)을 낮춰도 잡히지 않는다. 설비단가 쪽 래칫이
+    이 자리를 보지 못한 것도 접두사가 `capex.` 였기 때문이다.
+
+    ⚠ **이 래칫도 그 상태 자체는 못 잡는다** — 대장에 없는 값은 대장을 읽는
+    검사에 보이지 않는다. 이것이 붙드는 것은 *올린 뒤에 다시 빠지는 것*과
+    *새 요금 항목이 축 없이 들어오는 것*이다.
+    """
+    _assert_prefix_is_swept_or_says_why_not(
+        prefix="tariff.",
+        what="요금 단가",
+        exemptions=_TARIFF_KEYS_OUTSIDE_THE_SWEEP,
+        exemption_name="_TARIFF_KEYS_OUTSIDE_THE_SWEEP",
     )

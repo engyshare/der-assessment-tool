@@ -177,11 +177,6 @@ ESS_EOL_SOH_PCT = 80.0
 ESS_CYCLES_PER_YEAR = 365.0
 ESS_FIXED_OM_WON_PER_YEAR = 100_000
 
-#: 첨두 기본요금 단가. **요금표 값이며 대장으로 옮겨야 한다** — `Q-6`(고압 단일
-#: 계약 평균단가) 회신 뒤 `tariff.*` 항목에서 읽는 것이 맞다. 지금 여기 있는
-#: 것은 부채이며 리포트가 출처를 「소스 상수」로 표시해 그 사실을 드러낸다.
-DEMAND_CHARGE_WON_PER_KW_MONTH = 8_320.0
-
 
 def _resolve(
     level: str | object,
@@ -414,6 +409,16 @@ def run_single_case_e2e(
     pv_inverter_share = _resolve(
         case_values.get("pv_inverter_share", "base"), "pv_inverter_share", level_map
     )
+    # ★ **첨두 기본요금 단가** (`tariff.hv_single_contract.demand_charge` ·
+    # `Q-6` · R43). 종전에는 `DEMAND_CHARGE_WON_PER_KW_MONTH = 8_320.0` 모듈
+    # 상수였고 **대장에도 축에도 없었다** — 첨두 절감 편익(전체 편익의 21%)을
+    # 혼자 정하는 단가인데 붙임 1 의 어느 행도 그 신뢰도·출처를 말하지 못했다
+    # (문의사항 나-8 · `ledger_levels.py::_LEDGER_VARS` 의 그 줄에 경위가 있다).
+    # 상수를 **지웠다** — 남기면 이 축이 도는 동안에도 러너가 기준값을 계속
+    # 쓰고 변동폭이 0원으로 나온다(인버터 몫에서 적어 둔 그 함정이다).
+    demand_charge = _resolve(
+        case_values.get("demand_charge", "base"), "demand_charge", level_map
+    )
 
     # 1. Resources
     # ★ **형상이 오면 이용률 대신 시계열을 준다** (둘 다 주면 자원이 거부한다).
@@ -546,7 +551,7 @@ def run_single_case_e2e(
     peak_reduction_kw = ess.reducible_peak_kw(year=1)
     peak = PeakShaving(
         monthly_peak_reduction_kw=[peak_reduction_kw] * MONTHS_PER_YEAR,
-        demand_charge_won_per_kw_month=DEMAND_CHARGE_WON_PER_KW_MONTH,
+        demand_charge_won_per_kw_month=demand_charge,
     )
 
     # ★ **CBA 에 닿기 전에 거부한다.** 계산한 뒤에 막으면 「예외는 나지만 이미
