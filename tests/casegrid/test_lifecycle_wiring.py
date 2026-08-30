@@ -287,6 +287,25 @@ def test_salvage_counts_exactly_the_acquisitions_that_were_paid_for(
         )
 
 
+def test_zero_unit_cost_components_do_not_produce_zero_won_replacements() -> None:
+    """단가가 0인 부품은 교체 스케줄에 0원 재취득 연도를 남기지 않는다.
+
+    HeatPump에는 있던 가드가 PV와 ESS에는 빠져 있어 단가가 0이어도 미래 교체 연도에
+    0원 행을 내고 있었고, 이로 인해 교체가 없는데도 프로포마에 교체 기록이 표시되었다.
+    """
+    pv_res = _pv(inverter_unit_capex_won_per_kw=0.0)
+    pv_schedule = pv_res.replacement_schedule(horizon=_HORIZON)
+    assert 13 not in pv_schedule, (
+        f"단가 0인 PV 인버터가 13년차에 재취득 일정을 냈습니다: {pv_schedule.get(13)}"
+    )
+
+    ess_res = _ess(replacement_unit_won_per_kwh=0.0)
+    ess_schedule = ess_res.replacement_schedule(horizon=_HORIZON)
+    assert 16 not in ess_schedule, (
+        f"단가 0인 ESS 배터리가 16년차에 재취득 일정을 냈습니다: {ess_schedule.get(16)}"
+    )
+
+
 # ── ⓓ 계수를 받고도 곱하지 않는 자리 (래칫) ──────────────────────────
 
 #: 물가 계수를 **받고도 교체비에 곱하지 않는** 자원의 목록 — 실측 부채다.

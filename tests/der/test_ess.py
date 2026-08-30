@@ -341,7 +341,10 @@ def test_rc_ess_p4_second_life_battery_starts_at_soh_80() -> None:
         가용    = 10 × 0.8 × 0.8 = **6.4 kWh** (1년차 = 초기 SOH 적용)
         EOL     = 500/365 = 1.37년 → 올림 **2년** → 교체 3년차
     """
-    ess = _p1_ess(second_life=True, eol_soh_pct=60.0, cycle_life=500, calendar_life=10)
+    ess = _p1_ess(
+        second_life=True, eol_soh_pct=60.0, cycle_life=500, calendar_life=10,
+        replacement_unit_won_per_kwh=400_000.0,
+    )
 
     assert ess.initial_soh == pytest.approx(0.80, rel=1e-9)
     assert ess.state_of_health(year=0) == pytest.approx(0.80, rel=1e-9)

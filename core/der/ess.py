@@ -562,6 +562,12 @@ class ESS(DER):
 
         **`salvage_value()` 가 같은 사전을 읽으므로 잔존가치도 함께 움직인다** —
         그래야 「명목으로 산 것을 실질로 되판다」가 되지 않는다.
+
+        ⚠ **단가가 0인 부품은 재취득하지 않는다.** `HeatPump` 와 같이 `unit_cost > 0.0`
+        가드를 적용해 0원 교체행을 만들지 않는다. 0원 행을 프로포마에 내면 단가가 0일 뿐인데도
+        「교체가 있었다」로 표시되는 결함이 되기 때문이다. 종전에는 PCS 갈래만 우연히 그 조건
+        (`initial is None and unit_cost <= 0.0`)에 걸러졌고 배터리 갈래는 단가 0이어도
+        `{16: 0원}` 교체행을 내었다 (실측 결과는 3절 기록 참고).
         """
         if self.retires_at_end_of_life():
             # 다시 사지 않으므로 취득분은 **최초 본체 하나**다. PCS 를 여기 두면
@@ -576,15 +582,18 @@ class ESS(DER):
             # PCS — 최초 취득분을 두지 않는다(위 ⚠ 참조).
             (self._pcs_lifetime, self._pcs_cost, None),
         ):
-            if life is None or (initial is None and unit_cost <= 0.0):
+            if life is None:
                 continue
             acquired: dict[int, float] = {} if initial is None else {1: initial}
-            year = life + 1
-            while year <= horizon:
-                acquired[year] = float(
-                    to_won(unit_cost * self.replacement_escalation_factor(year=year))
-                )
-                year += life
+            if unit_cost > 0.0:
+                year = life + 1
+                while year <= horizon:
+                    acquired[year] = float(
+                        to_won(unit_cost * self.replacement_escalation_factor(year=year))
+                    )
+                    year += life
+            if not acquired:
+                continue
             parts.append((life, acquired))
         return tuple(parts)
 

@@ -573,12 +573,11 @@ class PV(DER):
         `_acquisitions()` 가 `retire` 에서 1년차 본체 하나만 내고 그것은 아래에서
         걸러지므로 이 함수는 저절로 빈다.
 
-        ⚠ **단가가 0인 부품도 행을 낸다.** `HeatPump._acquisitions()` 의
-        `unit_cost > 0.0` 가드를 `PV` 로 옮기지 **않았다** — 파생 이전의 이 함수에도
-        그 가드가 없어 단가 0 은 이미 `{13: 0원}` 을 내고 있었고(실측), 지금
-        넣으면 파생이 아니라 **출력을 바꾸는 변경**이 된다. 0원 교체행이 프로포마에
-        「교체가 있었다」로 읽히는 어긋남은 크기와 함께
-        `.orch/R44/result_13.md` 에 올렸다.
+        ⚠ **단가가 0인 부품은 재취득하지 않는다.** `HeatPump._acquisitions()` 에
+        있던 `unit_cost > 0.0` 가드를 이식해, 이제 단가 0인 부품은 미래 교체 연도에 0원 행을
+        내지 않고 건너뛴다. 종전에는 이 가드가 없어 단가 0이어도 `{13: 0원}`(인버터 기준)을 내어
+        프로포마에 「교체가 있었다」로 읽혔으며, 그 어긋남의 크기와 변경 전 동작 기록은
+        `.orch/R44/result_13.md` 에 남겼다.
 
         `horizon` 검증은 **여기가 진다** — `_acquisitions()` 에는 그 검증이 없고
         `salvage_value()` 는 그것을 검증 없이 부른다(`HeatPump` 와 같은 배치).
@@ -659,11 +658,16 @@ class PV(DER):
             (self.inverter_lifetime, self.inverter_unit_capex_won_per_kw, None),
         ):
             acquired: dict[int, float] = {} if initial is None else {1: initial}
-            year = life + 1
-            while year <= horizon:
-                cost = self.capacity_kw * unit_cost * self.replacement_escalation_factor(year=year)
-                acquired[year] = float(to_won(cost))
-                year += life
+            if unit_cost > 0.0:
+                year = life + 1
+                while year <= horizon:
+                    cost = self.capacity_kw * unit_cost * self.replacement_escalation_factor(
+                        year=year
+                    )
+                    acquired[year] = float(to_won(cost))
+                    year += life
+            if not acquired:
+                continue
             parts.append((life, acquired))
         return tuple(parts)
 

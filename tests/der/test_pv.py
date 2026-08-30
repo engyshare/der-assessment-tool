@@ -75,7 +75,7 @@ class TestPVContract(DERContractTests):
     """`DERContractTests` 를 **상속만으로** 통과시킨다 — 손으로 쓰면 빠진다(§13.0.3)."""
 
     def make(self) -> DER:
-        return make_pv_1kw()
+        return make_pv_1kw(unit_capex_won_per_kw=1_500_000.0)
 
 
 # ── 물리 (RC-PV-P1~P3) ───────────────────────────────────────────────
