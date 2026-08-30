@@ -14,10 +14,10 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from enum import StrEnum
 from types import MappingProxyType
-from typing import ClassVar
+from typing import ClassVar, NoReturn
 
 from core.contracts.der import DER, EOL_REPLACE, DispatchContext, DispatchResult
 from core.contracts.units import (
@@ -50,6 +50,21 @@ class ESSOperatingMode(StrEnum):
     PEAK_SHAVING = "피크 저감"
     BACKUP_RESERVE = "백업 예비 확보"
     HYBRID = "혼합(가중치)"
+
+
+class ESSChargeSource(StrEnum):
+    """충전원 (`docs/decisions-2026-08-31-R48.md` §1). **운전 방법과 직교하는
+    별도 축이다** — `_MODE_WINDOWS` 는 언제 충전하는지만 정하고 어디서
+    충전하는지는 정하지 않았고, 그 빈자리가 심야 계통충전을 「태양광 연계」로
+    착각하게 만들었다(같은 문서 「⚠⚠ 그런데」절).
+
+    `core.contracts.der.DER` 에 올리지 않는다 — 충전원은 저장장치에만 있는
+    개념이라 `DER` 계약에 올리면 `PV`·`Load`·`HeatPump` 전부가 뜻 없는 물음에
+    답해야 한다(판정 A-1).
+    """
+
+    PV_SURPLUS = "태양광 잉여"
+    GRID = "계통"
 
 
 #: 운전 방법별 (충전 시간대, 방전 시간대) — 하루 중 시각(0~23).
@@ -87,6 +102,10 @@ class ESS(DER):
     #: FR-105-AC1 이 ESS 에 대해 열거한 운전 방법 전체
     OPERATING_MODES: ClassVar[tuple[ESSOperatingMode, ...]] = tuple(ESSOperatingMode)
 
+    #: 이 자원이 받는 충전원 선언 목록 (판정 A-2) — `OPERATING_MODES` 와 같은
+    #: 관례다. 목록 밖 값은 `_coerce_charge_source()` 가 거부한다.
+    CHARGE_SOURCES: ClassVar[tuple[ESSChargeSource, ...]] = tuple(ESSChargeSource)
+
     #: 사용후배터리의 초기 SOH (FR-102-AC1.ESS 「신품/사용후배터리」)
     SECOND_LIFE_INITIAL_SOH: ClassVar[float] = 0.80
 
@@ -106,6 +125,15 @@ class ESS(DER):
         cycles_per_year: float = 365.0,
         operating_mode: ESSOperatingMode = ESSOperatingMode.TOU_ARBITRAGE,
         mode_weights: dict[ESSOperatingMode, float] | None = None,
+        # **기본값이 `GRID` 인 이유**: 종전 동작이 그것이고, 기본값을 바꾸면
+        # 이 인자를 모르는 기존 호출자 전부의 수가 조용히 움직인다. 이 사업의
+        # 값은 러너가 명시로 준다(`docs/decisions-2026-08-31-R48.md` §1 ·
+        # `e2e_runner.py::ESS_CHARGE_SOURCE_DEFAULT`).
+        charge_source: ESSChargeSource | str = ESSChargeSource.GRID,
+        #: 시각별(0~23) PV 잉여 kWh — `charge_source=PV_SURPLUS` 일 때만 쓴다
+        #: (판정 A-3). `ESS` 는 형제 구획을 import 할 수 없으므로(`NFR-208-AC2`)
+        #: PV 를 참조하지 않고 시계열로 받는다.
+        pv_surplus_profile_kwh: Sequence[float] | None = None,
         backup_reserve_pct: float = 0.0,
         dt: int = SECONDS_PER_HOUR,
         capex_unit_won_per_kwh: float = 0.0,
@@ -132,10 +160,8 @@ class ESS(DER):
             raise ValidationError(
                 field="ess.rte",
                 reason=f"{name}: RTE(왕복효율)는 0 초과 100 이하 %입니다 (받은 값 {rte_pct})",
-                action=(
-                    "RTE 를 0 초과 100 이하의 %값으로 지정하십시오 — 0.9 를 그대로 "
-                    "넘기고 있지 않은지 확인하십시오 (§7.5 비율)"
-                ),
+                action="RTE 를 0 초과 100 이하의 %값으로 지정하십시오 — 0.9 를 그대로 넘기고 "
+                "있지 않은지 확인하십시오 (§7.5 비율)",
                 rule="DV-3",
             )
         _in_range(
@@ -149,20 +175,14 @@ class ESS(DER):
         if soc_min_pct >= soc_max_pct:
             raise ValidationError(
                 field="ess.soc_min",
-                reason=(
-                    f"{name}: SOC 하한({soc_min_pct}%)이 상한({soc_max_pct}%)보다 "
-                    "크거나 같습니다"
-                ),
+                reason=f"{name}: SOC 하한({soc_min_pct}%)이 상한({soc_max_pct}%) 이상입니다",
                 action="SOC 하한을 상한보다 작은 값으로 고치십시오 — 가용량이 양수가 됩니다",
                 rule="DV-2",
             )
         if not 0.0 <= backup_reserve_pct < 100.0:
             raise ValidationError(
                 field="ess.backup_reserve",
-                reason=(
-                    f"{name}: 백업 예비율은 0 이상 100 미만 %입니다 "
-                    f"(받은 값 {backup_reserve_pct})"
-                ),
+                reason=f"{name}: 백업 예비율은 0~100 미만 %입니다 (받은 값 {backup_reserve_pct})",
                 action="백업 예비율(backup_reserve_pct)을 0 이상 100 미만의 값으로 지정하십시오",
             )
         if pcs_lifetime is not None:
@@ -186,17 +206,15 @@ class ESS(DER):
             # 교체비가 매년 잡히는 형태라 "보수적으로 나왔나 보다"로 읽힌다.
             raise ValidationError(
                 field="ess.eol_soh",
-                reason=(
-                    f"{name}: EOL 잔존율({eol_soh_pct}%)은 초기 SOH"
-                    f"({self.initial_soh * 100:.0f}%)보다 낮아야 합니다"
-                ),
-                action=(
-                    "사용후배터리는 이미 80%에서 시작하므로 EOL 을 그보다 낮게(예: 60%) "
-                    "지정하십시오"
-                ),
+                reason=f"{name}: EOL 잔존율({eol_soh_pct}%)은 초기 SOH"
+                f"({self.initial_soh * 100:.0f}%)보다 낮아야 합니다",
+                action="사용후배터리는 이미 80%에서 시작하므로 EOL 을 그보다 낮게(예: 60%) "
+                "지정하십시오",
             )
 
         self.mode_weights = self._normalize_weights(operating_mode, mode_weights, name=name)
+        self.charge_source = self._coerce_charge_source(charge_source, name=name)
+        self.pv_surplus_profile_kwh = self._check_pv_surplus(pv_surplus_profile_kwh, dt, name)
 
         self._capex_unit = float(capex_unit_won_per_kwh)
         self._capex_extra = float(capex_extra_won)
@@ -234,47 +252,107 @@ class ESS(DER):
         """운전 방법 가중치를 항상 「합 1」로 정규화한다. 단일 모드도
         `{mode: 1.0}` 으로 만들면 이후 계산에 분기가 없다 — 분기가 남으면 혼합
         모드에만 걸리는 규칙이 생기고 단일 모드에서 빠져도 보이지 않는다."""
+        def reject(reason: str, action: str) -> NoReturn:
+            raise ValidationError(field="ess.mode_weights", reason=reason, action=action)
+
         if mode is not ESSOperatingMode.HYBRID:
             if weights:
-                raise ValidationError(
-                    field="ess.mode_weights",
-                    reason=(
-                        f"{name}: 가중치는 {ESSOperatingMode.HYBRID.value} 모드에서만 "
-                        f"지정합니다 (현재 {mode.value})"
-                    ),
-                    action=(
-                        "mode_weights 인자를 빼거나 운전 방법을 "
-                        f"{ESSOperatingMode.HYBRID.value} 로 바꾸십시오"
-                    ),
+                reject(
+                    f"{name}: 가중치는 {ESSOperatingMode.HYBRID.value} 모드에서만 "
+                    f"지정합니다 (현재 {mode.value})",
+                    "mode_weights 인자를 빼거나 운전 방법을 "
+                    f"{ESSOperatingMode.HYBRID.value} 로 바꾸십시오",
                 )
             return {mode: 1.0}
 
         if not weights:
-            raise ValidationError(
-                field="ess.mode_weights",
-                reason=f"{name}: {ESSOperatingMode.HYBRID.value} 모드는 가중치가 필요합니다",
-                action=(
-                    "무엇을 어떤 비율로 섞는지 mode_weights 로 지정하십시오 — 없으면 "
-                    "예비 확보량도 운전창도 판정할 수 없습니다"
-                ),
+            reject(
+                f"{name}: {ESSOperatingMode.HYBRID.value} 모드는 가중치가 필요합니다",
+                "무엇을 어떤 비율로 섞는지 mode_weights 로 지정하십시오 — 없으면 예비 "
+                "확보량도 운전창도 판정할 수 없습니다",
             )
         if any(w < 0 for w in weights.values()):
-            raise ValidationError(
-                field="ess.mode_weights",
-                reason=f"{name}: 운전 방법 가중치는 음수가 될 수 없습니다",
-                action="mode_weights 의 모든 값을 0 이상으로 지정하십시오",
+            reject(
+                f"{name}: 운전 방법 가중치는 음수가 될 수 없습니다",
+                "mode_weights 의 모든 값을 0 이상으로 지정하십시오",
             )
         total = math.fsum(weights.values())
         if abs(total - 1.0) > 1e-9:
-            raise ValidationError(
-                field="ess.mode_weights",
-                reason=f"{name}: 운전 방법 가중치의 합이 1이 아닙니다 (합 {total})",
-                action=(
-                    "mode_weights 의 합이 1이 되도록 지정하십시오 — 합이 1이 아니면 "
-                    "가용량이 비율만큼 늘거나 줄어 편익이 왜곡됩니다"
-                ),
+            reject(
+                f"{name}: 운전 방법 가중치의 합이 1이 아닙니다 (합 {total})",
+                "mode_weights 의 합이 1이 되도록 지정하십시오 — 합이 1이 아니면 가용량이 "
+                "비율만큼 늘거나 줄어 편익이 왜곡됩니다",
             )
         return dict(weights)
+
+    # ── 충전원 (판정 A-1~A-3) ───────────────────────────────────────
+
+    @classmethod
+    def _coerce_charge_source(cls, source: ESSChargeSource | str, *, name: str) -> ESSChargeSource:
+        """문자열을 충전원 열거값으로 승격하고 목록 소속을 검사한다 (판정 A-2).
+
+        `PV._coerce_mode()` 와 같은 모양이다 — 케이스 그리드가 문자열로 값을
+        건넬 수 있어야 한다(`FR-105-AC5` 가 운전 방법에 대해 이미 세운 관례).
+
+        ⚠ **규칙 ID 를 비운다.** `DER._check_operating_mode` 의 `DV-14` 는
+        「운전 방법이 선언 목록에 속함」이고, 충전원은 그 규칙이 아니다 — 계약을
+        건드리지 않고 신설한 축이라 `DV-14` 를 재사용하면 그 규칙이 실제로
+        지키는 것과 어긋난다.
+        """
+        try:
+            return ESSChargeSource(source)
+        except ValueError as e:
+            allowed = ", ".join(s.value for s in cls.CHARGE_SOURCES)
+            reason = f"{name}: 선언되지 않은 충전원입니다: {source!r}"
+            action = f"ESS 가 지원하는 충전원 중 하나를 지정하십시오 — [{allowed}]"
+            raise ValidationError(field="ess.charge_source", reason=reason, action=action) from e
+
+    def _reject_pv_surplus_profile(self, reason: str, action: str) -> NoReturn:
+        """`_check_pv_surplus()` 전용 — 필드 하나에 걸린 거부 셋을
+        한 곳으로 모은다(코드 스프롤 방지, NFR-206)."""
+        raise ValidationError(field="ess.pv_surplus_profile_kwh", reason=reason, action=action)
+
+    def _check_pv_surplus(
+        self, profile: Sequence[float] | None, dt: int, name: str) -> tuple[float, ...] | None:
+        """`charge_source` 와 `pv_surplus_profile_kwh` 의 조합·제약을 검사한다
+        (판정 §1 · A-3).
+
+        **가능한 한 이 생성자에서 판정한다** (결정성 · `RC-ESS` 관례). 1년차가
+        열화가 가장 적어 가용량이 최대이므로(`usable_capacity_kwh` 는 연차에
+        단조 비증가) 1년차 충전량이 잉여를 넘지 않으면 이후 모든 연차도 넘지
+        않는다 — 그래서 `dispatch()` 에 남길 검사가 없다.
+        """
+        if self.charge_source is ESSChargeSource.GRID:
+            if profile is not None:
+                self._reject_pv_surplus_profile(
+                    f"{name}: 충전원이 계통인데 PV 잉여 시계열을 받았습니다",
+                    "charge_source 를 PV_SURPLUS 로 바꾸거나 인자를 빼십시오",
+                )
+            return None
+
+        # charge_source == PV_SURPLUS
+        if profile is None or not any(v > 0.0 for v in profile):
+            self._reject_pv_surplus_profile(
+                f"{name}: 충전원이 태양광 잉여인데 잉여 시계열이 없거나 전부 0입니다",
+                "pv_surplus_profile_kwh 에 시각별(0~23) PV 잉여 kWh 를 지정하십시오",
+            )
+        if len(profile) != HOURS_PER_DAY:
+            self._reject_pv_surplus_profile(
+                f"{name}: PV 잉여 시계열은 {HOURS_PER_DAY}행이어야 합니다(받은 값 "
+                f"{len(profile)}행)",
+                f"pv_surplus_profile_kwh 를 {HOURS_PER_DAY}행 시계열로 맞추십시오",
+            )
+        daily_kwh = self.usable_capacity_kwh(year=1) * self.cycles_per_year / DAYS_PER_YEAR
+        in_step_kwh = daily_kwh / self.rte / (len(self.charge_hours) * (SECONDS_PER_HOUR // dt))
+        for hour in self.charge_hours:
+            if in_step_kwh > profile[hour] + ENERGY_TOLERANCE_KWH:
+                self._reject_pv_surplus_profile(
+                    f"{name}: {hour}시 충전량({in_step_kwh:.6g})이 PV잉여"
+                    f"({profile[hour]:.6g})를 넘습니다",
+                    "충전량을 줄이거나 그 시각의 PV 잉여를 키우십시오 — 잘라내면 편익이 "
+                    "사라집니다",
+                )
+        return tuple(float(v) for v in profile)
 
     @property
     def dominant_mode(self) -> ESSOperatingMode:
@@ -335,15 +413,11 @@ class ESS(DER):
         if rate >= 1.0:
             raise ValidationError(
                 field="ess.degradation_rate",
-                reason=(
-                    f"{name}: 연간 열화율이 {rate:.3f} 로 100%를 넘습니다 — 사이클수명"
-                    f"({self.cycle_life}회)·달력수명({self.calendar_life}년)·연간 사이클"
-                    f"({self.cycles_per_year}회) 조합에서 계산됨"
-                ),
-                action=(
-                    "사이클수명·달력수명·연간 사이클 수 중 하나 이상을 조정해 연간 "
-                    "열화율이 100% 미만이 되도록 하십시오"
-                ),
+                reason=f"{name}: 연간 열화율이 {rate:.3f} 로 100%를 넘습니다 — 사이클수명"
+                f"({self.cycle_life}회)·달력수명({self.calendar_life}년)·연간 사이클"
+                f"({self.cycles_per_year}회) 조합에서 계산됨",
+                action="사이클수명·달력수명·연간 사이클 수 중 하나 이상을 조정해 연간 열화율이 "
+                "100% 미만이 되도록 하십시오",
             )
         return rate
 
@@ -407,11 +481,31 @@ class ESS(DER):
         """연 손실 = 충전 − 방전. `충전 = 방전 + 손실` 이 항등식이다."""
         return self.annual_charge_kwh(year=year) - self.annual_discharge_kwh(year=year)
 
-    def reducible_peak_kw(self, *, year: int = 1) -> float:
-        """피크 저감 가능 출력 (kW) = 가용량 / 방전창 시간. **정격출력이 상한**
-        이다 — 없으면 없는 출력으로 기본요금 편익이 난다 (`RC-ESS-B2`)."""
+    def reducible_peak_kw(
+        self, *, year: int = 1, site_load_kw: Sequence[float] | None = None) -> float:
+        """피크 저감 가능 출력 (kW) — **자가 부하와 겹치는 방전분에서만** 난다
+        (판정 §4). `site_load_kw` 는 시각별(0~23) 사업장 부하다.
+
+        `site_load_kw` 가 없으면 **0** 이다 — 이 자원 혼자서는 「무엇의 피크를
+        낮췄는가」에 답할 수 없다. 기본요금은 사업장 **최대부하**로 매겨지므로,
+        그 최대부하 시각이 방전창 밖이면 창 안에서 아무리 방전해도 그 피크는
+        내려가지 않는다(보수적인 쪽, 모듈 독스트링 「스스로 지키는 것 셋」③).
+
+        ⚠ **한계** — 시간 해상도가 하루 24스텝 대표일이고 월별 피크를 모형화
+        하지 않는다. 실제 월별 최대부하 시각이 대표일과 다르면 이 값은 그 달의
+        기본요금 절감을 과소·과대 계상할 수 있다.
+        """
+        if site_load_kw is None:
+            return 0.0
+        peak_hour = max(range(len(site_load_kw)), key=lambda h: site_load_kw[h])
+        if peak_hour not in self.discharge_hours:
+            return 0.0
         window_hours = len(self.discharge_hours)
-        return min(self.power_kw, self.usable_capacity_kwh(year=year) / window_hours)
+        return min(
+            self.power_kw,
+            self.usable_capacity_kwh(year=year) / window_hours,
+            site_load_kw[peak_hour],
+        )
 
     # ── 편익 (`RC-ESS-B1` · `B2`) ──────────────────────────────────
 
@@ -431,22 +525,24 @@ class ESS(DER):
         )
 
     def peak_shaving_benefit(
-        self,
-        *,
-        demand_charge_won_per_kw: float,
-        reduced_kw: float | None = None,
-        months: int = MONTHS_PER_YEAR,
-        year: int = 1,
+        self, *, demand_charge_won_per_kw: float, reduced_kw: float | None = None,
+        months: int = MONTHS_PER_YEAR, year: int = 1, site_load_kw: Sequence[float] | None = None,
     ) -> Money:
         """기본요금(피크) 절감 (원/년) — `RC-ESS-B2` / FR-401-AC2.PeakShaving.
 
-        `저감 kW × 기본요금 단가 × 12개월`
+        `저감 kW × 기본요금 단가 × 12개월`. `reduced_kw` 를 주지 않으면
+        `reducible_peak_kw(site_load_kw=site_load_kw)` 로 산정한다 — `site_load_kw`
+        없이는 0 이다(판정 §4, `reducible_peak_kw` 독스트링 참조).
         """
-        kw = self.reducible_peak_kw(year=year) if reduced_kw is None else reduced_kw
+        kw = (
+            self.reducible_peak_kw(year=year, site_load_kw=site_load_kw)
+            if reduced_kw is None
+            else reduced_kw
+        )
         if kw > self.power_kw + _KW_TOLERANCE:
             raise ValueError(
-                f"{self.name}: 저감 지시 {kw} kW 가 정격출력 {self.power_kw} kW 를 "
-                "넘습니다. 없는 출력으로 기본요금 편익이 계상됩니다"
+                f"{self.name}: 저감 {kw}kW 가 정격출력 {self.power_kw}kW 를 넘습니다 — 없는 "
+                "출력으로 편익이 계상됩니다"
             )
         return to_won(kw * demand_charge_won_per_kw * months)
 
@@ -666,16 +762,25 @@ class ESS(DER):
     # ── 디스패치 (FR-301) ──────────────────────────────────────────
 
     def value_streams(self) -> tuple[str, ...]:
-        """ESS 가 만드는 편익 (`FR-401-AC2.<키>`) — **운전 방법이 정한다.**
+        """ESS 가 만드는 편익 (`FR-401-AC2.<키>`) — **운전 방법이 정한다**
+        (판정 §4 산정식 표).
 
         백업 예비 확보의 정전 회피 편익(`Resilience`)은 Phase 3이므로 선언하지
         않는다 — 값 0인 행은 「편익 없음」과 「미구현」을 구분하지 못한다.
         혼합 모드는 가중치 0보다 큰 **모든** 모드의 편익을 갖는다. 대표 모드만
         보면 30% 섞인 피크 저감 편익이 통째로 사라진다.
+
+        ⚠⚠ **`TOU_ARBITRAGE` 는 지금 아무 편익도 내지 않는다 — 임시다.** 종전에는
+        이 모드가 `SelfConsumption` 을 냈는데, **계통에 파는 운전인데 자가소비
+        편익이 붙는** 오매핑이었다(판정 §4 ⚠⚠). 그 편익(충·방전 요금차,
+        `tou_arbitrage_benefit()` 이 이미 그 산식으로 구현돼 있다)에 해당하는
+        `FR-401-AC2.<키>` 가 저장소에 아직 없어 **WP-C 가 편익 항목을 세우면
+        그때 매핑한다.** 이 자리를 「TOU 차익거래는 편익이 없다」로 읽지 마라 —
+        미구현이지 무편익이 아니다.
         """
         active = {m for m, w in self.mode_weights.items() if w > 0.0}
         streams: list[str] = []
-        if active & {ESSOperatingMode.SELF_CONSUMPTION, ESSOperatingMode.TOU_ARBITRAGE}:
+        if ESSOperatingMode.SELF_CONSUMPTION in active:
             streams.append("SelfConsumption")
         if ESSOperatingMode.PEAK_SHAVING in active:
             streams.append("PeakShaving")
@@ -738,15 +843,11 @@ class ESS(DER):
         if kw > self.power_kw + _KW_TOLERANCE:
             raise ValidationError(
                 field="ess.power_kw",
-                reason=(
-                    f"{self.name}: {label} 계획 {kw:.6g} kW 가 정격출력 "
-                    f"{self.power_kw:.6g} kW 를 넘습니다"
-                ),
-                action=(
-                    "정격출력(power_kw)을 키우거나 운전창(운전 방법)을 조정해 계획이 "
-                    "정격출력 이내가 되도록 하십시오 — 자동으로 잘라내면 그만큼의 편익이 "
-                    "조용히 사라집니다"
-                ),
+                reason=f"{self.name}: {label} 계획 {kw:.6g} kW 가 정격출력 "
+                f"{self.power_kw:.6g} kW 를 넘습니다",
+                action="정격출력(power_kw)을 키우거나 운전창(운전 방법)을 조정해 계획이 "
+                "정격출력 이내가 되도록 하십시오 — 자동으로 잘라내면 그만큼의 편익이 "
+                "조용히 사라집니다",
             )
 
     def _check_grid_limit(
@@ -760,14 +861,10 @@ class ESS(DER):
             if kw > ctx.grid_limit_kw[i] + _KW_TOLERANCE:
                 raise ValidationError(
                     field="ess.power_kw",
-                    reason=(
-                        f"{self.name}: {i}번 스텝의 계통 연계 한도 초과 — "
-                        f"계획 {kw:.6g} kW / 한도 {ctx.grid_limit_kw[i]:.6g} kW"
-                    ),
-                    action=(
-                        "정격출력(power_kw)이나 용량(capacity_kwh)을 낮추거나, 시나리오의 "
-                        "계통 연계 한도(grid_limit_kw)를 이 자원의 계획에 맞게 올리십시오"
-                    ),
+                    reason=f"{self.name}: {i}번 스텝의 계통 연계 한도 초과 — "
+                    f"계획 {kw:.6g} kW / 한도 {ctx.grid_limit_kw[i]:.6g} kW",
+                    action="정격출력(power_kw)이나 용량(capacity_kwh)을 낮추거나, 시나리오의 "
+                    "계통 연계 한도(grid_limit_kw)를 이 자원의 계획에 맞게 올리십시오",
                 )
 
 

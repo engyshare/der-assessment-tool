@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from decimal import Decimal
+from typing import cast
 
 from core.casegrid.attribution import attribute_benefits
 from core.casegrid.incentive_cases import (
@@ -52,7 +53,7 @@ from core.contracts.der import DER, DispatchContext, DispatchResult
 from core.contracts.schemas import CashFlowRow
 from core.contracts.units import Money, Year
 from core.contracts.valuestream import ValueStream
-from core.der.ess import ESS, ESSOperatingMode
+from core.der.ess import ESS, ESSChargeSource, ESSOperatingMode
 from core.der.load import Load
 from core.der.pv import PV, OperatingMode
 from core.engine.rule_based import RuleBasedEngine
@@ -177,6 +178,15 @@ ESS_EOL_SOH_PCT = 80.0
 ESS_CYCLES_PER_YEAR = 365.0
 ESS_FIXED_OM_WON_PER_YEAR = 100_000
 
+#: 이 사업의 ESS 운전 방법·충전원 기본값 (판정 근거: `docs/decisions-
+#: 2026-08-31-R48.md` §1·§4 — 「이 사업의 ESS 는 태양광 연계다. PV 잉여로
+#: 충전하고 저녁에 방전한다」·산정식 표 1행). 케이스 그리드나 호출자가 값을
+#: 주지 않을 때만 쓰인다 — `run_single_case_e2e()` 의 `ess_operating_mode`·
+#: `ess_charge_source` 인자, `case_values["ess_operating_mode"/"ess_charge_source"]`
+#: 를 이 순서로 먼저 본다.
+ESS_OPERATING_MODE_DEFAULT = ESSOperatingMode.SELF_CONSUMPTION
+ESS_CHARGE_SOURCE_DEFAULT = ESSChargeSource.PV_SURPLUS
+
 
 def _resolve(
     level: str | object,
@@ -243,6 +253,53 @@ def _household_load_if_total_given(
     )
 
 
+def _resolve_ess_dispatch_inputs(
+    ess_operating_mode: ESSOperatingMode | str | None,
+    ess_charge_source: ESSChargeSource | str | None,
+    case_values: dict[str, object],
+    pv: PV,
+    ctx: DispatchContext,
+) -> tuple[ESSOperatingMode | str, ESSChargeSource | str, list[float]]:
+    """운전 방법·충전원을 고르고 PV 잉여 시계열을 만든다 (판정 §1·§3·A-3·A-6).
+
+    우선순위: 호출 인자 → `case_values`(문자열로 와도 받는다 — `FR-105-AC5` 가
+    이미 그 관례다) → 모듈 상수(`ESS_OPERATING_MODE_DEFAULT`·
+    `ESS_CHARGE_SOURCE_DEFAULT`, 근거는 그 상수 옆 주석).
+
+    ⚠ `ESS(...)` 자신이 문자열을 승격·검증한다(`ESS._coerce_charge_source` ·
+    `DER._check_operating_mode`) — 여기서 미리 승격하지 않는다, 잘못된 값의
+    오류 메시지는 그 자원이 내는 것이 맞다.
+
+    **PV 잉여 시계열은 PV 를 먼저 디스패치해** 시각별 전기 출력을 얻고, 그
+    발전량 중 자가소비로 가는 몫을 뺀 잉여만 돌려준다. ⚠ **모듈 상수를 읽어
+    대신하지 않는다** — 읽으면 이 케이스의 실제 PV 용량·형상이 아니라
+    기준값을 쓰게 되어 `pv_capacity_kw` 축이 도는 동안에도 잉여가 그대로다
+    (`pv_inverter_share`·`demand_charge` 주석이 같은 함정을 적어 두었다).
+    """
+    # `case_values` 는 `dict[str, object]` 다(케이스 그리드가 변수 종류를 섞어
+    # 담는 자리라 값 타입을 하나로 좁힐 수 없다) — 그래서 아래 두 `cast` 는
+    # **런타임 변환이 아니라 타입 단정**이다. 실제 검증은 여전히 `ESS` 가 한다.
+    mode = cast(
+        "ESSOperatingMode | str",
+        ess_operating_mode
+        if ess_operating_mode is not None
+        else case_values.get("ess_operating_mode", ESS_OPERATING_MODE_DEFAULT),
+    )
+    source = cast(
+        "ESSChargeSource | str",
+        ess_charge_source
+        if ess_charge_source is not None
+        else case_values.get("ess_charge_source", ESS_CHARGE_SOURCE_DEFAULT),
+    )
+    pv_dispatch = pv.dispatch(ctx)
+    annual_generation_kwh = pv.annual_generation_kwh(year=1)
+    surplus_ratio = (
+        pv.surplus_kwh(year=1) / annual_generation_kwh if annual_generation_kwh > 0.0 else 0.0
+    )
+    surplus_profile_kwh = [v * surplus_ratio for v in pv_dispatch.electric]
+    return mode, source, surplus_profile_kwh
+
+
 def run_single_case_e2e(
     case_values: dict[str, object],
     *,
@@ -257,6 +314,8 @@ def run_single_case_e2e(
     tariff_engine: TariffEngine | None = None,
     scheme: IncentiveScheme | None = None,
     viewpoint: Viewpoint = "OWNER",
+    ess_operating_mode: ESSOperatingMode | str | None = None,
+    ess_charge_source: ESSChargeSource | str | None = None,
 ) -> CaseOutcome:
     """Execute the full DER → Engine → Benefit → CBA pipeline for one case.
 
@@ -276,11 +335,22 @@ def run_single_case_e2e(
     *「배타 규칙 위반 조합은 실행이 거부됨」* 이 실행 경로에서는 성립하지 않았다.
 
     `extra_value_streams` 를 둔 이유는 **배선을 검증 가능하게 만들기 위해서**다.
-    내장 편익 둘(`SurplusSale`·`PeakShaving`)은 배타 쌍이 아니므로, 인자가 없으면
-    위반 조합을 **진입점으로 넣어 볼 방법이 없고** 그러면 이 호출이 실제로
-    무언가를 막는지 아무도 확인할 수 없다 — 그것이 이 저장소가 고치러 온 형태다.
-    넘긴 편익은 검사에 함께 들어가고, 화폐가치 계산은 아직 내장 둘만 한다
-    (편익 선택 API 는 `FR-402-AC2.A` 의 「선택 시」 절반이며 아직 없다).
+    인자가 없으면 위반 조합을 **진입점으로 넣어 볼 방법이 없고** 그러면 이
+    호출이 실제로 무언가를 막는지 아무도 확인할 수 없다 — 그것이 이 저장소가
+    고치러 온 형태다. 넘긴 편익은 검사에 함께 들어가고, 화폐가치 계산은 아직
+    내장 둘만 한다(편익 선택 API 는 `FR-402-AC2.A` 의 「선택 시」 절반이며
+    아직 없다).
+
+    ⚠⚠ **진짜 배타 축은 「운전 주체」다 — 「내장 편익 둘은 배타 쌍이 아니다」가
+    아니다.** 이 자리는 종전에 `SurplusSale`·`PeakShaving` 이 배타 쌍이
+    아니라고 적고 있었고, **그 문장이 이중계상을 정당화하는 근거로 인용돼
+    왔다.** 그 진술 자체는 지금도 참일 수 있다(둘 다 **사용자 운전**의
+    편익이다) — 그러나 실제 배타 축은 **「계통 급전 편익(CP·NWAs) × 사용자
+    운전 편익(SelfConsumption·PeakShaving)」**이다. CP·NWAs 로 급전하는
+    구조에서는 방전 시점을 사업자가 정하지 못하므로 자가소비·피크저감이
+    성립하지 않는다(`docs/decisions-2026-08-31-R48.md` §2, 사용자 판정
+    2026-08-31). **그 규칙은 WP-C 가 `docs/exclusion-rules.yaml` 에 세운다** —
+    여기서는 yaml 을 고치지 않는다.
 
     ★ **분석기간 상한을 실행 경로가 지난다 (DV-5).**
     ---------------------------------------------------
@@ -336,6 +406,14 @@ def run_single_case_e2e(
     시점이 달라** 비교 표에서 조용히 어긋난다. 그 규약이 같으므로 **무지원
     기준선의 NPV 는 케이스 지표의 NPV 와 일치해야 하고**, 그 일치가 규약이
     갈렸는지를 재는 검사가 된다.
+
+    ★ **`ess_operating_mode`·`ess_charge_source` — `:470` 하드코딩을 걷어낸다**
+    (판정 §1·§3, `docs/decisions-2026-08-31-R48.md`). 종전에는 이 자리가
+    `ESSOperatingMode.PEAK_SHAVING` 을 코드에 박아 두어, 그 모드의 충전창
+    (01~06시)이 심야 계통충전을 강제했다 — 태양광 연계 ESS 의 운전이
+    아니었다. 이제 인자 → `case_values` → 모듈 상수 순으로 값을 고른다.
+    `pv_surplus_profile_kwh` 는 이 함수가 PV 를 먼저 디스패치해 만들고
+    (충전원이 `PV_SURPLUS` 일 때만) 넘긴다 — 호출자가 줄 수 있는 값이 아니다.
     """
     pv_capex = _resolve(
         case_values.get("pv_unit_cost", "base"), "pv_unit_cost", level_map
@@ -456,6 +534,16 @@ def run_single_case_e2e(
         self_consumption_ratio=PV_SELF_CONSUMPTION_RATIO,
         operating_mode=OperatingMode.FULL_EXPORT,
     )
+
+    # ★ **운전 방법·충전원·PV 잉여 시계열 — 하드코딩을 두 갈래로 노출한다**
+    # (판정 §1·§3·A-3·A-6, `docs/decisions-2026-08-31-R48.md`). 한 statement 로
+    # 묶어 부르는 이유는 계산 자체가 아니라 `PLR0915`(이 함수의 statement 상한)
+    # 다 — 이 함수는 이미 그 상한에 닿아 있었다(브리프 실측).
+    ctx = DispatchContext(steps=STEPS_PER_DAY, dt=SECONDS_PER_HOUR, year=Year(1))
+    resolved_ess_operating_mode, resolved_ess_charge_source, ess_pv_surplus_profile_kwh = (
+        _resolve_ess_dispatch_inputs(ess_operating_mode, ess_charge_source, case_values, pv, ctx)
+    )
+
     ess = ESS(
         name="e2e-ess",
         capacity_kwh=ess_capacity_kwh,
@@ -467,7 +555,22 @@ def run_single_case_e2e(
         calendar_life=ESS_CALENDAR_LIFE,
         eol_soh_pct=ESS_EOL_SOH_PCT,
         cycles_per_year=ESS_CYCLES_PER_YEAR,
-        operating_mode=ESSOperatingMode.PEAK_SHAVING,
+        # `ESS.__init__` 의 `operating_mode` 타입은 `ESSOperatingMode` 뿐이다
+        # (문자열도 실제로 받는다 — `DER._check_operating_mode` 가 검증한다).
+        # 이 `cast` 는 그 사실의 타입 단정이지 런타임 변환이 아니다.
+        operating_mode=cast(ESSOperatingMode, resolved_ess_operating_mode),
+        charge_source=resolved_ess_charge_source,
+        # PV_SURPLUS 가 아닌 충전원에 시계열을 주면 `ESS` 가 거부한다(판정
+        # A-3) — 그래서 충전원이 PV_SURPLUS 일 때만 건넨다. **문자열도 비교
+        # 가능하다** — `ESSChargeSource` 는 `StrEnum` 이라 값이 같은 평문
+        # 문자열과도 `==` 가 성립한다. 잘못된 값이면 이 비교는 그냥 거짓이
+        # 되고, 실제 거부는 `ESS` 생성자(`_coerce_charge_source`)가 한다 —
+        # 여기서 미리 변환을 시도하면 그 에러 메시지를 이 자리가 가로챈다.
+        pv_surplus_profile_kwh=(
+            ess_pv_surplus_profile_kwh
+            if resolved_ess_charge_source == ESSChargeSource.PV_SURPLUS
+            else None
+        ),
         capex_unit_won_per_kwh=ess_capex,
         fixed_om_won_per_year=ESS_FIXED_OM_WON_PER_YEAR,
         # ★★ **명목 기준을 ESS 에도 물린다 (R39-E · R38 판정 ②나).** 이 인자가
@@ -493,7 +596,6 @@ def run_single_case_e2e(
     )
 
     # 2. Dispatch
-    ctx = DispatchContext(steps=STEPS_PER_DAY, dt=SECONDS_PER_HOUR, year=Year(1))
     engine = RuleBasedEngine()
     # ★ **부하는 편익을 만들지 않는다** (`RC-LD-B0` · `Load.value_streams()` 는
     # 비어 있다). 그래서 여기 더해도 편익 갈래는 늘지 않고 **운전만** 달라진다 —

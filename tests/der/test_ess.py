@@ -13,7 +13,7 @@ import pytest
 from core.contracts.der import DER, DispatchContext
 from core.contracts.units import ENERGY_TOLERANCE_KWH, Money, to_won, won_sum
 from core.contracts.validation import ValidationError
-from core.der.ess import ESS, ESSOperatingMode
+from core.der.ess import ESS, ESSChargeSource, ESSOperatingMode
 from core.incentive.calculator import build_capex_cashflows
 from core.incentive.schemas import IncentiveScheme
 from tests.contract.test_der_contract import DERContractTests
@@ -387,22 +387,51 @@ def test_rc_ess_b1_tou_arbitrage_benefit() -> None:
 
 
 @pytest.mark.req("FR-401-AC2.PeakShaving")
-def test_rc_ess_b2_peak_shaving_benefit() -> None:
-    """`RC-ESS-B2` 산식 원문: `저감 kW × 기본요금 단가 × 12개월`
+def test_rc_ess_b2_peak_shaving_needs_site_load_peaking_in_discharge_window() -> None:
+    """`RC-ESS-B2` 산식 원문: `저감 kW × 기본요금 단가 × 12개월` (판정 §4 갱신).
 
-        저감 가능 출력 = 가용 8 kWh / 방전창 4시간 = **2 kW** (정격 5kW 이내)
+    **부하 자료가 없으면 0 이다** — 피크 저감 편익은 자가 부하와 겹치는
+    방전분에서만 난다. 오라클을 재현하려면 `site_load_kw` 의 최대부하 시각이
+    방전창(TOU 차익거래 기본 모드 → 18~21시) 안에 오도록 준다:
+
+        저감 가능 출력 = min(정격 5kW, 가용 8 kWh / 방전창 4시간, 부하 10kW)
+                       = **2 kW**
         편익 = 2 × 8,320 × 12 = **199,680원/년**
     """
     ess = _p1_ess()
-    assert ess.reducible_peak_kw(year=1) == pytest.approx(2.0, rel=1e-9)
+    site_load_kw = [1.0] * 19 + [10.0] + [1.0] * 4  # 19시(방전창 안)에 최대부하
 
-    benefit = ess.peak_shaving_benefit(demand_charge_won_per_kw=8_320.0, year=1)
+    # 부하 자료가 없으면 0 이다 — 이 자원 혼자서는 무엇의 피크를 낮췄는지 모른다
+    assert ess.reducible_peak_kw(year=1) == 0.0
+
+    assert ess.reducible_peak_kw(year=1, site_load_kw=site_load_kw) == pytest.approx(
+        2.0, rel=1e-9
+    )
+
+    benefit = ess.peak_shaving_benefit(
+        demand_charge_won_per_kw=8_320.0, year=1, site_load_kw=site_load_kw
+    )
     assert isinstance(benefit, Money)
     assert benefit == 199_680
 
     # 저감 kW 는 정격출력을 넘을 수 없다 — 넘기면 없는 출력으로 편익이 난다
     capped = _p1_ess(power_kw=1.0, capacity_kwh=100.0, cycle_life=20000)
-    assert capped.reducible_peak_kw(year=1) == pytest.approx(1.0, rel=1e-9)
+    assert capped.reducible_peak_kw(
+        year=1, site_load_kw=site_load_kw
+    ) == pytest.approx(1.0, rel=1e-9)
+
+
+@pytest.mark.req("FR-401-AC2.PeakShaving")
+def test_rc_ess_b2_peak_shaving_is_zero_when_peak_hour_is_outside_discharge_window() -> None:
+    """기본요금은 **사업장 최대부하**로 매겨진다 — 최대부하 시각이 방전창 밖이면
+    창 안에서 아무리 방전해도 그 피크는 내려가지 않는다(보수적인 쪽, 판정 §4)."""
+    ess = _p1_ess()  # 기본 모드(TOU 차익거래)의 방전창은 18~21시
+    site_load_kw = [10.0] + [1.0] * 23  # 0시(방전창 밖)에 최대부하
+
+    assert ess.reducible_peak_kw(year=1, site_load_kw=site_load_kw) == 0.0
+    assert ess.peak_shaving_benefit(
+        demand_charge_won_per_kw=8_320.0, year=1, site_load_kw=site_load_kw
+    ) == 0
 
 
 @pytest.mark.req("FR-611-AC1")
@@ -870,6 +899,95 @@ def test_hybrid_mode_requires_weights_that_sum_to_one() -> None:
     )
     # 예비 가중치 0.25 × 예비율 0.4 = 10% 만 예비로 묶인다
     assert mixed.usable_capacity_kwh(year=1) == pytest.approx(8.0 * 0.9, rel=1e-9)
+
+
+# ── 충전원 (판정 A-1~A-3, `docs/decisions-2026-08-31-R48.md`) ────────
+@pytest.mark.req("FR-102-AC1.ESS")
+def test_charge_source_defaults_to_grid_with_no_profile() -> None:
+    """기본값은 `GRID` 다 — 종전 동작(계통 충전)과 같아야 기존 호출자의 수가
+    조용히 움직이지 않는다."""
+    ess = _p1_ess()
+    assert ess.charge_source is ESSChargeSource.GRID
+    assert ess.pv_surplus_profile_kwh is None
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_charge_source_accepts_a_plain_string_like_operating_mode_does() -> None:
+    """`FR-105-AC5` 가 운전 방법에 대해 이미 세운 관례(문자열로도 받는다)를
+    충전원도 따른다 — 케이스 그리드가 YAML·DB를 거쳐 문자열로 값을 건넨다."""
+    ess = _p1_ess(charge_source="계통")
+    assert ess.charge_source is ESSChargeSource.GRID
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_charge_source_out_of_declared_list_is_rejected_with_cause() -> None:
+    with pytest.raises(ValidationError) as excinfo:
+        _p1_ess(charge_source="원자력")
+    parts = excinfo.value.as_dict()
+    assert parts["field"] == "ess.charge_source"
+    assert "원자력" in parts["reason"]
+    assert parts["action"]
+    assert parts["rule"] is None
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_grid_charge_source_rejects_a_pv_surplus_profile() -> None:
+    """충전원이 계통인데 PV 잉여 시계열을 주면 거부한다 — 뜻 없는 조합이다."""
+    with pytest.raises(ValidationError) as excinfo:
+        _p1_ess(
+            charge_source=ESSChargeSource.GRID,
+            pv_surplus_profile_kwh=[1.0] * 24,
+        )
+    parts = excinfo.value.as_dict()
+    assert parts["field"] == "ess.pv_surplus_profile_kwh"
+    assert parts["action"]
+    assert parts["rule"] is None
+
+
+@pytest.mark.req("NFR-303-M1")
+@pytest.mark.parametrize(
+    ("profile", "needle"),
+    [
+        (None, "없거나 전부 0"),
+        ([0.0] * 24, "없거나 전부 0"),
+        ([10.0] * 23, "24행이어야"),  # 23행 — 시각별(0~23) 길이가 아니다
+    ],
+)
+def test_pv_surplus_charge_source_rejects_missing_or_empty_or_malformed_profile(
+    profile: list[float] | None, needle: str
+) -> None:
+    """판정 §1: 「PV 없는 구성에서 이 값을 주면 거부한다 — 조용히 0 충전으로
+    두면 편익이 사라진 채 초록불이 된다」."""
+    with pytest.raises(ValidationError) as excinfo:
+        _p1_ess(charge_source=ESSChargeSource.PV_SURPLUS, pv_surplus_profile_kwh=profile)
+    parts = excinfo.value.as_dict()
+    assert parts["field"] == "ess.pv_surplus_profile_kwh"
+    assert needle in parts["reason"]
+    assert parts["rule"] is None
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_pv_surplus_charge_source_rejects_charge_exceeding_that_hours_surplus() -> None:
+    """**매 충전 시각의 충전량이 그 시각의 PV 잉여를 넘으면 잘라내지 말고
+    거부한다** (모듈 독스트링 「스스로 지키는 것 셋」①). `_p1_ess()` 기본 모드
+    (TOU 차익거래)의 충전창은 1~6시이고, 1시의 잉여만 부족하게 준다."""
+    profile = [10.0] * 24
+    profile[1] = 0.1  # 실제 충전량(≈1.48 kWh)에 못 미치는 잉여
+    with pytest.raises(ValidationError) as excinfo:
+        _p1_ess(charge_source=ESSChargeSource.PV_SURPLUS, pv_surplus_profile_kwh=profile)
+    parts = excinfo.value.as_dict()
+    assert parts["field"] == "ess.pv_surplus_profile_kwh"
+    assert "1시" in parts["reason"]
+    assert parts["rule"] is None
+
+
+@pytest.mark.req("FR-102-AC1.ESS")
+def test_pv_surplus_charge_source_is_accepted_when_profile_covers_every_charge_hour() -> None:
+    """양성 짝 (§13.2.1) — 매 충전 시각의 잉여가 충전량 이상이면 정상 구성된다."""
+    profile = [10.0] * 24
+    ess = _p1_ess(charge_source=ESSChargeSource.PV_SURPLUS, pv_surplus_profile_kwh=profile)
+    assert ess.charge_source is ESSChargeSource.PV_SURPLUS
+    assert ess.pv_surplus_profile_kwh == tuple(profile)
 
 
 # ── 해상도·계통 제약 ────────────────────────────────────────────────
