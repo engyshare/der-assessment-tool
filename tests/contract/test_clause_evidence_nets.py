@@ -78,14 +78,18 @@ PARTITION_WORDS: dict[str, str] = {
 #:   않는다」. 인용 15건 전부가 편익 **산식**을 재고 엔진을 만지지 않는다.
 #:   `FR-101-AC3` 과 **같은 형태**이며 R38 이 그것을 닫은 방식(엔진을 실제로
 #:   돌리는 검사)이 여기에도 필요하다
-#: - **`core.report` 7건** — 조항이 「…를 리포트에 표시/명시/표기한다」라고
+#: - **`core.report` 6건** — 조항이 「…를 리포트에 표시/명시/표기한다」라고
 #:   적는데 인용이 전부 산출 쪽(`tests/asset`·`tests/der`·`tests/assumption`·
 #:   `tests/cba`)에 있고 리포트 계층을 만지지 않는다. 조항의 **앞 절반**
-#:   (계산)은 검증되고 **뒤 절반**(표시)은 비어 있는 상태다
+#:   (계산)은 검증되고 **뒤 절반**(표시)은 비어 있는 상태다.
+#:   ★ WP-15 가 여섯을 실물 대조했다 — 여섯 다 **리포트가 그 표시를 아예 내지
+#:   않는다**(자료구조는 「리포트가 표시하도록」 있는데 `core/report/` 에 호출자가
+#:   0곳). 그러므로 시험을 더해서는 닫히지 않는다. 일곱 번째였던 `FR-402-AC7` 만
+#:   리포트가 이미 내고 있었고(`core/report/perspective_report.py` 의 관점별
+#:   포함·제외 tag), WP-15 가 그것을 재는 검사를 세워 닫았다
 KNOWN_PARTITION_DEBT: frozenset[tuple[str, str]] = frozenset({
     ("FR-401-AC1", "core.engine"),
     ("FR-106-AC5", "core.report"),
-    ("FR-402-AC7", "core.report"),
     ("FR-404-AC1", "core.report"),
     ("FR-602-AC2", "core.report"),
     ("FR-603-AC2", "core.report"),

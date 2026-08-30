@@ -147,7 +147,7 @@
 |  |  | 1 | `FR-402-AC4` | 배타 규칙은 코드가 아닌 선언적 규칙 테이블로 관리한다. 각 규칙은 (편익A, 편익B, 배타유형 A~D, 근거, 적용 규제 프로파일) 을 보유한다 | 자동 | test_exclusion_declaration_matches_table.py, test_exclusion_rules_contract.py 4건, test_exclusion_structure_axis.py 7건, test_mapping_requirements.py |
 |  |  | 1 | `FR-402-AC5` | 편익을 활성화할 때 시스템은 분산자원 경제성 평가 원칙 「부록 A. 편익 항목 추가 시 실무 적용 절차」 의 4문항 판정을 통과했는지 확인하고, 지불 주체가 특… | 자동 | test_payer_structure_contract.py 3건, test_mapping_requirements.py |
 |  |  | 1 | `FR-402-AC6` | 리포트에 "편익 계상 내역" 을 표시한다: 계상된 편익 / 배타로 제외된 편익 / 증분만 계상된 편익(유형 B) / 미화폐화로 0 처리된 편익 | 자동 | test_phase1_dod.py, test_benefit_breakdown_sheet.py 5건, test_mapping_requirements.py |
-|  |  | 1 | `FR-402-AC7` | 관점별(FR-704) 편익 집합이 서로 다름을 리포트에 명시하고, 보조금은 사회 관점에서 이전지출로 처리하여 편익에 포함하지 않는다 | 자동 | test_transfer.py |
+|  |  | 1 | `FR-402-AC7` | 관점별(FR-704) 편익 집합이 서로 다름을 리포트에 명시하고, 보조금은 사회 관점에서 이전지출로 처리하여 편익에 포함하지 않는다 | 자동 | test_transfer.py, test_perspective_report.py |
 | `FR-403` | Must-have | 1 | `FR-403-AC1` | 편익별 제약을 개별 제약으로 쌓지 않고, 제약 유형별 단일 시계열로 min/max 합성한다 | 자동 | test_conflict.py 3건 |
 |  |  | 1 | `FR-403-AC2` | 각 시각별로 어느 편익이 그 제약값에 기여했는지 기록한다 | 자동 | test_conflict.py |
 |  |  | 1 | `FR-403-AC3` | 시뮬레이션·최적화 실행 전에 min > max 충돌을 검사하고, 충돌 시 "2027-01-15 18:00에 ESS 방전 하한(예비력 확보)과 상한(SOC 제약)… | 자동 | test_conflict.py |
