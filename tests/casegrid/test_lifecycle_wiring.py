@@ -263,11 +263,13 @@ def test_salvage_counts_exactly_the_acquisitions_that_were_paid_for(
     부속설비를 더 준 `PV` 는 **재지 않았다**(확인 못 함) — 그 구성에서 두 경로가
     같은지는 이 검사가 아무 말도 하지 않는다.
 
-    ⚠ **이제 세 자원 모두 두 경로가 같은 출처를 본다** — `ESS` 뿐 아니라
-    `PV` 도 `replacement_schedule()` 이 `_acquisitions()` 에서 파생된다
-    (R44 WP-13, 커밋 `e4ce901`). 이 검사는 셋 모두에 대해 **동어반복에 가깝다**
-    (1년차를 거르는 규약만 남는다). 그것을 알고 남긴다: 새 자원이 어느 모양을
-    고를지 모른다.
+    ⚠ **이 검사가 재는 자원(`PV`·`ESS`)은 이제 둘 다 두 경로가 같은 출처를 본다**
+    — `PV` 도 `ESS` 처럼 `replacement_schedule()` 이 `_acquisitions()` 에서
+    파생된다(R44 WP-13, 커밋 `e4ce901`). 이 검사는 그 둘(위 `PV`·`ESS`·
+    `ESS(+PCS)` 세 갈래)에 대해 **동어반복에 가깝다**(1년차를 거르는 규약만
+    남는다). ⚠ **`HeatPump` 도 R43 WP-D2 로 파생됐지만 이 검사는 `HeatPump`
+    를 parametrize 하지 않는다** — 그 자원에 대해서는 이 검사가 아무 말도
+    하지 않는다. 새 자원이 어느 모양을 고를지는 여전히 모른다.
     """
     for resource in (
         resource_factory(),
