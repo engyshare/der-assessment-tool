@@ -160,8 +160,7 @@ class ESS(DER):
             raise ValidationError(
                 field="ess.rte",
                 reason=f"{name}: RTE(왕복효율)는 0 초과 100 이하 %입니다 (받은 값 {rte_pct})",
-                action="RTE 를 0 초과 100 이하의 %값으로 지정하십시오 — 0.9 를 그대로 넘기고 "
-                "있지 않은지 확인하십시오 (§7.5 비율)",
+                action="RTE 를 0 초과 100 이하 %값으로 지정하십시오(0.9 를 그대로 넘기지 않도록)",
                 rule="DV-3",
             )
         _in_range(
@@ -206,15 +205,13 @@ class ESS(DER):
             # 교체비가 매년 잡히는 형태라 "보수적으로 나왔나 보다"로 읽힌다.
             raise ValidationError(
                 field="ess.eol_soh",
-                reason=f"{name}: EOL 잔존율({eol_soh_pct}%)은 초기 SOH"
-                f"({self.initial_soh * 100:.0f}%)보다 낮아야 합니다",
-                action="사용후배터리는 이미 80%에서 시작하므로 EOL 을 그보다 낮게(예: 60%) "
-                "지정하십시오",
+                reason=f"{name}: EOL({eol_soh_pct}%)이 0~초기SOH({self.initial_soh * 100:.0f}%) 밖",
+                action="사용후배터리는 80%에서 시작하므로 EOL 을 그보다 낮게(예: 60%) 지정하십시오",
             )
 
         self.mode_weights = self._normalize_weights(operating_mode, mode_weights, name=name)
         self.charge_source = self._coerce_charge_source(charge_source, name=name)
-        self.pv_surplus_profile_kwh = self._check_pv_surplus(pv_surplus_profile_kwh, dt, name)
+        self.pv_surplus_profile_kwh = self._check_pv_surplus(pv_surplus_profile_kwh, name)
 
         self._capex_unit = float(capex_unit_won_per_kwh)
         self._capex_extra = float(capex_extra_won)
@@ -313,21 +310,18 @@ class ESS(DER):
         raise ValidationError(field="ess.pv_surplus_profile_kwh", reason=reason, action=action)
 
     def _check_pv_surplus(
-        self, profile: Sequence[float] | None, dt: int, name: str) -> tuple[float, ...] | None:
-        """`charge_source` 와 `pv_surplus_profile_kwh` 의 조합·제약을 검사한다
-        (판정 §1 · A-3).
+        self, profile: Sequence[float] | None, name: str) -> tuple[float, ...] | None:
+        """`charge_source` 와 `pv_surplus_profile_kwh` 의 조합·형태만 검사한다
+        (판정 §1 · A-8-d).
 
-        **가능한 한 이 생성자에서 판정한다** (결정성 · `RC-ESS` 관례). 1년차가
-        열화가 가장 적어 가용량이 최대이므로(`usable_capacity_kwh` 는 연차에
-        단조 비증가) 1년차 충전량이 잉여를 넘지 않으면 이후 모든 연차도 넘지
-        않는다 — 그래서 `dispatch()` 에 남길 검사가 없다.
+        ⚠⚠ **「시각별 충전량이 잉여를 넘으면 거부」는 판정 A-8-b 로 없어졌다** —
+        모자라면 거부가 아니라 「가능한 만큼」 충전한다(`_pv_surplus_charge_kwh_by_hour`
+        가 그 계획을 짓는다). 여기 남는 것은 판정 §1 이 요구하는 **형태 검사 넷**뿐이다.
         """
         if self.charge_source is ESSChargeSource.GRID:
             if profile is not None:
-                self._reject_pv_surplus_profile(
-                    f"{name}: 충전원이 계통인데 PV 잉여 시계열을 받았습니다",
-                    "charge_source 를 PV_SURPLUS 로 바꾸거나 인자를 빼십시오",
-                )
+                self._reject_pv_surplus_profile(f"{name}: 충전원=계통인데 PV잉여 시계열을 받음",
+                    "charge_source 를 PV_SURPLUS 로 바꾸거나 인자를 빼십시오")
             return None
 
         # charge_source == PV_SURPLUS
@@ -342,17 +336,37 @@ class ESS(DER):
                 f"{len(profile)}행)",
                 f"pv_surplus_profile_kwh 를 {HOURS_PER_DAY}행 시계열로 맞추십시오",
             )
-        daily_kwh = self.usable_capacity_kwh(year=1) * self.cycles_per_year / DAYS_PER_YEAR
-        in_step_kwh = daily_kwh / self.rte / (len(self.charge_hours) * (SECONDS_PER_HOUR // dt))
-        for hour in self.charge_hours:
-            if in_step_kwh > profile[hour] + ENERGY_TOLERANCE_KWH:
-                self._reject_pv_surplus_profile(
-                    f"{name}: {hour}시 충전량({in_step_kwh:.6g})이 PV잉여"
-                    f"({profile[hour]:.6g})를 넘습니다",
-                    "충전량을 줄이거나 그 시각의 PV 잉여를 키우십시오 — 잘라내면 편익이 "
-                    "사라집니다",
-                )
         return tuple(float(v) for v in profile)
+
+    def _pv_surplus_charge_kwh_by_hour(self, *, year: int) -> dict[int, float]:
+        """대표일 시각별 **실제** 충전량(kWh) — `PV_SURPLUS` 전용 (판정 A-8-a·b).
+
+        시각(0~23)을 차례로 훑어 **방전창을 뺀, 잉여가 있는 모든 시각**에서
+        `min(그 시각 잉여, 정격출력 1시간분, 남은 저장 여유)` 만큼 채운다.
+        여유가 다 차거나 잉여가 없는 시각은 건너뛴다 — **거부하지 않는다**
+        (A-8-b). 남는 여유의 상한은 `cycles_per_year` 다(A-8-c — 잉여가
+        넘치도록 많아도 사이클 상한은 지킨다).
+        """
+        profile = self.pv_surplus_profile_kwh
+        assert profile is not None  # charge_source==PV_SURPLUS 면 생성자가 보장한다
+        daily_cap = self.usable_capacity_kwh(year=year) * self.cycles_per_year / DAYS_PER_YEAR
+        room_kwh = daily_cap / self.rte
+        charged: dict[int, float] = {}
+        for hour in range(HOURS_PER_DAY):
+            if hour in self.discharge_hours or room_kwh <= 0.0 or profile[hour] <= 0.0:
+                continue
+            amount = min(profile[hour], self.power_kw, room_kwh)  # 셋 다 양수라 amount>0
+            charged[hour] = amount
+            room_kwh -= amount
+        return charged
+
+    def realized_cycles_per_year(self, *, year: int) -> float:
+        """실제 연 사이클 수 — `PV_SURPLUS` 에서는 잉여가 모자라면
+        `cycles_per_year`(상한)보다 **작을 수 있다**(판정 A-8-c). `GRID` 에서는
+        언제나 `cycles_per_year` 와 같다. 「365 사이클로 샀는데 실제로는
+        얼마나 돌았는가」를 밖에서 읽는 자리다."""
+        capacity = self.usable_capacity_kwh(year=year)
+        return self.annual_discharge_kwh(year=year) / capacity if capacity > 0.0 else 0.0
 
     @property
     def dominant_mode(self) -> ESSOperatingMode:
@@ -413,11 +427,8 @@ class ESS(DER):
         if rate >= 1.0:
             raise ValidationError(
                 field="ess.degradation_rate",
-                reason=f"{name}: 연간 열화율이 {rate:.3f} 로 100%를 넘습니다 — 사이클수명"
-                f"({self.cycle_life}회)·달력수명({self.calendar_life}년)·연간 사이클"
-                f"({self.cycles_per_year}회) 조합에서 계산됨",
-                action="사이클수명·달력수명·연간 사이클 수 중 하나 이상을 조정해 연간 열화율이 "
-                "100% 미만이 되도록 하십시오",
+                reason=f"{name}: 연간 열화율 {rate:.3f} 가 100% 초과 (사이클·달력·연사이클 조합)",
+                action="사이클수명·달력수명·연간 사이클 수를 조정해 100% 미만이 되도록 하십시오",
             )
         return rate
 
@@ -461,16 +472,21 @@ class ESS(DER):
         available = soc_kwh - low
         if energy_kwh > available + ENERGY_TOLERANCE_KWH:
             raise ValueError(
-                f"{self.name}: SOC 하한 침범 — 요구 방전량 {energy_kwh:.6g} kWh 가 "
-                f"가용량 {available:.6g} kWh 를 초과합니다 "
-                f"(현재 SOC {soc_kwh:.6g} kWh, 하한 {low:.6g} kWh, {year}년차)"
-            )
+                f"{self.name}: SOC 하한 침범 — 요구 방전량 {energy_kwh:.6g} kWh 가 가용량 "
+                f"{available:.6g} kWh 를 초과합니다 (현재 SOC {soc_kwh:.6g} kWh, 하한 "
+                f"{low:.6g} kWh, {year}년차)")
         return energy_kwh
 
     # ── 연간 물리량 (`RC-ESS-P1` · `P2`) ────────────────────────────
 
     def annual_discharge_kwh(self, *, year: int) -> float:
-        """연 방전량 = 가용량 × 연간 사이클 수."""
+        """연 방전량. `GRID` = 가용량 × 연간 사이클 수(종전 그대로). `PV_SURPLUS` 는
+        **실제로 채운 잉여**가 정한다(판정 A-8-c) — `cycles_per_year` 는 상한일 뿐이라
+        잉여가 모자라면 이 값이 그보다 작을 수 있다(`realized_cycles_per_year` 참조).
+        """
+        if self.charge_source is ESSChargeSource.PV_SURPLUS:
+            daily_charge = math.fsum(self._pv_surplus_charge_kwh_by_hour(year=year).values())
+            return daily_charge * self.rte * DAYS_PER_YEAR
         return self.usable_capacity_kwh(year=year) * self.cycles_per_year
 
     def annual_charge_kwh(self, *, year: int) -> float:
@@ -541,8 +557,7 @@ class ESS(DER):
         )
         if kw > self.power_kw + _KW_TOLERANCE:
             raise ValueError(
-                f"{self.name}: 저감 {kw}kW 가 정격출력 {self.power_kw}kW 를 넘습니다 — 없는 "
-                "출력으로 편익이 계상됩니다"
+                f"{self.name}: 저감 {kw}kW 가 정격출력 {self.power_kw}kW 초과 — 없는 편익 계상"
             )
         return to_won(kw * demand_charge_won_per_kw * months)
 
@@ -800,42 +815,47 @@ class ESS(DER):
         교체비를 끊고 편익은 그대로 두면 회수기간이 실제보다 좋아지므로, 두
         쪽을 함께 끊는다 — 배터리에는 «채우지 못한 수요»가 없으므로
         `unmet_*` 는 건드리지 않는다(기본값 0이 그대로 남는다).
+
+        **`PV_SURPLUS` 는 충전창이 고정이 아니다** (판정 A-8-a). 방전은 두 충전원
+        모두 방전창에 균등 배분하지만(종전 그대로), 충전은 `GRID` 만 고정창을
+        쓰고 `PV_SURPLUS` 는 시각별 실충전량(`_pv_surplus_charge_kwh_by_hour`)을
+        그대로 싣는다 — 시각마다 다른 값이라 균등 배분할 수 없다.
         """
         self.check_context(ctx)
         if self.retires_at_end_of_life() and int(ctx.year) > self._first_eol_year():
             zeros = [0.0] * ctx.steps
-            return DispatchResult(
-                electric=zeros, heat=zeros, cool=list(zeros), fuel=list(zeros)
-            )
+            return DispatchResult(electric=zeros, heat=zeros, cool=list(zeros), fuel=list(zeros))
 
         steps_per_hour = SECONDS_PER_HOUR // ctx.dt
         hours_per_step = ctx.dt / SECONDS_PER_HOUR
-
-        daily = (
-            self.usable_capacity_kwh(year=int(ctx.year))
-            * self.cycles_per_year
-            / DAYS_PER_YEAR
-        )
-        out_step = daily / (len(self.discharge_hours) * steps_per_hour)
-        in_step = daily / self.rte / (len(self.charge_hours) * steps_per_hour)
-
+        year = int(ctx.year)
+        discharge_window = len(self.discharge_hours) * steps_per_hour
+        out_step = self.annual_discharge_kwh(year=year) / DAYS_PER_YEAR / discharge_window
         self._check_power(out_step, hours_per_step, "방전")
-        self._check_power(in_step, hours_per_step, "충전")
 
         electric = [0.0] * ctx.steps
-        for i in range(ctx.steps):
-            hour = (i // steps_per_hour) % HOURS_PER_DAY
-            if hour in self.discharge_hours:
-                electric[i] = out_step
-            elif hour in self.charge_hours:
-                electric[i] = -in_step
+        if self.charge_source is ESSChargeSource.PV_SURPLUS:
+            charged_by_hour = self._pv_surplus_charge_kwh_by_hour(year=year)
+            for i in range(ctx.steps):
+                hour = (i // steps_per_hour) % HOURS_PER_DAY
+                if hour in self.discharge_hours:
+                    electric[i] = out_step
+                elif hour in charged_by_hour:
+                    electric[i] = -(charged_by_hour[hour] / steps_per_hour)
+        else:
+            charge_window = len(self.charge_hours) * steps_per_hour
+            in_step = self.annual_charge_kwh(year=year) / DAYS_PER_YEAR / charge_window
+            self._check_power(in_step, hours_per_step, "충전")
+            for i in range(ctx.steps):
+                hour = (i // steps_per_hour) % HOURS_PER_DAY
+                if hour in self.discharge_hours:
+                    electric[i] = out_step
+                elif hour in self.charge_hours:
+                    electric[i] = -in_step
 
         self._check_grid_limit(electric, ctx, hours_per_step)
-
         zeros = [0.0] * ctx.steps
-        return DispatchResult(
-            electric=electric, heat=zeros, cool=list(zeros), fuel=list(zeros)
-        )
+        return DispatchResult(electric=electric, heat=zeros, cool=list(zeros), fuel=list(zeros))
 
     def _check_power(self, step_kwh: float, hours_per_step: float, label: str) -> None:
         """정격출력 초과를 **거부**한다. 잘라내면 없는 출력으로 편익이 난다."""
@@ -843,8 +863,7 @@ class ESS(DER):
         if kw > self.power_kw + _KW_TOLERANCE:
             raise ValidationError(
                 field="ess.power_kw",
-                reason=f"{self.name}: {label} 계획 {kw:.6g} kW 가 정격출력 "
-                f"{self.power_kw:.6g} kW 를 넘습니다",
+                reason=f"{self.name}: {label} {kw:.6g}kW 가 정격출력 {self.power_kw:.6g}kW 초과",
                 action="정격출력(power_kw)을 키우거나 운전창(운전 방법)을 조정해 계획이 "
                 "정격출력 이내가 되도록 하십시오 — 자동으로 잘라내면 그만큼의 편익이 "
                 "조용히 사라집니다",
@@ -861,8 +880,7 @@ class ESS(DER):
             if kw > ctx.grid_limit_kw[i] + _KW_TOLERANCE:
                 raise ValidationError(
                     field="ess.power_kw",
-                    reason=f"{self.name}: {i}번 스텝의 계통 연계 한도 초과 — "
-                    f"계획 {kw:.6g} kW / 한도 {ctx.grid_limit_kw[i]:.6g} kW",
+                    reason=f"{self.name}: {i} 계통 연계 초과 {kw:.6g}/{ctx.grid_limit_kw[i]:.6g}kW",
                     action="정격출력(power_kw)이나 용량(capacity_kwh)을 낮추거나, 시나리오의 "
                     "계통 연계 한도(grid_limit_kw)를 이 자원의 계획에 맞게 올리십시오",
                 )

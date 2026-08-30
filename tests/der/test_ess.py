@@ -966,19 +966,20 @@ def test_pv_surplus_charge_source_rejects_missing_or_empty_or_malformed_profile(
     assert parts["rule"] is None
 
 
-@pytest.mark.req("NFR-303-M1")
-def test_pv_surplus_charge_source_rejects_charge_exceeding_that_hours_surplus() -> None:
-    """**매 충전 시각의 충전량이 그 시각의 PV 잉여를 넘으면 잘라내지 말고
-    거부한다** (모듈 독스트링 「스스로 지키는 것 셋」①). `_p1_ess()` 기본 모드
-    (TOU 차익거래)의 충전창은 1~6시이고, 1시의 잉여만 부족하게 준다."""
-    profile = [10.0] * 24
-    profile[1] = 0.1  # 실제 충전량(≈1.48 kWh)에 못 미치는 잉여
-    with pytest.raises(ValidationError) as excinfo:
-        _p1_ess(charge_source=ESSChargeSource.PV_SURPLUS, pv_surplus_profile_kwh=profile)
-    parts = excinfo.value.as_dict()
-    assert parts["field"] == "ess.pv_surplus_profile_kwh"
-    assert "1시" in parts["reason"]
-    assert parts["rule"] is None
+@pytest.mark.req("FR-102-AC1.ESS")
+def test_pv_surplus_charge_source_charges_only_as_much_as_the_surplus_allows() -> None:
+    """★ 판정 A-8-b — **모자라면 거부가 아니라 「가능한 만큼」이다.**
+
+    잉여가 시간당 0.1kWh 뿐이면(정격출력 5kW·가용 8kWh 로는 충분히 더 받을 수
+    있어도) 그 시각의 충전은 0.1kWh 로 **줄어들 뿐** 예외가 나지 않는다.
+    """
+    profile = [0.1] * 24  # 전 시간대 잉여 0.1kWh — 정격출력·가용량보다 한참 작다
+    ess = _p1_ess(charge_source=ESSChargeSource.PV_SURPLUS, pv_surplus_profile_kwh=profile)
+    charged = ess._pv_surplus_charge_kwh_by_hour(year=1)
+    assert charged  # 예외 없이 구성됐고 충전 시각이 존재한다
+    assert all(amount == pytest.approx(0.1, rel=1e-9) for amount in charged.values())
+    # 방전은 실제로 채운 만큼에서만 난다 — 정격 8kWh 가 아니다
+    assert ess.annual_discharge_kwh(year=1) < ess.usable_capacity_kwh(year=1) * ess.cycles_per_year
 
 
 @pytest.mark.req("FR-102-AC1.ESS")
@@ -988,6 +989,79 @@ def test_pv_surplus_charge_source_is_accepted_when_profile_covers_every_charge_h
     ess = _p1_ess(charge_source=ESSChargeSource.PV_SURPLUS, pv_surplus_profile_kwh=profile)
     assert ess.charge_source is ESSChargeSource.PV_SURPLUS
     assert ess.pv_surplus_profile_kwh == tuple(profile)
+
+
+# ── 판정 A-8 — 「거부가 아니라 가능한 만큼」(`docs/decisions-2026-08-31-R48.md`
+# 사용자 2026-08-31 운전 규칙) ────────────────────────────────────────
+@pytest.mark.req("FR-105-AC1")
+def test_pv_surplus_charging_excludes_the_discharge_window() -> None:
+    """판정 A-8-a — 충전창은 고정이 아니라 「잉여 있는 모든 시각, **방전창 제외**」
+    다. 피크 저감 모드의 방전창(13~16시)에만 잉여를 몰아주면 그 시각은 충전에
+    쓰이지 않는다 — 같은 스텝에서 충·방전이 겹치면 어느 쪽이 실렸는지 구분할
+    수 없기 때문이다."""
+    profile = [0.0] * 24
+    for hour in (13, 14, 15, 16):
+        profile[hour] = 5.0
+    ess = _p1_ess(
+        operating_mode=ESSOperatingMode.PEAK_SHAVING,
+        charge_source=ESSChargeSource.PV_SURPLUS,
+        pv_surplus_profile_kwh=profile,
+    )
+    assert ess._pv_surplus_charge_kwh_by_hour(year=1) == {}
+    assert ess.annual_discharge_kwh(year=1) == 0.0
+
+
+@pytest.mark.req("FR-105-AC1")
+def test_pv_surplus_charges_at_any_hour_with_surplus_outside_the_discharge_window() -> None:
+    """양성 짝 — 방전창 밖의 잉여는 시각에 관계없이 충전에 쓰인다."""
+    profile = [0.0] * 24
+    profile[7] = 2.0
+    profile[9] = 3.0
+    ess = _p1_ess(
+        operating_mode=ESSOperatingMode.PEAK_SHAVING,
+        charge_source=ESSChargeSource.PV_SURPLUS,
+        pv_surplus_profile_kwh=profile,
+    )
+    assert ess._pv_surplus_charge_kwh_by_hour(year=1) == {7: 2.0, 9: 3.0}
+
+
+@pytest.mark.req("FR-104-AC2")
+def test_realized_cycles_per_year_matches_the_cap_when_surplus_is_ample() -> None:
+    """판정 A-8-c — 잉여가 넘치도록 많으면 실제 사이클은 상한(`cycles_per_year`)
+    과 같다(넘지 않는다)."""
+    ess = _p1_ess(charge_source=ESSChargeSource.PV_SURPLUS, pv_surplus_profile_kwh=[10.0] * 24)
+    assert ess.realized_cycles_per_year(year=1) == pytest.approx(ess.cycles_per_year, rel=1e-9)
+
+
+@pytest.mark.req("FR-104-AC2")
+def test_realized_cycles_per_year_falls_below_the_cap_when_surplus_is_scarce() -> None:
+    """★ 판정 A-8-c 의 핵심 — 「365 사이클로 샀는데 실제로는 그보다 적게
+    돌았다」가 이 접근자에 그대로 남는다."""
+    ess = _p1_ess(charge_source=ESSChargeSource.PV_SURPLUS, pv_surplus_profile_kwh=[0.1] * 24)
+    assert ess.realized_cycles_per_year(year=1) < ess.cycles_per_year
+
+
+@pytest.mark.req("FR-104-AC2")
+def test_realized_cycles_per_year_always_equals_the_cap_for_grid_charging() -> None:
+    """`GRID` 는 잉여 제약이 없으므로 실제 사이클이 언제나 상한과 같다(종전 동작)."""
+    ess = _p1_ess()
+    assert ess.realized_cycles_per_year(year=1) == pytest.approx(ess.cycles_per_year, rel=1e-9)
+
+
+@pytest.mark.req("FR-301-AC2")
+def test_pv_surplus_dispatch_balances_at_the_realized_amount_not_the_rated_one() -> None:
+    """PV_SURPLUS 배차도 하루가 닫힌다 — 다만 그 「가득」은 정격이 아니라 **실제로
+    채운 양**이다(판정 A-8-b)."""
+    profile = [0.1] * 24
+    ess = _p1_ess(charge_source=ESSChargeSource.PV_SURPLUS, pv_surplus_profile_kwh=profile)
+    result = ess.dispatch(DispatchContext(steps=24, dt=3600, year=1))
+    charge = -sum(v for v in result.electric if v < 0)
+    discharge = sum(v for v in result.electric if v > 0)
+    assert charge == pytest.approx(ess.annual_charge_kwh(year=1) / 365.0, rel=1e-9)
+    assert discharge == pytest.approx(ess.annual_discharge_kwh(year=1) / 365.0, rel=1e-9)
+    assert abs(charge * ess.rte - discharge) < ENERGY_TOLERANCE_KWH
+    # 정격(8kWh)보다 훨씬 작다 — 거부되지 않고 「가능한 만큼」만 돌았다
+    assert discharge < ess.usable_capacity_kwh(year=1)
 
 
 # ── 해상도·계통 제약 ────────────────────────────────────────────────
