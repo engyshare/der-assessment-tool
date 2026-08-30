@@ -3,6 +3,7 @@ from typing import Literal, NamedTuple
 
 from core.contracts.schemas import CashFlowRow
 from core.contracts.units import Money, to_won
+from core.contracts.validation import ValidationError
 from core.incentive.schemas import IncentiveScheme
 
 
@@ -70,6 +71,50 @@ def calculate_loan_schedule(
     return schedule
 
 
+def capex_viewpoint_row(*, label: str, tag: str, signed_amount_won: Decimal) -> CashFlowRow:
+    """관점별 CAPEX 현금흐름 한 행 — 1년차 일시 계상 (`FR-611-AC3`).
+
+    `build_capex_cashflows()` 가 관점마다 짓던 네 자리(자부담·타 사업 기지원·
+    본 사업 보조금·사회 전체 비용)가 **같은 모양**이라 여기로 모았다 — 라벨과
+    태그와 1년차 금액 하나. 네 자리 다 문면만 다르고 구조가 같다.
+
+    ## ★★ 부호 규약 — **이 함수는 부호를 뒤집지 않는다**
+
+    여기서 나오는 행은 **관점별 현금흐름**이고 위 넷은 전부 **유출**이므로
+    ``signed_amount_won`` 은 **음수(또는 0)** 다. 부호를 만드는 것은 **호출자**이며
+    이 함수는 받은 값을 **그대로** 싣는다. 양수를 넘기면 거부한다.
+
+    ⚠ **`core/cba/proforma.py::capex_row` 의 규약을 끌어다 쓰지 마라.** 그쪽은
+    *「amount 는 양수(비용)」* 인 **프로포마 비용 행**이고 이것은 **관점별
+    현금흐름**이다 — 층이 다르다. 그 규약을 여기에 강제하면 네 행의 부호가
+    조용히 뒤집히고, 그때 초기투자비는 **유입**이 되어 아무 예외 없이 결론이
+    총사업비의 두 배만큼 좋아진다.
+
+    ⚠ **`core/cba/proforma.py::salvage_row` 와도 반대다.** 잔존가치는 호출자가
+    **양수**를 넘기고 **그 함수가** 뒤집는다(*「부호를 뒤집는 자리는 이 함수
+    하나다」*). 여기서는 그 반대로 **호출자가 이미 뒤집어 넘긴다** — 이 함수가
+    또 뒤집으면 두 번 뒤집혀 다시 양수가 된다. 그래서 뒤집기를 **넣지 않았고**,
+    대신 양수 거부로 「호출자가 뒤집었는가」를 문턱에서 잡는다.
+
+    연차가 1 로 고정인 것은 `FR-611` 이 말하는 것이 **초기 투자**이기 때문이다 —
+    교체·잔존처럼 연차가 열리는 항목은 프로포마 쪽 빌더가 따로 진다.
+    """
+    if signed_amount_won > 0:
+        raise ValidationError(
+            field="incentive.capex_viewpoint_row.signed_amount_won",
+            reason=(
+                f"관점별 CAPEX 현금흐름은 유출이므로 0 이하여야 합니다: "
+                f"{signed_amount_won} ({tag})"
+            ),
+            action=(
+                "부호를 뒤집어 넘기십시오 — 이 함수는 뒤집지 않습니다. 양수를 "
+                "그대로 실으면 초기투자비가 유입으로 잡혀 결론이 그 금액의 두 "
+                "배만큼 좋아집니다"
+            ),
+        )
+    return CashFlowRow(label=label, tag=tag, amounts={1: signed_amount_won})
+
+
 def build_capex_cashflows(
     scheme: IncentiveScheme | None,
     capex: float | Decimal,
@@ -117,10 +162,10 @@ def build_capex_cashflows(
     if viewpoint in ("OWNER", "PARTICIPANT"):
         # 사업자/주민 관점: 총사업비 중 자기 자부담만 현금 유출
         rows.append(
-            CashFlowRow(
+            capex_viewpoint_row(
                 label="초기투자비(자부담)",
                 tag="capex.equity",
-                amounts={1: -financing["equity"]},
+                signed_amount_won=-financing["equity"],
             )
         )
     elif viewpoint == "GOV":
@@ -128,19 +173,19 @@ def build_capex_cashflows(
             # FR-611-AC3.GOV: 정부 관점 기지원 설비 보조금은 '타 사업 국비'로 분리
             # 여기서는 본 사업의 보조금이 아니므로 분리 계상
             rows.append(
-                CashFlowRow(
+                capex_viewpoint_row(
                     label=f"타 사업 기지원 ({scheme.funding_program or '불명'})",
                     tag="capex.prefunded_subsidy",
-                    amounts={1: -capex_won},
+                    signed_amount_won=-capex_won,
                 )
             )
         else:
             # 신규 설비의 정부 지출
             rows.append(
-                CashFlowRow(
+                capex_viewpoint_row(
                     label="본 사업 정부 지원(보조금)",
                     tag="capex.gov_subsidy",
-                    amounts={1: -financing["subsidy"]},
+                    signed_amount_won=-financing["subsidy"],
                 )
             )
             # 신규 설비의 전체 설치 비용 (사회 전체 관점에서 자원 소모를 보려면
@@ -152,10 +197,10 @@ def build_capex_cashflows(
         # 비용으로 본다. `financing`(스킴별 자금조달 분해)이나 `is_prefunded`
         # 여부와 무관하게 `capex_won` 그대로다.
         rows.append(
-            CashFlowRow(
+            capex_viewpoint_row(
                 label="취득원가(사회 전체 비용)",
                 tag="capex.social_cost",
-                amounts={1: -capex_won},
+                signed_amount_won=-capex_won,
             )
         )
 

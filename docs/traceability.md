@@ -226,11 +226,11 @@
 |  |  | - | `FR-609-AC2` | 각 조합의 정부 재정 부담 현가를 병기하여 최소 부담 조합을 강조 표시 | 자동 | test_incentive.py |
 |  |  | - | `FR-609-AC3` | 사업자 관점 지표와 정부 재정 관점 지표를 동시 표시 | 자동 | test_incentive.py |
 | `FR-610` | Must-have | 1 | `FR-610-AC1` | 확정된 지원안(예: ESS 50%·MG 70%)을 직접 입력하여 그 조건 하 경제성을 평가한다. 이 모드에서도 무지원 기준선(FR-607)은 함께 표시된다 | 자동 | test_incentive.py |
-| `FR-611` | Must-have | 1 | `FR-611-AC1` | IncentiveScheme에 funding_program(재원 사업명)과 is_prefunded(타 사업 기지원 여부), prefunded_status(확정 … | 자동 | test_ess.py, test_incentive.py |
-|  |  | 1 | `FR-611-AC2` | is_prefunded=True인 설비의 취득원가는 금액을 0으로 만들지 않고 전액 계상한다. 관점별 처리는 AC3. 각 조항이 정한다 (v0.9: v0.8까지… | 자동 | test_ess.py, test_incentive.py |
-|  |  | 1 | `FR-611-AC3.OWNER` | 사업자·주민 — 자기부담 0 (현금흐름 미발생). 근거: 실제 지출이 없음 | 자동 | test_ess.py, test_incentive.py |
-|  |  | 1 | `FR-611-AC3.SOCIAL` | 사회 — 전액 비용. 근거: 재원이 어디서 왔든 자원은 소모됨 (분산자원 경제성 평가 원칙 원칙 2-3 관점 분리) | 자동 | test_incentive.py 3건 |
-|  |  | 1 | `FR-611-AC3.GOV` | 정부 — 본 사업 재정부담에서 제외하되 타 사업 국비 행으로 분리 표시. 근거: 본 사업의 필요 지원액과 섞이면 안 됨 | 자동 | test_ess.py, test_incentive.py |
+| `FR-611` | Must-have | 1 | `FR-611-AC1` | IncentiveScheme에 funding_program(재원 사업명)과 is_prefunded(타 사업 기지원 여부), prefunded_status(확정 … | 자동 | test_ess.py, test_capex_viewpoint_row.py, test_incentive.py |
+|  |  | 1 | `FR-611-AC2` | is_prefunded=True인 설비의 취득원가는 금액을 0으로 만들지 않고 전액 계상한다. 관점별 처리는 AC3. 각 조항이 정한다 (v0.9: v0.8까지… | 자동 | test_ess.py, test_capex_viewpoint_row.py 2건, test_incentive.py |
+|  |  | 1 | `FR-611-AC3.OWNER` | 사업자·주민 — 자기부담 0 (현금흐름 미발생). 근거: 실제 지출이 없음 | 자동 | test_ess.py, test_capex_viewpoint_row.py 3건, test_incentive.py |
+|  |  | 1 | `FR-611-AC3.SOCIAL` | 사회 — 전액 비용. 근거: 재원이 어디서 왔든 자원은 소모됨 (분산자원 경제성 평가 원칙 원칙 2-3 관점 분리) | 자동 | test_capex_viewpoint_row.py, test_incentive.py 3건 |
+|  |  | 1 | `FR-611-AC3.GOV` | 정부 — 본 사업 재정부담에서 제외하되 타 사업 국비 행으로 분리 표시. 근거: 본 사업의 필요 지원액과 섞이면 안 됨 | 자동 | test_ess.py, test_capex_viewpoint_row.py, test_incentive.py |
 |  |  | 1 | `FR-611-AC4` | 지원 예정 상태는 미확정 리스크로 취급한다. 해당 설비를 제외한 케이스를 함께 산출하여 "지원 무산 시 회수기간"을 병기한다 | 자동 | test_incentive.py |
 |  |  | 1 | `FR-611-AC5` | 프로포마에 기지원 설비가 별도 행으로 표시되고, 재원 사업명이 함께 출력된다 | 자동 | test_ess.py |
 |  |  | 1 | `FR-611-AC6` | O&M·교체비·잔존가치는 기지원 여부와 무관하게 정상 계상한다. 무상으로 받은 설비도 유지비는 사업자가 낸다 | 자동 | test_ess.py |
