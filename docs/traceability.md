@@ -77,7 +77,7 @@
 | `FR-104` | Must-have | 1 | `FR-104-AC1` | PV: 연 degradation_rate(%/년) 발전량 감소 | 자동 | test_smoke_wave0.py, test_ev_v2g.py, test_heatpump.py, test_pv.py 2건 |
 |  |  | 1 | `FR-104-AC2` | ESS: 사이클 누적 + 달력 열화 중 보수적 값 적용, EOL(기본 80%) 도달 시 교체비 계상 | 자동 | test_lifecycle_wiring.py, test_ess.py 6건 |
 |  |  | 1 | `FR-104-AC3` | 수명 도달 자원은 replace / retire 선택 가능. 선택의 결과는 아래 「retire 의 의미」 다섯으로 정한다 (v0.14 명확화 — 조항이 선택지만… | 자동 | test_der_contract.py 2건, test_ess.py 5건, test_ev_v2g.py 4건, test_heatpump.py 5건, test_load.py 7건, test_pv.py 5건, test_thermal_load.py 6건 |
-|  |  | 1 | `FR-104-AC4` | 인버터 등 부속설비의 독립 수명(10~12년)을 본체와 분리 관리 | 자동 | test_smoke_wave0.py, test_ess.py 2건, test_heatpump.py 2건, test_load.py, test_pv.py 3건, test_thermal_load.py 3건 |
+|  |  | 1 | `FR-104-AC4` | 인버터 등 부속설비의 독립 수명(10~12년)을 본체와 분리 관리 | 자동 | test_smoke_wave0.py, test_ess.py 2건, test_heatpump.py 2건, test_load.py, test_pv.py 5건, test_thermal_load.py 3건 |
 |  |  | 1 | `FR-104-AC5` | 분석기간 종료 시 잔존 수명 비례 잔존가치를 최종연도에 계상 | 자동 | test_from_resource_conventions.py, test_lifecycle_wiring.py 2건, test_salvage_row.py 2건, test_der_contract.py 3건, test_ess.py 3건, test_ev_v2g.py, test_heatpump.py 3건, test_load.py 2건, test_pv.py 3건, test_thermal_load.py |
 | `FR-105` | Must-have | 1 | `FR-105-AC1` | 자원 클래스는 자신이 지원하는 운전 방법 목록을 선언한다. 예: | 자동 | test_der_contract.py, test_dv_rule_enforcement.py 2건, test_ess.py 3건, test_ev_v2g.py 4건, test_heatpump.py 5건, test_operating_mode_mapping.py, test_pv.py 5건, test_pv_validation.py |
 |  |  | 1 | `FR-105-AC2` | 운전 방법은 자원 클래스에 함께 정의되며, 신규 운전 방법 추가 시 코어 엔진 수정이 발생하지 않는다 (NFR-201과 동일 기준) | 자동 | test_17_11_sg5.py, test_pv.py |

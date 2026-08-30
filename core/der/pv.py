@@ -560,8 +560,28 @@ class PV(DER):
         짧게 나와 필요 지원액이 과소 산정된다. 12년차가 아닌 이유는 12년차가
         **아직 쓰고 있는 해**이고, 한 해 차이가 할인 때문에 회수기간을 바꾸기 때문.
 
-        **`retire` 면 빈다** (`FR-104-AC3`) — 본체도 부속설비도 다시 사지
-        않는다는 선택이므로 이후 교체비 자체가 없다.
+        ⚠ **이 스케줄은 `_acquisitions()` 에서 파생된다** (R44 · WP-13). 종전에는
+        여기와 `_acquisitions()` 가 **각자** `(수명, 단가)` 짝을 돌았다. 두 곳이
+        갈리면 *교체비는 계상되는데 그 취득분의 잔존가치는 안 세어지는* 상태가
+        조용히 생기고, 그것은 결론을 **한 방향으로만** 나쁘게 만들어 「보수적이라
+        안전하다」로 읽힌다. `ESS`(R42)·`HeatPump`(R43 · WP-D2)가 같은 자리에서
+        같은 답을 냈다 — **한 곳이 내고 다른 곳이 읽는다.** 부품을 왜 접지 않는지,
+        최초 인버터를 왜 취득분으로 세지 않는지는 전부 `_acquisitions()`
+        독스트링에 있다. **같은 조건을 두 곳에 적지 않는다.**
+
+        **`retire` 면 빈다** (`FR-104-AC3`) — 그 조건을 **여기 다시 적지 않는다.**
+        `_acquisitions()` 가 `retire` 에서 1년차 본체 하나만 내고 그것은 아래에서
+        걸러지므로 이 함수는 저절로 빈다.
+
+        ⚠ **단가가 0인 부품도 행을 낸다.** `HeatPump._acquisitions()` 의
+        `unit_cost > 0.0` 가드를 `PV` 로 옮기지 **않았다** — 파생 이전의 이 함수에도
+        그 가드가 없어 단가 0 은 이미 `{13: 0원}` 을 내고 있었고(실측), 지금
+        넣으면 파생이 아니라 **출력을 바꾸는 변경**이 된다. 0원 교체행이 프로포마에
+        「교체가 있었다」로 읽히는 어긋남은 크기와 함께
+        `.orch/R44/result_13.md` 에 올렸다.
+
+        `horizon` 검증은 **여기가 진다** — `_acquisitions()` 에는 그 검증이 없고
+        `salvage_value()` 는 그것을 검증 없이 부른다(`HeatPump` 와 같은 배치).
         """
         if horizon <= 0:
             raise ValidationError(
@@ -569,22 +589,17 @@ class PV(DER):
                 reason=f"{self.name}: 분석기간은 1년 이상입니다: {horizon}",
                 action="분석기간(horizon)에 1 이상의 정수를 지정하십시오",
             )
-        if self.retires_at_end_of_life():
-            return {}
 
         schedule: dict[int, Money] = {}
-        for life, unit_cost in (
-            (self.inverter_lifetime, self.inverter_unit_capex_won_per_kw),
-            (self.lifetime, self.unit_capex_won_per_kw),
-        ):
-            year = life + 1
-            while year <= horizon:
-                cost = self.capacity_kw * unit_cost * self.replacement_escalation_factor(year=year)
+        for _life, acquired in self._acquisitions(horizon=horizon):
+            for year, cost in acquired.items():
+                # 1년차 최초 취득은 CAPEX 이지 교체비가 아니므로 제외한다
+                if year == 1:
+                    continue
                 # 같은 해에 본체와 인버터가 겹치면 더한다 — 덮어쓰면 한쪽이
                 # 조용히 사라진다
                 schedule[year] = to_won(to_won(cost) + schedule.get(year, Money(0)))
-                year += life
-        return schedule
+        return {year: schedule[year] for year in sorted(schedule)}
 
     def _acquisitions(self, *, horizon: int) -> tuple[tuple[int, dict[int, float]], ...]:
         """부품별 `(수명, {취득 연도: 취득가})` — 본체와 인버터를 **갈라** 담는다.
@@ -614,10 +629,13 @@ class PV(DER):
         채우지 않는다** — 그 결과 최초 인버터 몫이 본체 잔존가치에 남아 있다는
         어긋남은 `.orch/R39/result_replacement_wiring.md` 에 크기와 함께 올렸다.
 
-        ⚠ **`replacement_schedule()` 과 같은 `(수명, 단가)` 짝을 돈다.** 두 곳이
-        갈리면 *교체비는 계상되는데 그 취득분의 잔존가치는 안 세어지는* 상태가
-        조용히 생긴다 — `tests/casegrid/test_lifecycle_wiring.py` 가 둘을 대조해
-        붙든다. **`retire` 갈래가 그 대조의 첫 실물이다** — 아래 참조.
+        ⚠ **`replacement_schedule()` 이 여기서 파생된다** (R44 · WP-13). 종전에는
+        두 함수가 **각자** 같은 `(수명, 단가)` 짝을 돌았고, 갈리면 *교체비는
+        계상되는데 그 취득분의 잔존가치는 안 세어지는* 상태가 조용히 생겼다.
+        `tests/casegrid/test_lifecycle_wiring.py` ⓒ 가 여전히 둘을 대조하지만,
+        이제 그 대조는 **1년차를 거르는 규약**만 재는 동어반복에 가깝다 — 갈림을
+        막는 것은 시험이 아니라 **출처가 하나뿐이라는 사실**이다.
+        **`retire` 갈래가 그 대조의 첫 실물이었다** — 아래 참조.
 
         ⚠⚠ **`retire` 면 재취득이 없다** (`FR-104-AC3` · R39-E2 가 고쳤다).
         `replacement_schedule()` 은 `retire` 에서 **빈 사전**을 내는데 이 함수는

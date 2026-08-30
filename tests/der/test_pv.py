@@ -330,6 +330,68 @@ def test_rc_all_c4_body_replacement_appears_in_long_horizon() -> None:
     assert 13 in schedule and 25 in schedule
 
 
+@pytest.mark.req("FR-104-AC4")
+def test_rc_all_c4_sums_the_year_where_body_and_inverter_collide() -> None:
+    """★ 같은 해에 본체와 인버터가 겹치면 **더한다** — 덮어쓰면 한쪽이 사라진다.
+
+    R44 가 `replacement_schedule()` 을 `_acquisitions()` 에서 파생시키면서
+    합산이 사전 갱신 한 줄로 옮겨졌다. 덮어쓰기로 바뀌어도 **연차 집합은 그대로**
+    이므로 위 세 검사는 전부 초록불이고, 사라지는 쪽이 본체(금액이 큰 쪽)면
+    결론은 **좋아지는 방향으로** 조용히 틀린다.
+
+    오라클 — 손계산(물가 계수를 꺼서 명목 = 실질로 둔다):
+
+        본체 10년 · 인버터 5년 · 3kW · 본체 150만원/kW · 인버터 30만원/kW
+        인버터 교체  6 · 11 · 16년차   각  3 × 300,000 =   900,000원
+        본체   교체       11년차       각 3 × 1,500,000 = 4,500,000원
+        → {6: 900,000, 11: 5,400,000, 16: 900,000}
+
+    ⚠ **붙들지 못하는 것**: 물가 계수를 껐으므로 *「겹친 해에 계수를 각각
+    곱했는가」* 는 재지 않는다 — 그쪽은 `tests/casegrid/
+    test_lifecycle_wiring.py` 의 실효 래칫이 갖는다.
+    """
+    pv = make_pv_3kw(
+        lifetime=10,
+        inverter_lifetime=5,
+        inverter_unit_capex_won_per_kw=300_000,
+        escalation_rate=0.0,
+        replacement_escalation_rate=0.0,
+    )
+    assert pv.replacement_schedule(horizon=HORIZON) == {
+        6: Money(900_000),
+        11: Money(5_400_000),
+        16: Money(900_000),
+    }
+
+
+@pytest.mark.req("FR-104-AC4")
+def test_rc_all_c4_never_counts_the_first_year_acquisition_as_a_replacement() -> None:
+    """★★ 1년차 최초 취득은 **CAPEX 이지 교체비가 아니다.**
+
+    `_acquisitions()` 는 본체 최초 취득을 `{1: _gross_capex_won()}` 로 담는다 —
+    잔존가치가 그 취득분을 세야 하기 때문이다. `replacement_schedule()` 이 거기서
+    파생되므로(R44) **1년차를 거르지 않으면 초기투자가 교체비로 한 번 더
+    계상되고**, 그 사업은 같은 설비를 두 번 사는 사업이 된다. 연차 하나가 느는
+    것이라 연차 집합만 보는 검사로는 눈에 띄지 않는다.
+
+    오라클 — 손계산(수명을 1년으로 눕혀 **2년차부터 매년** 교체가 걸리게 한다):
+
+        3kW · 본체 150만원/kW · 인버터 22.5만원/kW(기본 15%) · 물가 0
+        2 · 3년차  3 × 1,500,000 + 3 × 225,000 = 5,175,000원
+        1년차      **없다** (초기투자 4,500,000원은 `capex()` 의 몫)
+    """
+    pv = make_pv_3kw(
+        lifetime=1,
+        inverter_lifetime=1,
+        escalation_rate=0.0,
+        replacement_escalation_rate=0.0,
+    )
+    assert pv.replacement_schedule(horizon=3) == {
+        2: Money(5_175_000),
+        3: Money(5_175_000),
+    }
+
+
 @pytest.mark.req("FR-104-AC5")
 def test_rc_all_c5_salvage_value_at_horizon_end() -> None:
     """`RC-ALL-C5` — **본체 몫은 조항의 오라클 그대로**이고 재취득분이 더 붙는다.
