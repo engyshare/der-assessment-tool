@@ -38,7 +38,7 @@ class _FixedBenefit(ValueStream):
 
 @pytest.mark.req("FR-402-AC4")
 def test_exclusion_rules_are_declarative_table_rows() -> None:
-    """Spec expects fields A, B, type A-D, rationale, and optional regulation profile."""
+    """Spec expects fields A, B, type A-E, rationale, and optional regulation profile."""
     assert isinstance(DEFAULT_EXCLUSION_RULES, tuple)
     assert DEFAULT_EXCLUSION_RULES
     for rule in DEFAULT_EXCLUSION_RULES:

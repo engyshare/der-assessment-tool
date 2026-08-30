@@ -153,9 +153,12 @@ def test_malformed_rules_are_refused_at_load() -> None:
     """유형 오타·중복 쌍·자기 자신과의 배타는 읽는 시점에 터진다."""
     base = "version: 1\nrules:\n"
 
-    with pytest.raises(ExclusionRulesError, match="A~D"):
+    # ⚠ **열거에 없는 글자를 골라야 한다.** 여기 있던 `E` 는 R48 이 유형 `E`
+    # (동시에 성립할 수 없는 운전)를 신설하면서 **정상 값이 됐다** — 그대로 두면
+    # 이 단언이 「오타를 잡는다」가 아니라 「정상 값을 거부한다」를 고정한다.
+    with pytest.raises(ExclusionRulesError, match="A~E"):
         load_exclusion_rules_from_text(
-            base + "  - {benefit_a: X, benefit_b: Y, type: E, rationale: r}\n"
+            base + "  - {benefit_a: X, benefit_b: Y, type: Z, rationale: r}\n"
         )
 
     with pytest.raises(ExclusionRulesError, match="이미 선언된 쌍"):
