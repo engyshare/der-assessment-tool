@@ -263,10 +263,11 @@ def test_salvage_counts_exactly_the_acquisitions_that_were_paid_for(
     부속설비를 더 준 `PV` 는 **재지 않았다**(확인 못 함) — 그 구성에서 두 경로가
     같은지는 이 검사가 아무 말도 하지 않는다.
 
-    ⚠ **`ESS` 는 이제 두 경로가 같은 출처를 본다** — `replacement_schedule()` 이
-    `_acquisitions()` 에서 파생되므로 이 검사는 그쪽에서 **동어반복에 가깝다**
-    (1년차를 거르는 규약만 남는다). 그것을 알고 남긴다: `PV` 는 여전히 두 곳이
-    각자 `(수명, 단가)` 짝을 돌고, 새 자원이 어느 모양을 고를지 모른다.
+    ⚠ **이제 세 자원 모두 두 경로가 같은 출처를 본다** — `ESS` 뿐 아니라
+    `PV` 도 `replacement_schedule()` 이 `_acquisitions()` 에서 파생된다
+    (R44 WP-13, 커밋 `e4ce901`). 이 검사는 셋 모두에 대해 **동어반복에 가깝다**
+    (1년차를 거르는 규약만 남는다). 그것을 알고 남긴다: 새 자원이 어느 모양을
+    고를지 모른다.
     """
     for resource in (
         resource_factory(),
