@@ -740,7 +740,8 @@ def build_case_report(
     subsidy_rate = float(scenario["subsidy_rate"])
     scheme = _scheme_for(subsidy_rate)
 
-    # ★ **일사 곡선을 기본 경로에 배선한다 (R37 · `todo.md` 4번).**
+    # ★ **일사 곡선을 기본 경로에 배선한다 (R37 · 당시 `todo.md` 4번 — 그 파일은
+    # R45 에 `status.md` 「다음에 집을 것」 절로 합쳐졌다).**
     # 넘기지 않으면 러너가 이용률 하나로 24스텝을 **균등 배분**하고, 그러면
     # 심야에도 태양광이 0.45kWh 를 낸다 — 붙임 8 이 그것을 「미반영 항목」으로
     # 싣고 있었다. 통로(`PV.generation_profile_kwh`)와 자산(야간 가중치 0.0)은

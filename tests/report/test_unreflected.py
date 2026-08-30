@@ -497,7 +497,8 @@ def test_a_shaped_generation_profile_removes_the_row() -> None:
 
 
 def test_variable_om_is_judged_from_the_cost_rows_not_from_the_resource_argument() -> None:
-    """★★ **「변동 O&M 미포함」이 낡는 날을 붙든다** (R43-C · `todo.md` 5-①).
+    """★★ **「변동 O&M 미포함」이 낡는 날을 붙든다** (R43-C · 당시 `todo.md` 5-①
+    — 배선 자체는 `status.md` 「다음에 집을 것」 23번).
 
     본문 3.2 의 비용 행 칸은 한 줄 안에서 **앞 절반만** 규약을 지켰다 — 실린
     항목은 재어 짓고 뒤의 *「(변동 O&M 미포함 · 3.4)」* 는 문장으로 박혀
