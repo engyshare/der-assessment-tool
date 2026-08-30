@@ -451,6 +451,8 @@ jobs:
         with:
           python-version: "3.11"
 
+      - run: pip install pyyaml
+
       - name: 조항이 지목한 구획 인용 검사 (그물 ③-1)
         run: python scripts/check_clause_partition.py
 

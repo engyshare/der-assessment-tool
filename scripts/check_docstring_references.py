@@ -125,6 +125,12 @@ KNOWN_STALE: dict[tuple[str, str], str] = {
     ): "위와 같음 — R31 이 없앤 사본의 자리를 적는다.",
 }
 
+#: .gitignore 가 담지 않는 디렉터리 접두사의 목록.
+#: ⚠ 면제 목록이 아니라 「저장소 밖」 선언이다. 이 접두사로 시작하는 경로는
+#: 실물에 없는 것이 아니라 이 저장소가 일부러 담지 않는 것이다.
+#: (.gitignore 를 읽어 짓지 않는다 — 검사가 다른 파일의 문법을 따라다니면 안 된다)
+OUT_OF_REPO_PREFIXES: frozenset[str] = frozenset([".orch/"])
+
 #: 백틱 한 겹 또는 두 겹. 줄바꿈을 넘어도 잡는다 — 긴 경로는 줄을 넘겨 적힌다.
 _BACKTICK = re.compile(r"``?([^`]+?)``?", re.S)
 
@@ -368,6 +374,9 @@ class _Index:
         실재하는가**이지 경로를 몇 마디로 적었는가가 아니다.
         """
         rel = text.replace("\\", "/")
+        for prefix in OUT_OF_REPO_PREFIXES:
+            if rel.startswith(prefix):
+                return None, "out_of_repo"
         if "/" in rel:
             hit = self.by_rel.get(rel)
             if hit is not None:
@@ -433,6 +442,8 @@ def _check_span(
         if match is None:
             return None
         module, how = index.by_module_text(left)
+        if how == "out_of_repo":
+            return f"{left}::{match.group(1)}", "out_of_repo"
         if how == "absent":
             return f"{left}::{match.group(1)}", f"모듈 파일이 없다: {left}"
         if module is None:
@@ -450,6 +461,8 @@ def _check_span(
     path_match = _PATH.fullmatch(text)
     if path_match is not None:
         _, how = index.by_path_text(path_match.group(1))
+        if how == "out_of_repo":
+            return path_match.group(1), "out_of_repo"
         if how == "absent":
             return path_match.group(1), f"그 경로에 파일이 없다: {path_match.group(1)}"
         return None
@@ -495,6 +508,7 @@ def main() -> int:
     index = _Index(files)
     classes = _ClassIndex(files)
     scanned = 0
+    out_of_repo_count = 0
     violations: list[str] = []
     seen_stale: set[tuple[str, str]] = set()
 
@@ -514,6 +528,9 @@ def main() -> int:
                 if verdict is None:
                     continue
                 span, reason = verdict
+                if reason == "out_of_repo":
+                    out_of_repo_count += 1
+                    continue
                 key = (rel, span)
                 if key in KNOWN_STALE:
                     seen_stale.add(key)
@@ -524,11 +541,14 @@ def main() -> int:
         print("ERROR: 뽑힌 문면이 0건 — 검사를 수행하지 못했다", file=sys.stderr)
         return 2
 
-    print(
+    summary = (
         f"훑은 파일 {len(files)}개 · 백틱 문면 {scanned}건 · "
         f"클래스 선언 {sum(len(v) for v in classes.by_name.values())}건 · "
         f"경위 면제 {len(KNOWN_STALE)}건"
     )
+    if out_of_repo_count > 0:
+        summary += f" · 저장소 밖 참조 {out_of_repo_count}건"
+    print(summary)
 
     stale_gone = sorted(set(KNOWN_STALE) - seen_stale)
     if violations:

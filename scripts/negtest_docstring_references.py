@@ -260,6 +260,42 @@ def main() -> int:
     finally:
         restore_file(target, backup8)
 
+    # ── ⑨ 저장소 밖 접두사의 경로는 위반이 아닌가 ───────────────────────
+    print("\n⑨ 저장소 밖 경로 — OUT_OF_REPO_PREFIXES 로 시작하는 경로는 위반이 아닌가")
+    marker9 = "from core.casegrid.operating_lines import DAYS_PER_YEAR, net_operating_flows"
+    inject_new9 = "# `.orch/mutate.py` 의 원칙을 따른다\n" + marker9
+    backup9 = target.with_suffix(target.suffix + ".mutbak")
+    try:
+        src = target.read_text(encoding="utf-8")
+        mutated = plant(src, marker9, inject_new9)
+        if mutated != src:
+            shutil.copy2(target, backup9)
+            target.write_text(mutated, encoding="utf-8")
+            MUTATED.append(target)
+            rc, out = run_checker()
+            check("저장소 밖 접두사의 경로는 위반이 아니다 (rc=0)", rc == 0, f"rc={rc}\n{out}")
+            check("요약 줄에 저장소 밖 참조 건수가 뜬다", "저장소 밖 참조" in out, out)
+    finally:
+        restore_file(target, backup9)
+
+    # ── ⑩ 접두사가 아닌 실재하지 않는 경로는 여전히 잡히는가 ────────────────
+    print("\n⑩ 없는 경로 — 접두사가 아닌 실재하지 않는 경로는 여전히 잡히는가")
+    marker10 = "from core.casegrid.operating_lines import DAYS_PER_YEAR, net_operating_flows"
+    inject_new10 = "# `scripts/nonexistent_negcheck.py` 파일\n" + marker10
+    backup10 = target.with_suffix(target.suffix + ".mutbak")
+    try:
+        src = target.read_text(encoding="utf-8")
+        mutated = plant(src, marker10, inject_new10)
+        if mutated != src:
+            shutil.copy2(target, backup10)
+            target.write_text(mutated, encoding="utf-8")
+            MUTATED.append(target)
+            rc, out = run_checker()
+            check("접두사가 아닌 실재하지 않는 경로는 잡힌다 (rc=1)", rc == 1, f"rc={rc}\n{out}")
+            check("출력에 nonexistent_negcheck.py 가 나온다", "nonexistent_negcheck.py" in out, out)
+    finally:
+        restore_file(target, backup10)
+
     # ── ⑤ 대상 파일 0개 — rc=2 ─────────────────────────────────
     print("\n⑤ 대상 파일 0개 설정 오류 — rc=2 인가")
     # SCAN_ROOTS 를 존재하지 않는 이름으로 바꾼다.
@@ -282,7 +318,7 @@ def main() -> int:
     # ── 원복 확인 ──────────────────────────────────────────────
     print("\n원복 확인")
     touched = sorted({q.relative_to(REPO).as_posix() for q in MUTATED})
-    check("여덟 갈래가 건드린 파일은 둘뿐이다", len(touched) == 2, str(touched))
+    check("열 갈래가 건드린 파일은 둘뿐이다", len(touched) == 2, str(touched))
     r = subprocess.run(
         ["git", "diff", "--stat", "--", *touched],
         capture_output=True, text=True, encoding="utf-8", cwd=str(REPO),
@@ -302,7 +338,7 @@ def main() -> int:
             print(f"  - {f}")
         return 1
     print(
-        "전건 통과 — 문면 참조 검사 8갈래가 실제로 잡고, "
+        "전건 통과 — 문면 참조 검사 10갈래가 실제로 잡고, "
         "재수출·상속은 거짓으로 세지 않는다"
     )
     return 0
