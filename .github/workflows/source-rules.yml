@@ -422,3 +422,43 @@ jobs:
         # 실물이 상한 이내라 이 검사는 늘 초록불이다. 그 초록불이 «지킨다» 인지
         # «세지 않는다» 인지는 결과만으로 구분되지 않는다 (§13.0.1 ④).
         run: python scripts/negtest_status_round_blocks.py
+
+  # ── 조항이 지목한 구획을 그 조항의 인용이 만지는가 (R44 · WP-14 신설) ──
+  #
+  # R37 이 세운 두 그물은 인용의 **내용을 보지 않는다** — 하나는 건수를 세고
+  # 다른 하나는 Phase 를 견준다. R38 이 `FR-101-AC3` 에서 그 사이로 빠져나가는
+  # 형태를 찾았다: 조항이 「코어 엔진」을 명시하는데 인용 2건 어느 쪽도
+  # `core.engine` 을 import 하지 않고 **문자열로 금지 목록에 담고 있었을 뿐**
+  # 이었다. 매핑표는 그 조항을 「자동 검증됨」으로 셌다.
+  #
+  # **부채 대장 래칫이다.** 지금 저장소에 결손 10건이 있고(사각지대 3 · 실물
+  # 부채 7) 전부 `KNOWN_GAPS` 에 사유와 함께 적혀 있다. 막는 것은 결손이 아니라
+  # **아무도 모르는 결손**이다 — R42 `check_dependency_audit` 가 세운 형태이며
+  # `check_docstring_references.py` 의 `KNOWN_STALE` 과 같은 규약이다. 대장이
+  # 늘어도, 줄었는데 대장을 안 고쳐도 빨간불이다.
+  #
+  # ⚠ **그물 ③-2(`audit_clause_selfreference.py`)는 여기에 배선하지 않는다.**
+  # 그것은 독스트링 문면으로 후보를 지목하는 도구이고, R37 의 결함이 정확히
+  # **독스트링이 거짓이었던 것**이므로 판정이 될 수 없다. 차단으로 올리면
+  # 정당한 서술이 커밋을 막고 사람이 검사를 끈다. 감지 능력은 아래 음성
+  # 스위트가 함께 잰다.
+  clause-partition:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 조항이 지목한 구획 인용 검사 (그물 ③-1)
+        run: python scripts/check_clause_partition.py
+
+      - name: 도구 감지 능력 확인 (음성 14갈래 — 두 그물)
+        # 실물이 대장과 같아 위 검사는 초록불이다. 그 초록불이 «지킨다» 인지
+        # «못 잡는다» 인지는 결과만으로 구분되지 않는다 (§13.0.1 ④).
+        #
+        # 이 스위트는 **실물 파일을 변이시키지 않는다** — 두 그물이 `--spec`·
+        # `--tests` 를 받으므로 합성 픽스처만으로 전 갈래를 잰다. 중단해도
+        # 남는 것이 없다(R44 · WP-10 이 실측한 `.mutbak` 잔류를 피한다).
+        run: python scripts/negtest_clause_nets.py

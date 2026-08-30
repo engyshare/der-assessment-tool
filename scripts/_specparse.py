@@ -75,6 +75,18 @@ KEY = r"[A-Za-z][A-Za-z0-9_-]*"
 
 CRITERION = re.compile(rf"^\s{{2,}}- \*\*(AC\d+(?:\.{KEY})?|M\d+)\*\*\s+(.+)$")
 
+# 수용기준 **ID 자체**의 생김새. 인용을 찾는 쪽이 이것을 다시 적지 않게 한다.
+#
+# `check_task_mapping.py` 가 백틱으로 감싸 쓰고(`\`FR-106-AC1\``), `_citations.py`
+# 는 백틱 없이 쓴다(오류 문면은 백틱을 안 쓴다). 두 곳이 각자 적으면 어긋나며,
+# 이 저장소는 그 어긋남을 이미 한 번 밟았다 — `FR-` 를 그냥 찾다가 `NFR-` 를
+# 함께 잡는 함정이다. 그래서 **왼쪽 경계는 쓰는 쪽이 붙이고 몸통만 여기서
+# 소유한다.**
+#
+# `SC-\d+` 를 함께 받는 이유는 `check_task_mapping.py` 의 `CITE` 주석에 있다 —
+# §9 보안 조항은 표 한 행이 곧 규범 문장이라 수용기준 ID 가 요구사항 ID 와 같다.
+CID_BODY = rf"(?:FR|NFR|UI)-\d+-(?:AC|M)\d+(?:\.{KEY})?|SC-\d+"
+
 # 수용기준 자리에 있으나 ID 형식이 어긋난 선언.
 #
 # `BARE_BULLET`은 **4칸 들여쓰기만** 잡는다. 그런데 표에 딸린 수용기준은
@@ -349,5 +361,3 @@ def parse_phase_appendix(path: Path) -> dict[str, str]:
             if rid not in out or int(phase) < int(out[rid]):
                 out[rid] = phase
     return out
-
-

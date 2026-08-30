@@ -44,6 +44,8 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+from _specparse import CID_BODY
+
 # 표 수용기준 전개(2.15 ①)로 생긴 `FR-102-AC1.PV` 형식을 함께 받는다.
 # 키는 저자가 부여한 리터럴이며 대소문자를 구분한다 — `PV`를 `pv`로 낮추는 것도
 # 파생이므로 하지 않는다. 점은 한 단계까지만이다.
@@ -57,9 +59,9 @@ from pathlib import Path
 #: 접미사(`-AC1`)를 붙여 형식을 통일하지 않은 이유는 2.15가 동결한 규약이다 —
 #: *"키는 저자가 1회 부여하고 동결하는 리터럴"* 이고 `SC-8` 은 이미 그 리터럴
 #: 이다. 여기서 파생시키면 기존 인용이 한꺼번에 무효가 된다.
-CITE = re.compile(
-    r"`((?:FR|NFR|UI)-\d+-(?:AC|M)\d+(?:\.[A-Za-z][A-Za-z0-9_-]*)?|SC-\d+)`"
-)
+#: 몸통은 `_specparse.CID_BODY` 단독 소유다 — 여기서 다시 적으면 백틱 없이
+#: 같은 것을 찾는 `_citations.MENTION` 과 조용히 갈린다(R44 · WP-14).
+CITE = re.compile(rf"`({CID_BODY})`")
 RANGE = re.compile(r"`((?:FR|NFR|UI)-\d+)-(AC|M)(\d+)`\s*~\s*`?(?:AC|M)?(\d+)`?")
 
 # 작업 항목 식별.
