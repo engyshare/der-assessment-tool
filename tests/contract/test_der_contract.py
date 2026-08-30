@@ -347,6 +347,45 @@ class DERContractTests:
             "이중 계상됩니다 (FR-402-AC2.C)"
         )
 
+    # ── 정책 가정 경고 훅 (v1.2 계약 개정 · R48 §7) ─────────────────
+    @pytest.mark.contract
+    @pytest.mark.req("FR-404-AC1")
+    def test_policy_warnings_are_declared_as_str_list(self) -> None:
+        """모든 자원이 `policy_warnings()` 를 갖고 `list[str]` 을 낸다.
+
+        ## ★ 이 검사가 **「선언했는가」만 재는 이유** (R48 §7)
+
+        `value_streams()` 는 기본값이 「없음」이어도 보수적이다 — 잊으면 편익이
+        지워져 결과가 나빠 보이고, 나빠 보이는 결과는 검토를 부른다.
+        **`policy_warnings()` 는 방향이 반대다.** 기본값 「없음」은 경고를
+        지우므로, 잊으면 제도 근거 없는 편익이 **아무 표시 없이** 실리고 결과는
+        그럴듯해 보인다. 그래서 기본 구현에 빠뜨림을 막는 힘이 없고, 그 몫을
+        이 계약 테스트가 진다.
+
+        재는 것은 **낼 자리가 있는가**뿐이다. 어느 자원이 경고를 **내야
+        하는가**는 제도 사실이라 계약이 알 수 없다 — 계약이 그것까지 재려 들면
+        자원 이름 목록을 손으로 들게 되고, 그 목록은 다음 제도에 낡는다.
+        """
+        der = self.make()
+        assert callable(getattr(der, "policy_warnings", None)), (
+            f"{type(der).__name__} 이 policy_warnings() 를 갖지 않습니다. "
+            "리포트가 자원 종류를 몰라도 경고를 부를 수 있어야 합니다 — 없으면 "
+            "`isinstance(resource, EV_V2G)` 갈래가 되살아나고, 제도가 늘 때마다 "
+            "리포트를 또 고치게 됩니다 (FR-404-AC1 · R48 §7)"
+        )
+        warnings_out = der.policy_warnings()
+        assert isinstance(warnings_out, list), (
+            f"policy_warnings() 는 list 를 돌려줍니다 "
+            f"(실제 {type(warnings_out).__name__}). None 이나 단일 문자열을 "
+            "돌려주면 호출측이 「경고 없음」과 「훅이 없음」을 가르려 들고, "
+            "그 분기가 곧 자원별 갈래입니다"
+        )
+        for line in warnings_out:
+            assert isinstance(line, str) and line.strip(), (
+                f"경고 문구는 비어 있지 않은 문자열입니다: {line!r}. 빈 문자열은 "
+                "리포트에 빈 줄로 서고, 빈 줄은 「경고가 없다」와 구분되지 않습니다"
+            )
+
     # ── 운전 방법 (v1.1 계약 개정 ④ · FR-105) ───────────────────────
     @pytest.mark.contract
     @pytest.mark.req("FR-105-AC1")
@@ -796,6 +835,27 @@ def test_value_streams_defaults_to_empty_on_the_contract() -> None:
         "(부하는 편익을 만들지 않는다)이 상속으로 강제됩니다"
     )
     assert DER.value_streams(None) == ()  # type: ignore[arg-type]
+
+
+@pytest.mark.contract
+@pytest.mark.req("FR-404-AC1")
+def test_policy_warnings_defaults_to_empty_but_is_not_the_safe_direction() -> None:
+    """`policy_warnings()` 도 기본 구현을 갖는다 — **다만 이유가 다르다.**
+
+    기본 구현을 두는 목적은 **리포트가 자원 종류를 모르게 하는 것**이다
+    (R48 §7 — `isinstance(resource, EV_V2G)` 갈래를 없앤다). 「기본값이
+    보수적이라 잊어도 안전하다」가 **아니다**: 경고의 기본값 「없음」은 경고를
+    지우므로, 잊으면 제도 근거 없는 편익이 표시 없이 실린다.
+
+    그 몫은 `DERContractTests.test_policy_warnings_are_declared_as_str_list`
+    가 진다 — 자원마다 상속으로 「선언했는가」를 재는 검사다.
+    """
+    assert "policy_warnings" not in getattr(DER, "__abstractmethods__", frozenset()), (
+        "policy_warnings() 는 기본 구현(빈 목록)을 갖습니다 — 추상으로 두면 "
+        "경고를 낼 일이 없는 자원까지 빈 목록을 손으로 적게 되고, 그러면 리포트가 "
+        "훅의 유무로 다시 갈래를 칩니다"
+    )
+    assert DER.policy_warnings(None) == []  # type: ignore[arg-type]
 
 
 @pytest.mark.contract

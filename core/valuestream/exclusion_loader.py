@@ -112,9 +112,9 @@ def _build_rule(
         exclusion_type = ExclusionType(raw_type)
     except ValueError as exc:
         raise ExclusionRulesError(
-            f"{where}: 배타 유형이 A~D 가 아닙니다 — {raw_type!r}. "
+            f"{where}: 배타 유형이 A~E 가 아닙니다 — {raw_type!r}. "
             "유형은 spec FR-402-AC2.<키> 와 같은 리터럴이며, 행마다 수용 수준이 "
-            "반대입니다 (A 는 차단 100%, B~D 는 오탐 0)"
+            "반대입니다 (A 는 차단 100%, B~E 는 오탐 0)"
         ) from exc
 
     profile = entry.get("applies_to_profile")

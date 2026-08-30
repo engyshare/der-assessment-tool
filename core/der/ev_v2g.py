@@ -230,7 +230,11 @@ class EV_V2G(DER):
         return cls.OPERATING_MODES
 
     def policy_warnings(self) -> list[str]:
-        """리포트 상단에 표시할 정책 가정 경고 (FR-404-AC1)."""
+        """리포트 상단에 표시할 정책 가정 경고 (FR-404-AC1).
+
+        **`DER` 계약의 기본 구현(빈 목록)을 덮어쓴다** (R48 §7 · spec §16.2).
+        문면은 `POLICY_WARNING` 이 소유한다 — 계약은 형식만 고정한다.
+        """
         return [POLICY_WARNING] if self.discharge_benefit_enabled else []
 
     def value_streams(self) -> tuple[str, ...]:

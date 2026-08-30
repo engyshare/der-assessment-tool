@@ -1,10 +1,10 @@
-"""8.3 — 배타 4유형 판정. **A 차단 100%(음성)** 와 **B~D 오탐 0(양성)** 를
+"""8.3 — 배타 유형 판정. **A 차단 100%(음성)** 와 **B~E 오탐 0(양성)** 를
 별도 테스트로 쪼갰다 (판단 ① 결론).
 
 쪼갠 이유: 검사 방향이 반대다.
 - A (동일 물리량 이중 판매): 위반을 심어 «잡히는가» 본다 — 음성.
-- B~D: 정당한 동시 편익을 «안 지워지는가» 본다 — 양성.
-한 테스트에 섞이면 A 의 음성 케이스가 B~D 의 양성 검증을 망가뜨린다.
+- B~E: 정당한 동시 편익을 «안 지워지는가» 본다 — 양성.
+한 테스트에 섞이면 A 의 음성 케이스가 B~E 의 양성 검증을 망가뜨린다.
 
 **FR-402-AC1 핵심**: 동시 발생하는 정당한 편익(자가소비+피크저감+망회피+CO2)
 을 «정상 계상» 함을 반드시 확인 — 배타를 넓게 잡으면 그것들이 지워지고,
@@ -24,6 +24,7 @@ from core.valuestream import (
     SelfConsumption,
     SurplusSale,
 )
+from core.valuestream.exclusion_loader import load_exclusion_rules_from_text
 from core.valuestream.exclusion_table import (
     DEFAULT_EXCLUSION_RULES,
     collect_exclusions,
@@ -184,3 +185,49 @@ def test_default_rules_are_a_tuple_immutable() -> None:
     오라클: 순위 4 (NFR-205 정합).
     """
     assert isinstance(DEFAULT_EXCLUSION_RULES, tuple)
+
+
+# ── 유형 E — 동시에 성립할 수 없는 운전 (R48 §2) ─────────────────────────
+
+
+@pytest.mark.req("FR-402-AC2.E")
+def test_type_e_exists_and_is_not_borrowed_from_a_or_d() -> None:
+    """배타 유형에 `E`(동시에 성립할 수 없는 운전)가 **선다**.
+
+    R48 사용자 판정 §2 가 세운 축은 **계통 급전(CP·NWAs) × 사용자 운전
+    (SelfConsumption·PeakShaving)** 이며, 그것은 A~D 중 어느 것도 아니다:
+
+        A 가 아니다   같은 kWh 를 두 번 파는 것이 아니다 — 물리량이 겹치지
+                      않아도 성립하지 않는다
+        D 가 아니다   제도가 금지하는 것이 아니다 — 제도가 바뀌어도 성립하지
+                      않는다
+
+    유형을 빌려 쓰면 근거 문장이 거짓이 되고, 제도 개정 때 *「제도가 바뀌었으니
+    풀린다」* 로 잘못 읽힌다.
+
+    ⚠ **규칙 행은 여기서 재지 않는다** — `docs/exclusion-rules.yaml` 이 규칙의
+    정본이고(FR-402-AC4) 그 행은 별도 작업이 넣는다. 이 검사가 재는 것은
+    **유형이 있고 로더가 그것을 받는가**다.
+    """
+    assert "E" in {t.value for t in ExclusionType}, (
+        "ExclusionType 에 유형 E 가 없습니다 (R48 §2). 값은 spec 조항 키 "
+        "`FR-402-AC2.E`·`docs/exclusion-rules.yaml` 의 `type:`·DB enum 이 함께 "
+        "쓰는 리터럴이므로 한 글자 «E» 여야 합니다"
+    )
+    assert ExclusionType("E") is ExclusionType.E
+
+
+@pytest.mark.req("FR-402-AC2.E")
+def test_loader_accepts_type_e_rows() -> None:
+    """로더가 `type: E` 행을 **읽는다** — 유형만 세우고 로더를 안 고치면
+
+    규칙을 넣는 쪽이 「배타 유형이 A~E 가 아닙니다」로 막힌다. 유형과 그것을
+    받는 문(門)은 같은 변경에 있어야 한다 (spec §16.2).
+    """
+    rules = load_exclusion_rules_from_text(
+        "version: 1\n"
+        "rules:\n"
+        "  - {benefit_a: X, benefit_b: Y, type: E, rationale: 운전 주체가 다르다}\n"
+    )
+    assert len(rules) == 1
+    assert rules[0].exclusion_type is ExclusionType.E
