@@ -97,6 +97,15 @@ KNOWN_PARTITION_DEBT: frozenset[tuple[str, str]] = frozenset({
     ("FR-905-AC8", "core.report"),
 })
 
+#: spec 이 이 둘을 경로 문면(`core/engine/`)으로 적었고 둘 다 그 구획을 **만지지
+#: 말라**는 조항이다. 그물이 뒤집히므로 이 시험의 사전은 경로 표기를 넣지 않는다(위 주석).
+#: 검사기 쪽은 넣고 「사각지대」 사유로 흡수한다 — **두 선택 다 옳으며 이 상수가
+#: 그 차이를 명시한다**
+KNOWN_PARTITION_DESIGN_GAP: frozenset[tuple[str, str]] = frozenset({
+    ("NFR-201-M1", "core.engine"),
+    ("NFR-208-AC1", "core.engine"),
+})
+
 #: ★ **③-2 가 지금 지목하는 조항** → 그 인용 **전부**가 만장일치로 적은 이웃.
 #:
 #: ⚠ **판정이 아니라 지목이다.** R37 이 만난 결함은 **독스트링이 거짓이었던**
@@ -367,6 +376,34 @@ def _cross_requirement(pointed: dict[str, tuple[str, ...]]) -> dict[str, tuple[s
 
 
 # ── 검사 ─────────────────────────────────────────────────────────────
+
+
+def test_partition_debt_agrees_with_script_ledger() -> None:
+    """★ 메타 검사 — 두 대장이 의도된 설계 차이만큼만 다름을 단언한다.
+
+    시험(`KNOWN_PARTITION_DEBT`)과 검사기(`check_clause_partition.py` 의 `KNOWN_GAPS`)는
+    사전에 경로 표기를 넣느냐 마느냐의 설계 차이로 인해 정확히 `KNOWN_PARTITION_DESIGN_GAP`
+    만큼의 차이가 난다. 그 밖의 차이가 생기면 누군가 한쪽 대장만 갱신한 것이다.
+    """
+    check_clause_partition = _load_script("check_clause_partition")
+    known_gaps = check_clause_partition.KNOWN_GAPS
+
+    assert set(KNOWN_PARTITION_DEBT) <= set(known_gaps), (
+        "시험 대장에 있는 항목이 검사기 대장에 없다.\n"
+        f"  사라진 것: {sorted(set(KNOWN_PARTITION_DEBT) - set(known_gaps))}\n"
+        "부채를 갚았다면 `tests/contract/test_clause_evidence_nets.py` 의 "
+        "`KNOWN_PARTITION_DEBT` 에서도 해당 항목을 지우십시오."
+    )
+
+    diff = set(known_gaps) - set(KNOWN_PARTITION_DEBT)
+    assert diff == set(KNOWN_PARTITION_DESIGN_GAP), (
+        "검사기 대장과 시험 대장의 차이가 의도된 설계 차이와 다르다.\n"
+        f"  실제 차이:   {sorted(diff)}\n"
+        f"  의도된 차이: {sorted(set(KNOWN_PARTITION_DESIGN_GAP))}\n"
+        "새 결손이 생겼거나 부채를 갚았다면 두 대장을 모두 갱신하십시오:\n"
+        "  - `scripts/check_clause_partition.py` 의 `KNOWN_GAPS`\n"
+        "  - `tests/contract/test_clause_evidence_nets.py` 의 `KNOWN_PARTITION_DEBT`"
+    )
 
 
 def test_the_partition_dictionary_resolves_to_real_packages_and_real_clauses() -> None:
