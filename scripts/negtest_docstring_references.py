@@ -14,7 +14,7 @@
 겨냥할 길이 없으므로 **실물 파일을 잠깐 변이시키고 되돌리는** 방식을 쓴다.
 `.orch/mutate.py` 의 원칙(임시 백업 → 변이 → 실행 → `finally` 원복)을 따른다.
 
-## 붙드는 것 다섯
+## 붙드는 것 여덟
 
 | 갈래 | 무엇을 잡는가 |
 |---|---|
@@ -23,6 +23,14 @@
 | ③ 재수출 거짓 양성 방지 | 재수출된 이름은 참으로 인정 → `rc=0` |
 | ④ KNOWN_STALE 부채목록 | 목록에서 빼면 그 문면이 다시 위반으로 잡힘 |
 | ⑤ 대상 0개 설정 오류 | `SCAN_ROOTS` 를 비우면 `rc=2` |
+| ⑥ 클래스의 **없는** 메서드 | 클래스 수신자 점 표기를 판정하는가 → `rc=1` |
+| ⑦ 클래스의 **있는** 메서드 | 직접 선언된 메서드는 거짓 양성이 아닌가 → `rc=0` |
+| ⑧ **물려받은** 메서드 | 부모가 선언한 것을 자식 이름으로 가리켜도 참 → `rc=0` |
+
+⑥⑦⑧ 은 R44 · WP-10 이 붙였다. 그 전까지 `_DOTTED` 의 왼쪽이 **소문자로
+시작하는 것만** 잡아 클래스를 수신자로 쓴 문면 41건이 통째로 빠져 있었다.
+⑧ 이 없으면 상속 해석을 지워도 이 스위트가 초록불이다 — 그러면 물려받은
+메서드를 가리키는 정당한 문면이 전부 거짓 위반이 되는 변경을 못 붙든다.
 
 사용:
     python scripts/negtest_docstring_references.py
@@ -188,6 +196,70 @@ def main() -> int:
     finally:
         restore_file(checker_path, backup_stale)
 
+    # ── ⑥ 클래스의 없는 메서드를 가리키면 잡는가 ─────────────────
+    print("\n⑥ 클래스 수신자 — 없는 메서드를 심어 잡히는가")
+    # `ESS` 는 core/der/ess.py 에 하나뿐이고 부모 사슬은 ESS→DER→ABC 로
+    # 닫혀 있다(검사기의 _INERT_BASES). 그러므로 이 클래스는 판정 대상이다.
+    target = REPO / "core" / "casegrid" / "e2e_runner.py"
+    marker6 = "from core.casegrid.operating_lines import DAYS_PER_YEAR, net_operating_flows"
+    inject_new6 = "# `ESS.nonexistent_negcheck_method()` 을 부른다\n" + marker6
+    backup6 = target.with_suffix(target.suffix + ".mutbak")
+    try:
+        src = target.read_text(encoding="utf-8")
+        mutated = plant(src, marker6, inject_new6)
+        if mutated != src:
+            shutil.copy2(target, backup6)
+            target.write_text(mutated, encoding="utf-8")
+            MUTATED.append(target)
+            rc, out = run_checker()
+            check("클래스의 없는 메서드를 심으면 rc=1 이다", rc == 1, f"rc={rc}\n{out}")
+            check("위반 출력에 「nonexistent_negcheck_method」가 나온다",
+                  "nonexistent_negcheck_method" in out, out)
+    finally:
+        restore_file(target, backup6)
+
+    # ── ⑦ 클래스의 있는 메서드는 거짓 양성이 아닌가 ────────────────
+    print("\n⑦ 클래스 수신자 — 직접 선언된 메서드는 거짓 양성이 아닌가")
+    # salvage_value 는 core/der/ess.py 의 ESS 가 직접 선언한다.
+    marker7 = "from core.casegrid.operating_lines import DAYS_PER_YEAR, net_operating_flows"
+    inject_new7 = "# `ESS.salvage_value()` 을 부른다\n" + marker7
+    backup7 = target.with_suffix(target.suffix + ".mutbak")
+    try:
+        src = target.read_text(encoding="utf-8")
+        mutated = plant(src, marker7, inject_new7)
+        if mutated != src:
+            shutil.copy2(target, backup7)
+            target.write_text(mutated, encoding="utf-8")
+            MUTATED.append(target)
+            rc, out = run_checker()
+            check("직접 선언된 메서드는 거짓 양성이 아니다 (rc=0)", rc == 0,
+                  f"rc={rc}\n{out}")
+    finally:
+        restore_file(target, backup7)
+
+    # ── ⑧ 물려받은 메서드를 자식 이름으로 가리켜도 참인가 ──────────
+    print("\n⑧ 클래스 수신자 — 부모가 선언한 메서드를 자식 이름으로 가리켜도 참인가")
+    # TestESSContract(tests/der/test_ess.py)는 DERContractTests
+    # (tests/contract/test_der_contract.py)를 상속하며 아래 이름을 스스로
+    # 선언하지 않는다. 상속 해석이 없으면 이 문면은 거짓 위반이 된다.
+    marker8 = "from core.casegrid.operating_lines import DAYS_PER_YEAR, net_operating_flows"
+    inject_new8 = (
+        "# `TestESSContract.test_dt_is_positive_seconds()` 을 물려받는다\n" + marker8
+    )
+    backup8 = target.with_suffix(target.suffix + ".mutbak")
+    try:
+        src = target.read_text(encoding="utf-8")
+        mutated = plant(src, marker8, inject_new8)
+        if mutated != src:
+            shutil.copy2(target, backup8)
+            target.write_text(mutated, encoding="utf-8")
+            MUTATED.append(target)
+            rc, out = run_checker()
+            check("물려받은 메서드는 거짓 양성이 아니다 (rc=0)", rc == 0,
+                  f"rc={rc}\n{out}")
+    finally:
+        restore_file(target, backup8)
+
     # ── ⑤ 대상 파일 0개 — rc=2 ─────────────────────────────────
     print("\n⑤ 대상 파일 0개 설정 오류 — rc=2 인가")
     # SCAN_ROOTS 를 존재하지 않는 이름으로 바꾼다.
@@ -210,7 +282,7 @@ def main() -> int:
     # ── 원복 확인 ──────────────────────────────────────────────
     print("\n원복 확인")
     touched = sorted({q.relative_to(REPO).as_posix() for q in MUTATED})
-    check("네 갈래가 실제로 파일을 변이시켰다", len(touched) == 2, str(touched))
+    check("여덟 갈래가 건드린 파일은 둘뿐이다", len(touched) == 2, str(touched))
     r = subprocess.run(
         ["git", "diff", "--stat", "--", *touched],
         capture_output=True, text=True, encoding="utf-8", cwd=str(REPO),
@@ -229,7 +301,10 @@ def main() -> int:
         for f in FAILURES:
             print(f"  - {f}")
         return 1
-    print("전건 통과 — 문면 참조 검사 5갈래가 실제로 잡고, 재수출은 거짓으로 세지 않는다")
+    print(
+        "전건 통과 — 문면 참조 검사 8갈래가 실제로 잡고, "
+        "재수출·상속은 거짓으로 세지 않는다"
+    )
     return 0
 
 
