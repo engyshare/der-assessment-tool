@@ -109,14 +109,15 @@ def _ess(**overrides: object) -> ESS:
 def _reacquisitions(resource: PV | ESS) -> dict[int, int]:
     """`_acquisitions()` 가 아는 **재취득분**만 `{연차: 금액}` 으로 편다.
 
-    두 자원의 반환 모양이 다르다 — `PV` 는 부품별 `(수명, {연차: 취득가})` 의
-    튜플이고 `ESS` 는 `{연차: 취득가}` 하나다(`PV` 는 수명이 다른 부품 둘을
-    가지므로 접을 수 없다. 사유는 `PV._acquisitions` 독스트링). 여기서 그
-    차이를 흡수하되 **최초 취득(1년차)은 뺀다** — 그것은 교체가 아니라 초기
+    **둘 다 부품별 `(수명, {연차: 취득가})` 의 튜플이다**(`ESS` 는 R42 에
+    `replacement_schedule()` 을 `_acquisitions()` 에서 파생시키며 부품별 튜플이 됐다).
+    수명이 다른 부품 둘을 가지므로 접을 수 없다(사유는 `PV._acquisitions` 독스트링).
+    딴 모양이 오면 여기서 터지는 편이 낫다 — 갈래를 남겨 두면 다음 사람이
+    「`ESS` 는 다른 모양을 낼 수 있다」로 읽는다.
+    여기서 그 배열을 풀되 **최초 취득(1년차)은 뺀다** — 그것은 교체가 아니라 초기
     투자이고 `replacement_schedule()` 에도 없다.
     """
-    raw = resource._acquisitions(horizon=_HORIZON)
-    parts = raw if isinstance(raw, tuple) else ((0, raw),)
+    parts = resource._acquisitions(horizon=_HORIZON)
     flat: dict[int, int] = {}
     for _life, acquired in parts:
         for year, cost in acquired.items():
