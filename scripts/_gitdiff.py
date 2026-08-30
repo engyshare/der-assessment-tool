@@ -102,3 +102,31 @@ def head_reader(root: Path):
             return ""
 
     return read
+
+
+def base_reader(base: str, root: Path):
+    """«변경 전» 소스를 읽는 함수를 돌려준다 — `head_reader` 의 짝.
+
+    **작업 트리로 물러나지 않는다.** `head_reader` 는 미커밋 변경을 만나면 작업
+    트리를 읽는 예외 경로가 있으나, 이전 이미지는 작업 트리에 없다 — 거기 있는
+    것은 «변경 후» 내용이다. 물러나면 「이전과 이후가 같다」가 항상 참이 되어
+    이 검사가 조용히 사라진다.
+
+    **기준은 `base` 의 끝이 아니라 병합 기점이다.** `changed_files` 가
+    `base...HEAD`(세 점)로 목록을 뽑으므로 그 목록의 «이전» 도 같은 기점이어야
+    한다. 끝을 읽으면 남이 기준 브랜치에 올린 변경이 내 diff 의 이전 이미지로
+    섞인다.
+
+    **«없었다» 와 «비어 있었다» 를 구분한다.** 그 시점에 없던 파일은 `None`
+    이고, 실제로 빈 파일이었던 것은 `""` 다. 신규 파일을 빈 파일로 뭉개면
+    「이전에도 코드가 없었다」로 읽혀 새로 들어온 구현이 면제된다.
+    """
+    merge_base = git(["merge-base", base, "HEAD"], root).strip()
+
+    def read(path: str) -> str | None:
+        try:
+            return git(["show", f"{merge_base}:{path}"], root)
+        except CheckError:
+            return None
+
+    return read

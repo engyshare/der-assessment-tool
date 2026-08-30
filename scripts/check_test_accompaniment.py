@@ -39,6 +39,14 @@ diff에서 완전히 판정된다. 그래서 이 셋 중 이것만 차단으로 
 정당하지 않고, 정당하지 않은 요구는 게이트를 꺼지게 만든다. 판정은 `ast` 로
 한다 — 독스트링·주석·`from __future__` 뿐이면 계산 코드가 아니다.
 
+**그리고 그 원칙은 diff 에도 걸린다.** 조항의 주어는 「구현 변경」이지 「구현이
+있는 파일의 변경」이 아니다. 파일 단위로만 보면 `core/der/pv.py` 의 독스트링 한
+줄을 고친 커밋도 **항상** 동반 테스트를 요구한다 — 이미 코드가 있는 파일이기
+때문이다. 그래서 **이전 이미지**(`_gitdiff.base_reader`)를 함께 읽어, 독스트링·
+주석을 뺀 나머지 AST 가 실제로 달라졌을 때만 구현 변경으로 센다. 이전 이미지가
+**없는** 파일(신규)은 견줄 것이 없으므로 종전대로 판정한다 — 「이전이 없다」와
+「이전과 같다」는 다른 사실이다.
+
     종료 코드 0  전건 동반됨 (또는 대상 변경 없음)
     종료 코드 1  동반되지 않은 구현 변경이 있다
     종료 코드 2  검사 자체가 성립하지 않음 (기준 ref 없음·빈 diff 등)
@@ -54,10 +62,11 @@ from __future__ import annotations
 import argparse
 import ast
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from _gitdiff import Change, CheckError, changed_files, head_reader
+from _gitdiff import Change, CheckError, base_reader, changed_files, head_reader
 
 #: 조항 문면이 지정한 대상은 `core/` 다. `app/`·`infra/` 를 넣지 않는 것은
 #: 임의 축소가 아니라 조항을 넓히지 않는 것이다 — 넓히려면 spec 개정(§16.5)이며,
@@ -65,6 +74,9 @@ from _gitdiff import Change, CheckError, changed_files, head_reader
 IMPL_ROOT = "core"
 
 TEST_ROOT = "tests"
+
+#: 독스트링을 가질 수 있는 노드. `ast.get_docstring` 이 받는 것과 같은 집합이다.
+DOCSTRING_HOLDERS = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 
 #: 삭제된 구현은 테스트를 요구하지 않고(고칠 코드가 없다), 삭제된 테스트는 동반
 #: 으로 세지 않는다(테스트를 지워서 게이트를 통과하는 경로를 막는다).
@@ -115,6 +127,67 @@ def has_code(source: str) -> bool:
             continue
         return True
     return False
+
+
+def code_shape(source: str) -> str | None:
+    """`has_code()` 가 보는 것과 같은 층위의 정규형 — 두 시점을 견주기 위한 것.
+
+    독스트링·주석·`from __future__` 를 뺀 나머지 AST 를 덤프한다. 주석은 애초에
+    AST 에 없고, 독스트링만 골라내면 **「설명을 고쳤다」와 「계산을 고쳤다」가
+    갈린다.** 줄 번호를 담지 않으므로(`ast.dump` 의 기본값) 코드가 아래로 밀린
+    것만으로는 달라지지 않는다.
+
+    **정규식으로 벗기지 않는 이유는 `has_code` 와 같다** — `\"\"\"` 가 문자열
+    리터럴 안에 있는 경우와 구분되지 않고, 그 오판이 어느 방향으로 틀렸는지
+    드러나지 않는다.
+
+    문법 오류는 `None` 이다. 판정할 수 없는 것을 «같다» 로 처리하면 검사가 조용히
+    느슨해진다 — `has_code` 가 문법 오류를 «코드 있음» 으로 보는 것과 같은 방향의
+    보수적 처리다.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+
+    for node in list(ast.walk(tree)):
+        if not isinstance(node, DOCSTRING_HOLDERS):
+            continue
+        body = list(node.body)
+        if (body and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)):
+            body = body[1:]
+        if isinstance(node, ast.Module):
+            body = [
+                n for n in body
+                if not (isinstance(n, ast.ImportFrom) and n.module == "__future__")
+            ]
+        node.body = body
+
+    return ast.dump(tree)
+
+
+def code_changed(before: str | None, after: str) -> bool:
+    """이번 diff 가 **계산 코드를** 바꿨는가.
+
+    조항의 주어는 「구현 변경」이지 「구현이 있는 파일의 변경」이 아니다. 파일에
+    코드가 있는지만 보면 `core/der/pv.py` 의 독스트링 한 줄을 고친 커밋도 항상
+    동반 테스트를 요구하고, **정당하지 않은 요구는 게이트를 꺼지게 만든다** —
+    이 파일의 독스트링이 「코드가 없는 파일은 대상이 아니다」로 이미 적어 둔
+    원칙을 파일 단위에서만 지키고 diff 단위에서는 안 지키던 상태였다.
+
+    **`before is None` 은 「이전에 없었다」이며 「이전과 같다」와 다르다.** 신규
+    파일은 견줄 이전이 없으므로 종전 판정(파일에 코드가 있는가)이 그대로 선다 —
+    호출부가 이미 `has_code` 로 걸렀다.
+    """
+    if before is None:
+        return True
+    shape_before = code_shape(before)
+    shape_after = code_shape(after)
+    if shape_before is None or shape_after is None:
+        return True
+    return shape_before != shape_after
 
 
 def imported_core_modules(source: str) -> set[str]:
@@ -168,15 +241,22 @@ def covers(imported: set[str], module: str) -> str | None:
 
 def check(
     changes: list[Change],
-    read: object,
+    read: Callable[[str], str],
+    read_before: Callable[[str], str | None] | None = None,
 ) -> tuple[list[Violation], list[Accompanied]]:
     """변경 목록을 판정한다.
 
-    `read(path) -> str` 는 «변경 후» 소스를 읽는다. git 을 직접 부르지 않는
-    이유는 이 함수가 임의의 diff 에 대해 검사 가능해야 하기 때문이다 —
-    검증 케이스가 실제 커밋을 만들지 않고도 판정 논리를 시험할 수 있다.
+    `read(path) -> str` 는 «변경 후» 소스를, `read_before(path) -> str | None` 은
+    «변경 전» 소스를 읽는다(`None` 은 그 시점에 그 파일이 **없었다**는 뜻이다).
+    git 을 직접 부르지 않는 이유는 이 함수가 임의의 diff 에 대해 검사 가능해야
+    하기 때문이다 — 검증 케이스가 실제 커밋을 만들지 않고도 판정 논리를 시험할
+    수 있다.
+
+    `read_before` 를 안 주면 **이전 이미지 없이** 판정한다 — 모든 변경을 신규로
+    보는 것과 같아 「파일에 코드가 있는가」만 남는다. 이전을 못 읽는 상황에서
+    조용히 느슨해지지 않게 하려는 기본값이다(안 주면 더 많이 잡는다).
     """
-    read_source = read  # type: ignore[assignment]
+    read_source = read
 
     impl = [
         c for c in changes
@@ -191,7 +271,7 @@ def check(
     imported_by: dict[str, set[str]] = {}
     stems: dict[str, str] = {}
     for t in tests:
-        imported_by[t.path] = imported_core_modules(read_source(t.path))  # type: ignore[operator]
+        imported_by[t.path] = imported_core_modules(read_source(t.path))
         stem = Path(t.path).stem
         if stem.startswith("test_"):
             stems.setdefault(stem[len("test_"):], t.path)
@@ -199,7 +279,12 @@ def check(
     violations: list[Violation] = []
     accompanied: list[Accompanied] = []
     for c in impl:
-        if not has_code(read_source(c.path)):  # type: ignore[operator]
+        after = read_source(c.path)
+        if not has_code(after):
+            continue
+        # 파일에 코드가 있다는 것과 **이번 diff 가 코드를 바꿨다**는 것은 다르다.
+        # 이전 이미지를 읽을 수 있을 때만 뒤엣것까지 본다.
+        if read_before is not None and not code_changed(read_before(c.path), after):
             continue
         module = module_of(c.path)
 
@@ -248,6 +333,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         changes = changed_files(args.base, root)
+        read_before = base_reader(args.base, root)
     except CheckError as exc:
         print(f"검사를 수행할 수 없습니다: {exc}", file=sys.stderr)
         print("검사를 수행하지 못한 것을 통과로 읽지 않습니다 (§13.0.1 ④)",
@@ -262,7 +348,7 @@ def main(argv: list[str] | None = None) -> int:
               file=sys.stderr)
         return 2
 
-    violations, accompanied = check(changes, head_reader(root))
+    violations, accompanied = check(changes, head_reader(root), read_before)
 
     for a in accompanied:
         print(f"· {a.path}")

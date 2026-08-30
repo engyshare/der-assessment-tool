@@ -66,18 +66,30 @@ def _script(stem: str):
     return mod
 
 
-def _judge(files: dict[str, str], *, statuses: dict[str, str] | None = None):
+def _judge(
+    files: dict[str, str],
+    *,
+    statuses: dict[str, str] | None = None,
+    before: dict[str, str] | None = None,
+):
     """`{경로: 소스}` 를 diff 로 보고 판정한다.
 
     실제 커밋을 만들지 않는다 — 판정 논리와 git 연결부를 가르는 것이 요점이다.
     git 연결부는 아래 `test_missing_base_ref_...` 가 따로 본다.
+
+    `files` 는 «변경 후», `before` 는 «변경 전» 이다. `before` 를 안 주면 이전
+    이미지 없이 판정한다 — 그것이 종전 동작이고, 아래 기존 케이스 13건이 전부
+    그 경로다. `before` 에 **없는 경로**는 「그 시점에 없었다」(신규 파일)이며
+    「내용이 비었다」(`""`)와 다르다 — 검사기가 그 둘을 가르므로 이 헬퍼도
+    가른다.
     """
     mod = _script("check_test_accompaniment")
     statuses = statuses or {}
     changes = [
         mod.Change(path=p, status=statuses.get(p, "M")) for p in files
     ]
-    return mod.check(changes, lambda p: files[p])
+    read_before = None if before is None else before.get
+    return mod.check(changes, lambda p: files[p], read_before)
 
 
 # ── ⓐ 위반을 잡는다 ─────────────────────────────────────────────────
@@ -257,6 +269,68 @@ def test_changes_outside_core_are_not_the_clause_subject() -> None:
     })
     assert not violations
     assert not accompanied
+
+
+# ── ⓓ 「구현 변경」은 파일이 아니라 diff 다 ──────────────────────────
+#
+# 아래 셋은 ⓐ·ⓑ 와 **축이 다르다.** ⓐ·ⓑ 는 「파일에 코드가 있는가」를 고정하고,
+# 여기서는 그 파일에 코드가 있다는 것을 전제한 채 **「이번 diff 가 그 코드를
+# 바꿨는가」** 를 고정한다. 혼동하기 쉬운 짝이 바로 위에 있다 —
+# `test_a_docstring_only_package_marker_needs_no_test` 는 코드가 **없는** 파일
+# 이야기이고, 이 절은 코드가 **있는** 파일 이야기다.
+
+PV_BEFORE = '"""원래 설명."""\n\n\nclass PV:\n    tag = "PV"\n'
+PV_DOCSTRING_ONLY = '"""고쳐 쓴 설명."""\n\n\nclass PV:\n    # 주석도 새로 달았다\n    tag = "PV"\n'
+PV_CODE_CHANGED = '"""원래 설명."""\n\n\nclass PV:\n    tag = "PV"\n    kw = 3.0\n'
+
+
+@pytest.mark.req("NFR-105-AC1")
+def test_a_docstring_only_edit_to_an_implementation_file_is_not_a_violation() -> None:
+    """조항의 주어는 「구현 변경」이지 「구현이 있는 파일의 변경」이 아니다.
+
+    이 파일에는 코드가 분명히 있다(`class PV`). 바뀐 것은 독스트링과 주석뿐이다.
+    파일 단위로만 보면 이런 커밋이 **항상** 동반 테스트를 요구하고, 정당하지
+    않은 요구는 게이트를 꺼지게 만든다 — 이 검사기 자신의 독스트링이 그렇게 적어
+    두고도 diff 단위에서는 지키지 않던 자리다.
+    """
+    violations, accompanied = _judge(
+        {"core/der/pv.py": PV_DOCSTRING_ONLY},
+        before={"core/der/pv.py": PV_BEFORE},
+    )
+    assert not violations, (
+        "독스트링·주석만 바뀐 변경을 구현 변경으로 세고 있습니다 — 정당하지 "
+        "않은 요구는 게이트를 꺼지게 만듭니다"
+    )
+    assert not accompanied
+
+
+@pytest.mark.req("NFR-105-AC1")
+def test_a_real_code_edit_to_the_same_file_is_still_a_violation() -> None:
+    """회귀 방지 — 앞 케이스와 **이전 이미지가 같고 이후만 다르다.**
+
+    느슨해진 방향으로 틀리면 게이트가 조용히 초록불이 된다. 두 케이스가 같은
+    `PV_BEFORE` 를 쓰는 이유가 그것이다: 무엇이 판정을 갈랐는지가 한 줄로 보인다.
+    """
+    violations, _ = _judge(
+        {"core/der/pv.py": PV_CODE_CHANGED},
+        before={"core/der/pv.py": PV_BEFORE},
+    )
+    assert [v.module for v in violations] == ["core.der.pv"]
+
+
+@pytest.mark.req("NFR-105-AC1")
+def test_a_new_implementation_file_has_no_previous_image_and_is_still_judged() -> None:
+    """「이전이 없다」와 「이전과 같다」를 같게 다루지 않는다.
+
+    신규 파일은 이전 이미지가 아예 없다(`base_reader` 가 `None` 을 준다). 그것을
+    「이전과 같다」로 읽으면 **새로 들어온 구현 전부가 면제**된다 — 이 게이트가
+    막으려던 바로 그 경로다.
+    """
+    violations, _ = _judge(
+        {"core/der/wind.py": 'class Wind:\n    tag = "WT"\n'},
+        before={"core/der/pv.py": PV_BEFORE},
+    )
+    assert [v.module for v in violations] == ["core.der.wind"]
 
 
 # ── ⓒ 검사를 수행하지 못한 것을 통과로 읽지 않는다 ──────────────────
