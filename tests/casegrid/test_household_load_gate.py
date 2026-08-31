@@ -63,7 +63,10 @@ def test_a_shape_alone_builds_the_generation_curve_but_no_load() -> None:
 
     이것이 R37 이 열어야 했던 갈래다. 막혀 있던 동안 리포트는 일사 곡선을
     쓰려면 **부하까지 함께** 넣어야 했고, 그러면 배타 규칙 유형 A 때문에
-    결론에 실을 수 없는 실행이 된다(`_assumed_operation` 주석).
+    결론에 실을 수 없는 실행으로 여겨졌다. ⚠ **그 판단은 R48 에 뒤집혔다** —
+    이중계상을 막는 것은 배타 규칙이 아니라 자원별 수량 배분이며, 이제 본
+    실행이 부하를 세우고 돈다(`docs/decisions-2026-08-31-R48.md` §5 · 판정
+    B-1). 이 갈래는 **부하 없이 발전 곡선만 쓰는 실행**을 위해 남는다.
     """
     outcome = run_single_case_e2e(
         {},

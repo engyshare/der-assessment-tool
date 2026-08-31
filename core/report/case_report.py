@@ -239,14 +239,9 @@ class CaseReport:
     #: 이 실행이 적용한 규칙 순서. **엔진의 선언을 그대로 나른다** — 리포트가
     #: 기본 순서를 다시 적으면 순서를 바꾼 실행에서 표가 조용히 틀린다.
     rule_order: tuple[DispatchRule, ...]
-    #: 대표일 스텝별 운전 (의견 3).
+    #: 대표일 스텝별 운전 (의견 3). **부하·일사 형상을 함께 세운 본 실행**이며
+    #: 결론(프로포마·NPV)이 같은 실행 위에 선다 (R48/WP-B · 판정 B-1).
     dispatch_hours: tuple[DispatchHour, ...]
-    #: **부하·일사 형상을 가정해 다시 그린 운전** — 붙임 7 의 둘째 표.
-    #: 프로포마는 이것으로 다시 계산하지 않는다 — 사유는 아래
-    #: `_assumed_operation` 호출부 주석에 있다(배타 규칙 유형 A · 부하 미확보).
-    assumed_hours: tuple[DispatchHour, ...]
-    #: 그 운전이 쓴 형상과 총량. 리포트가 **무엇을 가정했는지** 적는다.
-    assumed_basis: AssumedOperationBasis | None
     #: 설계 변수(용량)를 탐색 구간에서 훑은 결과 — 4.4 · 붙임 10.
     #: *「적정 용량 검토가 선행되어야 한다」* 는 지적이 만든 절이다.
     capacity_review: tuple[CapacityFinding, ...]
@@ -636,84 +631,6 @@ def _formulas(
     )
 
 
-#: 부하 총량이 오는 대장 키. 형상은 자산(`fixtures/profiles/`)이 정하고
-#: **총량은 대장이 정한다** — 둘을 한 곳에 두면 하나를 고칠 때 다른 하나가
-#: 따라 움직이거나 그 반대가 된다.
-LOAD_LEDGER_KEY = "load.household.annual"
-
-
-@dataclass(frozen=True)
-class AssumedOperationBasis:
-    """가정 운전이 **무엇을 가정했는지** — 붙임 7 둘째 표의 머리.
-
-    적지 않으면 두 표의 차이가 *「계산을 고쳤다」* 로 읽힌다. 실제로는 **입력을
-    가정한 것**이며, 그 가정의 출처·신뢰도까지 함께 실어야 검토자가 어느 쪽을
-    믿을지 스스로 정한다.
-    """
-
-    load_title: str
-    load_confidence: str
-    load_annual_kwh: float
-    load_ledger_key: str
-    generation_title: str
-    generation_confidence: str
-
-
-def _assumed_operation(
-    *,
-    level_map: Mapping[str, Mapping[str, float]],
-    horizon_years: int,
-    scheme: IncentiveScheme | None,
-    provider: AssumptionSet,
-) -> tuple[tuple[DispatchHour, ...], AssumedOperationBasis | None]:
-    """부하·일사 형상을 주고 **같은 진입점**을 한 번 더 부른다.
-
-    **대장의 부하 총량이 없으면 메우지 않고 비운다** — 기본값으로 메우면
-    「대장이 비었다」와 「이 값을 골랐다」가 구별되지 않고, 붙임 7 이 지어낸
-    부하를 실물처럼 싣는다.
-
-    ## ⚠ 자산 부재는 **여기서 처리할 일이 아니다** (R37 후속 정정)
-
-    종전 이 독스트링은 *「자산이나 대장 항목이 없으면 비운다」* 였고 `except` 도
-    `OSError` 를 잡았다. R37 이 일사 곡선을 결론에 배선하면서 **그 절이 자산
-    쪽에서 거짓이 됐다** — 자산이 없으면 `build_case_report` 가 형상을 먼저
-    읽다가 터지므로 **이 함수에 닿지 않는다.** `OSError` 갈래는 도달 불가였고,
-    그 상태에서 붙임 7 은 *「형상 자산 또는 대장 항목 부재」* 라는 **인쇄될 수
-    없는 사유**를 싣고 있었다.
-
-    그래서 `OSError` 를 빼고 사유를 대장 하나로 좁혔다. **`load_daily_shapes()`
-    를 `try` 안에 남겨 둔 것은 의도**다 — 여기서 그것이 터지면 그것은 「비울
-    상황」이 아니라 **리포트가 서지 못할 상황**이므로 삼켜서는 안 된다.
-    (남은 `ValueError`·`KeyError` 는 대장 조회 몫이다.)
-    """
-    try:
-        shapes = load_daily_shapes()
-        entry = provider.get(LOAD_LEDGER_KEY)
-    except (ValueError, KeyError):
-        return (), None
-    if entry is None:
-        # 대장에서 부하 총량이 사라지면 **비운다.** 기본값을 두면 대장을
-        # 고쳐도 붙임 7 이 옛 총량으로 계속 그려진다.
-        return (), None
-    annual = float(entry.value)
-
-    outcome = run_single_case_e2e(
-        {},
-        level_map=level_map,
-        horizon_years=horizon_years,
-        scheme=scheme,
-        daily_shapes=shapes,
-        annual_load_kwh=annual,
-    )
-    return build_hourly_profile(outcome.dispatch), AssumedOperationBasis(
-        load_title=shapes.load.title,
-        load_confidence=shapes.load.confidence,
-        load_annual_kwh=annual,
-        load_ledger_key=LOAD_LEDGER_KEY,
-        generation_title=shapes.generation.title,
-        generation_confidence=shapes.generation.confidence,
-    )
-
 def _appendix(provider: AssumptionSet) -> tuple[AssumptionRow, ...]:
     """전 가정 목록 — 영향도 순위와 **별개로** 제공한다 (`FR-1002-AC6`).
 
@@ -809,33 +726,6 @@ def build_case_report(
         base_npv=float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC]),
     )
 
-    # ★ **가정 운전(붙임 7)** — 부하·일사 형상을 주고 **같은 진입점**을 한 번
-    # 더 부른다. 리포트가 자원을 다시 세우면 사본이 되고, 러너의 제원이 바뀔 때
-    # 붙임 7 만 옛 운전을 계속 인쇄한다.
-    #
-    # ⚠⚠ **이 별도 호출의 옛 근거는 R48/WP-B 로 사라졌다 — 지우지 않고 갱신한다.**
-    # 종전에는 *「이 실행의 지표를 쓰지 않는다 — 부하를 넣으면 배타 규칙 유형
-    # A(자가소비 × 잉여판매)를 건드린다」* 였다. 그 판단은 **위 본 실행
-    # (`outcome`)이 부하를 세우지 않던 시절의 것**이다 — 판정 §0 이 밝혔듯
-    # 이중계상은 배타 규칙이 아니라 **자원별 수량 배분(자가 부하로 간 kWh ×
-    # 계통으로 나간 kWh 가 디스패치 단계에서 이미 갈린다)**이 막는다. 이제
-    # 본 실행 자체가 같은 부하·같은 대장 `base` 값으로 돈다(판정 B-1, 위
-    # `outcome = run_single_case_e2e(...)` 참조) — 그러므로 **이 호출과 본
-    # 실행은 지금 같은 입력으로 돈다.**
-    #
-    # 그런데도 남겨 두는 이유는 딱 하나다: `build_hourly_profile()` 이 붙임 7에
-    # 싣는 것은 **`outcome.dispatch` 를 다시 조립한 시간대별 표시**이고, 이
-    # 호출은 그 표시가 **케이스 그리드 스윕과 무관하게 대장의 `base` 값 하나로
-    # 고정된 「가정 운전」을 보여준다는 것**을 스스로 증명한다(본 실행은
-    # `level_map` 을 통째로 받아 이론상 스윕된 값을 실을 수도 있는 자리다).
-    # ⚠ **다음 WP 가 두 호출을 하나로 합칠 수 있다** — 지금은 계산이 같아
-    # 중복이지만, 이 WP(-B)의 파일 범위는 이 재구성을 승인하지 않았다
-    # (`result_B.md` 8절 참고).
-    assumed_hours, assumed_basis = _assumed_operation(
-        level_map=level_map, horizon_years=horizon_years, scheme=scheme,
-        provider=provider,
-    )
-
     # ★ 용량 스윕은 **1변수 스윕과 같은 기계**를 쓴다 (`sweeper.conclusion_at`).
     # 갈라 두면 용량 쪽만 변형(`as_planned`)을 읽지 않는 어긋남이 생긴다.
     capacity_review = build_capacity_review(
@@ -903,6 +793,4 @@ def build_case_report(
         rule_order=outcome.rule_order,
         dispatch_hours=build_hourly_profile(outcome.dispatch),
         capacity_review=capacity_review,
-        assumed_hours=assumed_hours,
-        assumed_basis=assumed_basis,
     )

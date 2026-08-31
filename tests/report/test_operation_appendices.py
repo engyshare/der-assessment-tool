@@ -18,6 +18,7 @@
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -122,9 +123,12 @@ def test_hourly_table_carries_every_step_of_the_run() -> None:
     구성에서는 심야 여섯 스텝만 다른 모양이므로, 표본을 실었다면 그 여섯이
     사라졌을 것이다.
 
-    ⚠ **표가 둘이다** (2026-08-15) — 파이프라인 운전과 형상 가정 운전. 절
-    전체에서 행을 세면 둘이 뭉쳐 *「한 표가 절반만 실려도 합이 맞는」* 상태가
-    통과한다. 그래서 **표마다 따로** 센다.
+    ⚠ **표는 하나다** (R49/★A). 2026-08-15~R48 사이에는 둘이었고(파이프라인
+    운전과 형상 가정 운전) 이 검사가 **표마다 따로** 세었다 — 절 전체에서 행을
+    세면 둘이 뭉쳐 *「한 표가 절반만 실려도 합이 맞는」* 상태가 통과하기
+    때문이다. 둘째 표가 사라졌어도 **표마다 세는 방식은 그대로 둔다**: 표가
+    다시 둘이 되는 날(`Q-3` 실측 · 붙임 7 독스트링) 이 검사가 저절로 그 상태를
+    붙들고, 지금은 *「표가 하나인가」* 까지 함께 잰다.
     """
     report = _report()
     lines = dispatch_profile_section(report)
@@ -136,8 +140,6 @@ def test_hourly_table_carries_every_step_of_the_run() -> None:
             tables[-1].append(line)
 
     expected = [len(report.dispatch_hours)]
-    if report.assumed_hours:
-        expected.append(len(report.assumed_hours))
     assert len(tables) == len(expected), (
         f"스텝 표가 {len(tables)}개다 — 기대 {len(expected)}개"
     )
@@ -250,31 +252,47 @@ def test_unknown_rule_is_named_not_blanked() -> None:
     )
 
 
-def test_appendix_seven_and_the_unreflected_row_use_the_same_two_differences() -> None:
-    """★★ **붙임 7 의 차이와 붙임 8 의 방향이 같은 수인가** (R43-H · 나-5).
+def test_appendix_eight_self_consumption_stands_on_the_run_in_appendix_seven() -> None:
+    """★★ **붙임 8 의 자가소비량이 붙임 7 의 운전 안에 있는 수인가** (나-5).
 
-    붙임 8 의 자가소비 행은 이제 방향을 적는데, 그 계산의 재료는 **붙임 7 이
-    싣는 두 차이**(계통 송전·수전의 파이프라인 → 형상 가정 변화)다. 두 자리가
-    서로 다른 수를 쓰면 검토자는 *어느 쪽이 틀렸는지 물을 자리가 없다* — 표
-    하나를 보고 다른 표의 방향을 되짚을 수 없다.
+    ## ⚠ 재던 것이 사라졌다 — 성질은 남았다 (R49/★A)
 
-    ⚠ **여기서 방향을 다시 계산하지 않는다.** 계산을 베끼면 오라클이 구현의
-    사본이 된다. 재는 것은 **붙임 7 이 인쇄한 연간화 수전 차이가 붙임 8 의
-    크기 칸에도 같은 문면으로 있는가** 다.
+    종전 이 검사는 **붙임 7 이 싣는 두 차이**(첫 표 → 둘째 표의 송전 차·수전
+    차)가 붙임 8 의 크기 칸에 **같은 문면으로** 있는지 보았다. R48 이 본
+    실행에 부하를 세워 두 표가 같아졌고 그 차이가 전부 0 이 됐다. 판정 §1 이
+    둘째 표를 지웠으므로 **잴 차이가 없다.**
+
+    남는 성질은 *「두 붙임이 같은 운전 위에 선다」* 다. 붙임 8 의 자가소비량은
+    붙임 7 이 싣는 운전에서 잰 것이므로, 그 운전의 **발전 합계·부하 합계를
+    넘을 수 없다** — 자가소비는 스텝마다 그 둘의 작은 쪽을 넘지 못한다.
+
+    ⚠ **여기서 자가소비를 다시 계산하지 않는다**(스텝별 min 을 베끼면 오라클이
+    구현의 사본이 된다). 재는 것은 **붙임 7 의 합계가 세우는 상한 안에 붙임 8
+    의 수가 있는가** 이며, 그 상한은 표의 합계 행만으로 지어진다.
     """
     report = _report()
-    assert report.assumed_hours, "이 시나리오는 형상 가정 운전을 가져야 한다"
+    assert report.dispatch_hours, "이 시나리오는 붙임 7 운전을 가져야 한다"
     text = render_markdown(report)
-
-    seven = text[text.index("### 부하·일사 형상을 가정한 운전") : text.index("## 붙임 8.")]
     eight = text[text.index("## 붙임 8.") : text.index("## 붙임 9.")]
 
-    rows = [line for line in seven.splitlines() if line.startswith("| 계통 수전 (연간화")]
-    assert len(rows) == 1, f"붙임 7 에 연간화 수전 차이 행이 {len(rows)}개다"
-    delta = rows[0].split("|")[-2].strip()
-    assert delta.startswith(("+", "-")), f"차이가 부호를 갖지 않는다 — {delta}"
+    printed = re.findall(r"자가소비 ([\d,.]+)kWh/일", eight)
+    assert len(printed) == 1, f"붙임 8 에 자가소비량이 {len(printed)}개다"
+    self_consumption = float(printed[0].replace(",", ""))
 
-    assert f"{delta}kWh/년" in eight, (
-        f"붙임 7 의 수전 차이 {delta} 가 붙임 8 의 자가소비 행에 없다 — 두 붙임이 "
-        "서로 다른 수로 같은 사실을 말하고 있다"
+    generation = sum(
+        value
+        for hour in report.dispatch_hours
+        for value in hour.per_resource.values()
+        if value > 0.0
+    )
+    load = -sum(
+        value
+        for hour in report.dispatch_hours
+        for value in hour.per_resource.values()
+        if value < 0.0
+    )
+    assert 0.0 < self_consumption <= min(generation, load) + 5e-3, (
+        f"붙임 8 의 자가소비 {self_consumption:,.2f}kWh/일 이 붙임 7 의 운전 "
+        f"밖에 있다 (발전 합계 {generation:,.2f} · 부하 합계 {load:,.2f}) — "
+        "두 붙임이 서로 다른 운전 위에 서 있다"
     )

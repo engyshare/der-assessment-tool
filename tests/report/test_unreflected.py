@@ -554,9 +554,8 @@ def test_the_self_consumption_row_says_which_way_and_by_how_much() -> None:
 
     종전 이 행은 자가소비 수량과 「단가 120원/kWh 적용 시 연 238,234원」까지
     재어 놓고 방향은 **「방향 미측정」** 이었고, 사유가 *「순 방향은 두 단가의
-    차이가 정한다」* 였다. 두 단가는 같은 실행이 들고 있고 상쇄 요인(수전
-    증가)은 붙임 7 이 재어 두었으므로 — **담당자가 스스로 빼기를 해야 방향을
-    아는** 상태였다.
+    차이가 정한다」* 였다. 두 단가는 같은 실행이 들고 있으므로 — **담당자가
+    스스로 빼기를 해야 방향을 아는** 상태였다.
 
     ## 기대 수치를 여기 적지 않는다
 
@@ -570,8 +569,8 @@ def test_the_self_consumption_row_says_which_way_and_by_how_much() -> None:
     row = _self_consumption_row(report)
 
     assert row.direction != DIRECTION_UNKNOWN, (
-        "형상 가정 운전이 있는데 방향이 「미측정」이다 — 재료가 다 있는 채로 "
-        "담당자에게 빼기를 시킨다"
+        "본 실행이 자가소비를 재는데 방향이 「미측정」이다 — 재료가 다 있는 "
+        "채로 담당자에게 빼기를 시킨다"
     )
     assert row.direction in (DIRECTION_FAVORABLE, DIRECTION_ADVERSE)
     assert row.measured, "재어 판정한 항목이어야 한다"
@@ -625,12 +624,17 @@ def test_a_higher_sale_price_moves_the_self_consumption_row_the_other_way() -> N
     )
 
 
-def test_without_a_shape_the_self_consumption_row_goes_back_to_unmeasured() -> None:
+def test_without_a_run_to_measure_the_self_consumption_row_is_unmeasured() -> None:
     """★ **잴 수 없으면 「미측정」으로 돌아간다** — 방향을 지어내지 않는다.
 
-    형상 가정 운전이 없으면 상쇄 요인(수전 증가)을 잴 수 없고, 그때 한쪽만
-    반영한 방향은 **사업에 유리한 쪽으로** 틀린다(NSPM 대칭성 · 양식 4절).
+    ## ⚠ 무엇을 비우는지가 바뀌었다 (R49/★A) — 통로가 옮겨졌기 때문이다
+
+    종전에는 `assumed_hours=()`(붙임 7 둘째 표)를 비웠다. 그 표가 사라지고
+    수량을 **본 실행**(`dispatch_hours`)에서 재므로, 「잴 수 없는 실행」을
+    만들려면 그쪽을 비워야 한다. 통로만 옮겼고 **오라클은 그대로다** — 잴
+    자료가 없으면 방향을 지어내지 않는다.
+
     라벨을 박아 두면 그 실행에서도 방향이 인쇄되므로 여기서 잡는다.
     """
-    blind = replace(_report(), assumed_hours=())
+    blind = replace(_report(), dispatch_hours=())
     assert _self_consumption_row(blind).direction == DIRECTION_UNKNOWN

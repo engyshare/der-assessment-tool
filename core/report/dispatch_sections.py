@@ -29,7 +29,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from core.casegrid.e2e_runner import DAYS_PER_YEAR
 from core.engine.rule_based import DispatchRule
 from core.report.case_report import CaseReport
 from core.report.dispatch_notes import DispatchHour, DispatchNote
@@ -129,17 +128,36 @@ def _hour_label(step: int, steps: int) -> str:
 
 
 def dispatch_profile_section(report: CaseReport) -> list[str]:
-    """붙임 7 — **시간대별 운전 결과** (의견 3).
+    """붙임 7 — **시간대별 운전 결과** (의견 3). 표는 **하나**다.
+
+    ## ★ 표가 둘이던 자리다 — R49/★A 가 하나로 줄였다
+
+    종전 이 절은 표를 둘 실었다: 「파이프라인이 실제로 돈 운전」과 「부하·일사
+    형상을 **가정한** 운전」. 둘째 표는 *「본 실행에는 없는 가구 부하를 넣어
+    보면 어떻게 되는가」* 를 보이는 자리였고, 그 아래에 *「위 표와의 차이 —
+    가구 부하 하나다」* 를 인쇄했다.
+
+    **R48 이 본 실행에 가구 부하를 세우면서 두 표가 완전히 같아졌다**(송전·수전
+    실측 동일값). 그러므로 그 「차이」 문장은 **거짓**이 됐고, 같은 표를 두 번
+    싣는 상태가 남았다. 사용자 판정(2026-08-31 ·
+    `docs/decisions-2026-08-31-R49.md` §1)이 둘째 표를 지웠다.
+
+    ## ⚠⚠ 이 판정은 **되돌아올 수 있다** — 비교가 불필요해진 것이 아니다
+
+    지금 지운 것은 *「같은 표를 두 번 싣지 않는다」* 이지 *「가정 부하와 실측
+    부하를 견주는 일이 불필요하다」* 가 **아니다.** 가구 부하 총량은 여전히
+    대장의 **가정값**(`load.household.annual`)이며, `Q-3` 실측 시계열이 오면
+    *「가정 부하 ↔ 실측 부하」* 비교가 다시 의미를 갖는다 — **그때 둘째 표를
+    다시 세운다.** 그 자리를 여기에 적어 두지 않으면 다음 사람이 이 절을
+    「비교는 원래 없던 것」으로 읽고, 실측이 와도 견줄 자리를 만들지 않는다.
 
     ## 왜 스택 차트가 아니라 표인가
 
     `core/report/charts/dispatch_stack.py` 가 조항(`FR-1004-AC1`)이 말한
     스택 차트를 이미 갖고 있다. 그런데 그 차트는 `load`(부하 곡선)를 **필수
-    입력**으로 요구하고 이 파이프라인에는 가구 부하가 없다(붙임 8). 그래서
-    지금 낼 수 있는 것은 표다.
-
-    그 사실은 붙임 8 의 「계통 전력 구매 비용」 행이 이미 싣고 있으므로 여기서
-    되풀이하지 않는다 — 같은 사실을 두 곳에 적으면 한쪽만 고쳐진다.
+    입력**으로 요구하고, 이 실행이 세우는 부하는 **대표일 형상에 총량을 배분한
+    가정 곡선**이지 실측 시계열이 아니다(`Q-3` 미확보 · 붙임 8). 그래서 지금
+    낼 수 있는 것은 표다.
     """
     hours = report.dispatch_hours
     lines = [
@@ -154,19 +172,27 @@ def dispatch_profile_section(report: CaseReport) -> list[str]:
         lines += ["- 운전 결과 — 없음 (스텝 0)", ""]
         return lines
 
-    lines += ["### 파이프라인이 실제로 돈 운전", ""]
     lines += _hour_table(hours)
     lines += [
         "- 「계통 송전」 합계 — 붙임 4 잉여 판매 산식이 화폐로 바꾸는 수량",
+        "- 「계통 수전」 합계 — 붙임 4 계통 전력 구매 산식이 화폐로 바꾸는 수량",
+        "- 반영 범위 — **이 표의 운전 위에 프로포마·결론이 선다** (본문 4·5절)",
+        "- 부하 형상은 **배분이지 값이 아니다** — 연간 총량은 대장 "
+        "`load.household.annual` 이 정하고, 형상은 자산 "
+        "`fixtures/profiles/` 가 정한다",
+        "- 스택 차트(`FR-1004-AC1`) — 미산출 (실측 부하 곡선 `Q-3` 부재 · 붙임 8)",
         "",
     ]
-    lines += _assumed_lines(report)
     return lines
 
 
 def _hour_table(hours: tuple[DispatchHour, ...]) -> list[str]:
-    """스텝별 표 하나. **두 운전이 같은 기계로 그려진다** — 갈라 두면 한쪽만
-    열이 바뀌고 검토자는 두 표를 나란히 견줄 수 없게 된다."""
+    """스텝별 표 하나 — 이 절의 **유일한** 표다.
+
+    ⚠ 함수로 갈라 둔 것은 표가 둘이던 시절의 흔적이 아니다. `Q-3` 실측이 오면
+    둘째 표가 돌아오고(위 독스트링), 그때 **두 표가 같은 기계로 그려져야**
+    한다 — 갈라 두지 않으면 한쪽만 열이 바뀌어 검토자가 둘을 견줄 수 없다.
+    """
     names = tuple(hours[0].per_resource)
     steps = len(hours)
     lines = [
@@ -188,84 +214,6 @@ def _hour_table(hours: tuple[DispatchHour, ...]) -> list[str]:
         f"| **합계** | {totals} | "
         f"**{sum(hour.grid_export for hour in hours):,.2f}** | "
         f"**{sum(hour.grid_import for hour in hours):,.2f}** |",
-        "",
-    ]
-    return lines
-
-
-def _assumed_lines(report: CaseReport) -> list[str]:
-    """가정 운전 — **부하·일사 형상을 주고 다시 그린 것**.
-
-    ## 왜 두 표를 나란히 두는가
-
-    위 표는 파이프라인이 실제로 돈 운전이고 결론(NPV)이 그 위에 서 있다.
-    그런데 그 운전에는 **가구 부하가 없다**(붙임 8). 그 상태의 표만 실으면
-    검토자는 *부하 없는 단지*를 실물로 읽는다.
-
-    ✔ **「태양광이 24시간 평탄」은 R37 에 해소됐다.** 일사 곡선이 결론에
-    배선되어 위 표도 곡선이며, 붙임 8 의 「일중 발전 프로파일 (평탄)」 행은
-    사라졌다. 그래서 두 표의 차이는 이제 **부하 하나**이고, 아래 표는 그
-    사실을 한 줄로 밝힌다 — 밝히지 않으면 검토자는 무엇이 달라 두 표가 있는지
-    알 수 없다.
-
-    ⚠ **아래 표로 결론을 바꾸지 않는다.** 부하를 편익 계산에 태우면 잉여판매가
-    줄어드는데 그 대가인 자가소비 절감은 **배타 규칙(유형 A)** 이 동시 계상을
-    막고 실측 부하 곡선(`Q-3`)도 없어 켤 수 없다 — 한쪽만 반영한 NPV 는 사업에
-    불리한 쪽으로 틀린다(NSPM 대칭성). 그래서 싣는 것은 **수량뿐**이며,
-    화폐화 조건은 붙임 8 이 진다.
-
-    ✔ **「소매 단가가 없어」는 이제 사유가 아니다 (R43-H).** 종전 이 자리는 그
-    문면이었는데 R34·R35 가 구매·판매 단가를 대장에 세운 뒤 거짓이 됐다. 그
-    사실이 실제로 무엇을 막고 있었는지는 붙임 8 이 답한다 — **이 표의 두 차이에
-    두 단가를 곱해 방향과 크기를 재어 싣는다**(`unreflected.py::
-    _self_consumption_item`). 막고 있는 것은 값이 아니라 배타 규칙과 부하 곡선이다.
-    """
-    hours = report.assumed_hours
-    basis = report.assumed_basis
-    if not hours or basis is None:
-        # ⚠ **「형상 자산 부재」를 사유로 적지 않는다** (R37 후속).
-        # 그 자산은 이제 결론의 입력이므로 없으면 **리포트 자체가 서지 않는다**
-        # (`case_report.build_case_report` 가 형상을 먼저 읽는다). 여기까지
-        # 왔다는 것은 자산이 있었다는 뜻이고, 남은 사유는 **대장 항목** 하나다.
-        # 있을 수 없는 사유를 괄호에 남겨 두면 검토자가 「자산이 없어서 비었을
-        # 수도 있다」로 읽는다 — 리포트가 스스로 세운 규칙과 어긋나는 안내다.
-        return [
-            "- 부하·일사 형상을 가정한 운전 — 미산출 (대장 항목 부재)",
-            "",
-        ]
-    baseline_import = sum(hour.grid_import for hour in report.dispatch_hours)
-    baseline_export = sum(hour.grid_export for hour in report.dispatch_hours)
-    assumed_import = sum(hour.grid_import for hour in hours)
-    assumed_export = sum(hour.grid_export for hour in hours)
-    lines = [
-        "### 부하·일사 형상을 가정한 운전",
-        "",
-        f"- 부하 총량 — {basis.load_annual_kwh:,.0f} kWh/년 "
-        f"(대장 `{basis.load_ledger_key}` · 신뢰도 {basis.load_confidence})",
-        f"- 부하 형상 — {basis.load_title} "
-        f"(자산 `fixtures/profiles/` · 신뢰도 {basis.load_confidence})",
-        f"- 발전 형상 — {basis.generation_title} "
-        f"(자산 `fixtures/profiles/` · 신뢰도 {basis.generation_confidence})",
-        "- 연간 발전량 · 부하 총량 — 위 표와 같다 (형상은 배분이지 값이 아니다)",
-        "- 위 표와의 차이 — **가구 부하 하나**다. 발전 형상은 위 표에도 "
-        "반영되어 있다 (프로포마·결론이 그 위에 선다)",
-        "- 반영 범위 — **운전(물리량)만**. 프로포마·결론은 위 표 기준이다",
-        "",
-    ]
-    lines += _hour_table(hours)
-    lines += [
-        "| 대표일 합계 | 파이프라인 | 형상 가정 | 차이 |",
-        "|---|---|---|---|",
-        f"| 계통 송전 (kWh) | {baseline_export:,.2f} | {assumed_export:,.2f} | "
-        f"{assumed_export - baseline_export:+,.2f} |",
-        f"| 계통 수전 (kWh) | {baseline_import:,.2f} | {assumed_import:,.2f} | "
-        f"{assumed_import - baseline_import:+,.2f} |",
-        f"| 계통 수전 (연간화, kWh) | {baseline_import * DAYS_PER_YEAR:,.0f} | "
-        f"{assumed_import * DAYS_PER_YEAR:,.0f} | "
-        f"{(assumed_import - baseline_import) * DAYS_PER_YEAR:+,.0f} |",
-        "",
-        "- 이 차이의 화폐화 조건 — 붙임 8 (자가소비 편익 · 계통 전력 구매 비용)",
-        "- 스택 차트(`FR-1004-AC1`) — 미산출 (실측 부하 곡선 부재 · 붙임 8)",
         "",
     ]
     return lines

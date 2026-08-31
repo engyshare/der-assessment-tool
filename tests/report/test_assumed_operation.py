@@ -1,17 +1,19 @@
-"""**부하·일사 형상을 가정한 운전** — 붙임 7 둘째 표 (2026-08-15).
+"""**부하·일사 형상을 세운 본 실행** — 붙임 7 (2026-08-15 · R49/★A 개편).
 
-파이프라인이 실제로 도는 운전에는 **가구 부하가 없다**(붙임 8). 그 표만 실으면
-검토자는 *부하 없는 단지*를 실물로 읽는다.
+## ⚠ 이 파일이 재던 「둘째 표」는 사라졌다
 
-⚠ **「태양광이 24시간 평탄하다」는 R37 에 거짓이 됐다.** 일사 곡선이 결론에
-배선되어 본 실행의 발전도 곡선이며, 붙임 8 의 「일중 발전 프로파일 (평탄)」 행은
-사라졌다. 남은 차이는 **부하 하나**다 — 그래서 이 파일의 대조도 「형상 유무」가
-아니라 「부하 유무」로 바뀌었다.
+이 파일은 붙임 7 의 **둘째 표**(부하·일사 형상을 가정해 다시 그린 운전)를 재는
+자리였다. R48 이 본 실행에 가구 부하를 세우면서 두 표가 완전히 같아졌고,
+사용자 판정(`docs/decisions-2026-08-31-R49.md` §1)이 둘째 표를 지웠다.
+
+**표가 없어졌다고 성질까지 버리지 않았다.** 아래 셋은 둘째 표와 무관하게 여전히
+참이어야 하는 성질이며, 재는 **대상**만 본 실행(`dispatch_hours`)으로 옮겼다:
 
     ★ 형상은 **배분**이지 값이 아니다      ← 연간 총량이 바뀌면 안 된다
-    ★ 자원을 **리포트가 다시 세우지 않는다** ← 같은 진입점을 한 번 더 부른다
-    ★ 프로포마·결론은 **건드리지 않는다**   ← 한쪽만 반영하면 한 방향으로 틀린다
-    ★ 자산이 없으면 **메우지 않는다**       ← 지어낸 운전을 실물처럼 싣지 않는다
+    ★ 부하가 **계통 수전**으로 나타난다     ← 「구매 비용이 얼마인가」가 물은 자리
+    ★ 자산·대장이 없으면 **리포트가 서지 않는다**
+
+지운 것과 그 근거는 `.orch/R49/result_1.md` 3절에 있다.
 """
 from __future__ import annotations
 
@@ -19,6 +21,7 @@ import math
 from pathlib import Path
 
 import pytest
+import yaml  # type: ignore[import-untyped]
 
 from core.casegrid.e2e_runner import (
     DAYS_PER_YEAR,
@@ -29,12 +32,14 @@ from core.casegrid.e2e_runner import (
 from core.casegrid.ledger_levels import build_level_map
 from core.casegrid.profiles import load_daily_shapes
 from core.report.case_report import build_case_report
-from core.report.narrative import render_markdown
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
 _GOLDEN = _REPO_ROOT / "fixtures" / "golden"
-_LOAD_KWH = 3_600.0
+_LOAD = "e2e-load"
+#: 부하 총량이 오는 대장 키. **여기에 수를 적지 않는다** — 대장이 정본이고,
+#: 이 파일이 값을 베끼면 대장을 고쳐도 검사가 따라오지 않는다.
+_LOAD_LEDGER_KEY = "load.household.annual"
 
 
 def _report():
@@ -45,6 +50,11 @@ def _report():
 
 def _levels():
     return build_level_map(_ASSUMPTIONS)
+
+
+def _load_kwh() -> float:
+    """대장이 정한 가구 부하 총량 (kWh/년)."""
+    return float(_levels()["household_load_annual_kwh"]["base"])
 
 
 def test_a_shape_moves_energy_but_does_not_create_it() -> None:
@@ -61,7 +71,7 @@ def test_a_shape_moves_energy_but_does_not_create_it() -> None:
         level_map=levels,
         horizon_years=20,
         daily_shapes=load_daily_shapes(),
-        annual_load_kwh=_LOAD_KWH,
+        annual_load_kwh=_load_kwh(),
     )
     expected = levels["pv_capacity_kw"]["base"] * PV_CAPACITY_FACTOR * HOURS_PER_YEAR
 
@@ -73,77 +83,40 @@ def test_a_shape_moves_energy_but_does_not_create_it() -> None:
         )
 
 
-def test_the_shaped_run_has_no_generation_at_night() -> None:
-    """★ 형상을 주면 **야간 발전이 0** 이다 — 그것이 이 표를 만든 이유다."""
-    hours = _report().assumed_hours
-    assert hours, "가정 운전이 비어 있다"
-    night = [0, 1, 2, 3, 4, 23]
-    for step in night:
-        assert hours[step].per_resource["e2e-pv"] == 0.0, (
-            f"{step}시에 태양광이 {hours[step].per_resource['e2e-pv']}kWh 발전한다"
-        )
-
-
 def test_the_load_shows_up_as_grid_import() -> None:
     """★★ **부하를 넣으면 계통 수전이 실제 수량으로 나온다.**
 
     이것이 검토 의견 *「계통에서 전력을 구매한다면 구매 비용이 얼마인지」* 가
-    물은 자리다. 지금 파이프라인의 수전은 ESS 충전분뿐이다.
+    물은 자리다. 부하가 없으면 수전은 ESS 충전분뿐이다.
+
+    ## ⚠ 대조 대상이 바뀌었다 — 「둘째 표」가 아니라 **부하 없는 실행**이다
+
+    종전 이 검사는 `report.dispatch_hours`(부하 없던 본 실행)와
+    `report.assumed_hours`(부하를 가정한 둘째 표)를 견주었다. R48 이 본 실행에
+    부하를 세운 뒤 그 둘이 같아져 *「수전이 늘지 않았다」* 로 빨간불이 됐다 —
+    **성질이 깨진 것이 아니라 대조군이 사라진 것**이다.
+
+    그래서 대조군을 *「형상은 주고 부하 총량은 주지 않은 실행」* 으로 세운다.
+    붙임 7 이 싣는 본 실행은 여전히 그보다 수전이 많아야 한다.
     """
     report = _report()
-    plain = sum(hour.grid_import for hour in report.dispatch_hours)
-    assumed = sum(hour.grid_import for hour in report.assumed_hours)
-    assert assumed > plain, (
-        f"부하 {_LOAD_KWH:,.0f}kWh/년 을 넣었는데 수전이 늘지 않았다 "
-        f"(파이프라인 {plain:,.2f} · 가정 {assumed:,.2f})"
+    loadless = run_single_case_e2e(
+        {}, level_map=_levels(), horizon_years=20, daily_shapes=load_daily_shapes()
     )
+    reported = sum(hour.grid_import for hour in report.dispatch_hours)
+    baseline = sum(float(v) for v in loadless.dispatch.grid_import)
+    assert reported > baseline, (
+        f"부하 {_load_kwh():,.0f}kWh/년 을 세운 실행의 수전이 늘지 않았다 "
+        f"(부하 없음 {baseline:,.2f} · 붙임 7 {reported:,.2f})"
+    )
+
+    # ★ 부하 자원의 대표일 소비가 **대장 총량의 하루치**인가 — 형상은 배분이다.
     total_load = sum(
-        -hour.per_resource.get("e2e-load", 0.0) for hour in report.assumed_hours
+        -hour.per_resource.get(_LOAD, 0.0) for hour in report.dispatch_hours
     )
-    assert math.isclose(total_load * DAYS_PER_YEAR, _LOAD_KWH, rel_tol=1e-6), (
+    assert math.isclose(total_load * DAYS_PER_YEAR, _load_kwh(), rel_tol=1e-6), (
         f"대표일 부하 {total_load:,.3f}kWh 의 연간화가 대장값과 다르다"
     )
-
-
-def test_the_assumed_run_does_not_move_the_conclusion() -> None:
-    """★★★ **한쪽만 반영한 수를 결론으로 올리지 않는다** (양식 4절).
-
-    부하를 편익 계산에 태우면 잉여판매가 줄어드는데, 그 대가인 자가소비 절감은
-    배타 규칙 유형 A 라 같은 프로포마에 함께 실을 수 없다. 그 상태의 NPV 는
-    **사업에 불리한 쪽으로** 틀린다 — 그래서 붙임 7 둘째 표는 수량만 싣는다.
-
-    ## ⚠ 기준선이 R37 에 바뀌었다 — **부하만** 배제한다
-
-    종전 이 검사는 결론이 *「형상을 전혀 주지 않은 실행」* 과 같은지 보았고,
-    그것으로 두 가지를 한꺼번에 붙들고 있었다: **부하가 결론에 들어가지 않는가**
-    와 (뜻하지 않게) **발전 형상도 들어가지 않는가**. R37 이 일사 곡선을 결론에
-    배선했으므로 뒤쪽은 이제 붙들 것이 아니다.
-
-    그래서 대조 실행을 *「형상은 주고 부하 총량은 주지 않은 실행」* 으로 바꾼다 —
-    이 검사가 실제로 막으려던 것(부하가 결론에 스며드는 것)만 남는다. 두 갈래를
-    한 대조로 묶어 두면 배선이 옳아진 날 이 검사가 **옳은 리포트를 빨간불로
-    만든다**, 그리고 실제로 그렇게 됐다.
-    """
-    report = _report()
-    text = render_markdown(report)
-    plain_export = sum(hour.grid_export for hour in report.dispatch_hours)
-    assumed_export = sum(hour.grid_export for hour in report.assumed_hours)
-    assert assumed_export != plain_export, "가정 운전이 송전을 바꾸지 않았다"
-
-    # 결론은 **부하 없는** 파이프라인 운전 위에 서 있어야 한다.
-    conclusion = float(report.metrics["npv"])
-    loadless = run_single_case_e2e(
-        {},
-        level_map=_levels(),
-        horizon_years=20,
-        daily_shapes=load_daily_shapes(),
-    )
-    assert conclusion == float(loadless.variants["as_planned"]["npv"]), (
-        "결론이 부하를 실은 가정 운전 위에 서 있다 — 자가소비 절감이 빠진 "
-        "채로 잉여판매만 줄어든 값이다"
-    )
-    body = text[: text.index("# 붙임")]
-    assert "형상 가정" not in body, "가정 운전의 수가 본문에 올라갔다"
 
 
 def test_a_missing_profile_asset_stops_the_report() -> None:
@@ -173,89 +146,39 @@ def test_a_missing_profile_asset_stops_the_report() -> None:
         module.load_daily_shapes = original  # type: ignore[assignment]
 
 
-def test_an_asset_that_vanishes_between_the_two_reads_is_not_swallowed() -> None:
-    """★★ 자산이 **읽는 사이에** 사라지면 조용히 비우지 않는다 (R37 후속).
+def test_a_missing_load_total_stops_the_report(tmp_path: Path) -> None:
+    """★★ 대장에 부하 총량이 없으면 **리포트가 서지 않는다** (R49/★A 전제 교체).
 
-    ## 왜 이 자리가 있는가 — 변이가 초록불로 남았다
+    ## ⚠ 이 검사의 전제가 R48 에 뒤집혔다 — 「표만 빠진다」에서 「서지 않는다」로
 
-    `build_case_report` 는 형상을 **두 번** 읽는다: 결론에 넘기려고 한 번,
-    붙임 7 둘째 표를 그리려고 `_assumed_operation` 에서 한 번. 그래서
-    *「자산이 없으면 리포트가 서지 않는다」* 는 **첫 읽기에만** 걸려 있고, 둘째
-    읽기가 실패하는 갈래는 위 검사가 보지 못한다.
+    종전 문면은 *「붙임 7 둘째 표만 빠지고 리포트 자체는 선다」* 였다. 부하가
+    **둘째 표에만** 쓰이던 시절의 참이며, 그때는 `case_report` 가 이 값을
+    `provider.get(LOAD_LEDGER_KEY)` 로 직접 읽어 없으면 비웠다.
 
-    그 갈래를 `except OSError` 로 삼키면 **결론은 이미 읽은 형상 위에 서 있는데
-    붙임 7 은 「미산출」로 비는** 상태가 된다 — 리포트가 무엇 위에 섰는지
-    스스로 부정하는 꼴이고, 아무 예외도 나지 않는다. `OSError` 를 `except` 에서
-    뺀 것이 그 처리이며, 이 검사가 그것을 붙든다(빼지 않으면 초록불이다).
-
-    ⚠ **읽기를 한 번으로 줄이면 이 갈래는 아예 없어진다** — 그것이 더 나은
-    구조이나 이 라운드의 담당 밖이다. 구조가 바뀌면 이 검사는 「없어진 갈래를
-    지키는 검사」가 되므로 그때 함께 지울 자리다.
-    """
-    import core.report.case_report as module
-
-    original = module.load_daily_shapes
-    calls = {"n": 0}
-
-    def vanishing(*args: object, **kwargs: object):
-        calls["n"] += 1
-        if calls["n"] >= 2:
-            raise OSError("둘째 읽기에서 자산이 사라졌다")
-        return original(*args, **kwargs)
-
-    module.load_daily_shapes = vanishing  # type: ignore[assignment]
-    try:
-        with pytest.raises(OSError):
-            build_case_report(
-                _GOLDEN / "scenario_unsubsidized.yaml",
-                assumptions_path=_ASSUMPTIONS,
-            )
-        assert calls["n"] >= 2, (
-            f"형상을 {calls['n']}회만 읽었다 — 이 검사가 겨누는 둘째 읽기에 "
-            "닿지 않았다(읽기가 한 번으로 줄었다면 이 검사를 지울 자리다)"
-        )
-    finally:
-        module.load_daily_shapes = original  # type: ignore[assignment]
-
-
-def test_a_missing_load_total_leaves_the_table_out() -> None:
-    """★★ 대장에 부하 총량이 없으면 **붙임 7 둘째 표만** 빠지고, 사유는 **대장뿐**이다.
-
+    **R48 이 부하를 본 실행에 세우면서 이 값은 결론의 입력이 됐다.** 이제
+    `build_level_map()` 이 `household_load_annual_kwh` 축을 세우다 `ValueError`
+    를 내고, 리포트는 **형상 자산이 없을 때와 같은 자리에서** 선다 —
     기본값으로 메우면 「대장이 비었다」와 「이 값을 골랐다」가 구별되지 않고,
-    붙임 7 이 **지어낸 부하를 실물처럼** 싣는다. 자산 부재와 달리 이쪽은 결론의
-    입력이 아니므로(부하는 운전만 그린다) 리포트 자체는 선다.
+    리포트가 **지어낸 부하 위에 선 순현재가치**를 그렇다고 말하지 않고 싣는다.
 
-    ## ⚠ **사유에 「형상 자산 부재」가 없어야 한다** (R37 후속)
-
-    이 자리가 비어 있어서 부작용이 났다. 종전 검사는 사유 문면이 **있는가**만
-    보았고, 그래서 문면이 *「형상 자산 또는 대장 항목 부재」* 로 남아 있는 것을
-    아무도 잡지 못했다 — 그 괄호의 앞쪽 절은 **인쇄될 수 없는 사유**다(자산이
-    없으면 위 검사대로 리포트가 서지 않는다).
-
-    그래서 여기서는 **적힌 것과 적히지 않은 것을 함께** 본다. 「무엇이 있는가」만
-    보는 검사는 사유가 넓어지는 방향의 잘못을 구조적으로 보지 못한다.
+    ⚠ **오라클은 그대로다** — *「없는 값을 메우지 않는다」*. 재는 대상만
+    「둘째 표가 빠지는가」에서 「리포트가 서지 않는가」로 옮겼다.
     """
-    import core.report.case_report as module
+    data = yaml.safe_load(_ASSUMPTIONS.read_text(encoding="utf-8"))
+    kept = [
+        item for item in data["assumptions"] if item["key"] != _LOAD_LEDGER_KEY
+    ]
+    assert len(kept) == len(data["assumptions"]) - 1, (
+        f"대장에 `{_LOAD_LEDGER_KEY}` 항목이 없다 — 이 검사가 겨누는 자리가 "
+        "이미 사라졌다"
+    )
+    data["assumptions"] = kept
+    stripped = tmp_path / "assumptions.yaml"
+    stripped.write_text(
+        yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8"
+    )
 
-    original = module.LOAD_LEDGER_KEY
-    module.LOAD_LEDGER_KEY = "load.household.annual.대장에없는키"  # type: ignore[assignment]
-    try:
-        report = build_case_report(
-            _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    with pytest.raises(ValueError, match=_LOAD_LEDGER_KEY):
+        build_case_report(
+            _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=stripped
         )
-        assert report.assumed_hours == (), "대장 항목이 없는데 운전이 나왔다"
-        assert report.assumed_basis is None
-        text = render_markdown(report)
-        assert "미산출 (대장 항목 부재)" in text, (
-            "대장 항목 부재를 리포트가 밝히지 않는다"
-        )
-        # ★ 사유가 **넓어지지 않았는가.** 자산은 결론의 입력이므로 여기까지 온
-        # 실행에서는 사유가 될 수 없다 — 그 절이 문면에 있으면 리포트가 스스로
-        # 세운 규칙과 어긋나는 안내를 싣는 것이다.
-        for impossible in ("형상 자산 또는", "형상 자산 부재"):
-            assert impossible not in text, (
-                f"인쇄될 수 없는 사유가 문면에 남았다: {impossible!r} — "
-                "자산이 없으면 리포트 자체가 서지 않는다"
-            )
-    finally:
-        module.LOAD_LEDGER_KEY = original  # type: ignore[assignment]
