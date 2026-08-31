@@ -19,10 +19,12 @@ from __future__ import annotations
 import dataclasses
 import json
 from collections.abc import Mapping
+from decimal import Decimal
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel
 
 from core.report.case_report import CaseReport, build_case_report
 from core.report.narrative import render_markdown
@@ -90,7 +92,27 @@ def _plain(value: object) -> object:
     `dataclasses.asdict()` 하나로 끝내지 않는 이유: 그것은 깊은 복사를 하며
     읽기 전용 매핑(`MappingProxyType`)에서 멈춘다. 자료형이 읽기 전용인 것은
     의도(NFR-205)이므로 **자료형을 무르게 만드는 대신 여기서 옮긴다.**
+
+    ## ★ 재무 계층 자료형도 받는다 (R49/WP-3)
+
+    `CaseReport` 가 엔진의 현금흐름 행(`CashFlowRow`)을 나르기 시작하면서
+    **dataclass 가 아닌 것**이 처음으로 여기 닿았다 — 그 자료형은 pydantic
+    모델이고, 금액은 `Decimal` 이다(NFR-103 재무 계층 규약). 종전에는 둘 다
+    아래 `return value` 로 빠져 `json.dumps` 가 그 자리에서 멈췄다.
+
+    ⚠ **자료형 쪽을 무르게 만들어 고치지 않는다** — 위와 같은 이유다. 읽기
+    전용도 `Decimal` 도 의도이며, 표준 JSON 으로 옮기는 것은 **출구의 일**이다.
     """
+    # ⚠ **둘은 되돌려 보내지 않고 그 자리에서 표준형으로 바꾼다.** 각각을
+    # `return _plain(...)` 로 두면 이 함수의 반환 자리가 여덟이 되어 `PLR0911`
+    # (상한 여섯)에 걸린다 — 갈래를 늘린 것이 아니라 **모양만 맞춰** 아래
+    # 갈래들이 이어 받게 한다(모델 → 매핑 · `Decimal` → `float`).
+    if isinstance(value, BaseModel):
+        value = value.model_dump()
+    if isinstance(value, Decimal):
+        # JSON 에 `Decimal` 이 없다. `int` 로 자르지 않는 이유는 이 함수가 금액
+        # 전용이 아니기 때문이다 — 비율·계수가 조용히 버려진다.
+        value = float(value)
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return {
             field.name: _plain(getattr(value, field.name))

@@ -87,6 +87,10 @@ from core.report.method_sections import (
     resource_detail_section,
 )
 from core.report.policy_warnings import policy_warning_section
+from core.report.shortfall import (
+    SECTION_NUMBER as SHORTFALL_SECTION,
+)
+from core.report.shortfall import build_shortfall, shortfall_section
 from core.report.unreflected import (
     build_unreflected,
     unreflected_direction_tally,
@@ -131,9 +135,10 @@ def _support_alone_note(report: CaseReport) -> str:
     2. **얼마나 모자라는가** — 원 단위 (`residual_gap_at_full_support_won`)
     3. 그러므로 **지원율 외의 수단이 필요하다**
 
-    ⚠ *무엇이* 필요한지는 여기서 말하지 않는다. 그것은 적자 구조를 가르는
-    절이 답하며(판정 §3 ⓐ) **아직 없다** — 없는 절 번호를 가리키면 검토자는
-    있지도 않은 자리를 찾는다.
+    ⚠ *무엇이* 필요한지는 여기서 말하지 않는다 — 그것은 적자 구조를 가르는
+    **5.3** 이 답한다(판정 §3 ⓐ · R49/WP-3 이 세웠다). 여기가 지는 것은 그
+    자리를 **가리키는 것까지**이며, 번호는 `shortfall.SECTION_NUMBER` 한 곳이
+    소유한다 — 자리마다 적으면 절을 옮길 때 한 곳만 고쳐진다.
     """
     residual = report.residual_gap_at_full_support_won
     return (
@@ -141,7 +146,11 @@ def _support_alone_note(report: CaseReport) -> str:
         f"{GAP_SHORTFALL} **{_won(abs(residual))}** · 전환 지원율 환산값 "
         f"{report.break_even_subsidy_rate:.1%}는 지원 상한 "
         f"{MAX_SUBSIDY_RATE:.0%}(사업비 전액)를 넘어 답으로 성립하지 않는다 · "
-        "전환에는 지원율 외의 수단이 필요하다"
+        # ★ **「무엇이 필요한가」의 자리를 가리킨다** (R49/WP-3 · 판정 §2·§3 ⓐ).
+        # 여기서 처방을 적지 않는 이유는 종전 그대로다 — 적자 구조를 가르는
+        # 것은 이 문면이 아니라 그 절이며, 두 곳이 같은 말을 하면 갈린다.
+        f"전환에는 지원율 외의 수단이 필요하다 · 무엇이 얼마나 모자란지는 "
+        f"{SHORTFALL_SECTION} 이 항목별로 가른다"
     )
 
 
@@ -232,8 +241,11 @@ def _summary_section(report: CaseReport) -> list[str]:
 
 def _flip_names(report: CaseReport) -> str:
     """전환 인자 요약 칸 — 이름 · 임계값 · 신뢰도."""
+    # ★ **「없음」을 지우지 않는다 — 옆에 자리를 세운다** (판정 §3 ⓒ).
+    # 「없음」은 정직하고 옳다. 바뀌는 것은 그 옆에 *「그럼 결손은 어디서
+    # 오는가」* 에 답하는 절이 서고, 이 칸이 그 자리를 가리키는 것이다.
     if not report.flipping:
-        return f"없음 ({SOLO_SWEEP} 범위 내)"
+        return f"없음 ({SOLO_SWEEP} 범위 내 · 결손의 구조는 {SHORTFALL_SECTION})"
     return " · ".join(
         f"`{entry.variable}` {_num(entry.threshold or 0)}"
         f"{_unit_suffix(entry.value_unit)} (신뢰도 {entry.confidence})"
@@ -314,7 +326,8 @@ def _flip_section(report: CaseReport) -> list[str]:
     if not report.flipping:
         lines += [
             f"- 단독 전환 인자 — 없음 (산출: {SOLO_SWEEP} · 범위는 대장 "
-            "`sensitivity` 의 low~high · 전건은 붙임 2)",
+            f"`sensitivity` 의 low~high · 전건은 붙임 2 · 결손의 구조는 "
+            f"{SHORTFALL_SECTION})",
             "",
         ]
     else:
@@ -694,7 +707,7 @@ def _subsidy_flip_row(report: CaseReport) -> str:
     # 적은 나-2 오독의 **반대 방향**이다. 갈래는 `_support_answer` 가 짓는다.
     return (
         f"| 지원 (보조율) | {_support_answer(report)} "
-        f"(현 지원율 {report.subsidy_rate:.1%}) | 붙임 3 |"
+        f"(현 지원율 {report.subsidy_rate:.1%}) | 붙임 3 · {SHORTFALL_SECTION} |"
     )
 
 
@@ -797,8 +810,17 @@ def _result_section(report: CaseReport) -> list[str]:
 
 
 def _driver_section(report: CaseReport) -> list[str]:
-    """【5】 결론을 좌우하는 요인 — **두 종류를 갈라 싣는다.**"""
+    """【5】 결론을 좌우하는 요인 — **두 종류를 갈라 싣고, 결손을 가른다.**
+
+    ★ **5.3 은 5.1 · 5.2 뒤에 붙는다** (R49 · 판정 §3 ⓐ). 번호를 다시 매기지
+    않은 이유는 `5.1` 을 **이름으로 인용하는 자리가 여럿**이기 때문이다 —
+    양식 문서 · 붙임 2 · 붙임 3 · 검사 문면. 번호를 옮기면 그 인용이 전부
+    거짓이 된다.
+    """
     lines = ["## 5. 결론을 좌우하는 요인", ""]
     lines += _flip_section(report)
     lines += _policy_section(report)
+    # ★ 조립을 여기서 하지 않는다 — 분해는 `build_shortfall()` 이 만들고
+    # 합계가 결론 축과 다르면 **그 함수가 터뜨린다**(그쪽 독스트링).
+    lines += shortfall_section(build_shortfall(report))
     return lines

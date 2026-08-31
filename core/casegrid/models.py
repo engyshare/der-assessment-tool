@@ -6,6 +6,7 @@ from types import MappingProxyType
 
 from core.contracts.der import DER
 from core.contracts.engine import SystemDispatch
+from core.contracts.schemas import CashFlowRow
 from core.contracts.validation import ValidationError
 from core.engine.rule_based import DispatchRule
 
@@ -514,6 +515,53 @@ class CaseBasis:
 
 
 @dataclass(frozen=True)
+class CashflowSplit:
+    """엔진이 실제로 만든 현금흐름 행 — **러너가 가른 채로** 넘긴다 (R49 · 판정 §3 ⓐ).
+
+    ## ★★ 왜 지표(`CaseOutcome.metrics`)만으로는 안 되는가
+
+    판정 §3 ⓐ 는 결손을 **항목별로 원 단위로 갈라** 싣기를 요구한다. 그 분해를
+    리포트가 `CaseBasis` 의 1년차 값(편익·운영비)에서 되짓는 안이 먼저 있었고,
+    **그 안은 합계가 결손과 맞지 않는다.** 오케스트레이터가 직접 재 본 값이다:
+
+        1년차 편익 342,060원 · 1년차 운영비 489,388원을 20년 등액으로 놓고
+        할인해 더하면          합계 = -12,486,866원
+        실제 `npv` 는                 -12,956,180원
+                               어긋남     469,314원
+
+    `PRICE_ESCALATION_RATE` 때문이다 — 고정 O&M 과 교체비 행은 **해마다 물가로
+    올라간다**(러너가 `escalation_rate=` 로 넘긴다). 1년차 값 하나로는 그 시계열을
+    되짓지 못하고, 되짓는 순간 그 분해는 *「어디서 오는가」* 에 답하는 **척만 하는
+    표**가 된다 — 합이 결손과 다르기 때문이다.
+
+    그래서 **엔진이 만든 행을 그대로 나른다.** 이 저장소가 반복해 세운 규약과
+    같다(`CaseOutcome.resources` 주석) — *리포트가 자원을 다시 세우면 사본이 되고,
+    러너가 바뀌어도 리포트는 옛 표를 그럴듯하게 계속 인쇄한다.*
+
+    ## ⚠ 갈린 채로 넘기는 이유 — 리포트가 **태그 문자열로 다시 분류하면 안 된다**
+
+    셋의 구분(편익인가 · 운영비인가 · 교체·잔존인가)은 **러너가 이미 아는 것**이다.
+    표시 층이 `row.tag` 를 보고 되짚으면 태그 이름을 다듬는 순간 한 항목이 어느
+    갈래에도 들지 못해 **조용히 0 이 된다** — `CaseBasis.grid_purchase_price_won_
+    per_kwh` 주석이 같은 함정을 이미 적어 두었다.
+
+    ## ⚠ 이것은 **분해용 사본**이다 — 지표는 여전히 합성된 행 위에 선다
+
+    러너는 `lifecycle` 을 운영비 행과 **함께** 묶어 `net_operating_flows()` 에
+    넘기고 지표는 그 위에 선다. 여기서 갈라 나르는 것이 그 합성을 바꾸지 않는다.
+    """
+
+    #: 편익 행 — 부호를 뒤집지 않은 채(유입이 양수).
+    benefit: tuple[CashFlowRow, ...]
+    #: 운영비 행 — **교체·잔존을 뺀** 것. 금액은 양수(유출)이며 부호는
+    #: `operating_lines.net_operating_flows()` 가 한 번만 뒤집는다.
+    operating_cost: tuple[CashFlowRow, ...]
+    #: 교체비·잔존가치 행 (`core/casegrid/lifecycle.py`). 잔존가치는 비용 행에
+    #: 음수로 담기므로 이 묶음의 합은 순액이다.
+    lifecycle: tuple[CashFlowRow, ...]
+
+
+@dataclass(frozen=True)
 class CaseOutcome:
     """케이스 러너 하나의 산출 — 지표 **와 변형별 지표** (`FR-607-AC1` / R32).
 
@@ -573,6 +621,12 @@ class CaseOutcome:
     #: 인스턴스마다 다를 수 있고(조항이 「설정 가능」이다), 그때 리포트는
     #: **기본 순서를 실행 순서로 인쇄한다** — 아무 예외도 나지 않는다.
     rule_order: tuple[DispatchRule, ...]
+    #: ★ **결손을 가르는 재료** — 위 `CashflowSplit` 참조 (R49 · 판정 §3 ⓐ).
+    #:
+    #: ⚠ `metrics` 로는 대신할 수 없다. 지표는 **합계 하나**이고 이 절이 묻는
+    #: 것은 *「그 합계가 어느 항에서 왔는가」* 다. 1년차 값으로 되지으면
+    #: 물가 상승이 빠져 469,314원이 어긋난다(`CashflowSplit` 독스트링의 실측).
+    cashflows: CashflowSplit
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "metrics", MappingProxyType(dict(self.metrics)))

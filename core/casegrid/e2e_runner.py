@@ -28,6 +28,7 @@ from core.casegrid.models import (
     BenefitLine,
     CaseBasis,
     CaseOutcome,
+    CashflowSplit,
     ResourceLine,
 )
 from core.casegrid.operating_lines import DAYS_PER_YEAR, net_operating_flows
@@ -753,7 +754,11 @@ def run_single_case_e2e(
             {year: annual_benefit for year in range(1, horizon_years + 1)},
         ),
     ]
-    cost_rows = [
+    # ★ **운영비와 교체·잔존을 이름으로 갈라 둔다** (R49 · 판정 §3 ⓐ).
+    # 아래에서 둘을 이어 붙여 순현금흐름을 만드는 것은 **종전 그대로**이며
+    # 지표는 여전히 그 합성 위에 선다 — 갈라 두는 것은 `CashflowSplit` 이
+    # 나를 **분해용 사본**을 위해서다(그 독스트링 참조).
+    operating_cost_rows = [
         fixed_om_row(
             "PVFixedOM",
             start_year=1,
@@ -790,12 +795,16 @@ def run_single_case_e2e(
             )
             for cost in settlement_costs
         ),
-        # ★★★ **교체비·잔존가치 (R39-E).** 판정 근거는 `_lifecycle_rows`
-        # 독스트링 — 특히 *왜 잔존가치가 편익 행이 아닌가* 와 *왜 갈라 넣을 수
-        # 없는가*. 이 별표 하나가 다섯 라운드 미뤄진 자리다.
-        *lifecycle_rows,
     ]
-    all_rows = net_operating_flows(benefit_rows, cost_rows)
+    # ★★★ **교체비·잔존가치 (R39-E).** 판정 근거는 `_lifecycle_rows`
+    # 독스트링 — 특히 *왜 잔존가치가 편익 행이 아닌가* 와 *왜 갈라 넣을 수
+    # 없는가*. 이 별표 하나가 다섯 라운드 미뤄진 자리다.
+    #
+    # ⚠ **여기서 이어 붙이는 것은 종전 그대로다** — 지표는 이 합성 위에 선다.
+    # 갈라 둔 `operating_cost_rows` 는 분해용 사본으로만 나간다(`CashflowSplit`).
+    all_rows = net_operating_flows(
+        benefit_rows, [*operating_cost_rows, *lifecycle_rows]
+    )
 
     # 5. 변형별 지표 — **등록된 변형 전부** (FR-607-AC1). 위 독스트링 참조.
     variants = {
@@ -811,7 +820,8 @@ def run_single_case_e2e(
     # (`FR-1001-AC3` · `CaseBasis` 독스트링). 여기서 담지 않으면 리포트가
     # 지표를 다시 계산하거나 자원 구성을 사본으로 갖게 된다.
     annual_cost = sum(
-        int(row.amounts.get(1, 0)) for row in cost_rows
+        int(row.amounts.get(1, 0))
+        for row in (*operating_cost_rows, *lifecycle_rows)
     )
     benefit_lines = _benefit_lines(
         settlement_by_stream,
@@ -836,6 +846,15 @@ def run_single_case_e2e(
         # 엔진 인스턴스가 실제로 쓴 순서다 — 기본 상수를 다시 읽지 않는다
         # (`CaseOutcome.rule_order` 독스트링).
         rule_order=engine.rule_order,
+        # ★ **엔진이 만든 행을 갈린 채로 넘긴다** (R49 · 판정 §3 ⓐ).
+        # 여기서 요약하거나 합치지 않는다 — 리포트가 결손을 항목별로 가를 때
+        # 1년차 값으로 되지으면 물가 상승이 빠져 합계가 결손과 어긋난다
+        # (`CashflowSplit` 독스트링의 실측 469,314원).
+        cashflows=CashflowSplit(
+            benefit=tuple(benefit_rows),
+            operating_cost=tuple(operating_cost_rows),
+            lifecycle=tuple(lifecycle_rows),
+        ),
         basis=CaseBasis(
             initial_investment_won=int(initial_investment),
             annual_benefit_won=annual_benefit,

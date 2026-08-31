@@ -64,7 +64,7 @@ from core.casegrid.ledger_levels import (
     ledger_backed_variables,
     ledger_unit_scales,
 )
-from core.casegrid.models import CaseBasis
+from core.casegrid.models import CaseBasis, CashflowSplit
 from core.casegrid.profiles import DailyShapes, load_daily_shapes
 from core.casegrid.variants import run_order
 from core.contracts.assumptions import AssumptionValue
@@ -278,6 +278,12 @@ class CaseReport:
     #: 설계 변수(용량)를 탐색 구간에서 훑은 결과 — 4.4 · 붙임 10.
     #: *「적정 용량 검토가 선행되어야 한다」* 는 지적이 만든 절이다.
     capacity_review: tuple[CapacityFinding, ...]
+    #: ★ 엔진이 만든 현금흐름 행 — **5.3 이 결손을 가르는 재료** (판정 §3 ⓐ).
+    #:
+    #: ⚠ 여기서 요약하지 않는다. `metrics` 는 합계 하나이고 5.3 이 묻는 것은
+    #: *「그 합계가 어느 항에서 왔는가」* 다 — 1년차 값으로 되지으면 물가
+    #: 상승이 빠져 합계가 결손과 어긋난다(`CashflowSplit` 독스트링).
+    cashflows: CashflowSplit
 
     @property
     def uncertain_influences(self) -> tuple[InfluenceEntry, ...]:
@@ -897,4 +903,8 @@ def build_case_report(
         rule_order=outcome.rule_order,
         dispatch_hours=build_hourly_profile(outcome.dispatch),
         capacity_review=capacity_review,
+        # ★ 러너가 **가른 채로** 낸 현금흐름 행을 그대로 받는다 (판정 §3 ⓐ).
+        # 여기서 다시 묶거나 태그로 분류하지 않는다 — 그 순간 5.3 의 분해가
+        # 러너의 사본이 된다(`CashflowSplit` 독스트링).
+        cashflows=outcome.cashflows,
     )
