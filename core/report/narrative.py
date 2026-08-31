@@ -85,6 +85,7 @@ from core.report.method_sections import (
     model_section,
     resource_detail_section,
 )
+from core.report.policy_warnings import policy_warning_section
 from core.report.unreflected import (
     build_unreflected,
     unreflected_direction_tally,
@@ -635,6 +636,11 @@ def render_markdown(report: CaseReport) -> str:
         "---",
         "",
     ]
+    # ★ **정책 가정 경고가 요약보다 위다** (`FR-404-AC1` — 「리포트 상단에」).
+    # 결론 뒤에 두면 결론을 먼저 읽고 발췌해 가는 눈이 그것을 지나친다.
+    # 경고가 없으면 빈 목록이므로 이 줄은 아무것도 더하지 않는다
+    # (`policy_warning_section` 독스트링 — 「해당 없음」 줄을 세우지 않는다).
+    lines += policy_warning_section(report.basis.resources)
     # ── 본문 ──────────────────────────────────────────────────────────
     lines += _summary_section(report)
     lines += ["---", ""]

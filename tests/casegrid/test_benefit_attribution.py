@@ -90,6 +90,7 @@ def _resource(name: str, *, produces: tuple[str, ...] = ()) -> ResourceLine:
         capex_won=0,
         fixed_om_won_per_year=0,
         produces=produces,
+        policy_warnings=(),
     )
 
 
