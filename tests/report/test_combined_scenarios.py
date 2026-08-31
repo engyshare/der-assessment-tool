@@ -28,12 +28,17 @@ from core.report.case_report import (
     build_case_report,
 )
 from core.report.combined import build_coupled_sweeps
-from core.report.narrative import SOLO_SWEEP, render_markdown
+from core.report.narrative import NONE_IN_RANGE, SOLO_SWEEP, render_markdown
 from tests.report.conftest import report_shapes
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
 _GOLDEN = _REPO_ROOT / "fixtures" / "golden"
+
+#: 1절 요약의 **결합** 칸 머리. 문면을 검사가 갖는 이유는 이 칸이 사라졌는지를
+#: 재기 때문이다 — 칸 이름을 리포트에서 읽어 오면 「칸이 없다」를 잴 수 없다.
+#: 표제를 고치는 라운드는 이 상수를 함께 고친다(그때 빨간불이 알린다).
+COMBINED_SUMMARY_ROW = "| 결론 전환 조건 (결합) |"
 
 
 def _report(name: str = "scenario_unsubsidized", assumptions: Path | None = None):
@@ -289,9 +294,7 @@ def test_solo_rows_still_carry_the_label_when_the_table_is_not_empty() -> None:
 
 
 @pytest.mark.req("FR-1002-AC4")
-def test_summary_carries_the_combined_case_not_only_the_solo_ones(
-    recovery_probe_assumptions: Path,
-) -> None:
+def test_summary_carries_the_combined_case_not_only_the_solo_ones() -> None:
     """★ **요약(1절)이 결합 결과를 함께 말한다.**
 
     심의위원은 1절만 읽고 판단의 뼈대를 잡는다(양식). 요약에 단독 기여만
@@ -302,39 +305,147 @@ def test_summary_carries_the_combined_case_not_only_the_solo_ones(
     ⚠ 요약이 **제 손으로 계산하지 않았는지**도 함께 본다. 요약의 수는 5.1 의
     결합 행에서 그대로 와야 하며, 갈라지면 두 표를 대조할 때에야 드러난다.
 
-    ⚠ **탐침 대장으로 돈다 (R34 · R41 에 확인).** 실물 범위에서는 무보조의
-    **결합 회수 행이 0건**이고(R41 실측 · 결론축 −6,289,675원), 그러면 이 검사가
-    아무것도 순회하지 않는다 — 「요약이 결합 결과를 말하지 않는다」를 잡으려는
-    검사가 정작 결합 결과가 없을 때 초록불이 되는 형태다. 탐침은 설비단가 하단
-    둘만 넓혀 **동반 하락에서만** 회수되게 한다(`conftest.py`).
+    ## ⚠⚠ 전제를 바꿨다 — **탐침 대장에서 실물 대장으로** (R49)
 
-    ★ **R41 이 탐침을 뗄 수 있는지 재고 남겼다** — 나머지 셋은 실물로 옮겼고
-    **이 검사 하나가 탐침의 유일한 사용자다.** 뗄 수 없는 이유는 위 실측이다.
+    종전 판은 `recovery_probe_assumptions`(설비단가 하단 둘을 넓힌 탐침)로 돌며
+    *「동반 하락에서 회수되는 행이 있어야 한다」* 를 단정했다. R48 이 결론축을
+    **−6,289,675 → −12,956,180원**으로 두 배로 내리자 **탐침으로도 회수가
+    0건**이 됐다(R49 실측 · 무보조 · 탐침 대장: 동반 하락 −5,916,200원 —
+    0 선에 그만큼 못 미친다). 그래서 이 검사가 빨간불이 됐다.
+
+    🚫 **탐침을 더 밀지 않았다.** 판정 §3 이 명시로 막는다 — *「검사용 탐침
+    단가를 더 낮춰 억지로 답을 만들지 마라. 현실에 없는 설비값이 되고 「이 값이면
+    됩니다」가 실현 불가능한 조건이 된다」*. 그러므로 탐침이 살릴 수 있는 갈래는
+    **더 이상 없다**(`conftest.py` 머리말이 그 사실을 진다).
+
+    ## ★ 대신 오라클을 **갈래 둘로** 세운다 — 어느 쪽이든 재는 것이 있다
+
+        회수 행이 있으면   → 요약이 그 묶음과 **그 수**를 말한다   (종전 오라클 그대로)
+        회수 행이 없으면   → 요약이 결합 칸을 **비우지 않고** 「없음」이라 적고,
+                             5.1 결합 표는 **행 전건의 수를 그대로 싣는다**
+
+    ⚠ 뒤쪽 갈래가 「0건이면 통과」가 아니다 — 세 가지를 실제로 잰다: **결합
+    점이 존재하는가**(0회 순회 방지) · **요약의 결합 칸이 살아 있는가**(요약이
+    결합을 통째로 빼면 빨간불) · **「없음」이 실물과 맞는가**(어느 결합 점도
+    0 선을 넘지 않아야 그 문면이 참이다). 마지막 것이 `point.recovers` 판정을
+    거꾸로 매긴 변이를 잡는다.
+
+    ⚠ 무보조로 돈다 — 결합 회수가 가장 먼 시나리오이며, 「없음」 갈래를 실제로
+    지나는 자리다.
     """
-    report = _report(assumptions=recovery_probe_assumptions)
+    report = _report()
     text = render_markdown(report)
     summary = text[text.index("## 1. 요약") : text.index("## 2. 평가 개요")]
+    combined_section = text[text.index("#### 결합 시나리오") : text.index("### 5.2")]
 
-    recovering = [
+    combined = [
         point
         for sweep in report.coupled_sweeps
         for point in sweep.points
-        if point.is_combined and point.recovers
+        if point.is_combined
     ]
-    assert recovering, (
-        "이 시나리오는 동반 이동에서 회수되는 행을 가져야 한다 "
-        "(전제가 바뀌었다면 갱신할 것)"
+    assert combined, (
+        "결합 이동 점이 0건이다 — 이 검사가 0회 순회로 통과한다 "
+        "(묶음 선언이 사라졌다면 `coupled_variable_sets` 부터 볼 것)"
     )
-    for sweep in report.coupled_sweeps:
-        if any(p.is_combined and p.recovers for p in sweep.points):
-            assert sweep.bundle in summary, (
-                f"{sweep.bundle}: 요약이 결합 결과를 말하지 않는다"
+    assert COMBINED_SUMMARY_ROW in summary, (
+        f"요약에 「{COMBINED_SUMMARY_ROW}」 칸이 없다 — 요약이 단독만 말한다"
+    )
+    cell = next(
+        line for line in summary.splitlines() if line.startswith(COMBINED_SUMMARY_ROW)
+    )
+
+    recovering = [point for point in combined if point.recovers]
+    if recovering:
+        for sweep in report.coupled_sweeps:
+            if any(p.is_combined and p.recovers for p in sweep.points):
+                assert sweep.bundle in summary, (
+                    f"{sweep.bundle}: 요약이 결합 결과를 말하지 않는다"
+                )
+        for point in recovering:
+            assert f"{point.npv:,.0f}원" in summary, (
+                f"요약의 수가 5.1 결합 행({point.npv:,.0f}원)과 다르다 — 요약이 "
+                "스스로 계산하고 있다"
             )
-    for point in recovering:
-        assert f"{point.npv:,.0f}원" in summary, (
-            f"요약의 수가 5.1 결합 행({point.npv:,.0f}원)과 다르다 — 요약이 "
-            "스스로 계산하고 있다"
+        return
+
+    assert NONE_IN_RANGE in cell, (
+        f"결합 회수 행이 0건인데 요약의 결합 칸이 「{NONE_IN_RANGE}」라 적지 "
+        f"않는다: {cell}"
+    )
+    # ⚠ **「없음」이 실물과 맞는가.** 회수 판정을 거꾸로 매긴 구현은 여기서
+    # 걸린다 — 0 선을 넘은 점이 있는데 요약은 「없음」이라 적고 있게 된다.
+    worst_short = max(point.npv for point in combined)
+    assert worst_short < 0.0, (
+        f"요약은 결합 전환 조건이 「없음」이라 적는데 결합 점 하나가 "
+        f"{worst_short:,.0f}원(0 선 위)이다 — 회수 판정이 요약과 갈렸다"
+    )
+    # ★ **결합 결과 자체는 사라지지 않는다** — 요약이 「없음」이라 적더라도
+    # 5.1 은 행 전건의 수를 싣는다. 이것이 없으면 「함께 움직이면 어디까지
+    # 가는가」를 검토자가 어디서도 읽을 수 없다.
+    for point in combined:
+        assert f"{point.npv:,.0f}원" in combined_section, (
+            f"5.1 결합 표가 {point.level} 행의 수({point.npv:,.0f}원)를 싣지 않는다"
         )
+
+
+def test_the_recovery_probe_can_no_longer_reach_the_zero_line(
+    recovery_probe_assumptions: Path,
+) -> None:
+    """⚠⚠ **탐침 대장의 상태 자체를 잰다** — 위 검사가 실물로 옮긴 사유 (R49).
+
+    `conftest.py` 의 탐침은 설비단가 하단 둘을 넓혀 *「동반 하락에서만 회수된
+    다」* 를 만들어 두는 대장이었다. R48 이 결론축을 두 배로 내리면서 **넓힌
+    하단으로도 회수가 0건**이 됐고, 그래서 위 검사는 실물 대장으로 옮겼다.
+
+    ## ⚠⚠ **값을 밀어서는 되돌릴 수 없다 — 실측으로 확인했다** (R49)
+
+    판정 §3 은 *「탐침 단가를 더 낮춰 억지로 답을 만들지 마라」* 로 막는데,
+    **막기 이전에 가능하지도 않다.** 무보조 · 동반 하락의 최선값:
+
+        하단 600,000 / 150,000 (지금)   −5,916,200원
+        하단 100,000 /  20,000          −2,916,361원
+        하단       0 /       0 (공짜)   **−2,385,746원**  ← 5.3 「운영 단계 20년 누적」
+
+    ★ 설비를 **공짜로 줘도** 회수되지 않는다 — 설비단가 축의 하한이 **운영 단계
+    누적**이기 때문이다. 그래서 이 검사가 빨간불이 되는 길은 값이 아니라 **구조**
+    뿐이다(운영 단계가 플러스로 돌아서는 것 · 넓힘이 사라지는 것).
+
+    🚫 **이 검사를 「회수가 없으면 통과」로 읽지 마라.** 재는 것은 *탐침이 실물과
+    같아졌는지*이며, 그것을 위해 **탐침이 실제로 넓혀졌다**는 사실(실물과 다른
+    결합 값을 낸다)을 함께 단정한다. 넓힘이 사라져 탐침이 실물의 사본이 되면
+    이 검사가 그것을 잡는다 — 픽스처의 `assert item is not None` 이 잡는 것과
+    같은 자리의, 값 쪽 짝이다(R49 실측: 하단 둘을 지우면 빨간불).
+    """
+    probed = [
+        point
+        for sweep in _report(assumptions=recovery_probe_assumptions).coupled_sweeps
+        for point in sweep.points
+        if point.is_combined
+    ]
+    plain = [
+        point
+        for sweep in _report().coupled_sweeps
+        for point in sweep.points
+        if point.is_combined
+    ]
+    assert probed and len(probed) == len(plain), "결합 이동 점이 없다 — 잴 대상이 없다"
+
+    # ★ 탐침이 **실제로 넓혀졌는가** — 아니면 실물의 사본이다.
+    assert [p.npv for p in probed] != [p.npv for p in plain], (
+        "탐침 대장이 실물과 같은 결합 값을 낸다 — `_WIDENED` 가 비었거나 "
+        "대장 값이 탐침값까지 내려왔다"
+    )
+
+    best = max(point.npv for point in probed)
+    assert best < 0.0, (
+        f"탐침 대장에서 결합 이동이 회수된다(최선 {best:,.0f}원) — 운영 단계가 "
+        "플러스로 돌았다는 뜻이다(설비단가 하단만으로는 여기까지 오지 못한다: "
+        "공짜로 줘도 -2,385,746원). 그러면 "
+        "`test_summary_carries_the_combined_case_not_only_the_solo_ones` 의 "
+        "회수 갈래를 이 탐침으로 되돌릴 수 있다(`conftest.py` 머리말). "
+        "⚠ 하단을 누가 더 밀었다면 판정 §3 이 금지한 것이므로 먼저 되돌려라"
+    )
 
 
 @pytest.mark.req("FR-1002-AC2")
