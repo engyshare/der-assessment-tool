@@ -64,13 +64,45 @@ def _won(value: float) -> str:
     return f"{value:,.0f}원"
 
 
-def _resource_row(line: ResourceLine) -> str:
-    produces = " · ".join(line.produces) if line.produces else "없음 (비용만)"
+def _earned_cell(basis: CaseBasis, resource: ResourceLine) -> str:
+    """2.1 의 편익 칸 — **갈래마다 이 자원이 번 금액** (R48-E2).
+
+    ## 왜 선언 목록에서 바꿨는가
+
+    종전 이 칸은 `resource.produces` 였고 *「SurplusSale」* 처럼 **태그 이름
+    뿐**이었다 — 금액이 없다. 그런데 같은 표가 그 옆에 초기투자 4,800,000원을
+    적는다. 검토 지적 원문 *「그 비용 대비 편익이 적정한지는 어떻게 보는가」*
+    (4.3 이 생긴 이유)가 **2.1 안에서는 여전히 답이 없었던 것**이다.
+
+    ⚠ **금액을 여기서 세지 않는다.** `basis.benefit_attributions` 를 그대로
+    읽는다 — 새로 세우면 4.3 과 다른 수가 나란히 인쇄되고 검토자는 어느 쪽이
+    틀렸는지 물을 자리가 없다(같은 함정을 `_own_share_note()` 가 이미 적었다).
+
+    ⚠ **선언(`produces`)이 아니라 귀속으로 짓는다.** 저장장치는 잉여 판매를
+    **선언하지 않지만** 계통 송전의 일부를 방전으로 만들어 그 몫을 번다
+    (R43-E2). 선언으로 지으면 그 몫이 이 열에서 사라지고, 열의 합이 4.3 의
+    「연 편익」과 어긋난다 — 한 리포트가 두 수를 말하게 된다.
+
+    ⚠ **비면 「없음 (비용만)」이다.** 귀속 행이 하나도 없는 자원은 정말로
+    비용만 내는 자원이며(`ResourceLine.produces` 독스트링), 그 사실을 빈 칸
+    으로 두면 *「벌지 않는다」* 와 *「아직 재지 않았다」* 가 표에서 같아 보인다.
+    """
+    shares = [
+        share
+        for share in basis.benefit_attributions
+        if share.resource_name == resource.name
+    ]
+    if not shares:
+        return "없음 (비용만)"
+    return " · ".join(f"{share.tag} {_won(share.annual_won)}" for share in shares)
+
+
+def _resource_row(line: ResourceLine, basis: CaseBasis) -> str:
     return (
         f"| {line.kind} | {line.capacity} | {line.operating_mode} | "
         f"{line.lifetime_years}년 | {line.unit_capex} | "
         f"{_won(line.capex_won)} | {_won(line.fixed_om_won_per_year)}/년 | "
-        f"{produces} |"
+        f"{_earned_cell(basis, line)} |"
     )
 
 
@@ -120,13 +152,21 @@ def model_section(report: CaseReport) -> list[str]:
         "### 2.1 평가 대상",
         "",
         *_target_summary(report),
-        "| 자원 | 용량·성능 | 운전 방식 | 수명 | 단가 | 초기투자 | 고정 운영비 | 만드는 편익 |",
+        # ★ **열 이름이 「번다」라고 말한다 (R48-E2).** 종전 이름은 「만드는
+        # 편익」이었고 칸은 선언 목록이었다. 칸이 귀속 금액으로 바뀐 이상
+        # 이름도 함께 바뀌어야 한다 — 「만드는」과 「번다」는 이 저장소에서
+        # 같지 않고(붙임 4 의 `_own_share_note()`), 갈린 갈래에서 두 수는
+        # 실제로 다르다.
+        "| 자원 | 용량·성능 | 운전 방식 | 수명 | 단가 | 초기투자 | 고정 운영비 "
+        "| 버는 편익 (연) |",
         "|---|---|---|---|---|---|---|---|",
     ]
-    lines += [_resource_row(line) for line in basis.resources]
+    lines += [_resource_row(line, basis) for line in basis.resources]
     lines += [
         "",
         f"- 총 초기투자 — **{_won(total_capex)}** (부가세 별도 · 지원 반영 전)",
+        "- 「버는 편익」 — 4.3 의 자원별 귀속과 같은 수 (선언이 아니라 운전 "
+        "결과 · 갈래별 수량 근거는 4.3)",
         "- 구성의 성격 — 기준 구성 (실제 단지 설계 아님 · 부하·지붕 면적·"
         "계량점 구성 확정 시 재산출)",
         "",
@@ -242,16 +282,62 @@ def method_section(report: CaseReport) -> list[str]:
     ]
 
 
-def _benefit_row(line: BenefitLine, total: int) -> str:
-    """본문 4.3 의 한 행. **산식은 싣지 않는다** — 붙임 4 로 내렸다.
+def _earner_cell(basis: CaseBasis, line: BenefitLine) -> str:
+    """붙임 4 「편익 갈래」의 **임자 칸** — 귀속으로 짓는다 (R48-E2).
+
+    ## 왜 선언(`resource_code`)에서 바꿨는가
+
+    종전 이 칸은 `BenefitLine.resource_code` 였다. 그것은 *「이 갈래를 누가
+    만드는가」* 라는 **한 자원의 이름**이고(`BenefitAttribution` 독스트링),
+    잉여 판매에 `PV` 를 적었다. 그런데 같은 실행이 그 금액을 **수량으로
+    가른다** — 계통 송전 중 저장장치 방전분이 있는 구성에서 4.3 과 본문 2.1
+    은 이미 갈린 몫을 인쇄한다. 즉 **같은 리포트가 한 편익의 임자를 두 가지로
+    말하고 있었다.** 2.1 의 편익 열(`_earned_cell()`)과 붙임 1 의 기준값이
+    같은 형태로 갈려 있던 자리이며, 이 칸이 그 셋째다.
+
+    ⚠ **금액도 비율도 여기서 세지 않는다.** 몫은
+    `basis.benefit_attributions` 의 `annual_won`, 비율은 같은 행의
+    `basis_note`(안분 근거 수량과 비율)를 **그대로** 읽는다. 여기서 비율을
+    다시 나누면 4.3 이 적는 수량 비율과 반올림에서 갈릴 수 있고, 그것이
+    이 칸을 고치러 온 바로 그 결함이다.
+
+    ⚠ **갈리지 않은 갈래에는 금액을 적지 않는다.** 그 몫은 옆 칸 「연 금액」
+    과 같은 수이며, 같은 수를 한 행에 두 번 적으면 그것이 새 사본이 된다
+    (`_own_share_note()` 가 이미 같은 규약을 적었다).
+
+    ⚠ **자원 이름이 아니라 `kind` 로 적는다.** 귀속 행은 `ResourceLine.name`
+    으로 조인하고(`e2e-pv`), 그것은 심의위원이 읽을 이름이 아니다. 4.3 의
+    `_attribution_notes()` 가 같은 조인을 같은 방식으로 한다 — 이름이 대장에
+    없으면 **「자원 미귀속」** 이며 4.3 이 그 몫을 잔여 행으로 싣는다.
+    """
+    kinds = {resource.name: resource.kind for resource in basis.resources}
+    shares = [s for s in basis.benefit_attributions if s.tag == line.tag]
+    if not shares:
+        # 갈래에 귀속 행이 하나도 없으면 **그 금액이 4.3 에서 사라진다.**
+        # 빈 칸으로 두면 그 사실이 붙임 4 에서 보이지 않으므로 적어 둔다
+        # (`tests/casegrid/test_benefit_attribution.py` 가 러너 경로에서
+        # 같은 성질을 붙들고 있다).
+        return "귀속 없음"
+    if len(shares) == 1 and shares[0].annual_won == line.annual_won:
+        return kinds.get(shares[0].resource_name, "자원 미귀속")
+    return " · ".join(
+        f"{kinds.get(share.resource_name, '자원 미귀속')} "
+        f"{_won(share.annual_won)} ({share.basis_note})"
+        for share in shares
+    )
+
+
+def _benefit_row(basis: CaseBasis, line: BenefitLine, total: int) -> str:
+    """붙임 4 「편익 갈래」의 한 행. **산식은 싣지 않는다** — 자원별 절로 내렸다.
 
     양식이 본문을 4~5쪽으로 제한하는데 산식 열이 표를 화면 밖으로 밀어냈다.
-    *「본문에서 한 줄로 말한 것의 근거는 붙임에」* 가 그 규칙이다.
+    *「본문에서 한 줄로 말한 것의 근거는 붙임에」* 가 그 규칙이며, 갈래별
+    산식은 같은 붙임의 자원별 「만드는 편익」 목록이 싣는다.
     """
     share = f"{line.annual_won / total:.0%}" if total else "—"
     return (
-        f"| {line.label} | {line.resource_code} | {_won(line.annual_won)} | "
-        f"{share} |"
+        f"| {line.label} | {_earner_cell(basis, line)} | "
+        f"{_won(line.annual_won)} | {share} |"
     )
 
 
@@ -455,10 +541,20 @@ def resource_detail_section(basis: CaseBasis) -> list[str]:
         "",
         "### 편익 갈래",
         "",
-        "| 편익 | 만든 자원 | 연 금액 | 비중 |",
+        # ★ **열 이름이 「번다」라고 말한다 (R48-E2).** 종전 이름은 「만든
+        # 자원」이었고 칸은 선언(`resource_code`)이었다 — 잉여 판매를 `PV`
+        # 단독으로 적는데 같은 실행이 그 금액을 수량으로 갈라 4.3·2.1 에
+        # 인쇄한다. 칸이 귀속으로 바뀐 이상 이름도 함께 바뀌어야 한다:
+        # 「만드는」과 「번다」는 이 저장소에서 같지 않다
+        # (`core/casegrid/attribution.py` 독스트링).
+        "| 편익 | 번 자원 (귀속) | 연 금액 | 비중 |",
         "|---|---|---|---|",
-        *(_benefit_row(line, total_benefit) for line in basis.benefits),
+        *(_benefit_row(basis, line, total_benefit) for line in basis.benefits),
         f"| **합계** | | **{_won(total_benefit)}** | 100% |",
+        "",
+        "- 「번 자원」 — 4.3 의 자원별 귀속과 같은 수 (선언이 아니라 운전 결과). "
+        "갈린 갈래만 자원별 몫과 안분 근거를 함께 적는다 — 자원 하나에 간 "
+        "갈래의 몫은 옆 칸 「연 금액」과 같다",
         "",
         # ★★ **비용 항목을 편익과 같은 자리에 싣는다 (R34).**
         #

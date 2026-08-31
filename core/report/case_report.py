@@ -715,19 +715,45 @@ def _assumed_operation(
     )
 
 def _appendix(provider: AssumptionSet) -> tuple[AssumptionRow, ...]:
-    """전 가정 목록 — 영향도 순위와 **별개로** 제공한다 (`FR-1002-AC6`)."""
-    return tuple(
-        AssumptionRow(
-            key=item.key,
-            value=item.value,
-            value_unit=item.value_unit,
-            base_year=item.base_year,
-            source=item.source or "출처 미기재",
-            confidence=item.confidence.value,
-            verified_at=item.verified_at,
+    """전 가정 목록 — 영향도 순위와 **별개로** 제공한다 (`FR-1002-AC6`).
+
+    ## ★ 값은 **실행이 쓴 값**이다 — `items()` 는 기준값만 안다 (R48-E1)
+
+    `items()` 가 내주는 `AssumptionItem.value` 는 대장에 적힌 **기준값**이고,
+    오버라이드는 `AssumptionSet.get()` 에만 반영된다. 종전 이 함수는
+    `items()` 의 값을 그대로 실었으므로, **전제를 덮어쓴 실행에서도 붙임 1 은
+    덮어쓰기 전 값을 실었다** — 계산은 새 값으로 하고 「전 가정 전건」은 옛
+    값을 싣는 것이다. 검토자가 리포트만으로 결과를 재구성하면 **다른 수가
+    나오고**, 그 어긋남은 아무 예외도 내지 않는다.
+
+    ⚠ **목록의 범위는 여전히 `items()` 가 짓는다.** `get()` 은 키 하나에만
+    답하므로 전건을 세는 자리를 오버라이드 쪽으로 옮기면 **덮어쓰지 않은
+    항목이 붙임 1 에서 사라진다** — 그 순간 `FR-1002-AC6` 위반이다. 여기서
+    바뀌는 것은 **행의 값**뿐이고 행의 집합이 아니다.
+
+    ⚠ **「덮어썼다」는 표시는 이 자리가 만들지 않는다.** 기준값과 나란히
+    보일지, 어느 조항이 그 표시를 소유하는지는 아직 사람 판정이 남은
+    자리다(`status-human.md`). 이 함수가 지는 것은 **실린 값이 실행이 쓴
+    값인가**까지다 — 재료는 `provider.overridden_items()` 에 이미 있다.
+    """
+    rows: list[AssumptionRow] = []
+    for item in sorted(provider.items().values(), key=lambda i: i.key):
+        effective = provider.get(item.key)
+        rows.append(
+            AssumptionRow(
+                key=item.key,
+                # `get()` 은 `items()` 에 있는 키에 `None` 을 내지 않는다. 그
+                # 불변이 이 파일 밖(`AssumptionSet`)에 있으므로 기준값으로
+                # 내려서 둔다 — 깨져도 **값이 사라지는 대신 기준값이 실린다.**
+                value=item.value if effective is None else effective.value,
+                value_unit=item.value_unit,
+                base_year=item.base_year,
+                source=item.source or "출처 미기재",
+                confidence=item.confidence.value,
+                verified_at=item.verified_at,
+            )
         )
-        for item in sorted(provider.items().values(), key=lambda i: i.key)
-    )
+    return tuple(rows)
 
 
 def build_case_report(

@@ -613,19 +613,44 @@ def test_summary_section_stands_alone_for_the_committee() -> None:
         assert "붙임 8" in summary, "미반영 전문의 자리를 가리키지 않는다"
 
 
+def _benefit_branch_cell(appendix_four: str, label: str) -> str:
+    """붙임 4 「편익 갈래」 표에서 `label` 행의 **임자 칸**을 꺼낸다.
+
+    행을 이름으로 찾고 칸을 자리로 꺼낸다 — 문면을 통째로 `in` 으로 보면
+    같은 붙임의 다른 표(비용 항목·일회성 흐름)가 우연히 통과시킨다.
+    """
+    row = next(
+        line
+        for line in appendix_four.splitlines()
+        if line.startswith(f"| {label} |")
+    )
+    return [cell.strip() for cell in row.strip().strip("|").split("|")][1]
+
+
 def test_appendix_four_prints_the_two_resource_conventions_side_by_side() -> None:
     """★ 붙임 4 의 「귀속 자원」 칸이 **표마다 다른 규약**을 인쇄한다 (R43-B).
 
-    같은 붙임의 표 셋이 자원을 가리키는데 문면이 둘로 갈린다:
+    같은 붙임의 표 셋이 자원을 가리키는데 문면이 셋으로 갈린다:
 
-        편익 갈래 · 비용 항목   →  짧은 코드   `PV` · `ESS` · `—`
-        일회성 흐름            →  자원 이름   `` `e2e-pv` ``
+        비용 항목    →  짧은 코드   `PV` · `ESS` · `—`     (`CostLine.resource_code`)
+        일회성 흐름  →  자원 이름   `` `e2e-pv` ``          (`OneOffLine.resource_name`)
+        편익 갈래    →  자원 종류   `태양광 (옥상 고정형)`  (**귀속** · 아래 R48-E2)
 
-    **그것이 정상이다** — 두 자료형의 규약이 다르고
-    (`core/casegrid/models.py` 「두 규약」), 붙임 8 이 조인하는 것은 뒤쪽뿐이다.
+    **그것이 정상이다** — 앞 둘은 자료형의 규약이 다르고
+    (`core/casegrid/models.py` 「두 규약」), 붙임 8 이 조인하는 것은 가운데뿐이다.
     이 검사가 고정하는 것은 *어느 쪽이 옳은가* 가 아니라 **문면이 지금 그대로
     라는 사실**이다: 「일관되게 만들자」로 한쪽을 다른 쪽에 맞추면 골든·수용
     검사가 보는 표가 바뀌고, 그 전에 붙임 8 의 조인이 조용히 빈 교집합이 된다.
+
+    ## ⚠ 편익 갈래는 **셋째 칸이 되었다** (R48-E2)
+
+    종전 이 칸도 짧은 코드였고 그것은 `BenefitLine.resource_code` — 즉 자원의
+    **선언**이었다. 그런데 잉여 판매처럼 여러 자원의 송전이 만든 갈래에서
+    선언은 임자를 하나로만 적고, 같은 실행이 4.3·2.1 에는 갈린 몫을 인쇄한다.
+    그래서 이 칸은 이제 **귀속**(`basis.benefit_attributions`)에서 지으며,
+    귀속이 조인하는 키는 `ResourceLine.name` 이므로 인쇄되는 문면은 그 자원의
+    `kind` 다. `resource_code` 는 인쇄에서 빠졌을 뿐 **살아 있다** — 러너가
+    `e2e_runner.py` 에서 같은 코드로 조인한다.
 
     읽는 값이 규약을 지키는지는 `tests/casegrid/test_from_resource_conventions.py`
     가, 조인 쪽은 `tests/report/test_unreflected.py` 가 본다. 여기는 **인쇄된
@@ -653,13 +678,151 @@ def test_appendix_four_prints_the_two_resource_conventions_side_by_side() -> Non
             "짧은 코드 규약이 무너졌다"
         )
 
-    benefit_text = "\n".join(cost_benefit_section(basis))
+    kinds = {r.name: r.kind for r in basis.resources}
     for line in basis.benefits:
-        assert line.resource_code not in names, (
-            f"편익 갈래에 자원 이름이 인쇄된다: {line.resource_code!r}"
+        cell = _benefit_branch_cell(text, line.label)
+        assert cell not in {line.resource_code, ""}, (
+            f"{line.tag}: 편익 갈래의 임자가 여전히 선언 코드 "
+            f"{line.resource_code!r} 다 — 귀속으로 짓지 않는다"
         )
-        assert f"| {line.resource_code} |" in benefit_text + text, (
-            f"편익 갈래 귀속 자원 문면이 바뀌었다: {line.resource_code!r}"
+        for share in basis.benefit_attributions:
+            if share.tag != line.tag:
+                continue
+            assert kinds.get(share.resource_name, "자원 미귀속") in cell, (
+                f"{line.tag}: 귀속 자원 {share.resource_name!r} 이 붙임 4 의 "
+                f"임자 칸에 없다 — {cell}"
+            )
+        assert not (names & set(re.findall(r"[\w-]+", cell))), (
+            f"편익 갈래에 자원 이름이 인쇄된다 — {cell}"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# R48-E2 — 붙임 4 「편익 갈래」의 임자가 **귀속**인가
+#
+# 앞 라운드가 같은 형태의 자리 둘을 닫았다(붙임 1 의 기준값 · 2.1 의 선언
+# 목록). 셋째가 이 칸이다 — 잉여 판매를 `PV` 단독으로 적는데 같은 실행이
+# 그 금액을 수량으로 갈라 4.3·2.1 에 인쇄하고 있었다.
+#
+# ⚠ **값을 박지 않는다.** 아래 셋은 금액도 비율도 기대값으로 적지 않고
+# `basis` 와 **다른 절의 인쇄물**에서 지어 맞춘다 — 같은 라운드의 다른 WP 가
+# ESS 운전 축을 바꾸므로 수는 달라지고 성질만 남아야 한다.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _won_amounts(text: str) -> list[int]:
+    """문면에 실린 금액을 **자리 순서대로** 전부 꺼낸다."""
+    return [int(found.replace(",", "")) for found in re.findall(r"([\d,]+)원", text)]
+
+
+def _split_branches(basis) -> list:
+    """귀속이 **자원 둘 이상으로 갈린** 편익 갈래."""
+    return [
+        line
+        for line in basis.benefits
+        if len({s.resource_name for s in basis.benefit_attributions if s.tag == line.tag})
+        > 1
+    ]
+
+
+def test_appendix_four_names_the_earner_from_attribution_not_declaration() -> None:
+    """★★ 붙임 4 의 임자 칸이 말하는 **자원 집합**이 그 갈래의 귀속 집합과 같다.
+
+    이것이 이 자리의 성질이다 — *「누가 만든다고 선언했는가」* 가 아니라
+    *「운전 결과로 누가 벌었는가」* 를 적는가. 선언으로 지으면 갈린 갈래에서
+    집합이 작아지고(잉여 판매 → `PV` 하나), 같은 리포트의 4.3·2.1 이 말하는
+    집합과 어긋난다.
+
+    ⚠ **양방향으로 잰다.** 「귀속 자원이 다 있는가」만 보면 선언까지 함께
+    적는 변이가 통과한다.
+    """
+    report = build_case_report(
+        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    basis = report.basis
+    text = "\n".join(resource_detail_section(basis))
+    kinds = {r.name: r.kind for r in basis.resources}
+
+    assert basis.benefit_attributions, "귀속이 비어 있다 — 아래 단언이 공허하다"
+    for line in basis.benefits:
+        cell = _benefit_branch_cell(text, line.label)
+        attributed = {
+            kinds.get(s.resource_name, "자원 미귀속")
+            for s in basis.benefit_attributions
+            if s.tag == line.tag and s.annual_won
+        }
+        printed = {kind for kind in set(kinds.values()) | {"자원 미귀속"} if kind in cell}
+        assert printed == attributed, (
+            f"{line.tag}: 붙임 4 가 {printed} 를 임자로 적는데 귀속은 "
+            f"{attributed} 다 — 한 리포트가 한 편익의 임자를 두 가지로 말한다"
+        )
+
+
+def test_appendix_four_shows_each_share_and_its_basis_for_a_split_branch() -> None:
+    """★ 갈린 갈래는 **자원마다 몫과 안분 근거**가 보인다.
+
+    집합만 맞으면 *「둘이 나눠 벌었다」* 까지는 말하지만 **얼마씩인지**는
+    말하지 않는다. 심의회에서 나오는 물음(*「그럼 태양광만 하면」*)은 몫을
+    물으므로 붙임이 그 자리를 가져야 한다.
+
+    ⚠ **금액을 박지 않는다.** 몫은 귀속 행에서, 근거 문면은 같은 행의
+    `basis_note` 에서 지어 맞춘다 — 여기서 다시 나누면 4.3 이 적는 비율과
+    반올림에서 갈릴 수 있고, 그것이 이 칸을 고치러 온 결함이다.
+
+    ⚠ 이 구성에 갈린 갈래가 없으면 검사가 스스로 건너뛴다 — **없는 것을
+    있다고 박아 두지 않는다.**
+    """
+    report = build_case_report(
+        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    basis = report.basis
+    split = _split_branches(basis)
+    if not split:
+        pytest.skip("이 구성에는 갈린 편익 갈래가 없다")
+
+    text = "\n".join(resource_detail_section(basis))
+    for line in split:
+        cell = _benefit_branch_cell(text, line.label)
+        for share in basis.benefit_attributions:
+            if share.tag != line.tag:
+                continue
+            assert f"{share.annual_won:,}원" in cell, (
+                f"{line.tag}/{share.resource_name}: 이 자원 몫이 붙임 4 에 없다 — {cell}"
+            )
+            assert share.basis_note in cell, (
+                f"{line.tag}/{share.resource_name}: 안분 근거 문면이 없다 — {cell}"
+            )
+
+
+def test_appendix_four_and_four_three_split_a_branch_the_same_way() -> None:
+    """★★ 붙임 4 와 4.3 이 **같은 몫**을 말한다 — 인쇄물끼리 대조한다.
+
+    두 절이 같은 출처를 읽는지는 코드를 봐야 알지만 **검토자가 보는 것은
+    인쇄물**이다. 한쪽만 새로 세는 변경이 들어오면 여기가 먼저 빨간불이 된다
+    (2.1 ↔ 4.3 을 같은 방식으로 붙든 검사가
+    `tests/report/test_overview_sections.py` 에 있다).
+    """
+    report = build_case_report(
+        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    basis = report.basis
+    split = _split_branches(basis)
+    if not split:
+        pytest.skip("이 구성에는 갈린 편익 갈래가 없다")
+
+    appendix = "\n".join(resource_detail_section(basis))
+    ledger = "\n".join(cost_benefit_section(basis))
+    for line in split:
+        cell = _benefit_branch_cell(appendix, line.label)
+        note = next(
+            row
+            for row in ledger.splitlines()
+            if row.strip().startswith(f"- {line.label} ")
+        )
+        # 4.3 의 줄은 「갈래 금액 → 자원 몫 …」이므로 첫 금액을 떼어 낸다.
+        assert _won_amounts(cell) == _won_amounts(note)[1:], (
+            f"{line.tag}: 붙임 4 가 {cell} · 4.3 이 {note.strip()} 를 말한다 — "
+            "한 리포트가 한 편익을 두 가지로 가른다"
         )
 
 

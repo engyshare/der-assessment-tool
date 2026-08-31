@@ -1,4 +1,4 @@
-"""편익 8종의 **탐침 인자** — 계약 검사 둘이 함께 쓴다.
+"""편익 10종의 **탐침 인자** — 계약 검사 둘이 함께 쓴다.
 
 ## 왜 한 표인가
 
@@ -65,6 +65,16 @@ PROBES: dict[str, dict[str, object]] = {
     "AggregatedPPA": {
         "ppa_price_won_per_kwh": 120.0,
         "annual_generation_kwh": 4_000.0,
+    },
+    #: ★ **`enabled=True` 를 함께 준다** (R48 신설 편익 둘). 이 둘만 **기본
+    #: 비활성**이라(제도가 없거나 산정 기준이 없다 — `nwa.py`·`capacity_payment.py`
+    #: 독스트링) 탐침을 기본값으로 세우면 두 창 모두 0원이 되고, 연간화 규약
+    #: 검사가 그 편익을 **건너뛰면서 초록불로** 남는다.
+    "NWAs": {"contribution_price_won_per_kwh": 45.0, "enabled": True},
+    "CP": {
+        "registered_capacity_kw": 7.0,
+        "capacity_price_won_per_kw_month": 6_500.0,
+        "enabled": True,
     },
 }
 

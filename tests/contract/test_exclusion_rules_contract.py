@@ -62,8 +62,10 @@ def test_the_table_comes_from_the_data_file() -> None:
     # **건수를 못 박는다** — 규칙이 조용히 사라지는 것을 잡는다. 규칙을 더했으면
     # 이 수를 함께 고치는 것이 맞고, 고치지 않고 지나갈 수 없게 하는 것이 요점이다.
     # (R31 이 계약구조 축 규칙 하나를 더해 4 → 5, R32 가 집합 PPA 배타 둘을 더해
-    #  5 → 7 이 됐다 — PPA 는 전량 판매이므로 잉여판매·자가소비 **둘 다** 막는다.)
-    assert len(from_file) == 7
+    #  5 → 7 이 됐다 — PPA 는 전량 판매이므로 잉여판매·자가소비 **둘 다** 막는다.
+    #  R48 이 **운전 주체 축**(유형 E) 넷을 더해 7 → 11 이 됐다 — 계통 급전 편익
+    #  둘(`NWAs`·`CP`) × 사용자 운전 편익 둘(`SelfConsumption`·`PeakShaving`).)
+    assert len(from_file) == 11
 
 
 @pytest.mark.contract
@@ -153,9 +155,12 @@ def test_malformed_rules_are_refused_at_load() -> None:
     """유형 오타·중복 쌍·자기 자신과의 배타는 읽는 시점에 터진다."""
     base = "version: 1\nrules:\n"
 
-    with pytest.raises(ExclusionRulesError, match="A~D"):
+    # ⚠ **열거에 없는 글자를 골라야 한다.** 여기 있던 `E` 는 R48 이 유형 `E`
+    # (동시에 성립할 수 없는 운전)를 신설하면서 **정상 값이 됐다** — 그대로 두면
+    # 이 단언이 「오타를 잡는다」가 아니라 「정상 값을 거부한다」를 고정한다.
+    with pytest.raises(ExclusionRulesError, match="A~E"):
         load_exclusion_rules_from_text(
-            base + "  - {benefit_a: X, benefit_b: Y, type: E, rationale: r}\n"
+            base + "  - {benefit_a: X, benefit_b: Y, type: Z, rationale: r}\n"
         )
 
     with pytest.raises(ExclusionRulesError, match="이미 선언된 쌍"):
