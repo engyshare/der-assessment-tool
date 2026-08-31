@@ -446,6 +446,13 @@ class _Sweeper:
             horizon_years=self._horizon_years,
             scheme=self._scheme,
             daily_shapes=self._daily_shapes,
+            # ★ **본 실행과 같은 부하를 세운다** (판정 B-1,
+            # `docs/decisions-2026-08-31-R48.md` §5). `household_load_annual_kwh`
+            # 축을 스윕하는 동안에도 이 자리가 그 값을 읽어야 「그 값을 흔들면
+            # 결론이 얼마나 움직이는가」가 실제로 재진다 — 안 읽으면 5.1 표에
+            # 그 변수가 올라도 변동폭이 항상 0원이다(`pv_inverter_share` 등이
+            # 올라올 때 이 파일이 이미 겪은 함정).
+            annual_load_kwh=probe["household_load_annual_kwh"]["base"],
         )
         result = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
         self._memo[key] = result
@@ -751,9 +758,16 @@ def build_case_report(
     # 그대로이고 시간대만 옮겨간다(`DailyShape.spread`). 총량은 계속 대장이
     # 갖는다 — 이 배선은 소유를 바꾸지 않는다.
     shapes = load_daily_shapes()
+    # ★ **가구 부하를 본 실행에 세운다** (판정 B-1, `docs/decisions-
+    # 2026-08-31-R48.md` §5·§1·§4). 종전에는 이 호출이 `annual_load_kwh` 를
+    # 넘기지 않아 결론이 부하 없는 사업(PV+ESS 만) 위에 섰고, 그래서 §4 가
+    # 지적한 「피크 저감이 자가 부하를 못 본다」가 실행에서 드러나지 않았다.
+    # 값은 대장 축(`household_load_annual_kwh` · `load.household.annual`)의
+    # `base` 수준에서 온다 — 리터럴로 두면 5.1 스윕이 이 값을 흔들 수 없다.
     outcome = run_single_case_e2e(
         {}, level_map=level_map, horizon_years=horizon_years, scheme=scheme,
         daily_shapes=shapes,
+        annual_load_kwh=level_map["household_load_annual_kwh"]["base"],
     )
     sweeper = _Sweeper(
         level_map=level_map, horizon_years=horizon_years, scheme=scheme,
@@ -769,23 +783,28 @@ def build_case_report(
         base_npv=float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC]),
     )
 
-    # ★ **가정 운전** — 부하·일사 형상을 주고 **같은 진입점**을 한 번 더
-    # 부른다. 리포트가 자원을 다시 세우면 사본이 되고, 러너의 제원이 바뀔 때
+    # ★ **가정 운전(붙임 7)** — 부하·일사 형상을 주고 **같은 진입점**을 한 번
+    # 더 부른다. 리포트가 자원을 다시 세우면 사본이 되고, 러너의 제원이 바뀔 때
     # 붙임 7 만 옛 운전을 계속 인쇄한다.
     #
-    # ⚠ **이 실행의 지표를 쓰지 않는다.** 부하를 넣으면 잉여판매가 줄고 그
-    # 대가로 자가소비 절감이 생기는데, 둘은 **배타 규칙 유형 A** 라 같은
-    # 프로포마에 함께 실을 수 없다(`FR-402-AC2.A`) — 어느 갈래를 켜는지는 계약
-    # 구조가 정하고 이 실행은 그것을 정하지 않는다. 게다가 그 부하는 대장이
-    # 아직 확보하지 못한 값(`Q-3` · §16.3 개인정보 절차 선행)을 가정한 것이다.
-    # 한쪽만 반영한 NPV 는 사업에 불리한 쪽으로 틀린다(NSPM 대칭성 · 양식 4절).
-    # 여기서 취하는 것은 **운전(물리량)뿐**이다.
+    # ⚠⚠ **이 별도 호출의 옛 근거는 R48/WP-B 로 사라졌다 — 지우지 않고 갱신한다.**
+    # 종전에는 *「이 실행의 지표를 쓰지 않는다 — 부하를 넣으면 배타 규칙 유형
+    # A(자가소비 × 잉여판매)를 건드린다」* 였다. 그 판단은 **위 본 실행
+    # (`outcome`)이 부하를 세우지 않던 시절의 것**이다 — 판정 §0 이 밝혔듯
+    # 이중계상은 배타 규칙이 아니라 **자원별 수량 배분(자가 부하로 간 kWh ×
+    # 계통으로 나간 kWh 가 디스패치 단계에서 이미 갈린다)**이 막는다. 이제
+    # 본 실행 자체가 같은 부하·같은 대장 `base` 값으로 돈다(판정 B-1, 위
+    # `outcome = run_single_case_e2e(...)` 참조) — 그러므로 **이 호출과 본
+    # 실행은 지금 같은 입력으로 돈다.**
     #
-    # ⚠ **사유가 「단가가 없어서」였는데 그것은 R34 에 거짓이 됐다.** 한계단가
-    # `tariff.hv_single_contract.energy_only` 가 대장에 섰고, 붙임 8 이 바로 그
-    # 단가로 자가소비 절감을 **재어 싣는다**(연 238,234원). 막고 있는 것은 값의
-    # 부재가 아니라 위의 배타 규칙과 부하의 미확보다 — 사유를 갱신하지 않으면
-    # 대장을 채운 뒤에도 아무도 이 자리를 다시 보지 않는다.
+    # 그런데도 남겨 두는 이유는 딱 하나다: `build_hourly_profile()` 이 붙임 7에
+    # 싣는 것은 **`outcome.dispatch` 를 다시 조립한 시간대별 표시**이고, 이
+    # 호출은 그 표시가 **케이스 그리드 스윕과 무관하게 대장의 `base` 값 하나로
+    # 고정된 「가정 운전」을 보여준다는 것**을 스스로 증명한다(본 실행은
+    # `level_map` 을 통째로 받아 이론상 스윕된 값을 실을 수도 있는 자리다).
+    # ⚠ **다음 WP 가 두 호출을 하나로 합칠 수 있다** — 지금은 계산이 같아
+    # 중복이지만, 이 WP(-B)의 파일 범위는 이 재구성을 승인하지 않았다
+    # (`result_B.md` 8절 참고).
     assumed_hours, assumed_basis = _assumed_operation(
         level_map=level_map, horizon_years=horizon_years, scheme=scheme,
         provider=provider,

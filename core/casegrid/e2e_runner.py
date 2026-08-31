@@ -50,6 +50,7 @@ from core.cba.proforma import (
 )
 from core.contracts.assumptions import AssumptionProvider
 from core.contracts.der import DER, DispatchContext, DispatchResult
+from core.contracts.engine import SystemDispatch
 from core.contracts.schemas import CashFlowRow
 from core.contracts.units import Money, Year
 from core.contracts.valuestream import ValueStream
@@ -202,9 +203,15 @@ def _resolve(
 
 
 def _household_load_if_total_given(
-    daily_shapes: DailyShapes | None, annual_load_kwh: float | None
+    daily_shapes: DailyShapes | None,
+    annual_load_kwh: float | None,
+    extra_appliance_load_kwh: float = 0.0,
 ) -> Load | None:
     """가구 부하 자원 — **부하 총량(`annual_load_kwh`)이 왔을 때만** 세운다.
+
+    `extra_appliance_load_kwh` (판정 §5·B-2)는 히트펌프 등 추가 전력사용기기의
+    **연간 소비전력량**이며 총량에 더해진다 — `annual_load_kwh` 가 `None`
+    이면(부하를 세우지 않는 실행) 더할 기저가 없으므로 **무시된다**.
 
     ## 왜 함수 이름이 조건을 말하는가 (R37)
 
@@ -240,7 +247,9 @@ def _household_load_if_total_given(
         )
     return Load(
         name="e2e-load",
-        hourly_kwh=daily_shapes.load.spread(annual_load_kwh, days=DAYS_PER_YEAR),
+        hourly_kwh=daily_shapes.load.spread(
+            annual_load_kwh + extra_appliance_load_kwh, days=DAYS_PER_YEAR
+        ),
         # ★ **지금 어떤 수도 움직이지 않는다** — 이 `Load` 에는 비용 인자가 하나도
         # 없어(단가·O&M·부속설비 전부 미지정) 곱할 것이 없다. 그런데도 넘기는
         # 이유는 `test_escalation_debt.py` 래칫이 R42 에 **처음으로 이 자리를
@@ -251,6 +260,30 @@ def _household_load_if_total_given(
         # 날 조용히 실질 기준이 되지 않도록 지금 닫는다 (`DV-7`).
         escalation_rate=PRICE_ESCALATION_RATE,
     )
+
+
+def _site_load_kw(
+    household: Load | None, dispatch: SystemDispatch, ctx: DispatchContext
+) -> list[float] | None:
+    """가구 부하의 시각별 kW — `ESS.reducible_peak_kw(site_load_kw=...)` 로 간다
+    (판정 §4·B-3, `docs/decisions-2026-08-31-R48.md`).
+
+    부하가 없으면 `None` 이다 — 피크 저감은 그때 0 이 맞다(`reducible_peak_kw`
+    독스트링).
+
+    ⚠ **세운 자원(`dispatch`)에서 읽는다** — 형상 자산이나 대장에서 다시
+    지으면 두 벌이 되어 어느 쪽이 실렸는지 구분할 수 없다(`_resource_lines()`
+    가 적어 둔 같은 원칙).
+
+    ⚠ **kWh 를 kW 로 명시 환산한다.** 스텝이 1시간이면 수는 같지만 단위가
+    다르고, `dt` 가 바뀌는 날 조용히 틀린다.
+    """
+    if household is None:
+        return None
+    hours_per_step = ctx.dt / SECONDS_PER_HOUR
+    return [
+        -v / hours_per_step for v in dispatch.per_resource[household.name].electric
+    ]
 
 
 def _resolve_ess_dispatch_inputs(
@@ -310,6 +343,7 @@ def run_single_case_e2e(
     provider: AssumptionProvider | None = None,
     daily_shapes: DailyShapes | None = None,
     annual_load_kwh: float | None = None,
+    extra_appliance_load_kwh: float = 0.0,
     settlement_inputs: SettlementInputs | None = None,
     tariff_engine: TariffEngine | None = None,
     scheme: IncentiveScheme | None = None,
@@ -414,6 +448,18 @@ def run_single_case_e2e(
     아니었다. 이제 인자 → `case_values` → 모듈 상수 순으로 값을 고른다.
     `pv_surplus_profile_kwh` 는 이 함수가 PV 를 먼저 디스패치해 만들고
     (충전원이 `PV_SURPLUS` 일 때만) 넘긴다 — 호출자가 줄 수 있는 값이 아니다.
+
+    ★ **`extra_appliance_load_kwh` — 「추가 기기 비례 증가」** (판정 §5·B-2,
+    `docs/decisions-2026-08-31-R48.md`). 히트펌프 등 추가 전력사용기기가
+    있으면 **그 기기의 연간 소비전력량만큼 가구 부하 총량이 늘어난다** — 이
+    인자가 그 증분이고, `annual_load_kwh` 에 더해 같은 `Load` 자원 하나로
+    세운다(형상도 같은 대표일 형상을 쓴다). 기본값 0.0 은 *「추가 기기가
+    없다」* 다.
+
+    ⚠ **`annual_load_kwh` 가 `None`(부하를 아예 세우지 않는 실행)이면 이
+    인자는 무시된다.** 기기 소비량은 가구 부하에 **더하는 증분**이지 그
+    자체로 부하를 만드는 값이 아니다 — 기저 없이 증분만 있으면 「무엇에
+    비례해 늘었는가」에 답할 수 없다.
     """
     pv_capex = _resolve(
         case_values.get("pv_unit_cost", "base"), "pv_unit_cost", level_map
@@ -601,7 +647,9 @@ def run_single_case_e2e(
     # 비어 있다). 그래서 여기 더해도 편익 갈래는 늘지 않고 **운전만** 달라진다 —
     # 계통 수전이 실제 수량으로 나온다. 화폐화(자가소비 절감·구매 비용)는 요금
     # 엔진의 몫이며, 한쪽만 계상하면 사업에 불리한 쪽으로 틀린다(NSPM 대칭성).
-    household = _household_load_if_total_given(daily_shapes, annual_load_kwh)
+    household = _household_load_if_total_given(
+        daily_shapes, annual_load_kwh, extra_appliance_load_kwh
+    )
     resources: list[DER] = [pv, ess] if household is None else [pv, ess, household]
     dispatch = engine.run(resources, ctx)
 
@@ -650,7 +698,9 @@ def run_single_case_e2e(
         )
         settlement_costs = ()
 
-    peak_reduction_kw = ess.reducible_peak_kw(year=1)
+    peak_reduction_kw = ess.reducible_peak_kw(
+        year=1, site_load_kw=_site_load_kw(household, dispatch, ctx)
+    )
     peak = PeakShaving(
         monthly_peak_reduction_kw=[peak_reduction_kw] * MONTHS_PER_YEAR,
         demand_charge_won_per_kw_month=demand_charge,

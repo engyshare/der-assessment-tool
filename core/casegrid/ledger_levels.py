@@ -128,6 +128,18 @@ _LEDGER_VARS: tuple[tuple[str, str, float], ...] = (
     # 1변수 스윕이라 그 상관을 재지 않는다 — 대장의 `impact_note` 가 그
     # 사실을 적어 둔다.
     ("demand_charge", "tariff.hv_single_contract.demand_charge", 1.0),
+    # ★ **가구 부하 총량** — R48/WP-B 에 올렸다 (판정 B-1,
+    # `docs/decisions-2026-08-31-R48.md` §5).
+    #
+    # 종전에는 이 값을 대장에서 읽어 스윕하는 자리가 없었다 — `case_report.py`
+    # 가 붙임 7(가정 운전)에서만 `provider.get(LOAD_LEDGER_KEY)` 로 직접
+    # 읽었고, 본 실행·5.1 영향도 스윕은 이 값을 아예 보지 않았다(부하 자원을
+    # 세우지 않았다). 이제 본 실행도 부하를 세우므로(`case_report.py`) 이
+    # 축이 없으면 그 결론이 3,600kWh 상수 위에 서고 흔들어 볼 수 없다 —
+    # `surplus_sale_price`·`demand_charge` 가 올라온 것과 같은 이유다.
+    #
+    # ⚠ **배율 1.0 이다** — 대장·러너 둘 다 kWh/호·년 을 쓴다.
+    ("household_load_annual_kwh", "load.household.annual", 1.0),
 )
 
 #: 대장 항목이 **아닌** 모형 파라미터. 위 독스트링 참조.
