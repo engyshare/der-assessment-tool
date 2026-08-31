@@ -32,9 +32,12 @@ from core.report.sensitivity import rank_influences
 from core.valuestream import (
     REC,
     AggregatedPPA,
+    CapacityPayment,
     DirectTrade,
     DistributedBenefit,
     DistributedSubItems,
+    NWAs,
+    PeakShaving,
     SelfConsumption,
     SurplusSale,
 )
@@ -304,10 +307,15 @@ def test_dod5_influence_ranking_and_formula_representation() -> None:
     assert "대입값: 450 = 1200 - 750" in pdf_content["formulas"]
 
 
-def _create_valuestream_for_tag(
+def _create_valuestream_for_tag(  # noqa: PLR0911 — 태그 하나에 갈래 하나다
     tag: str, assumptions: AssumptionSet, *, structure: str | None = None
 ) -> ValueStream:
     """tags 로부터 ValueStream 객체를 정본 파라미터 기반으로 생성을 보조하는 헬퍼.
+
+    ⚠ **갈래 수를 줄이려고 표로 접지 않는다.** 편익마다 생성자 인자가 다르고
+    대장에서 읽는 값도 다르다 — 표로 접으면 그 차이가 람다 뭉치로 옮겨 갈 뿐
+    이고, 읽는 사람은 「어느 태그가 무엇으로 세워지는가」를 더 어렵게 본다.
+    갈래가 규칙표의 태그 수만큼 늘어나는 것이 이 헬퍼의 정상 형태다.
 
     `structure` 를 받는 이유: 구조 한정 배타 규칙(`applies_to_structure`)은 참여
     편익이 그 구조를 선언해야 발동한다. 싣지 못하면 그 규칙은 **선언돼 있으나
@@ -391,6 +399,39 @@ def _create_valuestream_for_tag(
             annual_generation_kwh=10_000.0,
             structure=structure,
         )
+    elif tag == "PeakShaving":
+        # R48 신설 유형 E 규칙의 상대편이라 이 공장에 처음 들어왔다. 단가는
+        # 대장의 첨두 기본요금(`tariff.hv_single_contract.demand_charge`)을
+        # 쓰되, 이 테스트가 보는 것은 금액이 아니라 **배타 판정**이다.
+        demand_item = assumptions.get("tariff.hv_single_contract.demand_charge")
+        demand_charge = (
+            float(demand_item.value)
+            if demand_item and demand_item.value is not None
+            else 8_320.0
+        )
+        return PeakShaving(
+            monthly_peak_reduction_kw=[1.0] * 12,
+            demand_charge_won_per_kw_month=demand_charge,
+        )
+    elif tag == "NWAs":
+        # R48 신설. **단가가 대장에 없다** — 제도 자체가 없어서(판정 §6) 값이
+        # 없고, 값 없는 항목을 대장에 넣으면 「가정한 제도」가 된다. 이 테스트가
+        # 보는 것은 금액이 아니라 **배타 판정**이므로 탐침 단가를 여기서 준다.
+        #
+        # ⚠ `enabled=True` 를 명시한다 — 이 편익은 **기본 비활성**이고,
+        # `collect_exclusions` 는 **둘 다 활성**인 쌍만 본다. 빠뜨리면 유형 E
+        # 규칙이 「감지되지 않음」으로 조용히 통과한다.
+        return NWAs(
+            contribution_price_won_per_kwh=50.0, enabled=True
+        )
+    elif tag == "CP":
+        # R48 신설. 단가가 대장에 없는 이유는 `NWAs` 와 **다르다** — CP 는 현행
+        # 제도이나 **분산특구 내 ESS 에 적용할 산정 기준이 부재**하다(판정 §6).
+        return CapacityPayment(
+            registered_capacity_kw=10.0,
+            capacity_price_won_per_kw_month=6_000.0,
+            enabled=True,
+        )
     else:
         raise ValueError(f"지원하지 않는 편익 태그입니다: {tag}")
 
@@ -426,6 +467,30 @@ EXPECTED_RATIONALES: dict[tuple[str, str], str] = {
     ),
     ("AggregatedPPA", "SelfConsumption"): (
         "집합 PPA 로 넘긴 kWh 는 자가소비가 아니다 — 동일 물리량 이중 계상"
+    ),
+    # ↓ R48 — **운전 주체 축**(유형 E · 판정 §2). 계통 급전 편익 둘 × 사용자 운전
+    # 편익 둘 = 넷이며, 하나라도 빠지면 그 조합만 조용히 열린 채 남는다.
+    # 유형 `A` 가 아니다(같은 kWh 를 두 번 파는 것이 아니다) · 유형 `D` 도
+    # 아니다(제도가 바뀌어도 성립하지 않는다).
+    ("NWAs", "SelfConsumption"): (
+        "방전 시점을 계통운영자가 정하면 사용자가 원하는 시각에 방전할 수 없고 "
+        "사용자의 전기사용량에 영향이 없다 — 자가소비가 성립하지 않는다 "
+        "(R48 판정 §2)"
+    ),
+    ("NWAs", "PeakShaving"): (
+        "방전 시점을 계통운영자가 정하면 사용자가 원하는 시각에 방전할 수 없고 "
+        "사용자의 전기사용량에 영향이 없다 — 자가 피크 저감이 성립하지 않는다 "
+        "(R48 판정 §2)"
+    ),
+    ("CP", "SelfConsumption"): (
+        "준중앙급전으로 등록하면 방전 시점을 계통운영자가 정하므로 사용자가 원하는 "
+        "시각에 방전할 수 없고 사용자의 전기사용량에 영향이 없다 — 자가소비가 "
+        "성립하지 않는다 (R48 판정 §2)"
+    ),
+    ("CP", "PeakShaving"): (
+        "준중앙급전으로 등록하면 방전 시점을 계통운영자가 정하므로 사용자가 원하는 "
+        "시각에 방전할 수 없고 사용자의 전기사용량에 영향이 없다 — 자가 피크 저감이 "
+        "성립하지 않는다 (R48 판정 §2)"
     ),
 }
 

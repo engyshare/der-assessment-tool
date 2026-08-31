@@ -11,12 +11,14 @@
 from __future__ import annotations
 
 from core.valuestream.aggregated_ppa import AggregatedPPA
+from core.valuestream.capacity_payment import CapacityPayment
 from core.valuestream.direct_trade import DirectTrade
 from core.valuestream.distributed_benefit import (
     DistributedBenefit,
     DistributedSubItems,
 )
 from core.valuestream.heat_cost_saving import HeatCostSaving
+from core.valuestream.nwa import NWAs
 from core.valuestream.peak_shaving import PeakShaving
 from core.valuestream.rec import REC
 from core.valuestream.self_consumption import SelfConsumption
@@ -25,10 +27,12 @@ from core.valuestream.surplus_sale import SurplusSale
 __all__ = (
     "REC",
     "AggregatedPPA",
+    "CapacityPayment",
     "DirectTrade",
     "DistributedBenefit",
     "DistributedSubItems",
     "HeatCostSaving",
+    "NWAs",
     "PeakShaving",
     "SelfConsumption",
     "SurplusSale",
