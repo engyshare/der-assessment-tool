@@ -392,6 +392,11 @@ def test_the_endpoint_values_are_paired_with_the_run_that_produced_them() -> Non
                 scheme=scheme,
                 # ★ 리포트와 같은 배선 (R37) — `conftest.report_shapes` 참조.
                 daily_shapes=report_shapes(),
+                # ★★ 가구 부하도 같은 배선 (R48/WP-B → WP-F) — 본 실행·
+                # `_Sweeper.conclusion_at_many()` 모두 `annual_load_kwh` 를
+                # 넘긴다. 이 재실행만 안 넘기면 부하 있는 리포트 수를 부하 없는
+                # 재실행과 맞대는 것이 되어 항상 갈린다.
+                annual_load_kwh=probe["household_load_annual_kwh"]["base"],
             )
             measured = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
             assert reported == pytest.approx(measured, abs=1.0), (

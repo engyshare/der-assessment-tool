@@ -156,14 +156,19 @@ def test_hourly_export_total_matches_the_benefit_formula_quantity() -> None:
     말할 수 없다. 여기서는 송전 합계가 실행의 송전 합계와 같은지 본다.
     """
     report = _report()
+    levels = build_level_map(_ASSUMPTIONS)
     # ★ **리포트와 같은 배선으로 돌린다 (R37).** 형상 없이 돌리면 송전
     # 합계가 16.10 대 18.80 으로 갈리는데, 그것은 붙임 7 이 틀린 것이 아니라
     # 검사가 **다른 사업**을 돌린 것이다(`conftest.report_shapes`).
+    # ★★ 가구 부하도 같은 배선 (R48/WP-B → WP-F) — 본 실행이 부하를 넘겨
+    # 계통 수전이 생기고 그만큼 송전이 줄었으므로, 부하 없이 재실행하면
+    # 붙임 7 이 실은 수(부하 있는 실행)와 다른 사업이 된다.
     outcome = run_single_case_e2e(
         {},
-        level_map=build_level_map(_ASSUMPTIONS),
+        level_map=levels,
         horizon_years=report.basis.horizon_years,
         daily_shapes=report_shapes(),
+        annual_load_kwh=levels["household_load_annual_kwh"]["base"],
     )
     expected = sum(outcome.dispatch.grid_export)
     reported = sum(hour.grid_export for hour in report.dispatch_hours)

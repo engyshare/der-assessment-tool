@@ -1,7 +1,7 @@
 # Regression snapshot only. These values are produced by the current code, not a
 # proof of accuracy. Re-generate this file whenever the assumption ledger version
 # changes; until then, mismatches are expected and are not defects.
-# Calculated on 2026-08-09 with docs/assumptions.yaml version 1.
+# Calculated on 2026-08-31 with docs/assumptions.yaml version 1.
 #
 # ── 이 기준값의 «모양» (R39-F 가 옮겼다) ──────────────────────────────────
 # 아래 두 수는 **실행 경로**(`core.report.case_report.build_case_report()`)가 낸
@@ -39,15 +39,25 @@
 # 전부 회수 시점(보조 80% 는 6.5년차) **뒤**에 있기 때문이다.
 # **손으로 고치지 않았다** — `_scenario_metrics()` 를 돌려 그대로 옮겼다.
 #
+# ── R48 이 여섯 값을 다시 뽑았다(§8-d, 「맨 마지막에 한 번만」) ────────────
+# ESS 운전 축이 §11 판정(잉여는 ESS 로 · 저녁·피크 방전 · 모자라면 용량만큼만)
+# 으로 바뀌고, 가구 부하가 본 실행에 섰다(R48/WP-B). 두 변경이 함께 작용해
+# 세 시나리오의 `npv_won` 이 **각각 −6,666,505원** 만큼 내려갔다(세 시나리오
+# 모두 같은 폭 — 보조율은 초기투자 분담만 바꾸므로 운영현금흐름의 이동은
+# 시나리오와 무관하게 같다). `payback_period_years` 는 보조 80% 시나리오가
+# 6.507374076238821년(회수)에서 `.inf`(미회수)로 바뀌었다 — 결손이 총사업비를
+# 넘어 20년 안에 회수되지 않는다. **손으로 고치지 않았다** —
+# `_scenario_metrics()` 를 돌려 그대로 옮겼다(R48/WP-F, 2026-08-31).
+#
 scenario: "energy_independent_household"
 subsidy_rate: 0.20
 
-generated_at: "2026-08-29"
+generated_at: "2026-08-31"
 assumptions_version: 1
 oracle_rank: 3
 oracle_source: "tests/integration/test_wave2_end_to_end.py"
 error_tolerance: "0.1%"
 
 expected_values:
-  npv_won: -4329675
+  npv_won: -10996180
   payback_period_years: .inf

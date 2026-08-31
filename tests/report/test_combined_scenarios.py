@@ -127,11 +127,19 @@ def _conclusion_at(level_map, assignment, horizon: int) -> float:
     # 일사 곡선을 본 실행·스윕에 넘기므로, 형상 없이 다시 돌리면 리포트의
     # 수를 **다른 사업**의 0 선에 대고 재는 것이 된다. 형상은 검사가
     # 자산에서 직접 읽는다(`conftest.report_shapes` 독스트링).
+    # ★★ **가구 부하도 같은 배선으로 돌린다 (R48/WP-B → WP-F).** 본 실행·
+    # `_Sweeper.conclusion_at_many()` 모두 `household_load_annual_kwh` 를
+    # 넘긴다(`docs/decisions-2026-08-31-R48.md` §5·§1·§4). 이 헬퍼만 안 넘기면
+    # 리포트가 실은 수(부하 있음)와 이 재실행(부하 없음)이 갈린다 — R48 착수
+    # 직후 실측: 결합 기준행이 리포트 −12,956,180원인데 이 헬퍼는 −8,466,123원을
+    # 냈다. 부하 없는 재실행은 리포트가 실제로 돈 실행이 아니므로 오라클이
+    # 아니라 이 헬퍼 쪽이 낡아 있었다.
     outcome = run_single_case_e2e(
         {},
         level_map=probe,
         horizon_years=horizon,
         daily_shapes=report_shapes(),
+        annual_load_kwh=probe["household_load_annual_kwh"]["base"],
     )
     return float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
 

@@ -115,15 +115,20 @@ def test_the_conclusion_stands_on_the_shaped_run() -> None:
     같다: **표시만 하는 구현은 표시를 보는 검사를 전부 통과한다**).
     """
     report = _report()
+    levels = build_level_map(_ASSUMPTIONS)
     shaped = run_single_case_e2e(
         {},
-        level_map=build_level_map(_ASSUMPTIONS),
+        level_map=levels,
         horizon_years=report.basis.horizon_years,
         daily_shapes=report_shapes(),
+        # ★★ 가구 부하도 같은 배선 (R48/WP-B → WP-F) — 본 실행이 부하를
+        # 넘기므로, 이 재실행도 넘기지 않으면 「곡선 대 평탄」이 아니라
+        # 「곡선+부하 대 곡선」을 재는 것이 된다.
+        annual_load_kwh=levels["household_load_annual_kwh"]["base"],
     )
     flat = run_single_case_e2e(
         {},
-        level_map=build_level_map(_ASSUMPTIONS),
+        level_map=levels,
         horizon_years=report.basis.horizon_years,
     )
     reported = float(report.metrics[CONCLUSION_METRIC])
@@ -237,6 +242,9 @@ def test_the_sensitivity_and_capacity_sections_run_the_same_business() -> None:
                 level_map=probe,
                 horizon_years=horizon,
                 daily_shapes=report_shapes(),
+                # ★★ 가구 부하도 같은 배선 (R48/WP-B → WP-F) — 4절 용량 검토는
+                # `_Sweeper.conclusion_at_many()` 를 거치므로 부하를 이미 본다.
+                annual_load_kwh=probe["household_load_annual_kwh"]["base"],
             )
             measured = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
             assert point.conclusion == pytest.approx(measured, abs=1.0), (
