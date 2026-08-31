@@ -792,7 +792,12 @@ def _resource_lines(
     ess_capex: float,
     benefits: Sequence[BenefitLine],
 ) -> tuple[ResourceLine, ...]:
-    """평가 대상 자원 제원 — 리포트 0절의 재료 (`ResourceLine` 독스트링)."""
+    """평가 대상 자원 제원 — 리포트 0절의 재료 (`ResourceLine` 독스트링).
+
+    ★ **정책 가정 경고도 여기서 실린다** (`FR-404-AC1` · R48 §7). 훅은 `DER`
+    계약에 있으므로 자원 종류를 묻지 않는다 — 새 자원이 경고를 내기 시작해도
+    이 함수도 리포트도 한 줄이 바뀌지 않는다.
+    """
 
     def produced_by(resource: str) -> tuple[str, ...]:
         return tuple(
@@ -816,6 +821,7 @@ def _resource_lines(
             capex_won=int(pv.capex(year=1)),
             fixed_om_won_per_year=int(pv.fixed_om(year=1)),
             produces=produced_by("PV"),
+            policy_warnings=tuple(pv.policy_warnings()),
         ),
         ResourceLine(
             name=ess.name,
@@ -832,6 +838,7 @@ def _resource_lines(
             capex_won=int(ess.capex(year=1)),
             fixed_om_won_per_year=int(ess.fixed_om(year=1)),
             produces=produced_by("ESS"),
+            policy_warnings=tuple(ess.policy_warnings()),
         ),
     )
 
