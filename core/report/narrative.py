@@ -90,7 +90,11 @@ from core.report.policy_warnings import policy_warning_section
 from core.report.shortfall import (
     SECTION_NUMBER as SHORTFALL_SECTION,
 )
-from core.report.shortfall import build_shortfall, shortfall_section
+from core.report.shortfall import (
+    SENSITIVITY_SECTION,
+    build_shortfall,
+    shortfall_section,
+)
 from core.report.unreflected import (
     build_unreflected,
     unreflected_direction_tally,
@@ -317,12 +321,16 @@ def _flip_section(report: CaseReport) -> list[str]:
 
         결론까지 남은 거리      결론 축의 절대값 (총사업비 대비 비율 병기)
         결론 전환 지원율        그 거리를 t=0 지원으로 환산한 값 (붙임 3 이 산식)
-        전환까지 남는 거리 표   인자를 검토 범위 끝까지 밀었을 때 남는 거리
+        줄임 표                 인자를 끝까지 밀면 **얼마가 줄고 얼마가 남는가**
+                                (R49/WP-4 가 「줄임」 열을 세웠다 — 종전에는
+                                 남는 거리만 실려 뺄셈이 독자에게 남았다)
 
     ⚠ **「없음」 줄을 지우지 않았다.** 거리가 실렸다고 전환 인자의 존부가
     말해지는 것은 아니며, 1절 요약이 그 사실을 같은 문면으로 이미 싣는다.
     """
-    lines = ["### 5.1 불확실 인자 — 값이 틀릴 수 있는 것", ""]
+    # ★ 번호는 `shortfall.SENSITIVITY_SECTION` 한 곳이 짓는다 — 5.3 이 이 절을
+    # 가리키므로(상호 참조), 두 자리에 적으면 절을 옮길 때 한쪽만 고쳐진다.
+    lines = [f"### {SENSITIVITY_SECTION} 불확실 인자 — 값이 틀릴 수 있는 것", ""]
     if not report.flipping:
         lines += [
             f"- 단독 전환 인자 — 없음 (산출: {SOLO_SWEEP} · 범위는 대장 "
@@ -396,12 +404,24 @@ def _gap_lines(report: CaseReport) -> list[str]:
 
 
 def _remaining_gap_table(report: CaseReport) -> list[str]:
-    """전환하지 못한 인자마다 **끝까지 밀었을 때 남는 거리**.
+    """인자마다 **그 끝까지 밀면 결손이 얼마 줄어드나** — 그리고 얼마가 남는가.
 
     붙임 2 의 `변동폭` 과 다른 것을 재는 표다. 변동폭은 *「이 인자가 결론 축을
-    얼마나 흔드는가」* 이고 이 표는 *「그 흔들림을 최대한 좋은 쪽으로 써도
-    0 선까지 얼마가 남는가」* 다. 둘은 같은 순위를 만들지 않는다 — 변동폭이
-    커도 반대 끝에서 시작하면 남는 거리가 더 클 수 있다.
+    얼마나 흔드는가」* 이고 이 표는 *「그 흔들림을 최대한 좋은 쪽으로 써서
+    결손을 얼마 줄이고, 0 선까지 얼마가 남는가」* 다. 둘은 같은 순위를 만들지
+    않는다 — 변동폭이 커도 반대 끝에서 시작하면 남는 거리가 더 클 수 있다.
+
+    ## ★★ **줄임을 열로 세운다** (R49/WP-4 · 판정 §3 ⓑ)
+
+    종전 이 표는 `그 끝의 남은 거리` 만 실었다. 재료는 다 있었으나 *「그러면
+    이 인자가 **얼마를 벌어 주는가**」* 는 **읽는 사람의 뺄셈으로 남았다** —
+    붙임 8 이 R43-H 에 고친 것과 같은 형태의 결함이다(*「재료가 다 있는데
+    담당자가 스스로 빼기를 해야 알았다」*). 판정 §3 ⓑ 의 제목이 그 물음
+    그대로이므로(*「이 인자를 고치면 적자가 얼마 줄어드나」*) 뺄셈을 표가 진다.
+
+    ★ **순서도 줄임이 정한다.** `결손 − 남은 거리` 가 줄임이고 결손은 행마다
+    같은 수이므로, **줄임 내림차순은 남은 거리 오름차순과 정확히 같은 순서**다
+    (그래서 정렬 키는 남은 거리 하나이며 두 수를 각각 정렬하지 않는다).
 
     ⚠ **전환 인자를 이 표에 넣지 않는다.** 그쪽은 남는 거리가 0 인 지점
     (임계값)이 존재하므로 위 표의 `결론 전환값`·`여유` 열이 답이고, 여기 함께
@@ -412,16 +432,28 @@ def _remaining_gap_table(report: CaseReport) -> list[str]:
     ]
     if not rows:
         return []
+    # 결손(또는 여유)은 **행마다 같은 수**다 — 줄임의 기준선이며, 여기서 한 번만
+    # 읽는다. 행마다 다시 읽으면 그것이 사본이 된다.
+    gap = abs(report.conclusion_gap_won)
+    direction = GAP_MARGIN if report.recovers_within_horizon else GAP_SHORTFALL
+    measured = sorted(
+        (
+            (entry, *_flip_direction_end(
+                entry, recovers=report.recovers_within_horizon
+            ))
+            for entry in rows
+        ),
+        # 남은 거리 오름차순 = 줄임 내림차순 (위 독스트링).
+        key=lambda measure: abs(measure[2]),
+    )
     lines = [
-        "#### 전환까지 남는 거리 — 검토 범위 끝까지 밀었을 때",
+        "#### 무엇을 고치면 얼마가 줄어드나 — 검토 범위 끝까지 밀었을 때",
         "",
-        "| 인자 | 사용값 | 단위 | 전환 방향 끝 | 그 끝의 남은 거리 | 신뢰도 | 산출 |",
-        "|---|---|---|---|---|---|---|",
+        "| 인자 | 사용값 | 단위 | 전환 방향 끝 | "
+        f"그 끝까지 밀면 줄어드는 {direction} | 그 끝의 남은 거리 | 신뢰도 | 산출 |",
+        "|---|---|---|---|---|---|---|---|",
     ]
-    for entry in rows:
-        end_value, end_npv = _flip_direction_end(
-            entry, recovers=report.recovers_within_horizon
-        )
+    for entry, end_value, end_npv in measured:
         # ⚠ **두 끝의 결론 축이 같으면 「전환 방향」이 없다.** 그때 어느 끝을
         # 적어도 *그쪽으로 밀면 0 선에 가까워진다* 를 함의하게 되는데, 그 인자는
         # 어느 쪽으로도 결론을 움직이지 않는다 — 방향 칸은 `NO_VALUE` 로 두고
@@ -431,7 +463,8 @@ def _remaining_gap_table(report: CaseReport) -> list[str]:
         lines.append(
             f"| `{entry.variable}` | {_num(entry.used_value)} | "
             f"{_unit_head(entry.value_unit) or NO_VALUE} | {moved} | "
-            f"{_won(abs(end_npv))} | {entry.confidence} | {method} |"
+            f"{_won(gap - abs(end_npv))} | {_won(abs(end_npv))} | "
+            f"{entry.confidence} | {method} |"
         )
     lines.append("")
     # ★ **라벨의 뜻을 표 바로 아래에 단다 (R43-G).** 종전에는 붙임 2 각주와
@@ -440,7 +473,46 @@ def _remaining_gap_table(report: CaseReport) -> list[str]:
     # `UNREAD_NOTE` 한 곳이다 — 여기서 다시 적지 않는다.
     if any(entry.unread_by_pipeline for entry in rows):
         lines += [UNREAD_NOTE, ""]
+    lines += _reduction_total_line(gap, measured, direction=direction)
     return lines
+
+
+def _reduction_total_line(
+    gap: float,
+    measured: list[tuple[InfluenceEntry, float, float]],
+    *,
+    direction: str,
+) -> list[str]:
+    """줄임의 **합**과 그래도 남는 몫 — 판정 §3 ⓑ 가 묻는 것의 마지막 칸.
+
+    ## ⚠ 왜 「단순 합」이라 못 박는가
+
+    이것은 1변수 스윕 전건을 각각 좋은 끝까지 민 값을 **더한 것**이며, 전건을
+    동시에 민 실행이 아니다. 양식 §2 가 *「단독 효과를 더하면 결합 효과」를
+    단정하지 않는다* 로 못 박고 있으므로 라벨이 그 사실을 진다 — 실제로 이
+    구성의 설비단가 묶음은 잔차 0원이지만(아래 결합 시나리오), 그것이 **전건에
+    성립한다는 근거는 없다.**
+
+    ★ 그래도 이 한 줄이 서는 이유는, 이 수가 없으면 *「전건을 다 좋은 쪽으로
+    밀어도 절반밖에 못 메운다」* 를 심의회가 **표의 칸을 손으로 더해** 알아야
+    하기 때문이다. 판정 §3 ⓑ 의 실측 노트가 든 *「검사용 하한까지 낮춰도 약
+    667만원이 여전히 부족」* 과 같은 물음이며, 그 물음의 답을 표가 낸다.
+
+    ⚠ **남는 몫을 「해소 조건」으로 읽히게 두지 않는다** — 어느 항에서 오는
+    몫인지는 5.3 이 항목별로 가르며, 이 줄은 그 자리를 가리키는 것까지다.
+    """
+    total = sum(gap - abs(end_npv) for _entry, _end_value, end_npv in measured)
+    residual = gap - total
+    # ⚠ 결손이 0 이면 비율이 성립하지 않는다 — 그때는 비율 칸을 두지 않는다.
+    share = f" ({direction} {_won(gap)}의 {residual / gap:.1%})" if gap else ""
+    return [
+        f"- 위 {len(measured)}건을 각각 좋은 끝까지 밀어 얻는 줄임의 **단순 합** "
+        f"— {_won(total)} (산출: {SOLO_SWEEP} {len(measured)}건의 합 · "
+        f"상호작용 미반영 · 함께 민 결과는 아래 결합 시나리오) · "
+        f"그래도 남는 {direction} **{_won(residual)}**{share} · "
+        f"그 몫이 어느 항에서 오는지는 {SHORTFALL_SECTION}",
+        "",
+    ]
 
 
 def _flip_direction_end(

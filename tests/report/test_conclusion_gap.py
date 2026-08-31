@@ -51,6 +51,10 @@ from core.report.narrative import (
     GAP_SHORTFALL,
     render_markdown,
 )
+from core.report.shortfall import (
+    SECTION_NUMBER as SHORTFALL_SECTION,
+)
+from core.report.shortfall import SENSITIVITY_SECTION
 from tests.report.conftest import report_shapes
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -698,3 +702,168 @@ def test_the_subsidised_scenario_measures_the_distance_toward_the_flip() -> None
             f"{entry.variable}: 미회수 상태인데 **나빠지는 끝**의 거리가 "
             f"실렸다 — 행: {row}. 이 표가 재는 것은 전환 방향의 끝이다"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# R49/WP-4 — 5.1 이 **「고치면 얼마 줄어드나」**에 답하는가 (판정 §3 ⓑ)
+# ─────────────────────────────────────────────────────────────────────────
+
+#: 줄임 표의 요약 줄 머리. 검사가 이 이름으로 줄을 집는다.
+_TOTAL_HEAD = "- 위 "
+
+
+def _reduction_rows(section: str) -> list[tuple[str, float, float]]:
+    """줄임 표에서 (인자, 줄임, 남는 거리)를 **인쇄된 문면에서** 읽는다.
+
+    ⚠ 자료형에서 읽으면 *「자료형은 맞는데 표는 다른 수를 싣는」* 구현이
+    통과한다 — `test_shortfall.py` 가 같은 이유로 표를 파싱한다.
+    """
+    rows = []
+    for line in section.splitlines():
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) != 8 or not cells[0].startswith("`"):
+            continue
+        rows.append(
+            (
+                cells[0].strip("`"),
+                float(cells[4].removesuffix("원").replace(",", "")),
+                float(cells[5].removesuffix("원").replace(",", "")),
+            )
+        )
+    return rows
+
+
+@pytest.mark.req("FR-1002-AC4")
+def test_the_table_carries_how_much_each_factor_actually_removes() -> None:
+    """★★ **줄임이 열로 실린다** — 독자가 뺄셈하지 않는다 (판정 §3 ⓑ).
+
+    종전 표는 `그 끝의 남은 거리` 만 실었다. 재료는 다 있었으나 *「이 인자가
+    얼마를 벌어 주는가」* 는 **읽는 사람의 뺄셈으로 남았고**, 붙임 8 이
+    R43-H 에 고친 것이 같은 형태의 결함이다.
+
+    ⚠ **기대값을 박지 않는다.** `결손 − 그 끝의 남은 거리` 를 리포트에서 다시
+    지어 대조하므로, 대장이 바뀌어도 이 검사가 재는 성질은 그대로다.
+    """
+    for name in ("scenario_unsubsidized", "scenario_subsidy_80"):
+        report = _report(name)
+        rows = _reduction_rows(_section(report))
+        expected = {
+            entry.variable: entry
+            for entry in report.uncertain_influences
+            if not entry.flips_conclusion
+        }
+        assert len(rows) == len(expected), (
+            f"{name}: 줄임 표의 행이 {len(rows)}개인데 전환하지 않는 인자는 "
+            f"{len(expected)}개다 — 행을 줄이면 「그 밖의 인자는 영향이 없다」"
+            "로 읽힌다"
+        )
+        gap = report.conclusion_gap_won
+        for variable, reduction, remaining in rows:
+            entry = expected[variable]
+            nearest = min(abs(entry.npv_low), abs(entry.npv_high))
+            assert remaining == pytest.approx(nearest, abs=1.0), (
+                f"{name}/{variable}: 남는 거리가 가까운 끝이 아니다"
+            )
+            assert reduction == pytest.approx(gap - nearest, abs=1.0), (
+                f"{name}/{variable}: 줄임이 `결손 - 남는 거리` 와 다르다 — "
+                f"실린 값 {reduction:,.0f}원 · 재어 본 값 {gap - nearest:,.0f}원"
+            )
+
+
+@pytest.mark.req("FR-1002-AC4")
+def test_the_table_is_ordered_by_how_much_it_removes() -> None:
+    """★ **줄여 주는 크기 순**이다 — 판정 §3 ⓑ 가 요구한 순서.
+
+    ⚠ 자료형이 아니라 **인쇄된 순서**를 본다. `uncertain_influences` 는
+    변동폭 순이므로, 정렬을 빠뜨린 구현은 *「변동폭 순으로 인쇄하고 줄임 열만
+    붙인」* 표가 되고 그것은 다른 우선순위를 가리킨다.
+
+    ★ 실물에서 **두 순서가 실제로 갈린다** — 무보조에서 변동폭 1위는
+    `grid_purchase_price` 이지만 줄임 1위는 `surplus_sale_price` 다. 그
+    어긋남이 이 검사가 무언가를 재고 있다는 증거이므로 함께 확인한다.
+    """
+    for name in ("scenario_unsubsidized", "scenario_subsidy_80"):
+        rows = _reduction_rows(_section(_report(name)))
+        printed = [reduction for _variable, reduction, _remaining in rows]
+        assert printed == sorted(printed, reverse=True), (
+            f"{name}: 줄임 내림차순이 아니다 — 인쇄된 순서 {printed}"
+        )
+
+    report = _report()
+    by_delta = [
+        entry.variable
+        for entry in report.uncertain_influences
+        if not entry.flips_conclusion
+    ]
+    by_reduction = [variable for variable, _r, _g in _reduction_rows(_section(report))]
+    assert by_delta[0] != by_reduction[0], (
+        "변동폭 1위와 줄임 1위가 같아졌다 — 이 검사가 정렬을 재지 못한다. "
+        f"변동폭 {by_delta[0]} · 줄임 {by_reduction[0]}. 실물이 그렇게 "
+        "바뀌었으면 다른 갈래에서 순서를 재도록 고칠 것"
+    )
+
+
+@pytest.mark.req("FR-1002-AC4")
+def test_the_total_is_labelled_as_a_plain_sum_and_adds_up() -> None:
+    """★★ 줄임의 **합**이 실리고, 그것이 「단순 합」이라 밝혀져 있다.
+
+    이 줄이 없으면 *「전건을 다 좋은 쪽으로 밀어도 절반밖에 못 메운다」* 를
+    심의회가 표의 칸을 손으로 더해 알아야 한다. 그러나 이것은 1변수 스윕을
+    **더한 값**이며 함께 민 실행이 아니다 — 양식 §2 가 *「단독 효과를 더하면
+    결합 효과」를 단정하지 않는다* 로 못 박으므로 **라벨이 그 사실을 져야**
+    한다. 라벨이 없으면 이 수가 달성 가능한 조건으로 읽히고, 그것이 판정
+    §2 가 5.1 에서 걷어낸 결함과 같은 형태다.
+    """
+    for name in ("scenario_unsubsidized", "scenario_subsidy_80"):
+        report = _report(name)
+        section = _section(report)
+        line = next(
+            (
+                text
+                for text in section.splitlines()
+                if text.startswith(_TOTAL_HEAD) and "단순 합" in text
+            ),
+            None,
+        )
+        assert line is not None, (
+            f"{name}: 줄임의 합이 5.1 에 없다 — 검토자가 아홉 칸을 손으로 "
+            "더해야 한다"
+        )
+        assert "상호작용 미반영" in line, (
+            f"{name}: 합이 「단순 합」이라 밝혀져 있지 않다 — 달성 가능한 "
+            f"조건으로 읽힌다. 줄: {line}"
+        )
+        rows = _reduction_rows(section)
+        total = sum(reduction for _variable, reduction, _remaining in rows)
+        assert _won(total) in line, (
+            f"{name}: 실린 합({line})이 표의 줄임을 더한 값"
+            f"({_won(total)})과 다르다"
+        )
+        assert _won(report.conclusion_gap_won - total) in line, (
+            f"{name}: 「그래도 남는 결손」이 `결손 - 합` 과 다르다 — 줄: {line}"
+        )
+
+
+@pytest.mark.req("FR-1002-AC4")
+def test_the_two_shortfall_sections_point_at_each_other() -> None:
+    """★ **5.1 ↔ 5.3 상호 참조** — 둘이 갈라져 있으면 이어 읽지 못한다.
+
+    5.3 은 *어디서 오는가*, 5.1 은 *무엇을 고치면 얼마가 줄어드나* 다. 판정
+    §3 은 둘을 함께 세우라고 했으므로, 한쪽만 상대를 가리키면 심의회는
+    나머지 절이 있는 것을 모른 채 한 표만 인용해 간다.
+
+    ⚠ **번호를 검사에 박지 않는다** — 두 상수에서 읽는다. 절을 옮기면 이
+    검사가 새 번호로 따라간다.
+    """
+    text = render_markdown(_report())
+    sensitivity = text[
+        text.index(f"### {SENSITIVITY_SECTION} ") : text.index("### 5.2 ")
+    ]
+    shortfall = text[text.index(f"### {SHORTFALL_SECTION} ") : text.index("## 6. ")]
+    assert SHORTFALL_SECTION in sensitivity, (
+        f"5.1 이 {SHORTFALL_SECTION} 을 가리키지 않는다"
+    )
+    assert SENSITIVITY_SECTION in shortfall, (
+        f"{SHORTFALL_SECTION} 이 {SENSITIVITY_SECTION} 을 가리키지 않는다 — "
+        "「어디서 오는가」만 읽고 「무엇을 고치면 되는가」로 넘어갈 통로가 없다"
+    )
