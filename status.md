@@ -163,7 +163,11 @@ R44-12 가 spec 을 **v0.19 → v0.20** 으로 올렸으나 **§13.2.2 `C-5` 의
 >
 > **④ 착수 자리** — 남은 목록은 아래 **「다음에 집을 것」 절**이 갖는다(같은 파일 안이다).
 >
-> **⑤ 푸시·CI** — (마감에서 채운다)
+> **⑤ 푸시·CI — ★ `main` 에 병합했다.** `r48-wp-a` 를 **fast-forward** 로 올려 밀었다
+> (`41fb3a1` · R48 이 남긴 25 커밋이 함께 나갔다). **`tests` · `source-rules` 둘 다 `success`
+> 를 눈으로 확인했다**(`gh run list --branch main`). ⚠ **브랜치 푸시로는 `tests` 가 돌지
+> 않는다**(`on.push.branches` 가 `[main]` 뿐) — R48 의 빨간불이 CI 에 안 보였던 이유다.
+> 미푸시 수는 `git log origin/main..HEAD --oneline | wc -l`.
 >
 > **⑥ 전문** — 경위·WP 표·게이트 실측·커밋 목록은 **`status-history.md` R49 블록**.
 > 재료 정본은 **`docs/decisions-2026-08-31-R49.md`**(사용자 판정 · 잠정 아님) — R49 가
