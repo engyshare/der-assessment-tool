@@ -70,6 +70,7 @@ from core.report.case_report import (
     BASELINE_VARIANT,
     CONCLUSION_METRIC,
     HEADLINE_METRIC,
+    MAX_SUBSIDY_RATE,
     CaseReport,
     InfluenceEntry,
 )
@@ -108,6 +109,64 @@ NONE_IN_RANGE = "없음 (검토 범위 내)"
 #: 값으로 읽는다.
 GAP_SHORTFALL = "결손"
 GAP_MARGIN = "여유"
+
+#: 5.1 의 전환 지원율 줄이 **「지원만으로는 안 된다」로 서 있을 때**의 머리.
+#: 전환되는 갈래에서는 같은 줄이 `- 결론 전환 지원율 — **52.6%** …` 로 선다 —
+#: `⚠` 한 글자가 **값 자리에 백분율이 서지 않는다**는 표시다. 검사가 이 이름으로
+#: 줄을 집는다(`test_conclusion_gap.py`).
+FULL_SUPPORT_LINE_HEAD = "- 결론 전환 지원율 — ⚠"
+
+
+def _support_alone_note(report: CaseReport) -> str:
+    """★ **「지원만으로는 안 된다」 — 네 자리가 함께 지는 한 문면** (판정 §2).
+
+    1. 요약 · 5.1 · 6.2 · 붙임 3 이 같은 사실을 말해야 하고, 자리마다 다시
+    지으면 네 문면이 갈린다 — 같은 물음에 자리가 늘수록 한 곳이 스스로 짓는
+    위험이 커진다는 것은 이 저장소가 전환 지원율에서 이미 만난 형태다
+    (`test_narrative.py::test_the_break_even_subsidy_rate_is_one_number_in_four_places`).
+
+    판정 §2 가 요구한 **셋을 담는다**:
+
+    1. 전액(100%) 지원해도 전환되지 않는다는 **사실**
+    2. **얼마나 모자라는가** — 원 단위 (`residual_gap_at_full_support_won`)
+    3. 그러므로 **지원율 외의 수단이 필요하다**
+
+    ⚠ *무엇이* 필요한지는 여기서 말하지 않는다. 그것은 적자 구조를 가르는
+    절이 답하며(판정 §3 ⓐ) **아직 없다** — 없는 절 번호를 가리키면 검토자는
+    있지도 않은 자리를 찾는다.
+    """
+    residual = report.residual_gap_at_full_support_won
+    return (
+        f"전액({MAX_SUBSIDY_RATE:.0%}) 지원해도 결론이 전환되지 않는다 — 남는 "
+        f"{GAP_SHORTFALL} **{_won(abs(residual))}** · 전환 지원율 환산값 "
+        f"{report.break_even_subsidy_rate:.1%}는 지원 상한 "
+        f"{MAX_SUBSIDY_RATE:.0%}(사업비 전액)를 넘어 답으로 성립하지 않는다 · "
+        "전환에는 지원율 외의 수단이 필요하다"
+    )
+
+
+def _support_answer(report: CaseReport) -> str:
+    """전환 지원율 자리의 **값 머리** — 1. 요약 · 5.1 · 6.2 가 함께 쓴다.
+
+    ## ★ 상한을 넘으면 **백분율이 이 자리에 서지 않는다** (R49/WP-2-fix)
+
+    종전에는 굵은 `132.2%` 를 먼저 싣고 뒤에 단서를 붙였다. 그것은 판정 §2 가
+    적은 *「그 숫자를 **답으로 제시하지 않는다**」* 가 아니라 **제시한 뒤에
+    단서를 붙인** 형태다 — 그리고 이 저장소는 그 위험을 이미 한 번 겪었다:
+    **발췌돼 인용되는 것은 행의 말이 아니라 그 굵은 수**이고(R43-G ·
+    `_subsidy_flip_row` 독스트링), 심의회 자료에서 「지원율 132.2%」 한 칸만
+    떼어 가면 **줄 수 없는 지원율이 달성 조건으로 나간다.**
+
+    그래서 값 머리를 통째로 바꾼다 — 굵은 수가 서던 자리에 **진술**이 선다.
+    환산값 자체는 그 진술 **안에서** 「답으로 성립하지 않는다」와 함께만
+    나오고, 어디서 온 수인지는 붙임 3 이 대입값으로 진다(`MC-1` 의 첫 물음).
+
+    ⚠ **전환되는 갈래는 종전 그대로 백분율이다.** 보조율이 오르거나 사업비가
+    바뀌면 다시 그 갈래가 되고, 그때 132.2% 는 **정당한 답**이다.
+    """
+    if report.support_alone_can_flip:
+        return f"**{report.break_even_subsidy_rate:.1%}**"
+    return f"⚠ {_support_alone_note(report)}"
 
 
 def _summary_section(report: CaseReport) -> list[str]:
@@ -152,7 +211,15 @@ def _summary_section(report: CaseReport) -> list[str]:
         # ★ 값을 여기서 계산하지 않는다 — `break_even_subsidy_rate` 한 함수를
         # 본문 5.1 · 붙임 3 과 **함께** 쓴다. 요약이 스스로 환산하면 같은
         # 물음에 세 자리가 다른 수를 낸다. 자리수도 5.1 과 같은 `:.1%` 다.
-        f"| 결론 전환 지원율 | **{report.break_even_subsidy_rate:.1%}** "
+        # ★ **상한을 넘으면 값 자리에 백분율을 두지 않는다** (판정 §2 ·
+        # R49/WP-2-fix). **행 이름은 건드리지 않는다**(양식 【1】이 소유자다) —
+        # 바뀌는 것은 **값 칸이 무엇으로 시작하는가**이며, 그 갈래를
+        # `_support_answer` 한 곳이 짓는다.
+        #
+        # ⚠ **`(현 지원율 …%)` 는 두 갈래 모두 남긴다.** 그것은 **실제로 적용된
+        # 값**이지 달성 조건이 아니다 — 빼면 검토자가 *어느 지원 수준의 사업을
+        # 보고 있는지* 알 수 없고, 두 시나리오의 요약 행이 서로 바뀌어도 매끈해진다.
+        f"| 결론 전환 지원율 | {_support_answer(report)} "
         f"(현 지원율 {report.subsidy_rate:.1%} · 산식은 붙임 3) |",
         f"| 결론 전환 조건 (결합) | {_summary_combined(report)} |",
         f"| 미반영 항목 | {unreflected_direction_tally(unreflected)} |",
@@ -284,21 +351,35 @@ def _gap_lines(report: CaseReport) -> list[str]:
 
     ⚠ **판정어를 쓰지 않는다.** 「부족하다」·「가깝다」는 작성자의 말이므로,
     거리의 방향은 `결손`·`여유` 라벨 한 칸이 지고 크기는 수가 진다.
+
+    ★ **환산이 지원 상한을 넘으면 둘째 줄의 값 자리가 바뀐다** (판정 §2 ·
+    R49/WP-2-fix) — 그 지원율은 넣어 돌릴 수 없는 값이므로(`DV-1`) 백분율을
+    답으로 두지 않고, *「전액 지원해도 얼마가 남는가」* 를 원 단위로 대신
+    싣는다. 갈래는 `_support_answer`, 문면은 `_support_alone_note` 한 곳이 짓는다.
     """
     # 환산을 **먼저** 부른다 — 총사업비가 0 이면 여기서 멈춘다(그 함수가
     # 사유를 말한다). 비율을 먼저 계산하면 같은 상태에서 `ZeroDivisionError`
     # 가 나고, 그 예외는 검토자에게 무엇이 잘못됐는지 말하지 않는다.
-    flip_rate = report.break_even_subsidy_rate
+    # ⚠ 값은 `_support_answer` 가 다시 부른다 — 여기서는 **부르는 것 자체**가
+    # 목적이므로 이름에 담지 않는다.
+    _ = report.break_even_subsidy_rate
     gap = report.conclusion_gap_won
     total = report.total_project_cost_won
     direction = GAP_MARGIN if report.recovers_within_horizon else GAP_SHORTFALL
-    return [
+    lines = [
+        # ⚠ **이 줄은 「거리」다 — 지원율이 아니다.** 총사업비 대비 결손의 크기를
+        # 재며, 아래 전환 지원율과 수가 같아 보이는 것은 **무보조라 `s=0`**
+        # 이기 때문이다(보조 80% 에서는 52.2% 와 132.2% 로 갈린다). 지원 상한을
+        # 넘었다고 이 줄을 함께 걷어내면 **결손의 크기를 잴 자리가 사라진다.**
         f"- 결론까지 남은 거리 — **{_won(gap)}** ({direction} · 총사업비 "
         f"{_won(total)}의 {gap / total:.1%})",
-        f"- 결론 전환 지원율 — **{flip_rate:.1%}** (현 지원율 "
+        # ★ 값 머리는 `_support_answer` 가 짓는다 — 상한을 넘으면 이 줄은
+        # **지원율 값 줄이 아니라 진술 줄**이 된다(위 독스트링).
+        f"- 결론 전환 지원율 — {_support_answer(report)} (현 지원율 "
         f"{report.subsidy_rate:.1%} · 산출: t=0 일시 지원 환산 · 산식은 붙임 3)",
         "",
     ]
+    return lines
 
 
 def _remaining_gap_table(report: CaseReport) -> list[str]:
@@ -600,9 +681,19 @@ def _subsidy_flip_row(report: CaseReport) -> str:
     `break_even_subsidy_rate` **한 함수**를 그대로 부른다. 자리수도 같은
     `:.1%` 다 — 네 자리가 같은 물음에 다른 수를 내면 그 어긋남은 검토자가
     표를 대조할 때에야 드러난다.
+
+    ## ★ 환산이 지원 상한을 넘으면 **답이 아니라는 것을 함께 싣는다** (판정 §2)
+
+    같은 이유가 반대로 선다 — 줄 수 있는 지원율이 아닌 수를 「전환 조건」 칸에
+    홀로 실으면, 그것만 떼어 인용한 검토자는 *「132% 를 지원하면 된다」* 로
+    읽는다. 문면은 `_support_alone_note` 한 곳이 짓는다.
     """
+    # ★ **상한을 넘은 자리에서 이 행이 가장 위험하다** (판정 §2 · R49/WP-2-fix).
+    # 6.2 는 **떼어 인용되는 표**이므로 값 칸이 굵은 「132.2%」로 시작하면
+    # 담당자가 심의회에서 **줄 수 없는 지원율**을 답으로 읽는다 — 위 독스트링이
+    # 적은 나-2 오독의 **반대 방향**이다. 갈래는 `_support_answer` 가 짓는다.
     return (
-        f"| 지원 (보조율) | **{report.break_even_subsidy_rate:.1%}** "
+        f"| 지원 (보조율) | {_support_answer(report)} "
         f"(현 지원율 {report.subsidy_rate:.1%}) | 붙임 3 |"
     )
 

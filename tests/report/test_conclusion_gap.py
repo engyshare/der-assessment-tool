@@ -9,11 +9,17 @@ R35 가 잉여 판매단가를 대장으로 올린 뒤, 실물 대장의 두 골
 아닌가**다.
 
     거리가 본문에 실린다              ← 「없음」 한 줄로 끝나지 않는다
-    ★ 전환 지원율로 다시 돌리면 0 이다  ← 표시만 하는 구현을 걸러 낸다
+    ★ 상한에서 다시 돌린 값과 맞는다     ← 표시만 하는 구현을 걸러 낸다
     ★ 두 시나리오가 같은 값을 낸다      ← 지원이 `t=0` 감액이라는 규약의 대조
     ★ 1절 요약이 그 수를 그대로 싣는다   ← 검토자가 **먼저 보는 표**
     인자마다 남는 거리가 실린다        ← 끝까지 밀어도 얼마가 남는가
     미반영 인자를 「닫힌 자리」로 적지 않는다
+
+★ **R49/WP-2 가 재는 대상을 옮겼다** (판정 `docs/decisions-2026-08-31-R49.md`
+§2). 전환 지원율이 지원 상한(100%)을 넘어 **답으로 제시할 수 없게** 되면서,
+둘째·셋째가 견주는 수가 「전환 지원율(백분율)」에서 **「전액 지원해도 남는
+결손(원)」** 으로 바뀌었다. 지키는 성질은 그대로다 — *인쇄된 수가 재실행으로
+확인되는 실물인가* · *네 자리가 한 수를 싣는가*.
 
 둘째·셋째가 요점이다. 첫째와 넷째는 **거리를 인쇄만 하는 구현도 통과한다** —
 R33 의 `_find_flip_threshold` 결함이 「임계값을 표시만」 하는 구현으로도 통과했던
@@ -28,16 +34,23 @@ import pytest
 
 from core.casegrid.e2e_runner import run_single_case_e2e
 from core.casegrid.ledger_levels import build_level_map
+from core.contracts.validation import ValidationError
 from core.report._format import NO_VALUE, _num, _won
 from core.report.appendix_sections import UNREAD_BY_PIPELINE
 from core.report.case_report import (
     CONCLUSION_METRIC,
+    MAX_SUBSIDY_RATE,
     PLAN_VARIANT,
     CaseReport,
     _scheme_for,
     build_case_report,
 )
-from core.report.narrative import GAP_MARGIN, GAP_SHORTFALL, render_markdown
+from core.report.narrative import (
+    FULL_SUPPORT_LINE_HEAD,
+    GAP_MARGIN,
+    GAP_SHORTFALL,
+    render_markdown,
+)
 from tests.report.conftest import report_shapes
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -51,6 +64,16 @@ def _report(name: str = "scenario_unsubsidized") -> CaseReport:
     )
 
 
+def _load_kwh() -> float:
+    """본 실행과 **같은 가구 부하** (R48/WP-B → WP-F).
+
+    `build_case_report` 가 `annual_load_kwh` 를 넘기므로, 재실행이 그것을
+    빠뜨리면 **부하 있는 리포트의 수를 부하 없는 사업**에 대고 재게 되고
+    두 수는 언제나 갈린다 — 그 어긋남은 지원율 환산의 잘못처럼 읽힌다.
+    """
+    return float(build_level_map(_ASSUMPTIONS)["household_load_annual_kwh"]["base"])
+
+
 def _section(report: CaseReport) -> str:
     text = render_markdown(report)
     return text[text.index("### 5.1 불확실 인자") : text.index("### 5.2 정책 설정값")]
@@ -61,7 +84,14 @@ def _section(report: CaseReport) -> str:
 #: 「정확히 이 이름의 행이 하나」를 함께 요구한다.
 _SUMMARY_ROW_HEAD = "| 결론 전환 지원율 |"
 _BODY_LINE_HEAD = "- 결론 전환 지원율 —"
+#: 6.2 종합의 지원 행 — **네 번째 자리**다 (R43-G · `narrative._subsidy_flip_row`).
+_SUPPORT_ROW_HEAD = "| 지원 (보조율) |"
+#: 붙임 3 이 「전액 지원해도 얼마가 남는가」를 대입값으로 지는 산식의 이름.
+_RESIDUAL_FORMULA = "전액 지원 시 잔여 결손"
 _PERCENT = re.compile(r"\d+(?:\.\d+)?%")
+_WON = re.compile(r"[\d,]+원")
+#: 값 칸의 **머리에 선 백분율** — 굵게(`**52.6%**`)든 맨눈이든.
+_LEADING_PERCENT = re.compile(r"\*{0,2}-?\d+(?:\.\d+)?%")
 
 
 def _one_line(text: str, head: str) -> str:
@@ -81,6 +111,29 @@ def _percents(line: str) -> list[str]:
     found = _PERCENT.findall(line)
     assert found, f"백분율이 없다 — 줄: {line}"
     return found
+
+
+def _answer_cells(text: str) -> dict[str, str]:
+    """전환 지원율 물음에 **답하는 자리 셋의 값 칸**만 떼어 낸다.
+
+    1. 요약 · 6.2 는 표의 셋째 칸(`| 이름 | 값 | …`)이고 5.1 은 줄 이름 뒤다.
+    붙임 3 은 여기 없다 — 그쪽은 *「이 수가 어디서 왔는가」* 를 대입값으로 답하는
+    **산식 자리**이고, 답을 내세우는 자리가 아니다.
+    """
+    return {
+        "1. 요약": _one_line(text, _SUMMARY_ROW_HEAD).split("|")[2].strip(),
+        "5.1": _one_line(text, _BODY_LINE_HEAD)[len(_BODY_LINE_HEAD) :].strip(),
+        "6.2": _one_line(text, _SUPPORT_ROW_HEAD).split("|")[2].strip(),
+    }
+
+
+def _first_won(line: str) -> str:
+    """줄에 실린 **첫 금액을 적힌 그대로**. 백분율과 같은 이유로 문면이다 —
+    `316만원` 과 `3,156,180원` 은 값으로는 같고 자리수 변이는 값 비교로는
+    보이지 않는다."""
+    found = _WON.search(line)
+    assert found is not None, f"금액이 없다 — 줄: {line}"
+    return found.group(0)
 
 
 @pytest.mark.req("FR-1002-AC4")
@@ -119,12 +172,20 @@ def test_the_body_says_how_far_the_conclusion_is_from_the_zero_line() -> None:
 
 
 @pytest.mark.req("FR-1002-AC4", "FR-607-AC1")
-def test_the_break_even_support_rate_actually_zeroes_the_conclusion() -> None:
-    """★★ **보고된 전환 지원율로 다시 돌려 결론 축이 0 이 되는지 본다.**
+def test_support_at_the_ceiling_moves_the_conclusion_to_the_reported_residual() -> None:
+    """★★ **지원을 상한까지 올려 다시 돌리고, 리포트가 싣는 잔여 결손과 맞춘다.**
 
-    이 검사가 없으면 「지원율 52.6%」를 **인쇄만** 하는 구현이 통과한다. 그
-    숫자는 정책 판단에 그대로 쓰이는 값이며(*「얼마를 지원해야 하는가」*),
-    계산과 무관해도 그럴듯하게 읽힌다 — R33 이 임계값에서 만난 형태와 같다.
+    ## 오라클은 그대로다 — **재는 대상만 옮겼다** (R49/WP-2 · 판정 §2)
+
+    종전 이 검사는 *「보고된 전환 지원율로 다시 돌리면 결론 축이 0 인가」* 를
+    물었다. 지키던 성질은 **「인쇄된 수는 표시가 아니라 재실행으로 확인되는
+    실물이다」** 이고, 그것은 여전히 지켜야 한다 — 정책 판단에 그대로 쓰이는
+    수는 계산과 무관해도 그럴듯하게 읽힌다(R33 이 임계값에서 만난 형태).
+
+    바뀐 것은 **인쇄되는 수**다. 전환 지원율이 지원 상한
+    (`MAX_SUBSIDY_RATE`)을 넘어 **그 값으로는 돌릴 수조차 없으므로**(아래
+    `DV-1`), 리포트는 그것을 답으로 제시하지 않고 *「전액 지원해도 남는
+    결손」* 을 대신 싣는다. 그래서 재실행도 **상한에서** 한다.
 
     ⚠ **리포트를 다시 조립하지 않고 파이프라인을 직접 돈다.** 같은 조립기로
     확인하면 그 조립기의 환산을 그 조립기로 검산하는 것이 되어 **동어반복**이
@@ -132,31 +193,54 @@ def test_the_break_even_support_rate_actually_zeroes_the_conclusion() -> None:
     """
     report = _report()
     rate = report.break_even_subsidy_rate
-    assert 0.0 < rate < 1.0, (
-        f"전환 지원율이 {rate:.1%} 로 지원 범위 밖이다 — 이 검사가 재실행으로 "
-        "확인할 수 있는 구간을 벗어났다"
+    assert not report.support_alone_can_flip, (
+        f"전환 지원율이 {rate:.1%} 로 지원 상한({MAX_SUBSIDY_RATE:.0%}) 안에 "
+        "들어왔다 — 그러면 리포트는 다시 그 값을 답으로 싣고, 이 검사는 "
+        "**그 지원율로** 돌려 결론 축이 0 인지 보아야 한다. 실물이 바뀌었으면 "
+        "재는 자리를 되돌릴 것"
     )
 
-    # ★ **리포트와 같은 배선으로 돌린다 (R37).** `build_case_report` 가
-    # 일사 곡선을 본 실행·스윕에 넘기므로, 형상 없이 다시 돌리면 리포트의
-    # 수를 **다른 사업**의 0 선에 대고 재는 것이 된다. 형상은 검사가
-    # 자산에서 직접 읽는다(`conftest.report_shapes` 독스트링).
+    # ★ **그 지원율은 넣어 돌릴 수 없다.** 판정 §2 가 「있을 수 없는 답」이라
+    # 적은 근거가 이것이며, 규칙이 사라지면 리포트는 다시 **실행되지 않는
+    # 조건**을 달성 조건으로 실을 수 있게 된다. 🚫 `DV-1` 을 풀어 이 검사를
+    # 통과시키지 마라 — 자부담이 음수인 사업을 만드는 것이다.
+    with pytest.raises(ValidationError) as refused:
+        run_single_case_e2e(
+            {},
+            level_map=build_level_map(_ASSUMPTIONS),
+            horizon_years=report.basis.horizon_years,
+            scheme=_scheme_for(rate),
+            daily_shapes=report_shapes(),
+            annual_load_kwh=_load_kwh(),
+        )
+    assert refused.value.rule == "DV-1", (
+        f"전환 지원율 {rate:.4%} 를 넣었는데 `DV-1` 이 아닌 "
+        f"`{refused.value.rule}` 로 거부됐다 — 자부담 음수를 막는 규칙이 "
+        "아니라면 이 검사의 전제가 다른 것이다"
+    )
+
+    # ★ **리포트와 같은 배선으로 돌린다 (R37 · R48/WP-B).** `build_case_report`
+    # 가 일사 곡선과 **가구 부하**를 본 실행에 넘기므로, 둘 없이 다시 돌리면
+    # 리포트의 수를 **다른 사업**의 0 선에 대고 재는 것이 된다.
     outcome = run_single_case_e2e(
         {},
         level_map=build_level_map(_ASSUMPTIONS),
         horizon_years=report.basis.horizon_years,
-        scheme=_scheme_for(rate),
+        scheme=_scheme_for(MAX_SUBSIDY_RATE),
         daily_shapes=report_shapes(),
+        annual_load_kwh=_load_kwh(),
     )
     npv = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
 
     # 허용오차는 **총사업비에 대한 비율**로 잡는다. 원 단위 절대값으로 잡으면
     # 사업 규모가 바뀔 때 이 검사가 의미 없이 빨간불이 된다.
     tolerance = report.total_project_cost_won * 1e-6
-    assert abs(npv) <= tolerance, (
-        f"전환 지원율 {rate:.4%} 로 다시 돌렸는데 결론 축이 {npv:,.0f}원이다 "
-        f"(허용 ±{tolerance:,.2f}원). 리포트가 지원 필요액을 환산이 아니라 "
-        "표시로만 싣고 있다"
+    residual = report.residual_gap_at_full_support_won
+    assert npv == pytest.approx(residual, abs=tolerance), (
+        f"지원 {MAX_SUBSIDY_RATE:.0%} 로 다시 돌렸더니 결론 축이 {npv:,.0f}원인데 "
+        f"리포트는 잔여 결손을 {residual:,.0f}원으로 싣는다 "
+        f"(허용 ±{tolerance:,.2f}원). 리포트가 「전액 지원해도 남는 결손」을 "
+        "환산이 아니라 표시로만 싣고 있다"
     )
 
 
@@ -215,86 +299,202 @@ def test_the_support_rate_formula_carries_the_same_number_as_the_body() -> None:
 
 
 @pytest.mark.req("FR-1002-AC4", "FR-607-AC1", "FR-1001-AC3")
-def test_the_summary_row_carries_the_same_support_rate_as_the_body() -> None:
-    """★★ **1절 요약의 「결론 전환 지원율」이 세 자리에서 한 수인가.**
+def test_the_summary_row_carries_the_same_support_numbers_as_the_body() -> None:
+    """★★ **1절 요약이 「지원만으로는 안 된다」를 본문과 같은 수로 싣는가.**
 
-    요약 · 본문 5.1 · 붙임 3 산식이 같은 수를 실어야 한다. 요약이 스스로
-    환산하면 검토자는 **먼저 보는 표에서 본문과 다른 수**를 읽고, 그 어긋남은
-    두 절을 대조할 때에야 드러난다.
+    ## 오라클은 그대로다 — **재는 대상만 옮겼다** (R49/WP-2 · 판정 §2)
 
-    ## ★ 값 셋 중 둘이 **다른 층**에서 온다
+    지키던 성질은 **「요약 · 5.1 · 6.2 · 붙임 3 이 한 수를 싣는다」** 이고,
+    그것은 여전히 지켜야 한다 — 요약이 스스로 환산하면 검토자는 **먼저 보는
+    표에서 본문과 다른 수**를 읽고, 그 어긋남은 두 절을 대조할 때에야 드러난다.
 
-    같은 조립기의 세 자리를 서로 견주는 것만으로는 부족하다 — 자기가 계산한 수를
-    세 곳에 똑같이 인쇄하는 구현은 전건 통과한다(R35 함정 절). 그래서 둘을 더
-    본다.
+    바뀐 것은 **견주는 수**다. 전환 지원율(백분율)은 지원 상한을 넘어 답으로
+    성립하지 않으므로, 네 자리가 함께 지는 수는 이제 **전액 지원해도 남는
+    결손(원 단위)** 이다. 백분율 쪽 네 자리 일치는
+    `test_narrative.py::test_the_break_even_subsidy_rate_is_one_number_in_four_places`
+    가 계속 붙든다.
+
+    ## ★ 같은 조립기의 네 자리를 서로 견주는 것만으로는 부족하다
+
+    자기가 계산한 수를 네 곳에 똑같이 인쇄하는 구현은 전건 통과한다(R35 함정
+    절). 그래서 둘을 더 본다.
 
     - **두 시나리오 대조** — 무보조(0%)와 보조 80% 는 결론 축이 다른데
-      전환 지원율은 **한 값**이다. 요약이 *결손/총사업비* 를 직접 계산하면
-      무보조에서는 우연히 맞고(지원율이 0 이므로 두 식이 같다) **보조 80% 에서
-      갈린다.** 한 시나리오만 보는 검사는 어떤 잘못된 환산도 통과시킨다.
-    - **인쇄된 그 수로 진입점을 다시 돌린다** — 정본은 `run_single_case_e2e` 다.
-      허용오차는 **표시 자리수의 반 칸**(0.05%p)이므로, `:.0%` 로 자리수를 줄인
-      변이는 여기서 걸린다(53% 는 0.4%p 어긋나 약 3.6만원이 남는다).
+      (−12,956,180원 · −5,116,180원) 잔여 결손은 **한 값**이다. 지원이 `t=0`
+      감액이라는 규약이 그렇게 만든다. 한 시나리오만 보는 검사는 어떤 잘못된
+      환산도 통과시킨다 — 자기 시나리오에서는 자기 자신과 맞기 때문이다.
+    - **인쇄된 그 금액을 진입점의 실측과 맞댄다** — 정본은
+      `run_single_case_e2e` 이고, 지원을 **상한까지** 올려 돌린 결론 축이
+      그 금액이어야 한다.
 
-    ⚠ 백분율은 **값이 아니라 문면**으로 견준다. `53%` 와 `52.6%` 는 값으로는
-    가깝고, 자리수 변이는 값 비교로는 보이지 않는다.
+    ⚠ 금액도 백분율과 마찬가지로 **값이 아니라 문면**으로 견준다.
+    `316만원` 과 `3,156,180원` 은 값으로는 같다.
     """
     printed: dict[str, str] = {}
     for name in ("scenario_unsubsidized", "scenario_subsidy_80"):
         report = _report(name)
         text = render_markdown(report)
+        assert not report.support_alone_can_flip, (
+            f"{name}: 지원만으로 전환된다 — 그러면 네 자리는 「전액 지원해도 "
+            "남는 결손」을 싣지 않는다(그 갈래는 리포트가 지운 것이 아니라 "
+            "서지 않은 것이다). 실물이 바뀌었으면 재는 자리를 되돌릴 것"
+        )
+        expected = _won(abs(report.residual_gap_at_full_support_won))
 
         row = _one_line(text, _SUMMARY_ROW_HEAD)
-        rate_text, current_text = _percents(row)[:2]
-
-        body = _one_line(text, _BODY_LINE_HEAD)
-        assert rate_text == _percents(body)[0], (
-            f"{name}: 요약의 전환 지원율({rate_text})이 본문 5.1"
-            f"({_percents(body)[0]})과 다르다 — 검토자가 먼저 보는 표와 근거가 "
-            f"갈렸다. 요약 행: {row}"
-        )
         substituted = {
             formula.label: formula.substituted for formula in report.formulas
         }
-        assert rate_text in substituted["결론 전환 지원율"], (
-            f"{name}: 요약의 전환 지원율({rate_text})이 붙임 3 산식"
-            f"({substituted['결론 전환 지원율']})의 대입값과 다르다"
+        assert _RESIDUAL_FORMULA in substituted, (
+            f"{name}: 붙임 3 에 「{_RESIDUAL_FORMULA}」 산식이 없다 — 본문이 "
+            "금액만 싣고 그 금액이 어디서 왔는지 따라갈 자리가 없다"
         )
+        places = {
+            "1. 요약": row,
+            "5.1": _one_line(text, FULL_SUPPORT_LINE_HEAD),
+            "6.2": _one_line(text, _SUPPORT_ROW_HEAD),
+            "붙임 3": substituted[_RESIDUAL_FORMULA],
+        }
+        for where, line in places.items():
+            assert expected in line, (
+                f"{name}: {where} 의 잔여 결손이 환산({expected})과 다르다 — "
+                f"그 자리가 스스로 계산했거나 자리수를 줄여 실었다. 줄: {line}"
+            )
+
         # 수와 **그 수가 나온 조건**의 짝 (R35 ② 함정 절). 현 지원율을 함께
         # 싣지 않으면 두 시나리오의 요약 행이 서로 바뀌어도 매끈하다.
-        assert current_text == f"{report.subsidy_rate:.1%}", (
-            f"{name}: 요약 행의 현 지원율({current_text})이 이 시나리오의 "
-            f"지원율({report.subsidy_rate:.1%})이 아니다 — 행: {row}"
+        # ⚠ **자리로 집지 않는다** — 값 칸의 백분율이 하나가 아니므로(상한
+        # 100% · 환산값) 「몇 번째 백분율」로 집으면 문면이 늘 때마다 낡는다.
+        assert f"(현 지원율 {report.subsidy_rate:.1%}" in row, (
+            f"{name}: 요약 행에 이 시나리오의 현 지원율"
+            f"({report.subsidy_rate:.1%})이 없다 — 행: {row}"
         )
 
-        # ★ 다른 층 — 요약에 **인쇄된 그 수**를 진입점에 그대로 먹인다.
-        rate = float(rate_text.rstrip("%")) / 100.0
+        # ★ 다른 층 — 요약에 **인쇄된 그 금액**을 진입점의 실측과 맞댄다.
+        # 지원을 상한까지 올린 실행의 결론 축이 그 금액이다.
+        shown = float(_first_won(row).rstrip("원").replace(",", ""))
         outcome = run_single_case_e2e(
             {},
             level_map=build_level_map(_ASSUMPTIONS),
             horizon_years=report.basis.horizon_years,
-            scheme=_scheme_for(rate),
-            # ★ 리포트와 같은 배선 (R37) — 형상 없이 돌리면 리포트의 수를 **다른
-            # 사업**의 0 선에 대고 재게 된다. 실측으로 걸렸다: 곡선 배선 뒤 이
-            # 검사가 125,808원(≈ 곡선↔평탄 차이 128,194원)을 남겼다.
+            scheme=_scheme_for(MAX_SUBSIDY_RATE),
+            # ★ 리포트와 같은 배선 (R37 · R48/WP-B) — 형상·부하 없이 돌리면
+            # 리포트의 수를 **다른 사업**의 0 선에 대고 재게 된다. 실측으로
+            # 걸렸다: 곡선 배선 뒤 이 검사가 125,808원(≈ 곡선↔평탄 차이
+            # 128,194원)을 남겼다.
             daily_shapes=report_shapes(),
+            annual_load_kwh=_load_kwh(),
         )
         npv = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
-        # 표시 자리수(`:.1%`)의 반 칸. 이보다 좁게 잡으면 반올림만으로 빨간불이
-        # 나고, 넓게 잡으면 자리수를 줄인 변이가 통과한다.
-        tolerance = report.total_project_cost_won * 0.0005
-        assert abs(npv) <= tolerance, (
-            f"{name}: 요약에 실린 지원율 {rate_text} 로 다시 돌렸는데 결론 축이 "
-            f"{npv:,.0f}원이다 (허용 ±{tolerance:,.0f}원). 요약이 환산이 아닌 "
-            f"수를 싣거나 자리수를 줄여 실었다 — 행: {row}"
+        assert npv < 0.0, (
+            f"{name}: 지원 {MAX_SUBSIDY_RATE:.0%} 로 돌렸더니 결론 축이 "
+            f"{npv:,.0f}원이다 — 전액 지원으로 결론이 서는데도 리포트는 "
+            "「전환되지 않는다」고 적고 있다"
         )
-        printed[name] = rate_text
+        # 표시 자리수(원 단위)의 반 칸보다 넓게 잡되 사업 규모에 비례시킨다.
+        # 원 단위 절대값으로 잡으면 사업 규모가 바뀔 때 의미 없이 빨간불이 된다.
+        tolerance = report.total_project_cost_won * 0.0005
+        assert abs(npv) == pytest.approx(shown, abs=tolerance), (
+            f"{name}: 요약에 실린 잔여 결손 {shown:,.0f}원이 지원 "
+            f"{MAX_SUBSIDY_RATE:.0%} 실측({abs(npv):,.0f}원)과 다르다 "
+            f"(허용 ±{tolerance:,.0f}원) — 요약이 환산이 아닌 수를 싣고 있다. "
+            f"행: {row}"
+        )
+        printed[name] = expected
 
     assert len(set(printed.values())) == 1, (
-        f"두 시나리오의 요약이 다른 전환 지원율을 싣는다 — {printed}. 지원이 "
-        "`t=0` 초기지출 감액이라면 0 선에 닿는 지원율은 한 값이며, 갈렸다는 것은 "
-        "요약이 결론 축을 총사업비로 직접 나누고 있다는 뜻이다"
+        f"두 시나리오가 다른 잔여 결손을 싣는다 — {printed}. 지원이 `t=0` "
+        "초기지출 감액이라면 전액 지원 시 남는 결손은 **한 값**이며, 갈렸다는 "
+        "것은 지원이 다른 경로로 들어왔다는 뜻이다"
     )
+
+
+@pytest.mark.req("FR-1002-AC4")
+def test_no_answer_cell_leads_with_a_support_rate_that_cannot_be_given() -> None:
+    """★★ **줄 수 없는 지원율이 「답」 자리에 서지 않는다** (판정 §2).
+
+    ## 무엇을 잡는 검사인가
+
+    *「세 자리가 같은 잔여 결손을 싣는가」* 는 위 검사가 본다. 그런데 그것만으로는
+    **굵은 `132.2%` 를 먼저 싣고 뒤에 단서를 붙인** 문면이 전건 통과한다 — 판정이
+    적은 것은 *「그 숫자를 **답으로 제시하지 않는다**」* 이지 *「제시한 뒤에 단서를
+    붙인다」* 가 아니다.
+
+    ★ 이 저장소는 그 위험을 **이미 한 번 겪었다**: 실제로 발췌돼 인용되는 것은
+    행의 말이 아니라 **그 굵은 수**다(R43-G · `narrative._subsidy_flip_row`
+    독스트링 · 문의사항 나-2). 심의회 자료에서 「지원율 132.2%」 한 칸만 떼어
+    가면 **줄 수 없는 지원율이 달성 조건으로 나간다.**
+
+    ## 함께 보는 것 — **현 지원율은 남아 있어야 한다**
+
+    백분율을 걷어내면서 `(현 지원율 …%)` 까지 함께 지우는 변이가 있다. 그것은
+    **실제로 적용된 값**이지 달성 조건이 아니며, 없으면 검토자가 *어느 지원
+    수준의 사업을 보고 있는지* 알 수 없다. 둘 다 보아야 한 쪽만 고친 구현이
+    걸린다.
+
+    ⚠ **문면으로 본다.** 값 비교로는 「어느 수가 값 칸의 머리에 서 있는가」를
+    잴 수 없다.
+    """
+    for name in ("scenario_unsubsidized", "scenario_subsidy_80"):
+        report = _report(name)
+        text = render_markdown(report)
+        assert not report.support_alone_can_flip, (
+            f"{name}: 지원만으로 전환된다 — 그 갈래에서 백분율은 **정당한 답**"
+            "이므로 이 검사가 재는 것이 없다. 실물이 바뀌었으면 갈래를 다시 고를 것"
+        )
+        rate_text = f"{report.break_even_subsidy_rate:.1%}"
+        won_text = _won(abs(report.residual_gap_at_full_support_won))
+
+        for where, cell in _answer_cells(text).items():
+            assert _LEADING_PERCENT.match(cell) is None, (
+                f"{name}: {where} 의 값 칸이 백분율로 시작한다 — 지원 상한을 "
+                f"넘어 **줄 수 없는 지원율**이 답의 자리에 서 있다. 칸: {cell}"
+            )
+            assert f"(현 지원율 {report.subsidy_rate:.1%}" in cell, (
+                f"{name}: {where} 의 값 칸에 현 지원율"
+                f"({report.subsidy_rate:.1%})이 없다 — 백분율을 걷어내면서 "
+                f"**적용된 값**까지 함께 지웠다. 칸: {cell}"
+            )
+            if rate_text in cell:
+                # 환산값을 통째로 없애라는 것이 아니다(붙임 3 이 그 수의 출처를
+                # 진다). 다만 **답의 자리는 금액**이어야 하므로 순서를 본다.
+                assert cell.index(won_text) < cell.index(rate_text), (
+                    f"{name}: {where} 의 값 칸에서 전환 지원율({rate_text})이 "
+                    f"잔여 결손({won_text})보다 앞선다 — 읽는 눈에는 앞선 수가 "
+                    f"답이다. 칸: {cell}"
+                )
+
+
+def test_the_flipping_branch_still_leads_with_the_support_rate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """★ **갈래를 지우지 않았는가** — 전환되는 쪽은 백분율이 답이다.
+
+    ⚠ **골든에 그 갈래가 없다.** 셋 다 전환 지원율이 상한을 넘는다(실측
+    132.2%). 그래서 시나리오를 **지어내지 않고**(없는 사업을 만드는 것이다)
+    `support_alone_can_flip` 한 갈래만 뒤집어 **문면의 갈래**를 확인한다 —
+    이 검사가 재는 것은 사업이 아니라 `narrative._support_answer` 의 분기다.
+
+    이 갈래가 사라지면 보조율이 오르거나 사업비가 바뀌어 다시 전환 가능해진
+    날에도 리포트가 *「지원만으로는 안 된다」* 를 계속 인쇄한다 — 그리고 그
+    문장은 그때 **거짓**이다.
+
+    ⚠ 붙임 3 은 여기서 보지 않는다. 그쪽 갈래는 프로퍼티가 아니라
+    `case_report._formulas()` 가 환산값에서 직접 판정하므로, 이 뒤집기로는
+    함께 움직이지 않는다.
+    """
+    report = _report()
+    monkeypatch.setattr(
+        CaseReport, "support_alone_can_flip", property(lambda self: True)
+    )
+    text = render_markdown(report)
+    expected = f"**{report.break_even_subsidy_rate:.1%}**"
+
+    for where, cell in _answer_cells(text).items():
+        assert cell.startswith(expected), (
+            f"{where}: 전환되는 갈래인데 값 칸이 전환 지원율({expected})로 "
+            f"시작하지 않는다 — 갈래가 지워졌다. 칸: {cell}"
+        )
 
 
 @pytest.mark.req("FR-1002-AC3", "FR-1002-AC4")
@@ -444,40 +644,57 @@ def test_a_factor_the_pipeline_never_read_is_not_shown_as_a_closed_gap() -> None
 
 
 @pytest.mark.req("FR-1002-AC4")
-def test_the_recovering_scenario_measures_the_distance_toward_the_flip() -> None:
-    """★ **회수하는 시나리오에서는 방향이 뒤집힌다.**
+def test_the_subsidised_scenario_measures_the_distance_toward_the_flip() -> None:
+    """★ **방향은 인자가 아니라 결론에서 읽는다** — 지원을 받은 갈래에서 본다.
 
-    보조 80% 는 결론 축이 +2,683,608원이다. 그때 5.1 이 답해야 하는 물음은
-    *「얼마나 모자란가」* 가 아니라 *「어디까지 나빠지면 뒤집히는가」* 이며,
-    두 물음은 **같은 거리의 반대 방향**이다. 방향을 인자마다 부호로 적어 두면
-    편익·비용 인자가 늘 때 낡고, 낡은 부호는 반대 끝을 「가까운 끝」으로 싣는다.
+    ## 갈래를 다시 골랐다 (R49/WP-2)
 
-    그래서 방향을 **결론에서 읽는다** — 이 검사가 그것을 확인한다.
+    이 검사는 **회수하는** 갈래를 보려고 보조 80% 를 골랐다(당시 결론 축
+    +2,683,608원). R48 이 가구 전기요금을 세운 뒤 **그 시나리오도 회수하지
+    못하고**(−5,116,180원), 골든 셋 어디에도 회수 갈래가 남아 있지 않다 —
+    검사 자신이 적어 두었던 *「실물이 바뀌었으면 갈래를 다시 고를 것」* 이
+    그것이다. 🚫 회수 갈래를 **만들려고** 탐침 단가를 낮추지 않는다: 현실에
+    없는 설비값이 되고 *「이 값이면 됩니다」* 가 실현 불가능한 조건이 된다
+    (판정 §3).
+
+    ## 살아 있는 오라클 — **거리가 실물인가**
+
+    5.1 이 답해야 하는 물음은 *「어디까지 좋아져야 뒤집히는가」* 이고, 방향을
+    인자마다 부호로 적어 두면 편익·비용 인자가 늘 때 낡는다 — 낡은 부호는
+    반대 끝을 「가까운 끝」으로 싣는다. 그래서 방향을 **결론에서** 읽는다.
+
+    ⚠ 무보조 갈래는 `test_every_factor_that_does_not_flip_shows_the_gap_that_
+    remains` 가 본다. 여기서 보는 것은 **지원 조건이 붙은** 실행이며, 지원이
+    결론 축을 옮겨도 방향 읽기가 같은 자리에서 나오는지가 이 갈래의 몫이다.
     """
     report = _report("scenario_subsidy_80")
-    assert report.recovers_within_horizon, (
-        "보조 80% 가 회수하지 못한다 — 이 검사는 회수 갈래를 보려고 이 "
-        "시나리오를 골랐다. 실물이 바뀌었으면 갈래를 다시 고를 것"
+    assert not report.recovers_within_horizon, (
+        "보조 80% 가 회수한다 — 이 검사는 **미회수** 갈래에서 거리를 재도록 "
+        "전제를 바꾼 것이다. 회수 갈래가 다시 생겼으면 방향이 뒤집히는 쪽"
+        "(`GAP_MARGIN`)을 보도록 되돌릴 것"
     )
     section = _section(report)
-    assert GAP_MARGIN in section, "회수하는데 거리가 `결손` 으로 실렸다"
-    assert GAP_SHORTFALL not in section, "회수하는데 `결손` 라벨이 남아 있다"
+    assert GAP_SHORTFALL in section, "회수하지 못하는데 거리가 `결손` 이 아니다"
 
     base_npv = float(report.metrics[CONCLUSION_METRIC])
     for entry in report.uncertain_influences:
         if entry.flips_conclusion:
             continue
-        near = min(entry.npv_low, entry.npv_high)
+        # 미회수 갈래에서 **전환 방향**은 결론 축이 올라가는 쪽이다. 회수
+        # 갈래에서는 같은 자리가 `min` 이었다 — 방향을 뒤집는 것은 인자가
+        # 아니라 `recovers_within_horizon` 이며, 그 대칭이 이 검사의 요점이다.
+        near = max(entry.npv_low, entry.npv_high)
+        far = min(entry.npv_low, entry.npv_high)
         row = next(
             line
             for line in section.splitlines()
             if line.startswith(f"| `{entry.variable}` ")
         )
-        assert near <= base_npv, (
+        assert far <= base_npv, (
             f"{entry.variable}: 두 끝이 모두 기준보다 좋다 — 스윕이 기준을 "
             "넘겨 계산했다"
         )
         assert _won(abs(near)) in row, (
-            f"{entry.variable}: 회수 상태인데 **좋아지는 끝**의 거리가 실렸다 — "
-            f"행: {row}. 이 표가 재는 것은 전환 방향의 끝이다"
+            f"{entry.variable}: 미회수 상태인데 **나빠지는 끝**의 거리가 "
+            f"실렸다 — 행: {row}. 이 표가 재는 것은 전환 방향의 끝이다"
         )

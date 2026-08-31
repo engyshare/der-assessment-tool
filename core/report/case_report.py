@@ -103,6 +103,19 @@ CONCLUSION_METRIC = "npv"
 PLAN_VARIANT = "as_planned"
 #: 무지원 기준선 — `FR-607-AC1` 이 「모든 실행에 자동 포함」을 요구하는 변형.
 BASELINE_VARIANT = "unsupported"
+#: 지원의 **상한** — 사업비 전액(100%).
+#:
+#: ★ 리포트가 스스로 정한 값이 아니다. `DV-1`(보조금 + 융자가 총사업비를 넘어
+#: **자부담이 음수**가 되는 상태를 거부)이 강제하는 천장이며, 그 검증이 살아
+#: 있는 한 이보다 높은 지원율은 **실행 자체가 거부된다** — 실측으로 확인했다
+#: (132.2% 를 넣으면 `[DV-1] incentivescheme.subsidy_rate_or_loan_rate`).
+#: 그래서 환산이 이 값을 넘은 순간 그 수는 *「이만큼 지원하면 된다」* 가 아니라
+#: *「지원만으로는 안 된다」* 를 말한다(판정 `docs/decisions-2026-08-31-R49.md`
+#: §2).
+#:
+#: 🚫 **여기 숫자를 올려 천장을 넓히지 마라.** `DV-1` 을 먼저 반박하지 않으면
+#: 리포트가 **실행되지 않는 조건**을 달성 조건으로 싣게 된다.
+MAX_SUBSIDY_RATE = 1.0
 
 
 def break_even_subsidy_rate(
@@ -126,6 +139,26 @@ def break_even_subsidy_rate(
             "무지원 기준선의 초기지출이 0 인 실행입니다"
         )
     return subsidy_rate - npv_won / total_project_cost_won
+
+
+def residual_gap_at_full_support_won(
+    *, subsidy_rate: float, npv_won: float, total_project_cost_won: float
+) -> float:
+    """**전액(`MAX_SUBSIDY_RATE`) 지원해도 남는 결손** — 환산 한 곳.
+
+    부호 있는 값이다 — 음수면 전액 지원으로도 여전히 결손이고, 0 이상이면
+    지원만으로 결론이 선다. 전환 지원율이 상한을 넘어 **답으로 제시할 수 없는**
+    자리에서 리포트가 그 대신 싣는 수이며(판정 §2 의 *「얼마나 모자라는가」*),
+    근거는 `break_even_subsidy_rate` 와 **같은 한 문장**이다 —
+    *「지원 1원은 결론 축을 정확히 1원 올린다」*
+    (`CaseReport.break_even_subsidy_rate` 독스트링의 「왜 환산인가」 절).
+    지원율을 상한까지 올리면 결론 축은 남은 지원분 `(1 - s) × I_total` 만큼
+    오르고, 상한 위로는 올릴 곳이 없다.
+
+    ⚠ 여기서 나누지 않으므로 총사업비 0 을 막지 않는다 — 그 실행은 위
+    `break_even_subsidy_rate` 가 먼저 사유를 말하며 멈춘다.
+    """
+    return npv_won + (MAX_SUBSIDY_RATE - subsidy_rate) * total_project_cost_won
 
 
 @dataclass(frozen=True)
@@ -352,6 +385,36 @@ class CaseReport:
             total_project_cost_won=self.total_project_cost_won,
         )
 
+    @property
+    def residual_gap_at_full_support_won(self) -> float:
+        """전액(`MAX_SUBSIDY_RATE`) 지원해도 남는 결손 — 부호 있는 값.
+
+        ⚠ **이 값도 두 시나리오에서 한 수여야 한다.** 전환 지원율이 지원율에
+        무관한 것과 **같은 이유**다(지원은 `t=0` 감액). 어긋나면 지원이 다른
+        경로로 들어온 것이며, 그 대조가 검사다
+        (`tests/report/test_conclusion_gap.py`).
+        """
+        return residual_gap_at_full_support_won(
+            subsidy_rate=self.subsidy_rate,
+            npv_won=float(self.metrics[CONCLUSION_METRIC]),
+            total_project_cost_won=self.total_project_cost_won,
+        )
+
+    @property
+    def support_alone_can_flip(self) -> bool:
+        """**지원만으로 결론을 전환할 수 있는가** (판정 §2).
+
+        환산된 전환 지원율이 상한(`MAX_SUBSIDY_RATE`) 안에 있는가 하나만
+        묻는다. 거짓이면 그 환산값은 **넣어 돌릴 수 없는 지원율**이므로
+        (`DV-1` 이 거부한다) 리포트는 그것을 답으로 제시하지 않고,
+        `residual_gap_at_full_support_won` 과 *「지원율 외의 수단이 필요하다」*
+        를 대신 싣는다.
+
+        ⚠ **갈래를 지우지 않는다.** 보조율 대장이 오르거나 사업비가 바뀌면
+        이 값은 다시 참이 되고, 그때 리포트는 종전 문면으로 돌아간다.
+        """
+        return self.break_even_subsidy_rate <= MAX_SUBSIDY_RATE
+
 
 def _repo_relative(path: Path) -> str:
     """저장소 상대 경로. 밖에 있으면 **파일 이름만** 남긴다 (위 `_REPO_ROOT`)."""
@@ -577,7 +640,25 @@ def _formulas(
         total_project_cost_won=total_project_cost_won,
     )
     net = basis.annual_benefit_won - basis.annual_cost_won
-    return (
+    # ★ **환산이 지원 상한을 넘으면 붙임 3 이 그것을 함께 진다** (판정 §2).
+    # 산식은 **지우지 않는다** — 본문의 그 수가 어디서 왔는지 대입값으로 말하는
+    # 자리가 사라지면 검토자가 따라갈 통로가 없어진다(`MC-1` 의 첫 물음).
+    # 대신 그 결과가 **답으로 성립하지 않는다**는 것을 대입값 줄이 함께 적고,
+    # *「그러면 얼마가 모자라는가」* 는 아래 「전액 지원 시 잔여 결손」 산식이
+    # 답한다 — 요구된 수가 **감사 가능해야** 하기 때문이다.
+    over_ceiling = flip_rate > MAX_SUBSIDY_RATE
+    residual = residual_gap_at_full_support_won(
+        subsidy_rate=subsidy_rate,
+        npv_won=float(metrics[CONCLUSION_METRIC]),
+        total_project_cost_won=total_project_cost_won,
+    )
+    ceiling_note = (
+        f" — ⚠ 지원 상한 {MAX_SUBSIDY_RATE:.0%}(사업비 전액)를 넘어 "
+        "지원율로는 답이 성립하지 않는다"
+        if over_ceiling
+        else ""
+    )
+    formulas = (
         Formula(
             label="연 순현금흐름",
             natural="연 순현금흐름 = 연 편익 - 연 운영비",
@@ -625,7 +706,30 @@ def _formulas(
             substituted=(
                 f"{flip_rate:.1%} = {subsidy_rate:.1%} - "
                 f"({metrics[CONCLUSION_METRIC]:,.0f}원) "
-                f"÷ {total_project_cost_won:,.0f}원"
+                f"÷ {total_project_cost_won:,.0f}원{ceiling_note}"
+            ),
+        ),
+    )
+    if not over_ceiling:
+        return formulas
+    # RUF001: 「×」는 검토자가 읽는 **산식 문면**이다. `x` 로 바꾸면 곱셈이
+    # 변수 이름처럼 읽힌다 — `core/casegrid/operating_lines.py` 가 같은 자리에
+    # 같은 판정을 적어 두었다.
+    return (
+        *formulas,
+        Formula(
+            label="전액 지원 시 잔여 결손",
+            natural=(
+                "전액 지원 시 잔여 결손 = 순현재가치 + (지원 상한 - 현 지원율) "
+                "× 총사업비. 지원은 t=0 초기지출 감액이므로 지원율을 상한"  # noqa: RUF001
+                f"({MAX_SUBSIDY_RATE:.0%})까지 올려도 결론 축은 남은 지원분"
+                "만큼만 오르고, 그 위로는 올릴 곳이 없다"
+            ),
+            expression="R = NPV + (1 - s) × I_total",  # noqa: RUF001
+            substituted=(
+                f"{residual:,.0f}원 = {metrics[CONCLUSION_METRIC]:,.0f}원 + "
+                f"({MAX_SUBSIDY_RATE:.1%} - {subsidy_rate:.1%}) "
+                f"× {total_project_cost_won:,.0f}원"  # noqa: RUF001
             ),
         ),
     )
