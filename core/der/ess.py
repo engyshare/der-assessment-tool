@@ -346,6 +346,10 @@ class ESS(DER):
         여유가 다 차거나 잉여가 없는 시각은 건너뛴다 — **거부하지 않는다**
         (A-8-b). 남는 여유의 상한은 `cycles_per_year` 다(A-8-c — 잉여가
         넘치도록 많아도 사이클 상한은 지킨다).
+
+        ⚠ **이 충전이 가구 부하보다 앞선다** — 그 우선순위의 정본 선언은
+        `e2e_runner._resolve_ess_dispatch_inputs` 독스트링에 있다(사본을 두지
+        않는다).
         """
         profile = self.pv_surplus_profile_kwh
         assert profile is not None  # charge_source==PV_SURPLUS 면 생성자가 보장한다

@@ -313,6 +313,10 @@ class PV(DER):
         `RC-PV-B2`)을 산식 자체로 보장하기 위해서다. `총량 × (1 − 비율)` 로
         따로 계산하면 두 식이 각각 반올림되어 항등식이 미세하게 깨지고, 깨진
         만큼의 kWh는 어느 편익에도 잡히지 않는다.
+
+        ⚠ **여기서 나온 잉여를 가구 부하보다 ESS 충전이 먼저 가져간다** — 그
+        우선순위의 정본 선언은 `e2e_runner._resolve_ess_dispatch_inputs`
+        독스트링에 있다(사본을 두지 않는다).
         """
         return self.annual_generation_kwh(year=year) - self.self_consumption_kwh(year=year)
 
