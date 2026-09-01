@@ -78,7 +78,9 @@ class PVAllocationPriority(StrEnum):
 
     #: 그 스텝의 실제 가구 부하를 먼저 채우고 남는 것만 ESS 충전
     HOUSEHOLD_FIRST = "집 우선"
-    #: ESS 충전을 먼저 채우고 가구는 계통 수전 (배포 기본값)
+    #: ESS 충전을 먼저 채우고 가구는 계통 수전
+    #: (R51/WP-6 이전의 배포 기본값 — 지금은 `HOUSEHOLD_FIRST` 가 기본이다.
+    #: 지워지지 않았고 명시로 고를 수 있다)
     BATTERY_FIRST = "배터리 우선"
     #: 그 시각의 요금·판매단가를 보고 더 이득인 쪽 (미구현)
     PRICE_BASED = "가격 기반"

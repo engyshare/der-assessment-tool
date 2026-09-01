@@ -5,10 +5,16 @@
 
 러너가 짓는 `surplus_profile_kwh` 는 **PV 출력의 배분 순서를 정한다.** 정본
 선언은 `e2e_runner._resolve_ess_dispatch_inputs` 독스트링에 있고 여기는 그
-선언이 **동작과 같은지** 재는 자리다. 축은 셋이다 — `BATTERY_FIRST`(지금 배포
-기본값) · `HOUSEHOLD_FIRST`(사용자 판정이 `MC-1` 기본값으로 정한 갈래,
-`docs/decisions-2026-09-01-R51.md` §1) · `PRICE_BASED`(자리만 있고 거부됨,
-`tests/der/test_pv.py` 가 붙든다).
+선언이 **동작과 같은지** 재는 자리다. 축은 셋이다 — `HOUSEHOLD_FIRST`(**지금
+배포 기본값** · 사용자 판정 `docs/decisions-2026-09-01-R51.md` §1 이 `MC-1`
+기본값으로 정했고 R51/WP-6 이 뒤집었다) · `BATTERY_FIRST`(그 전의 배포
+기본값이며 지워지지 않았다 — 명시로 고를 수 있다) · `PRICE_BASED`(자리만 있고
+거부됨, `tests/der/test_pv.py` 가 붙든다).
+
+⚠ **아래 검사 전부가 갈래를 명시로 지정해 돌린다** — 그래서 배포 기본값이
+어느 쪽이든 단언이 그대로 성립한다. 기본값 자체를 붙드는 것은 이 파일 맨
+아래 `test_deployment_default_is_household_first` 하나이며, 그것만이 뒤집기에
+반응한다.
 
 `ESS._pv_surplus_charge_kwh_by_hour` 는 가구 부하를 보지 않는다 — 러너가 그
 부하를 충전 계획에 넘기지 않기 때문이다(피크 저감에는 `_site_load_kw` 로
@@ -76,7 +82,10 @@ _HEAVY_LOAD_KWH = 36_000.0
 _CROSS_PRIORITY_LOAD_KWH = 7_200.0
 
 
-def _run(annual_load_kwh: float | None, *, priority: PVAllocationPriority) -> CaseOutcome:
+def _run(
+    annual_load_kwh: float | None, *, priority: PVAllocationPriority | None
+) -> CaseOutcome:
+    """`priority=None` 은 **아무것도 지정하지 않은 실행** — 배포 기본값이 쓰인다."""
     return run_single_case_e2e(
         {},
         level_map=build_level_map(_ASSUMPTIONS),
@@ -121,15 +130,16 @@ def test_both_priorities_stand_the_load_resource() -> None:
 
 
 def test_battery_first_ess_charge_does_not_yield_to_household_demand() -> None:
-    """★★ 배터리 우선(지금 배포 기본값) — ② 가 가구의 추가 수요보다 **앞선다**.
+    """★★ 배터리 우선 — ② 가 가구의 추가 수요보다 **앞선다**.
 
     가구 부하를 0 에서 10호분으로 올려도 ESS 가 받아 가는 연간 kWh 는 **한
     kWh 도 줄지 않는다.** 충전 계획(`ESS._pv_surplus_charge_kwh_by_hour`)이
     보는 것은 PV 잉여뿐이고, 그 잉여는 가구가 무엇을 쓰든 그대로이기 때문이다.
 
-    ⚠ **이 단언은 「그래야 한다」가 아니라 「지금 그렇다」다.** 이 갈래가 배포
-    기본값인 한 성립해야 하는 래칫이며, 기본값이 `HOUSEHOLD_FIRST` 로 바뀌는
-    날 이 검사가 붙드는 것은 「선택하면 여전히 이 동작이 나오는가」로 좁혀진다.
+    ⚠ **이 단언은 「그래야 한다」가 아니라 「지금 그렇다」다.** R51/WP-6 이
+    배포 기본값을 `HOUSEHOLD_FIRST` 로 뒤집었으므로 **이 검사가 지금 붙드는
+    것은 「명시로 고르면 여전히 이 동작이 나오는가」**다 — 그 좁혀짐은 WP-1 이
+    이 자리에 미리 적어 둔 것이며, 갈래가 지워지지 않았다는 증인이기도 하다.
     """
     quiet = _annual_ess_charge_kwh(
         _run(_NO_LOAD_KWH, priority=PVAllocationPriority.BATTERY_FIRST)
@@ -229,3 +239,45 @@ def test_household_none_priority_is_irrelevant() -> None:
     assert _annual_grid_export_kwh(household) == pytest.approx(
         _annual_grid_export_kwh(battery)
     ), "household=None 인데 계통 역송이 갈래별로 다르다"
+
+
+@pytest.mark.req("FR-302-AC1")
+def test_deployment_default_is_household_first() -> None:
+    """★★★ **배포 기본값이 「집 우선」이다** (사용자 판정 §1 · R51/WP-6).
+
+    ## 왜 상수를 읽어 견주지 않는가
+
+    `PV_ALLOCATION_PRIORITY_DEFAULT is PVAllocationPriority.HOUSEHOLD_FIRST`
+    는 **선언이 선언과 같은지**를 물을 뿐이다 — 러너가 그 상수를 읽지 않게
+    되는 날에도 초록불이다(이 저장소가 「선언은 있는데 읽는 쪽이 없다」로
+    네 번 만난 형태다). 그래서 **아무것도 지정하지 않은 실행**을 두 갈래를
+    명시로 지정한 실행과 각각 견준다 — 기본값과 같은 갈래의 운전이 나오고,
+    다른 갈래와는 실제로 갈리는지를 함께 본다.
+
+    ## ⚠ 갈래가 갈리는 것도 함께 단언하는 이유
+
+    「기본 실행 == 집 우선」만 재면 **두 갈래가 우연히 같은 수를 내는 케이스**
+    에서도 통과한다(부하가 없거나 잉여가 넉넉하면 실제로 같다 — 같은 파일의
+    `test_household_none_priority_is_irrelevant` 가 그 경우를 잰다). 그러면
+    누가 기본값을 되돌려도 이 검사가 아무 말을 하지 않는다.
+    """
+    default_run = _run(_CROSS_PRIORITY_LOAD_KWH, priority=None)
+    household = _run(_CROSS_PRIORITY_LOAD_KWH, priority=PVAllocationPriority.HOUSEHOLD_FIRST)
+    battery = _run(_CROSS_PRIORITY_LOAD_KWH, priority=PVAllocationPriority.BATTERY_FIRST)
+
+    assert _annual_ess_charge_kwh(battery) != pytest.approx(
+        _annual_ess_charge_kwh(household)
+    ), (
+        "이 부하에서 두 갈래가 같은 운전을 낸다 — 그러면 아래 단언이 기본값을 "
+        "붙들지 못한다. `_CROSS_PRIORITY_LOAD_KWH` 를 갈래가 갈리는 값으로 고쳐라"
+    )
+    assert _annual_ess_charge_kwh(default_run) == pytest.approx(
+        _annual_ess_charge_kwh(household)
+    ), (
+        "갈래를 지정하지 않은 실행이 「집 우선」과 다른 ESS 충전을 냈다 — 배포 "
+        "기본값(`core/casegrid/pv_allocation.py::PV_ALLOCATION_PRIORITY_DEFAULT`)이 "
+        "사용자 판정 §1(「지산지소 모델은 집에서 우선 사용」)과 어긋난다"
+    )
+    assert _annual_grid_import_kwh(default_run) == pytest.approx(
+        _annual_grid_import_kwh(household)
+    ), "갈래를 지정하지 않은 실행이 「집 우선」과 다른 계통 수전을 냈다"

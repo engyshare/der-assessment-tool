@@ -49,6 +49,25 @@
 # 넘어 20년 안에 회수되지 않는다. **손으로 고치지 않았다** —
 # `_scenario_metrics()` 를 돌려 그대로 옮겼다(R48/WP-F, 2026-08-31).
 #
+# ── R51 이 `npv_won` 셋을 다시 뽑았다(판정 §1, 「축은 맨 마지막에 한 번만」) ─
+# **낮에 만든 전기를 누가 먼저 가져가는가**가 바뀌었다. 사용자 판정
+# (`docs/decisions-2026-09-01-R51.md` §1 — *「지산지소 모델의 경우에는 집에서
+# 우선 사용하는 것이 취지에 맞음」*)에 따라 배포 기본값
+# (`core/casegrid/pv_allocation.py::PV_ALLOCATION_PRIORITY_DEFAULT`)을
+# 「배터리 우선」에서 **「집 우선」**으로 뒤집었다(R51/WP-6). 종전에는 러너의
+# 자가소비 비율이 0 이라 **가구가 자기 PV 를 한 kWh 도 쓰지 못하고** 부하 전량을
+# 계통에서 샀다 — 이제 그 스텝의 실제 부하를 PV 가 먼저 채우고 남는 것만 ESS 로
+# 간다. **움직인 것**: 세 시나리오의 `npv_won` 이 **각각 +365,018원** 올랐다
+# (계통 수전이 줄어든 몫이다. 세 시나리오가 같은 폭인 것은 보조율이 초기투자
+# 분담만 바꾸고 운영현금흐름의 이동은 시나리오와 무관하기 때문이며, R48 블록이
+# 같은 사실을 적어 두었다). **안 움직인 것**: `payback_period_years` 는 셋 다
+# `.inf` 그대로다 — 「집 우선」은 사업을 흑자로 돌리지 않으며, 결손은 여전히
+# 총사업비를 넘는다(무보조 기준 132.2% → **약 128.5%**). 같은 WP 가 `REC` 를
+# 화폐화 경로에 배선했으나 **대장 단가가 0**(`benefit.rec_price` ·
+# `track: default0` — 제도·값 근거 미확인)이라 이 수들은 그 배선에 영향받지
+# 않았다. **손으로 고치지 않았다** — `_scenario_metrics()` 를 돌려 그대로
+# 옮겼다(R51/WP-6, 2026-09-02).
+#
 scenario: "energy_independent_household"
 subsidy_rate: 0.20
 
@@ -59,5 +78,5 @@ oracle_source: "tests/integration/test_wave2_end_to_end.py"
 error_tolerance: "0.1%"
 
 expected_values:
-  npv_won: -10996180
+  npv_won: -10631162
   payback_period_years: .inf

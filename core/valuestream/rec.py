@@ -3,6 +3,12 @@
 산식: 발전량 × 가중치 × REC 단가. 가중치는 자원 종류별로 다르다 (PV 1.0,
 ESS 방전 0.5 등 — 규제 프로파일이 정한다).
 
+⚠ **단가의 단위는 `원/kWh` 다.** 발전량이 kWh 이므로 그렇게만 곱이 맞는다 —
+REC 는 통상 **1매 = 1MWh** 로 거래되므로 `원/REC` 로 받은 값은 **1,000 으로
+나누어** 넘겨야 하며, 조항이 그 환산을 예시에 적어 두었다(`FR-401-AC2.REC`).
+배포 경로가 이 단가를 받는 자리는 대장 `benefit.rec_price` 다
+(`core/report/case_report.py::REC_PRICE_LEDGER_KEY` · 사용자 판정 §4).
+
 **오라클**: 순위 1 (해석해) — 곱셈으로 손계산 재현 가능.
 """
 from __future__ import annotations
@@ -56,7 +62,12 @@ class REC(ValueStream):
         return (
             f"발전 {self._generation_kwh(dispatch):,.2f}kWh "
             f"× 가중치 {self._weight:,.2f} "  # noqa: RUF001
-            f"× REC 단가 {self._price:,.0f}원/REC"  # noqa: RUF001
+            # ⚠ **단위는 원/kWh 다** — 왼쪽 항이 kWh 이므로 그렇게만 곱이 맞는다.
+            # 종전 이 자리는 `원/REC` 라 적었고, REC 1매 = 1MWh 이므로 그 표기는
+            # 산식을 **1,000배로 읽게** 했다. 조항이 이미 그 환산을 적어 두었다
+            # (`FR-401-AC2.REC` 의 예: *「REC단가(70,000 원/REC ÷ 1,000)」*) —
+            # 값이 아니라 **표기**가 조항과 갈려 있었다(R51/WP-6 이 표기를 고쳤다).
+            f"× REC 단가 {self._price:,.0f}원/kWh"  # noqa: RUF001
         )
 
     @staticmethod

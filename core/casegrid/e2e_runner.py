@@ -74,7 +74,7 @@ from core.der.pv import PV, OperatingMode, PVAllocationPriority
 from core.engine.rule_based import RuleBasedEngine
 from core.incentive.schemas import IncentiveScheme
 from core.regulation.tariff import TariffEngine
-from core.valuestream import PeakShaving, SurplusSale
+from core.valuestream import REC, PeakShaving, SurplusSale
 from core.valuestream.exclusion_table import assert_no_exclusions
 from core.valuestream.settlement import SettlementInputs, assemble
 
@@ -182,6 +182,25 @@ PV_CAPACITY_FACTOR = 0.15
 #: 상수」로 표시해 그 사실을 드러낸다.
 PRICE_ESCALATION_RATE = 0.02
 PV_SELF_CONSUMPTION_RATIO = 0.0
+
+#: REC 가중치 — 태양광 **1.0** (`core/valuestream/rec.py::REC` 독스트링의 값이며
+#: 이 WP 가 그 값을 다시 정하지 않았다). 규제 프로파일이 정하는 값이다.
+#:
+#: ⚠⚠ **왜 대장이 아니라 여기 있는가** (R51/WP-6 판정 · 되돌리는 법은
+#: `.orch` 밖에서는 이 주석이 정본이다). 대장에 올리려면 갈래를 골라야 하는데
+#: 셋 다 맞지 않는다 — `assume` 은 민감도 3수준을 **필수**로 요구하고 그 폭을
+#: 지어내는 순간 「어느 값이 더 그럴듯하다」는 근거 없는 주장이 된다,
+#: `fixed` 는 신뢰도 `확정` 이라 **출처를 요구**하는데 확인한 고시가 없다,
+#: `default0`(값 0)로 두면 단가만 등재해도 편익이 켜지지 않아
+#: 「대장 한 줄로 켜진다」가 거짓이 된다.
+#:
+#: ★ **그리고 단가가 0 인 동안 이 값은 어떤 수도 바꾸지 못한다** — 산식이
+#: `발전량 × 가중치 × 단가` 이므로 0 × 가중치 = 0 이다. 그러므로 지금 대장에
+#: 올려야 할 값은 **단가 하나**이고, 그 단가가 켜지는 날 가중치도 **같은
+#: 편집에서** 대장으로 가야 한다. 그것을 잊지 못하게 하는 래칫이
+#: `tests/casegrid/test_rec_wiring.py` 에 있다 — 대장의 `benefit.rec_price`
+#: 가 `default0` 를 벗어나는 순간 빨간불이 되고 이 자리를 가리킨다.
+REC_WEIGHT_PV = 1.0
 
 #: ESS **정격출력**(kW). 용량과 달리 설계 변수로 올리지 않았다 — 이 값이
 #: `reducible_peak_kw = min(power_kw, 가용량/방전창)` 의 **상한**이라, 고정해
@@ -301,6 +320,39 @@ def _site_load_kw(
     ]
 
 
+def _rec(rec_price_won_per_unit: float) -> REC:
+    """★★ **REC 를 화폐화 경로에 세운다** (사용자 판정 §4, `docs/decisions-
+    2026-09-01-R51.md` — *「태양광 전력을 ESS에 충전한 후에 계통에 판매하면,
+    해당 전력은 재생전력이므로 … 재생에너지 차익(REC)을 기대할 수 있다」*).
+
+    클래스는 R16 이래 있었고 **실행 경로에서 부르는 자리가 0곳**이었다 —
+    「구현이 없었다」가 아니라 **받을 자리가 없었다**(`NWAs`·`CP` 가 R51/WP-3
+    전까지 그랬던 것과 같은 형태이며, 이 저장소가 다섯 번 만난 형태다).
+
+    ⚠ **단가가 0 이면 0원을 낸다.** 그것이 결함이 아니라 대장의 판정이다
+    (`docs/assumptions.yaml::benefit.rec_price` · `track: default0` — 제도·값
+    근거가 확인되지 않은 편익은 크기를 추정하지 않는다). **단가가 확보되면
+    대장 한 줄로 켜진다** — 그 배선을 `tests/casegrid/test_rec_wiring.py` 가
+    붙든다.
+
+    ⚠ **호출부가 이것을 `settlement_streams` 안에 넣는다.** 아래
+    `_annualise((*settlement_streams, peak), …)` 가 `annualised[:-1]`·
+    `annualised[-1]` 로 **자리로** 쪼개므로 `peak` 가 마지막이라는 성질을
+    깨면 안 된다 — 튜플 밖에 더하면 첨두 절감 금액 자리에 REC 의 0원이 들어가고
+    **예외도 나지 않는다.**
+
+    ⚠ **구조가 있는 갈래에도 함께 선다.** 상계거래에서 REC 발급이 제한되는
+    것은 `docs/exclusion-rules.yaml` 의 유형 `D` 두 규칙이 이미 선언하며,
+    여기서 조건을 다시 쓰면 그 표가 정본이 아니게 된다 — 유형 `D` 는 거부가
+    아니라 **표시**다(`assert_no_exclusions` 독스트링).
+
+    ⚠ **함수로 뗀 이유는 갈래가 둘이기 때문이다** — 구조를 준 갈래와 주지
+    않은 갈래가 각자 편익 튜플을 짓는데, 양쪽에 같은 생성자를 적으면 그것이
+    사본이 되고 한쪽만 고치는 날 **구조를 준 실행에서만 REC 가 사라진다.**
+    """
+    return REC(weight=REC_WEIGHT_PV, rec_price_won_per_unit=rec_price_won_per_unit)
+
+
 def run_single_case_e2e(
     case_values: dict[str, object],
     *,
@@ -312,6 +364,7 @@ def run_single_case_e2e(
     daily_shapes: DailyShapes | None = None,
     annual_load_kwh: float | None = None,
     extra_appliance_load_kwh: float = 0.0,
+    rec_price_won_per_unit: float = 0.0,
     settlement_inputs: SettlementInputs | None = None,
     tariff_engine: TariffEngine | None = None,
     scheme: IncentiveScheme | None = None,
@@ -423,8 +476,9 @@ def run_single_case_e2e(
     `case_values` → 모듈 상수(`PV_ALLOCATION_PRIORITY_DEFAULT`) 순서를 따르되,
     이 축의 승격·거부는 `_resolve_ess_dispatch_inputs` 가 `resolve_pv_
     allocation_priority()` 로 직접 한다 — 어느 자원 계약도 이 축을 모른다.
-    배포 기본값은 지금도 `BATTERY_FIRST`(연간 고정 비율)다 — 그 상수 옆
-    주석에 뒤집지 않은 이유가 있다.
+    배포 기본값은 **`HOUSEHOLD_FIRST`(집 우선)** 다 — R51/WP-6 이 판정 §1
+    (*「지산지소 모델의 경우에는 집에서 우선 사용하는 것이 취지에 맞음」*)에
+    따라 뒤집었고, 근거는 그 상수 옆 주석에 있다.
 
     ★ **`extra_appliance_load_kwh` — 「추가 기기 비례 증가」** (판정 §5·B-2,
     `docs/decisions-2026-08-31-R48.md`). 히트펌프 등 추가 전력사용기기가
@@ -680,7 +734,7 @@ def run_single_case_e2e(
             inputs=_with_model_generation(settlement_inputs, pv),
             tariff_engine=tariff_engine,
         )
-        settlement_streams: tuple[ValueStream, ...] = plan.streams
+        settlement_streams: tuple[ValueStream, ...] = (*plan.streams, _rec(rec_price_won_per_unit))
         # ★ **구조가 만드는 비용을 비용으로 나른다 (R32).** 조립기가 편익에서
         # 빼 주는 것이 아니라 여기서 프로포마 행이 된다 — 근거는
         # `core/cba/proforma.py::fee_row`. `core.cba` 가 `core.valuestream` 보다
@@ -709,6 +763,7 @@ def run_single_case_e2e(
                     else 0.0
                 ),
             ),
+            _rec(rec_price_won_per_unit),
         )
         settlement_costs = ()
 

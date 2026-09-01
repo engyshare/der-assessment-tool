@@ -117,7 +117,7 @@
 |  |  | 1 | `FR-301-AC4` | (v0.14 신설) 계통 연계 용량 상한을 초과하는 운전 계획은 명확한 | 자동 | test_ess.py, test_pv_validation.py |
 |  |  | 1 | `FR-301-AC5` | (v0.15 신설) 해상도를 바꿔도 겹치는 구간의 결과가 일치한다 — | 자동 | test_der_contract.py 2건, test_money_boundary.py |
 |  |  | 1 | `FR-301-AC6` | (v0.15 신설) **가격 신호가 없으면 0원으로 대체하지 않고 오류로 | 자동 | test_der_contract.py 2건 |
-| `FR-302` | Must-have | 1 | `FR-302-AC1` | 다음 우선순위를 설정 가능한 순서로 적용 | 자동 | test_pv_surplus_allocation_priority.py 2건, test_rule_based.py |
+| `FR-302` | Must-have | 1 | `FR-302-AC1` | 다음 우선순위를 설정 가능한 순서로 적용 | 자동 | test_pv_surplus_allocation_priority.py 3건, test_rule_based.py |
 |  |  | 1 | `FR-302-AC2` | TOU 하 경부하 충전 / 최대부하 방전 차익거래 규칙을 옵션 활성화 | 자동 | test_ess.py, test_rule_based.py, test_tou_arbitrage.py |
 |  |  | 1 | `FR-302-AC3` | 규칙 순서·활성화를 UI에서 변경 가능하며 효과가 결과에 반영된다 | 자동 | test_rule_based.py |
 | `FR-303` | Should-have | - | `FR-303-AC1` | 목적함수: 분석기간 총비용 최소화. 자원·SOC·계통 제약을 선형 제약으로 표현 | **미매핑** | — |
@@ -129,7 +129,7 @@
 | `FR-401` | Must-have | 1 | `FR-401-AC1` | 편익 1종 = 독립 클래스 1개로 구현되고, 각 편익은 활성화 여부를 개별 토글할 수 있다. 편익을 추가하거나 비활성화해도 코어 엔진(core/engine/·c… | 자동 | test_benefit_line_rendering.py 3건, test_annualisation_convention.py 4건, test_benefit_formula.py 4건, test_der_contract.py 2건, test_aggregated_ppa.py, test_formulas.py, test_grid_dispatch_benefits.py 2건, test_tou_arbitrage.py |
 |  |  | 1 | `FR-401-AC2.SelfConsumption` | SelfConsumption 자가소비 전기요금 절감 — (기존요금 − 신규요금), 누진·TOU 구조 반영 | 자동 | test_pv.py, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.SurplusSale` | SurplusSale 잉여전력 판매 — 잉여량 × 판매단가(직거래/상계/SMP) (v0.24: 잉여량에서 비-태양광(계통충전) ESS 방전분을 뺀다 — 아래 참… | 자동 | test_surplus_sale_charge_source_deduction.py, test_pv.py 2건, test_formulas.py, test_surplus_sale.py 6건 |
-|  |  | 1 | `FR-401-AC2.REC` | REC REC 수익 — 발전량 × 가중치 × REC 단가 | 자동 | test_pv.py 2건, test_formulas.py |
+|  |  | 1 | `FR-401-AC2.REC` | REC REC 수익 — 발전량 × 가중치 × REC 단가 | 자동 | test_rec_wiring.py 2건, test_pv.py 2건, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.DirectTrade` | DirectTrade 분산특구 직접거래 차익 — (약관요금 − 직접거래단가) × 거래량 − 거래지원수수료 | 자동 | test_formulas.py |
 |  |  | 1 | `FR-401-AC2.PeakShaving` | PeakShaving 기본요금(피크) 절감 — 월 최대수요 저감분 × 기본요금 단가 | 자동 | test_ess.py 2건, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.HeatCostSaving` | HeatCostSaving 열 비용 절감 (히트펌프) — (기존 열원 연료비 − 히트펌프 전력비) | 자동 | test_heatpump.py 2건, test_formulas.py |

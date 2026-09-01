@@ -317,9 +317,19 @@ def test_the_resource_table_carries_the_costs_that_belong_to_no_resource() -> No
 #: 귀속 자체가 갈렸다 — `attribution.py`(이 라운드에서 건드리지 않은 코드)의
 #: 산식이 아니라 **입력 경제성이 움직인 결과**다(§9). 손으로 고치지 않았다 —
 #: `docs/evidence/MC-1-검토용-리포트-2026-08-31.md` 의 4.3 표를 그대로 옮겼다.
+#:
+#: ★ **R51/WP-6 이 다시 재산출했다**(2026-09-02) — 사용자 판정 §1 에 따라 낮
+#: 전기의 배분 **기본값**이 「배터리 우선」에서 **「집 우선」**으로 뒤집혔다
+#: (`core/casegrid/pv_allocation.py::PV_ALLOCATION_PRIORITY_DEFAULT`). 가구가
+#: 그 스텝의 PV 를 먼저 쓰므로 계통 역송이 줄고, **역송 수량으로 안분되는**
+#: `SurplusSale` 의 총량과 자원별 몫이 함께 움직였다(태양광 43,954 →
+#: 25,274원 · 저장장치는 `PeakShaving` 을 더해 298,106 → 176,626원). 여기서도
+#: `attribution.py` 는 건드리지 않았다 — 움직인 것은 **운전**이다. 손으로
+#: 고치지 않았다 — `docs/evidence/MC-1-검토용-리포트-2026-09-02.md` 의 4.3
+#: 표를 그대로 옮겼다(R48 이 이 자리에서 한 것과 같은 방식).
 _ATTRIBUTED_PAYBACK = (
-    ("태양광 (옥상 고정형)", "43,954원", "-56,046원", "회수 불가"),
-    ("에너지저장장치 (신품)", "298,106원", "198,106원", "25.2년"),
+    ("태양광 (옥상 고정형)", "25,274원", "-74,726원", "회수 불가"),
+    ("에너지저장장치 (신품)", "176,626원", "76,626원", "65.3년"),
 )
 
 #: 종전 4.3 이 표 아래에 **문장으로 박아 두었던** 성립 조건. 이 실행에서
@@ -741,6 +751,20 @@ def test_appendix_four_names_the_earner_from_attribution_not_declaration() -> No
 
     ⚠ **양방향으로 잰다.** 「귀속 자원이 다 있는가」만 보면 선언까지 함께
     적는 변이가 통과한다.
+
+    ⚠⚠ **귀속 행을 금액으로 거르지 않는다** (R51/WP-6 이 고쳤다). 종전 이
+    단언은 `s.annual_won` 이 참인 행만 모아 견주었고, 그래서 **금액이 0 인
+    편익에서 거짓 빨간불**을 냈다 — `REC` 가 화폐화 경로에 서면서(사용자
+    판정 §4 · 대장 단가 0) 실제로 그 상태가 났다. 리포트 쪽
+    (`method_sections._earner_cell`)은 금액을 보지 않고 **귀속 행 전부로**
+    칸을 짓는다. 즉 어긋남의 원인은 리포트가 아니라 **두 집합을 다르게 거른
+    것**이었고, 리포트는 일관돼 있었다(실측으로 확인 — `REC` 귀속 행 둘이
+    각각 0원으로 실재하고 안분 근거 수량도 `SurplusSale` 과 같다).
+
+    ★ 거르지 않는 편이 **더 강하다** — 몫이 0 인 자원이 임자 칸에서 조용히
+    빠지는 것도 이제 걸린다. 이 검사가 원래 잡으러 온 결함(칸을 **선언**으로
+    짓는 것)은 그대로 걸린다: 그러면 잉여 판매의 칸이 `PV` 하나가 되는데
+    귀속은 둘이다.
     """
     report = build_case_report(
         _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
@@ -755,7 +779,7 @@ def test_appendix_four_names_the_earner_from_attribution_not_declaration() -> No
         attributed = {
             kinds.get(s.resource_name, "자원 미귀속")
             for s in basis.benefit_attributions
-            if s.tag == line.tag and s.annual_won
+            if s.tag == line.tag
         }
         printed = {kind for kind in set(kinds.values()) | {"자원 미귀속"} if kind in cell}
         assert printed == attributed, (

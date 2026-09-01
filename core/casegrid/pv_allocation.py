@@ -41,13 +41,31 @@ from core.der.pv import PV, PVAllocationPriority, resolve_pv_allocation_priority
 ESS_OPERATING_MODE_DEFAULT = ESSOperatingMode.SELF_CONSUMPTION
 ESS_CHARGE_SOURCE_DEFAULT = ESSChargeSource.PV_SURPLUS
 
-#: PV 낮 전기 배분 우선순위 기본값 (판정 근거: `docs/decisions-2026-09-01-R51.md`
-#: §1). ⚠⚠ **판정 §1 은 `MC-1`(지산지소 모델) 기본값을 「집 우선」으로 정했다.
-#: 여기서 뒤집지 않은 이유는 결론축을 한 번만 흔들기 위해서이며(같은 문서
-#: 머리말·`status.md` 「다음에 집을 것」 머리말), R51 닫기 WP 가 ④(잉여판매
-#: 수량 분리)와 함께 한 번에 뒤집는다.** 그 전까지는 `BATTERY_FIRST`(지금
-#: 동작)가 배포 기본값이고, 이 WP 는 그 갈래의 수를 한 kWh 도 바꾸지 않는다.
-PV_ALLOCATION_PRIORITY_DEFAULT = PVAllocationPriority.BATTERY_FIRST
+#: PV 낮 전기 배분 우선순위 **배포 기본값** — 「집 우선」.
+#:
+#: ★★ **근거는 사용자 판정이다** (`docs/decisions-2026-09-01-R51.md` §1 —
+#: *「낮에 만든 전기를 집에서 사용할 수도 있고, 배터리에 충전할 수도 있음. …
+#: 지산지소 모델의 경우에는 집에서 우선 사용하는 것이 취지에 맞음」*).
+#: `MC-1` 이 재는 것이 그 지산지소 모델이므로 **그 모델의 기본값이 「집
+#: 우선」이어야 한다** — 판정 문면의 *「취지에 맞음」* 이 이 한 줄의 전부다.
+#:
+#: ⚠ 조항 쪽 근거도 같은 방향이다 — `FR-302-AC1` 의 *「① PV 발전 → **즉시**
+#: 자가소비」* 에서 「즉시」는 **그 스텝의 실제 가구 부하**를 뜻하며,
+#: `BATTERY_FIRST` 의 연간 고정 비율(`PV_SELF_CONSUMPTION_RATIO`)은 그것과
+#: 어긋난다(아래 `_resolve_ess_dispatch_inputs` 독스트링이 그 어긋남을 잰다).
+#:
+#: ⚠⚠ **「배터리 우선」은 지워지지 않았다** — 여전히 고를 수 있는 갈래이며
+#: (시나리오·모델 파라미터·호출 인자 셋 다), `PV_SELF_CONSUMPTION_RATIO` 는
+#: 그 갈래가 계속 읽으므로 **지우지 마라.** 판정 §1 이 답한 것은 *「하나를
+#: 골라라」* 가 아니라 *「고를 수 있게 하고 지산지소의 기본값은 집 우선으로
+#: 두라」* 다.
+#:
+#: ★ **이 한 줄이 R51 의 결론축을 움직였다** — 세 골든 시나리오의 `npv` 가
+#: 각각 **+365,018원** 올랐다(`payback_period_years` 는 셋 다 `.inf` 그대로 —
+#: 「집 우선」이 사업을 흑자로 돌리지는 않는다). 경위는 세 골든 파일 머리말
+#: 주석의 R51 블록이 갖는다. 되돌리려면 이 줄 하나를 `BATTERY_FIRST` 로
+#: 되돌리고 골든 셋을 다시 뽑는다.
+PV_ALLOCATION_PRIORITY_DEFAULT = PVAllocationPriority.HOUSEHOLD_FIRST
 
 
 def _resolve_ess_dispatch_inputs(
@@ -85,7 +103,7 @@ def _resolve_ess_dispatch_inputs(
 
     `pv_allocation_priority` 가 **어느 계산으로 잉여를 만들지**를 고른다.
 
-    ### `BATTERY_FIRST`(지금 배포 기본값) — 연간 고정 비율
+    ### `BATTERY_FIRST`(R51/WP-6 이전의 배포 기본값) — 연간 고정 비율
 
         ① PV 출력 중 「자가소비 비율」분    → 가구 자가소비 (PV 가 비율로 정한다)
         ② 그 나머지(= 잉여) 중 ESS 가 받을 수 있는 만큼 → ESS 충전 (PV_SURPLUS)
@@ -99,19 +117,22 @@ def _resolve_ess_dispatch_inputs(
     이고, 스텝마다 자원별 시계열을 상계해 남는 부족분을 계통 수전으로 세는 것은
     `RuleBasedEngine._grid_exchange` 다.
 
-    ⚠ **지금 이 배포 경로에서 ① 은 항등적으로 0 이다.** 러너가 `PV` 를
+    ⚠ **이 갈래를 고르면 ① 은 항등적으로 0 이다.** 러너가 `PV` 를
     `self_consumption_ratio=PV_SELF_CONSUMPTION_RATIO`(= 0.0) 로 세우고 운전
     방법도 전량 판매라 `PV._self_consumption_ratio_effective()` 가 한 번 더 0 으로
     덮는다. 그래서 `surplus_ratio` 는 1.0 이고 **PV 출력 전량이 ② 의 몫으로
     간다** — 가구 부하는 한 kWh 도 ① 로 가지 못하고 전부 계통 수전이 된다.
+    ★ **그것이 R51/WP-6 이 배포 기본값을 뒤집은 이유다** — 「집 우선」이 기본이
+    아니면 지산지소 모델의 가구가 자기 PV 를 한 kWh 도 못 쓴다.
     **`PV_SELF_CONSUMPTION_RATIO` 는 이 갈래에서만 읽힌다** — `HOUSEHOLD_FIRST`
-    는 아래에서 보듯 이 상수를 쓰지 않는다.
+    는 아래에서 보듯 이 상수를 쓰지 않는다. ⚠ **그러므로 기본값이 바뀌어도
+    그 상수를 지우면 안 된다** — 이 갈래가 계속 읽는다.
 
     **물리적으로 부정확하지는 않다** — 넘치는 몫은 계통 수전으로 메워지므로
     에너지 수지는 맞는다(`RuleBasedEngine.verify_media_balance` 와 그 위의 수지
     검사가 그것을 잰다).
 
-    ### `HOUSEHOLD_FIRST` — 그 스텝의 실제 가구 부하 (판정 §1·④)
+    ### `HOUSEHOLD_FIRST`(**지금 배포 기본값**) — 그 스텝의 실제 가구 부하 (판정 §1·④)
 
     스텝별 잉여 = `max(0, PV 스텝 출력 − 그 스텝 가구 부하)`. **`household` 가
     `None`(부하를 아예 세우지 않는 실행)이면 뺄 것이 없으므로 `BATTERY_FIRST`
@@ -121,9 +142,9 @@ def _resolve_ess_dispatch_inputs(
     이것이 `FR-302-AC1` 의 *「① PV 발전 → 즉시 자가소비」* 다 — 「즉시」는 그
     스텝의 실제 부하를 뜻하며, `BATTERY_FIRST` 의 연간 고정 비율과 다르다.
     사용자 판정(`docs/decisions-2026-09-01-R51.md` §1)은 `MC-1`(지산지소
-    모델)의 **기본값을 이 갈래로 정했다** — ⚠⚠ **그러나 배포 기본값
-    (`PV_ALLOCATION_PRIORITY_DEFAULT`)은 이 WP 에서 뒤집지 않는다**(그 상수
-    옆 주석에 이유가 있다).
+    모델)의 **기본값을 이 갈래로 정했고, R51/WP-6 이 `PV_ALLOCATION_PRIORITY_
+    DEFAULT` 를 이 갈래로 뒤집었다** — 그 상수 옆 주석이 근거와 움직인 수를
+    갖는다(세 골든 `npv` 각 **+365,018원**).
 
     ### `PRICE_BASED` — 자리만 있다
 
@@ -143,10 +164,10 @@ def _resolve_ess_dispatch_inputs(
     조항의 ① 은 *「즉시」* 자가소비이고 `BATTERY_FIRST` 의 ① 은 연간 고정
     비율이다. `HOUSEHOLD_FIRST` 는 그 어긋남이 없다.
 
-    ★ **이것이 최선인가는 판정이며 이 자리가 답하지 않는다.** *「가구 부하가
-    ESS 충전보다 먼저여야 하는 것 아닌가」* 는 결론축을 움직이는 물음이었고
-    사용자가 §1 에서 「축을 만들라」로 답했다 — 배포 기본값을 지금 뒤집지
-    않기로 한 것은 오케스트레이터의 가정이다(위 참조).
+    ★ **어느 갈래가 최선인가는 판정이며 이 자리가 답하지 않는다.** *「가구
+    부하가 ESS 충전보다 먼저여야 하는 것 아닌가」* 는 결론축을 움직이는
+    물음이었고 사용자가 §1 에서 「축을 만들고 지산지소의 기본값은 집 우선으로
+    두라」로 답했다 — **가정이 아니라 사용자 판정이 이 기본값을 정한다.**
     `tests/casegrid/test_pv_surplus_allocation_priority.py` 가 두 갈래를 각각
     붙든다.
     """
