@@ -25,12 +25,20 @@ from pathlib import Path
 
 from core.report.case_report import build_case_report
 from core.report.narrative import render_markdown
+from core.report.verification import render_verification_markdown
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _GOLDEN_DIR = _REPO_ROOT / "fixtures" / "golden"
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
 #: 기본 시나리오. `status-human.md` 1-A 가 *「무보조 1건으로 충분」* 이라 적는다.
 DEFAULT_SCENARIO = "scenario_unsubsidized"
+#: 리포트 종류 — 기본값은 **바이트 한 글자도 바뀌면 안 된다** (R52/WP-1).
+#: `MC-1` 재산출이 이 기본 경로를 그대로 쓴다.
+KIND_DELIBERATION = "deliberation"
+#: 검증 보고서 — 사용자 판정 §2(`docs/decisions-2026-09-02-R52.md`). 대조군이
+#: 없는 대신 단계별 전제·계산·인계·수식을 늘어놓는다.
+KIND_VERIFICATION = "verification"
+REPORT_KINDS = (KIND_DELIBERATION, KIND_VERIFICATION)
 
 
 def available_scenarios() -> list[str]:
@@ -59,6 +67,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=_ASSUMPTIONS,
         help="전제 대장 경로",
     )
+    parser.add_argument(
+        "--kind",
+        choices=REPORT_KINDS,
+        default=KIND_DELIBERATION,
+        help=(
+            f"낼 리포트 종류 (기본 {KIND_DELIBERATION}). "
+            f"{KIND_VERIFICATION} 은 대조군 없이 단계별 전제·계산·인계·수식을 "
+            "늘어놓는 검증 보고서다(사용자 판정 §2)"
+        ),
+    )
     return parser
 
 
@@ -77,7 +95,11 @@ def main(argv: list[str] | None = None) -> int:
     report = build_case_report(
         _GOLDEN_DIR / f"{args.scenario}.yaml", assumptions_path=args.assumptions
     )
-    text = render_markdown(report)
+    text = (
+        render_verification_markdown(report)
+        if args.kind == KIND_VERIFICATION
+        else render_markdown(report)
+    )
 
     if args.out is None:
         print(text)
@@ -86,8 +108,8 @@ def main(argv: list[str] | None = None) -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(text, encoding="utf-8")
     print(
-        f"{args.out} 에 썼습니다 — 전제 대장 판 {report.assumption_set_version} · "
-        f"매니페스트 {report.manifest_hash[:12]}",
+        f"{args.out} 에 썼습니다 — {args.kind} 리포트 · 전제 대장 판 "
+        f"{report.assumption_set_version} · 매니페스트 {report.manifest_hash[:12]}",
         file=sys.stderr,
     )
     return 0
