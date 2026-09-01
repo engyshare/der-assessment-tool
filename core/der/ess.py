@@ -50,6 +50,11 @@ class ESSOperatingMode(StrEnum):
     PEAK_SHAVING = "피크 저감"
     BACKUP_RESERVE = "백업 예비 확보"
     HYBRID = "혼합(가중치)"
+    #: R51/WP-3 신설 — 한전(계통운영자)에 도움을 주는 두 용도. 값은 사용자
+    #: 문면 그대로다(`docs/decisions-2026-09-01-R51.md` §3) — 다듬으면 위 규칙이
+    #: 경고하는 대상이 된다.
+    GRID_DISCHARGE = "계통 방전"
+    SEMI_CENTRAL_DISPATCH = "준중앙급전 등록"
 
 
 class ESSChargeSource(StrEnum):
@@ -84,6 +89,11 @@ _MODE_WINDOWS: Mapping[ESSOperatingMode, tuple[tuple[int, ...], tuple[int, ...]]
         ESSOperatingMode.TOU_ARBITRAGE: ((1, 2, 3, 4, 5, 6), (18, 19, 20, 21)),
         ESSOperatingMode.PEAK_SHAVING: ((1, 2, 3, 4, 5, 6), (13, 14, 15, 16)),
         ESSOperatingMode.BACKUP_RESERVE: ((1, 2, 3, 4, 5, 6), (18, 19, 20, 21)),
+        # R51/WP-3 신설 — 방전 시각을 **계통운영자가 정하는** 두 모드다. 사업자가
+        # 고른 창이 아니라 손계산 가능한 대표 프로파일이며, 계통 전체 수요 피크와
+        # 겹치는 저녁(18~21시)을 그대로 쓴다 — 실제 지시 시각은 제도가 서면 배선한다.
+        ESSOperatingMode.GRID_DISCHARGE: ((1, 2, 3, 4, 5, 6), (18, 19, 20, 21)),
+        ESSOperatingMode.SEMI_CENTRAL_DISPATCH: ((1, 2, 3, 4, 5, 6), (18, 19, 20, 21)),
     })
 )
 
@@ -157,6 +167,11 @@ class ESS(DER):
         ):
             _positive(value, field=field_name, label=label, name=name)
         if not 0.0 < rte_pct <= 100.0:
+            # ⚠ **`_in_range()` 로 접지 않는다.** `rule="DV-3"` 이 `ValidationError(...)`
+            # 호출에 **리터럴**로 있어야 `tests/contract/test_dv_rule_enforcement.py`
+            # 의 AST 스캐너가 「실제로 던지는 코드」로 센다 — 변수로 넘기면(`_in_range`
+            # 처럼) 스캐너가 **의도적으로** 세지 않는다(그 파일 독스트링이 그렇게
+            # 적는다). R51/WP-3 이 이 자리에서 그 함정을 실측으로 밟았다.
             raise ValidationError(
                 field="ess.rte",
                 reason=f"{name}: RTE(왕복효율)는 0 초과 100 이하 %입니다 (받은 값 {rte_pct})",
@@ -178,12 +193,8 @@ class ESS(DER):
                 action="SOC 하한을 상한보다 작은 값으로 고치십시오 — 가용량이 양수가 됩니다",
                 rule="DV-2",
             )
-        if not 0.0 <= backup_reserve_pct < 100.0:
-            raise ValidationError(
-                field="ess.backup_reserve",
-                reason=f"{name}: 백업 예비율은 0~100 미만 %입니다 (받은 값 {backup_reserve_pct})",
-                action="백업 예비율(backup_reserve_pct)을 0 이상 100 미만의 값으로 지정하십시오",
-            )
+        _in_range(backup_reserve_pct, 0.0, 100.0, field="ess.backup_reserve", label="백업 예비율",
+            name=name, high_exclusive=True)
         if pcs_lifetime is not None:
             _positive(pcs_lifetime, field="ess.pcs_lifetime", label="PCS 수명", name=name)
 
@@ -200,14 +211,10 @@ class ESS(DER):
         self.backup_reserve = backup_reserve_pct / 100.0
         self.initial_soh = self.SECOND_LIFE_INITIAL_SOH if self.second_life else 1.0
 
-        if not 0.0 < self.eol_soh < self.initial_soh:
-            # 사용후배터리(초기 80%)에 EOL 80%를 주면 **취득 즉시 EOL** 이 된다.
-            # 교체비가 매년 잡히는 형태라 "보수적으로 나왔나 보다"로 읽힌다.
-            raise ValidationError(
-                field="ess.eol_soh",
-                reason=f"{name}: EOL({eol_soh_pct}%)이 0~초기SOH({self.initial_soh * 100:.0f}%) 밖",
-                action="사용후배터리는 80%에서 시작하므로 EOL 을 그보다 낮게(예: 60%) 지정하십시오",
-            )
+        # 사용후배터리(초기 80%)에 EOL 80%를 주면 **취득 즉시 EOL** 이 된다.
+        # 교체비가 매년 잡히는 형태라 "보수적으로 나왔나 보다"로 읽힌다.
+        _in_range(eol_soh_pct, 0.0, self.initial_soh * 100.0, field="ess.eol_soh", label="EOL(%)",
+            name=name, low_exclusive=True, high_exclusive=True)
 
         self.mode_weights = self._normalize_weights(operating_mode, mode_weights, name=name)
         self.charge_source = self._coerce_charge_source(charge_source, name=name)
@@ -803,6 +810,13 @@ class ESS(DER):
         `NWAs`·`CP` 와의 유형 `E` 배타가 갈라내는 축은 **방전 시점을 누가
         정하는가**이며 그 축에서 셋은 같은 쪽이다 (`docs/exclusion-rules.yaml`
         「R48 신설 — 운전 주체 축」).
+
+        ⚠ **`GRID_DISCHARGE` → `NWAs` · `SEMI_CENTRAL_DISPATCH` → `CP` (R51/WP-3
+        · 예언대로 표에 한 줄씩만 붙었다).** 이 둘은 방전 시점을 **계통운영자가**
+        정하는 쪽이라 위 셋(사업자 운전)과 유형 `E` 로 갈린다 — 혼합 모드로
+        함께 켜면 이 메서드는 두 태그를 **함께** 내고, 배타는 실행 경로
+        (`assert_no_exclusions`/`build_report`)가 건다. 그것이 결함이 아니라
+        옳은 동작이다(판정 §3 · 「고를 수 있다」 ≠ 「동시에 성립한다」).
         """
         # ⚠ **`if` 갈래 대신 표로 둔다.** 갈래로 짜면 편익이 늘 때마다 이 메서드가
         # 자라고, 이 파일은 이미 `NFR-206` 코드 줄 수 상한(500)에 **정확히 걸려
@@ -813,6 +827,8 @@ class ESS(DER):
             ESSOperatingMode.SELF_CONSUMPTION: "SelfConsumption",
             ESSOperatingMode.TOU_ARBITRAGE: "TouArbitrage",
             ESSOperatingMode.PEAK_SHAVING: "PeakShaving",
+            ESSOperatingMode.GRID_DISCHARGE: "NWAs",
+            ESSOperatingMode.SEMI_CENTRAL_DISPATCH: "CP",
         }
         return tuple(tag for mode, tag in by_mode.items() if mode in active)
 
@@ -917,20 +933,27 @@ def _positive(value: float, *, field: str, label: str, name: str) -> float:
 
 
 def _in_range(
-    value: float,
-    low: float,
-    high: float,
-    *,
-    field: str,
-    label: str,
-    name: str,
-    rule: str | None = None,
+    value: float, low: float, high: float, *, field: str, label: str, name: str,
+    rule: str | None = None, low_exclusive: bool = False, high_exclusive: bool = False,
 ) -> float:
-    if not low <= value <= high:
-        raise ValidationError(
-            field=field,
-            reason=f"{name}: {label}은 {low}~{high} 범위입니다 (받은 값 {value})",
-            action=f"{label}을(를) {low}~{high} 범위의 값으로 지정하십시오",
-            rule=rule,
-        )
-    return float(value)
+    """닫힌 구간이 기본이다 — `low_exclusive`·`high_exclusive` 로 경계를 배타로
+    바꾼다 (R51/WP-3 · `rte_pct`·`backup_reserve_pct`·`eol_soh` 흡수).
+
+    ⚠ **경계가 하나라도 배타면 문면이 「N 초과/이상 M 이하/미만」으로 바뀐다** —
+    닫힌 구간의 `{low}~{high} 범위` 문면(기존 호출자 전부)은 그대로 둔다. 값을
+    두 번 쓰지 않으려고 여기서 만들지만, 어느 쪽이든 개폐를 **말로** 남긴다.
+    """
+    ok = (low < value if low_exclusive else low <= value) and (
+        value < high if high_exclusive else value <= high
+    )
+    if ok:
+        return float(value)
+    if low_exclusive or high_exclusive:
+        lo, hi = ("초과" if low_exclusive else "이상"), ("미만" if high_exclusive else "이하")
+        desc = f"{low:g} {lo} {high:g} {hi}"
+    else:
+        desc = f"{low}~{high} 범위"
+    raise ValidationError(
+        field=field, reason=f"{name}: {label}은 {desc}입니다 (받은 값 {value})",
+        action=f"{label}을(를) {desc}(으)로 지정하십시오", rule=rule,
+    )

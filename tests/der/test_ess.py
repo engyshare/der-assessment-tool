@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import pytest
 
-from core.contracts.der import DER, DispatchContext
+from core.contracts.der import DER, DispatchContext, DispatchResult
 from core.contracts.units import ENERGY_TOLERANCE_KWH, Money, to_won, won_sum
 from core.contracts.validation import ValidationError
 from core.der.ess import ESS, ESSChargeSource, ESSOperatingMode
 from core.incentive.calculator import build_capex_cashflows
 from core.incentive.schemas import IncentiveScheme
+from core.valuestream import NWAs, SelfConsumption
+from core.valuestream.report import STATE_EXCLUDED, build_report
 from tests.contract.test_der_contract import DERContractTests
 
 
@@ -147,6 +149,44 @@ def test_eol_soh_validation_error_carries_field_reason_action() -> None:
     assert "80.0" in parts["reason"]
     assert parts["action"]
     assert parts["rule"] is None
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_line_recovery_preserves_boundary_semantics_in_error_messages() -> None:
+    """★★ **줄 회수 안전망** (R51/WP-3 판정 §5).
+
+    `core/der/ess.py` 는 코드 줄 500/500 이었다 — 새 운전 방법 둘이 그 자리에서
+    빨간불을 냈고, `_in_range()` 에 경계 개폐 인자(`low_exclusive`·
+    `high_exclusive`)를 붙여 `rte_pct`·`backup_reserve_pct`·`eol_soh` 의 손수
+    쓴 `raise` 셋을 흡수해 줄을 되찾았다.
+
+    ⚠ **문장 전문은 바뀌었다** — 「RTE(왕복효율)는 0 초과 100 이하 %입니다」가
+    「RTE(왕복효율)은 0 초과 100 이하입니다」로 바뀌는 식이다. 그러나
+    `test_constructor_validation_errors_carry_field_reason_action` 등 기존
+    시험이 요구하는 **부분 문자열**(`field`·`rule`·경계어 「초과/이상/이하/미만」·
+    받은 값)은 전부 보존했다 — 그것이 바뀌면 이 시험이 먼저 빨간불이 된다.
+    """
+    with pytest.raises(ValidationError) as rte_exc:
+        _p1_ess(rte_pct=0.0)
+    rte = rte_exc.value.as_dict()
+    assert rte["field"] == "ess.rte"
+    assert rte["rule"] == "DV-3"
+    assert "초과" in rte["reason"] and "이하" in rte["action"]
+
+    with pytest.raises(ValidationError) as backup_exc:
+        _p1_ess(backup_reserve_pct=100.0)
+    backup = backup_exc.value.as_dict()
+    assert backup["field"] == "ess.backup_reserve"
+    assert backup["rule"] is None
+    assert "미만" in backup["action"]
+
+    with pytest.raises(ValidationError) as eol_exc:
+        _p1_ess(second_life=True, eol_soh_pct=80.0)
+    eol = eol_exc.value.as_dict()
+    assert eol["field"] == "ess.eol_soh"
+    assert eol["rule"] is None
+    assert "80.0" in eol["reason"]
+    assert "초과" in eol["action"] and "미만" in eol["action"]
 
 
 @pytest.mark.req("NFR-303-M1")
@@ -847,13 +887,21 @@ def test_rc_all_c5_salvage_counts_the_pcs_it_paid_to_replace() -> None:
 @pytest.mark.req("FR-105-AC1")
 def test_operating_modes_declared_match_spec_list() -> None:
     """FR-105-AC1 원문: 「`ESS`: 자가소비 우선 / TOU 차익거래 / 피크 저감 /
-    백업 예비 확보 / 혼합(가중치)」 — 자원 클래스가 이 목록을 선언한다."""
+    백업 예비 확보 / 혼합(가중치) / 계통 방전 / 준중앙급전 등록」 — 자원
+    클래스가 이 목록을 선언한다.
+
+    ⚠ **마지막 둘은 R51/WP-3 신설이다**(`docs/decisions-2026-09-01-R51.md` §3 —
+    「한전에 도움을 주는 용도로도 사용할 수 있어야 함」). 값은 사용자 문면
+    그대로다 — 다듬지 않는다(`ESSOperatingMode` 독스트링).
+    """
     assert {m.value for m in ESS.OPERATING_MODES} == {
         "자가소비 우선",
         "TOU 차익거래",
         "피크 저감",
         "백업 예비 확보",
         "혼합(가중치)",
+        "계통 방전",
+        "준중앙급전 등록",
     }
 
 
@@ -909,6 +957,80 @@ def test_mixed_mode_declares_every_weighted_benefit_at_once() -> None:
     assert len(mixed.value_streams()) == 3, (
         f"편익 tag 가 중복됐습니다: {mixed.value_streams()} — 같은 편익을 두 번 "
         "선언하면 이중 계상됩니다"
+    )
+
+
+@pytest.mark.req("FR-105-AC1", "FR-401-AC2.NWAs", "FR-401-AC2.CP")
+def test_grid_discharge_and_semi_central_dispatch_declare_nwas_and_cp() -> None:
+    """★ **신설 두 모드가 각각 `NWAs`·`CP` 를 낸다** (R51/WP-3 · 판정 §3).
+
+    `docs/decisions-2026-09-01-R51.md` §3 이 「한전에 도움을 주는 용도로도 사용할
+    수 있어야 함」을 답한 자리다 — `GRID_DISCHARGE`(계통 방전)는 `NWAs`(계통
+    기여 보상)를, `SEMI_CENTRAL_DISPATCH`(준중앙급전 등록)는 `CP`(용량정산금)를
+    낸다. 태그 문자열은 `FR-401-AC2.<키>` 와 정확히 같아야 배타 표
+    (`docs/exclusion-rules.yaml`)가 찾는다 — 「CapacityPayment」가 아니라 「CP」다.
+    """
+    assert _p1_ess(operating_mode=ESSOperatingMode.GRID_DISCHARGE).value_streams() == (
+        "NWAs",
+    )
+    assert _p1_ess(
+        operating_mode=ESSOperatingMode.SEMI_CENTRAL_DISPATCH
+    ).value_streams() == ("CP",)
+
+
+@pytest.mark.req("FR-105-AC1")
+def test_default_operating_mode_still_excludes_grid_dispatch_benefits() -> None:
+    """★ **래칫** — 새 모드가 서도 기본 인스턴스는 그대로다 (판정 §3 · §4).
+
+    `ESS.__init__` 의 기본 운전 방법은 여전히 `TOU_ARBITRAGE` 다. 「쓸 수 있어야
+    한다」와 「기본으로 켠다」는 다르다 — 명시로 `GRID_DISCHARGE`·
+    `SEMI_CENTRAL_DISPATCH` 를 고르지 않으면 `NWAs`·`CP` 는 나오지 않는다.
+    """
+    default = _p1_ess()
+    assert default.operating_mode is ESSOperatingMode.TOU_ARBITRAGE
+    assert default.value_streams() == ("TouArbitrage",)
+    assert "NWAs" not in default.value_streams()
+    assert "CP" not in default.value_streams()
+
+
+@pytest.mark.req("FR-105-AC1", "FR-402-AC2.E")
+def test_grid_discharge_plus_self_consumption_is_excluded_on_the_execution_path() -> None:
+    """★★ **혼합 모드로 「계통 방전」+「자가소비 우선」을 켜면 유형 `E` 가 거부한다**
+    (R51/WP-3 · 판정 §3 · `docs/decisions-2026-09-01-R51.md` §3).
+
+    *「상황에 따라 변경될 수 있으며」* 는 **고를 수 있다**는 뜻이지 **동시에
+    성립한다**는 뜻이 아니다 — `value_streams()` 가 두 태그를 함께 내는 것은
+    결함이 아니라, **유형 `E` 배타가 실행 경로에서 그것을 걸러내는 것이 옳은
+    동작이다.** `build_report()` 를 지나는 실행 경로에서 잰다 — 이 저장소는
+    「거부 기계는 있는데 배포 코드가 아무도 안 부른다」를 실물로 겪었다(R26).
+    """
+    mixed = _p1_ess(
+        operating_mode=ESSOperatingMode.HYBRID,
+        mode_weights={
+            ESSOperatingMode.SELF_CONSUMPTION: 0.5,
+            ESSOperatingMode.GRID_DISCHARGE: 0.5,
+        },
+    )
+    assert set(mixed.value_streams()) == {"SelfConsumption", "NWAs"}
+
+    dispatch = DispatchResult(
+        electric=[10.0, 20.0], heat=[0.0, 0.0], cool=[0.0, 0.0], fuel=[0.0, 0.0]
+    )
+    streams = [
+        NWAs(contribution_price_won_per_kwh=50.0, enabled=True),
+        SelfConsumption(baseline_annual_bill_won=300, new_annual_bill_won=120),
+    ]
+    # 켜져 있으면 값이 난다 — 0원끼리 비교하는 검사가 되지 않게 먼저 확인한다.
+    assert streams[0].annual_value(dispatch, year=1) > to_won(0)
+    assert streams[1].annual_value(dispatch, year=1) > to_won(0)
+
+    report = build_report(streams, dispatch, year=1)
+    states = {line.tag: line.state for line in report.all_lines()}
+    assert states["NWAs"] == STATE_EXCLUDED
+    assert states["SelfConsumption"] == STATE_EXCLUDED
+    assert report.total_accounted() == to_won(0), (
+        "계통 방전과 자가소비는 동시에 성립할 수 없는 운전인데 계상 합계에 값이 "
+        "남았습니다 (FR-402-AC2.E)"
     )
 
 

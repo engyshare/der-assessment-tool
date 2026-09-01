@@ -79,7 +79,7 @@
 |  |  | 1 | `FR-104-AC3` | 수명 도달 자원은 replace / retire 선택 가능. 선택의 결과는 아래 「retire 의 의미」 다섯으로 정한다 (v0.14 명확화 — 조항이 선택지만… | 자동 | test_der_contract.py 2건, test_ess.py 5건, test_ev_v2g.py 4건, test_heatpump.py 5건, test_load.py 7건, test_pv.py 5건, test_thermal_load.py 6건 |
 |  |  | 1 | `FR-104-AC4` | 인버터 등 부속설비의 독립 수명(10~12년)을 본체와 분리 관리 | 자동 | test_smoke_wave0.py, test_ess.py 2건, test_heatpump.py 2건, test_load.py, test_pv.py 5건, test_thermal_load.py 3건 |
 |  |  | 1 | `FR-104-AC5` | 분석기간 종료 시 잔존 수명 비례 잔존가치를 최종연도에 계상 | 자동 | test_from_resource_conventions.py, test_lifecycle_wiring.py 2건, test_salvage_row.py 2건, test_der_contract.py 3건, test_ess.py 3건, test_ev_v2g.py, test_heatpump.py 3건, test_load.py 2건, test_pv.py 3건, test_thermal_load.py |
-| `FR-105` | Must-have | 1 | `FR-105-AC1` | 자원 클래스는 자신이 지원하는 운전 방법 목록을 선언한다. ESS 는 운전 방법과 함께 「충전원(charge_source)」 축을 선언한다 — 시간창만으로는 「… | 자동 | test_der_contract.py, test_dv_rule_enforcement.py 2건, test_ess.py 7건, test_ev_v2g.py 4건, test_heatpump.py 5건, test_operating_mode_mapping.py, test_pv.py 5건, test_pv_validation.py, test_tou_arbitrage.py |
+| `FR-105` | Must-have | 1 | `FR-105-AC1` | 자원 클래스는 자신이 지원하는 운전 방법 목록을 선언한다. ESS 는 운전 방법과 함께 「충전원(charge_source)」 축을 선언한다 — 시간창만으로는 「… | 자동 | test_der_contract.py, test_dv_rule_enforcement.py 2건, test_ess.py 10건, test_ev_v2g.py 4건, test_heatpump.py 5건, test_operating_mode_mapping.py, test_pv.py 5건, test_pv_validation.py, test_tou_arbitrage.py |
 |  |  | 1 | `FR-105-AC2` | 운전 방법은 자원 클래스에 함께 정의되며, 신규 운전 방법 추가 시 코어 엔진 수정이 발생하지 않는다 (NFR-201과 동일 기준). 운전 방법과 충전원은 시나… | 자동 | test_17_11_sg5.py, test_pv.py |
 |  |  | 1 | `FR-105-AC3` | 동일 시나리오 내에서 같은 유형의 두 인스턴스가 서로 다른 운전 방법을 가질 수 있다 (예: 가구용 ESS는 자가소비 우선, 공용부 ESS는 피크 저감) | 자동 | test_ess.py, test_pv.py |
 |  |  | 1 | `FR-105-AC4` | 선택한 운전 방법이 FR-302 디스패치 우선순위와 어떻게 결합되는지 리포트에 표기한다 | 자동 | test_dispatch_notes.py 5건, test_operation_appendices.py 3건 |
@@ -134,8 +134,8 @@
 |  |  | 1 | `FR-401-AC2.PeakShaving` | PeakShaving 기본요금(피크) 절감 — 월 최대수요 저감분 × 기본요금 단가 | 자동 | test_ess.py 2건, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.HeatCostSaving` | HeatCostSaving 열 비용 절감 (히트펌프) — (기존 열원 연료비 − 히트펌프 전력비) | 자동 | test_heatpump.py 2건, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.AggregatedPPA` | AggregatedPPA 집합 PPA 수익 — 발전량 전량 × PPA 계약단가(약관요금 × 비율) (v0.16 신설) | 자동 | test_e2e_settlement_wiring.py 2건, test_annualisation_convention.py, test_aggregated_ppa.py 5건 |
-|  |  | 1 | `FR-401-AC2.NWAs` | NWAs 계통 기여 보상 (비망대안) — 계통 방전량에 대한 계통 기여 수준 보상. 제도 표시 「제도 필요」 · 기본 비활성(값 0) + 활성화 시 정책 경고 … | 자동 | test_grid_dispatch_benefits.py 5건 |
-|  |  | 1 | `FR-401-AC2.CP` | CP 용량정산금 — 준중앙급전 등록 자원의 용량정산금. 제도 표시 「제도 보완 필요」 · 기본 비활성(값 0) + 활성화 시 정책 경고 표시 · 배타 FR-40… | 자동 | test_grid_dispatch_benefits.py 4건 |
+|  |  | 1 | `FR-401-AC2.NWAs` | NWAs 계통 기여 보상 (비망대안) — 계통 방전량에 대한 계통 기여 수준 보상. 제도 표시 「제도 필요」 · 기본 비활성(값 0) + 활성화 시 정책 경고 … | 자동 | test_ess.py, test_grid_dispatch_benefits.py 5건 |
+|  |  | 1 | `FR-401-AC2.CP` | CP 용량정산금 — 준중앙급전 등록 자원의 용량정산금. 제도 표시 「제도 보완 필요」 · 기본 비활성(값 0) + 활성화 시 정책 경고 표시 · 배타 FR-40… | 자동 | test_ess.py, test_grid_dispatch_benefits.py 4건 |
 |  |  | 1 | `FR-401-AC2.TouArbitrage` | TouArbitrage TOU 차익거래 — 연간 방전 kWh × 피크단가 − 연간 충전 kWh × 경부하단가(사용자 문면의 「충방전요금차이」). 배타 FR-40… | 자동 | test_ess.py, test_tou_arbitrage.py 7건 |
 |  |  | 2 | `FR-401-AC2.DemandResponse` | DemandResponse 수요반응 정산금 — 감축량 × 정산단가 (중복·배타 규칙 반영) | **미매핑** | — |
 |  |  | 2 | `FR-401-AC2.VPPMarket` | VPPMarket VPP 시장참여 수익 — 시장정산 − 운영수수료 | **미매핑** | — |
@@ -147,7 +147,7 @@
 |  |  | 1 | `FR-402-AC2.B` | 인과 하류 편익이 상류에 이미 포함 — 배전망 회피 편익 ↔ 전기요금 절감처럼 망 비용이 이미 망이용요금으로 회수된 경우, 하류 편익은 요금에 미반영된 증분만 … | 자동 | test_exclusion.py |
 |  |  | 3 | `FR-402-AC2.C` | 동일 효과의 이중 화폐화 — 같은 tCO2에 배출권 수익(사업자 현금)과 사회적 탄소비용(사회 편익)을 동시 계상하지 않는다. 관점당 하나의 화폐화 방법만 허용… | **미매핑** | — |
 |  |  | 1 | `FR-402-AC2.D` | 제도적 배타 — 상계거래 참여 시 REC 발급 제한, DR 정산금과 요금 인센티브 중복 수취 금지 등은 규제 프로파일에 종속된 배타 규칙으로 관리하고 제도 개정… | 자동 | test_exclusion.py, test_exclusion_reject_wp28b.py |
-|  |  | 1 | `FR-402-AC2.E` | 동시에 성립할 수 없는 운전 — 운전 주체가 계통운영자인 급전 편익(FR-401-AC2.NWAs·FR-401-AC2.CP)과 운전 주체가 사업자인 편익(FR-4… | 자동 | test_exclusion.py 2건, test_grid_dispatch_benefits.py 4건, test_tou_arbitrage.py 5건 |
+|  |  | 1 | `FR-402-AC2.E` | 동시에 성립할 수 없는 운전 — 운전 주체가 계통운영자인 급전 편익(FR-401-AC2.NWAs·FR-401-AC2.CP)과 운전 주체가 사업자인 편익(FR-4… | 자동 | test_ess.py, test_exclusion.py 2건, test_grid_dispatch_benefits.py 4건, test_tou_arbitrage.py 5건 |
 |  |  | 1 | `FR-402-AC4` | 배타 규칙은 코드가 아닌 선언적 규칙 테이블로 관리한다. 각 규칙은 (편익A, 편익B, 배타유형 A~E, 근거, 적용 규제 프로파일) 을 보유한다 (v0.21:… | 자동 | test_exclusion_declaration_matches_table.py, test_exclusion_rules_contract.py 4건, test_exclusion_structure_axis.py 7건, test_mapping_requirements.py |
 |  |  | 1 | `FR-402-AC5` | 편익을 활성화할 때 시스템은 분산자원 경제성 평가 원칙 「부록 A. 편익 항목 추가 시 실무 적용 절차」 의 4문항 판정을 통과했는지 확인하고, 지불 주체가 특… | 자동 | test_payer_structure_contract.py 3건, test_mapping_requirements.py, test_tou_arbitrage.py |
 |  |  | 1 | `FR-402-AC6` | 리포트에 "편익 계상 내역" 을 표시한다: 계상된 편익 / 배타로 제외된 편익 / 증분만 계상된 편익(유형 B) / 미화폐화로 0 처리된 편익 | 자동 | test_phase1_dod.py, test_benefit_breakdown_sheet.py 5건, test_mapping_requirements.py |
@@ -356,7 +356,7 @@
 |  |  | 1 | `NFR-208-M1` | import-linter 계약(layers + independence)을 CI에서 강제. 위반 0건 | 자동 | test_17_10_dod10.py, test_import_boundaries.py 2건 |
 | `NFR-301` | Should-have | 1 | `NFR-301-M1` | 사용자 5명 태스크 수행 테스트 | 수동 | test_manual_stubs.py (스텁) + MC-2 (미수행) |
 | `NFR-302` | Should-have | 1 | `NFR-302-M1` | UI 검수 체크리스트 | 자동 | test_dashboard.py 2건 |
-| `NFR-303` | Should-have | 1 | `NFR-303-M1` | 오류 메시지 리뷰 체크리스트 | 자동 | test_analysis_period.py 5건, test_price_basis.py 6건, test_dv9_dv10.py 2건, test_e2e_analysis_period_wiring.py 6건, test_e2e_exclusion_wiring.py, test_feasible_region_slice.py 3건, test_structured_errors.py 22건, test_variant_production_wiring.py, test_proforma.py 4건, test_chart_contract.py, test_dv_catalogue_matches_spec.py 3건, test_dv_rule_enforcement.py 10건, test_leap_year_policy.py 3건, test_validation_contract.py 5건, test_ess.py 10건, test_ev_v2g.py 8건, test_heatpump.py 15건, test_load.py 17건, test_pv_validation.py 9건, test_thermal_load.py 15건, test_incentive.py 3건, test_tsstore.py 4건, test_tariff_fallback.py 7건, test_charts_feasible_region.py, test_charts_wp28a.py 3건, test_aggregated_ppa.py, test_settlement_household_contract.py, test_settlement_manager_structure.py 2건, test_dashboard.py |
+| `NFR-303` | Should-have | 1 | `NFR-303-M1` | 오류 메시지 리뷰 체크리스트 | 자동 | test_analysis_period.py 5건, test_price_basis.py 6건, test_dv9_dv10.py 2건, test_e2e_analysis_period_wiring.py 6건, test_e2e_exclusion_wiring.py, test_feasible_region_slice.py 3건, test_structured_errors.py 22건, test_variant_production_wiring.py, test_proforma.py 4건, test_chart_contract.py, test_dv_catalogue_matches_spec.py 3건, test_dv_rule_enforcement.py 10건, test_leap_year_policy.py 3건, test_validation_contract.py 5건, test_ess.py 11건, test_ev_v2g.py 8건, test_heatpump.py 15건, test_load.py 17건, test_pv_validation.py 9건, test_thermal_load.py 15건, test_incentive.py 3건, test_tsstore.py 4건, test_tariff_fallback.py 7건, test_charts_feasible_region.py, test_charts_wp28a.py 3건, test_aggregated_ppa.py, test_settlement_household_contract.py, test_settlement_manager_structure.py 2건, test_dashboard.py |
 | `NFR-304` | Nice-to-have | 1 | `NFR-304-AC1` | 주요 화면은 1366×768 이상에서 가로 스크롤 없이 표시되어야 한다 | 수동 | test_manual_stubs.py (스텁) + MC-5 (미수행) |
 | `NFR-401` | Must-have | 1 | `NFR-401-AC1` | 비밀번호는 Argon2id 또는 bcrypt(cost≥12)로 해싱 저장 | 자동 | test_hashing.py 2건 |
 | `NFR-402` | Must-have | 1 | `NFR-402-AC1` | 모든 통신은 TLS 1.2 이상 | 자동 | test_phase1_measurements.py |
