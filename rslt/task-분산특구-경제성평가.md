@@ -286,7 +286,7 @@ Wave는 통합 순서이므로, 각 Wave 종료 시 **실물끼리 붙는지**�
   - 수용기준: `NFR-204-M1`
   > **`strict = true` 는 08-08 이전부터 있었지만 아무도 돌리지 않아 5건이 쌓여 있었다.** 설정 파일에 규칙이 적혀 있다는 것과 그 규칙이 강제된다는 것은 다르다 — CODEOWNERS(없는 팀명은 조용히 무시)와 import-linter(CI 에 없었다)에서 이미 두 번 만난 간극이다. 그래서 검사 테스트가 **`strict` 설정 자체도** 본다: CI 가 `mypy` 를 부르더라도 설정이 느슨해지면 같은 명령이 아무것도 잡지 않는다
   > **갚은 5건 중 실제 동작에 영향이 있던 것은 1건이다.** `core/der/heatpump.py` 의 `_normalize_heat_load` 가 `bool` 을 거르지 않아, `heat_load_kwh=True` 가 «연간 열부하 1 kWh» 로 조용히 통과했다(`bool` 은 `int` 의 하위 클래스). `to_won()` 이 금액 자리의 `bool` 을 거부하는 것과 같은 이유로 `TypeError` 로 바꿨다
-  > **`heatpump.py:446` 의 `Year` 불일치는 동작 결함이 아니었다** — `DispatchContext.__post_init__` 가 `Year(int(self.year))` 로 다시 감싸므로 1-base 검증은 이미 걸려 있었다(실측 확인). 다만 `int(year)` 로 타입을 벗겨 넘기면 **그 규약이 계약 경계에서만 살아 있고 호출부에서는 사라진 것처럼 보이므로** `Year(year)` 로 바꿨다
+  > **`core/der/heatpump.py` 의 `annual_operation()` 이 보인 `Year` 불일치는 동작 결함이 아니었다** — `DispatchContext.__post_init__` 가 `Year(int(self.year))` 로 다시 감싸므로 1-base 검증은 이미 걸려 있었다(실측 확인). 다만 `int(year)` 로 타입을 벗겨 넘기면 **그 규약이 계약 경계에서만 살아 있고 호출부에서는 사라진 것처럼 보이므로** `Year(year)` 로 바꿨다
   > 대상은 `core` 다. 테스트·도구까지 strict 로 묶으면 임시 스텁과 음성 케이스가 타입 오류가 되고, **통과시키려고 검사 대상을 무르게 만드는 압력**이 생긴다
 - **2.5** [I] CI 게이트 ① **diff coverage ≥ 95%** (diff-cover) — **완료 (08-08)**. `tests.yml` 신설. `scripts/check_coverage_inputs.py` 가 diff-cover **앞에서** 입력을 검증한다
   - 수용기준: `NFR-105-AC1`
