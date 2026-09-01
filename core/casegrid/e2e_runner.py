@@ -41,6 +41,7 @@ from core.casegrid.operating_lines import annualise as _annualise
 from core.casegrid.operating_lines import benefit_line as _benefit_line  # noqa: F401
 from core.casegrid.operating_lines import benefit_lines as _benefit_lines
 from core.casegrid.operating_lines import cost_lines as _cost_lines
+from core.casegrid.perspectives import build_perspective_wiring
 from core.casegrid.profiles import DailyShapes
 
 # ★ **분리 이유는 `pv_allocation.py` 머리말에 있다** — `NFR-206` 코드 줄 상한에
@@ -946,6 +947,10 @@ def run_single_case_e2e(
             operating_cost=tuple(operating_cost_rows),
             lifecycle=tuple(lifecycle_rows),
         ),
+        # ★★★ 관점 넷 배선 (R52/WP-A) — `build_perspective_wiring()` 독스트링 참조.
+        perspectives=build_perspective_wiring(
+            annualised, benefit_rows, [*operating_cost_rows, *lifecycle_rows],
+            initial_investment, discount_rate, horizon_years=horizon_years),
         basis=CaseBasis(
             initial_investment_won=int(initial_investment),
             annual_benefit_won=annual_benefit,

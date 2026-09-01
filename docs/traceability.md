@@ -151,7 +151,7 @@
 |  |  | 1 | `FR-402-AC4` | 배타 규칙은 코드가 아닌 선언적 규칙 테이블로 관리한다. 각 규칙은 (편익A, 편익B, 배타유형 A~E, 근거, 적용 규제 프로파일) 을 보유한다 (v0.21:… | 자동 | test_exclusion_declaration_matches_table.py, test_exclusion_rules_contract.py 4건, test_exclusion_structure_axis.py 7건, test_mapping_requirements.py |
 |  |  | 1 | `FR-402-AC5` | 편익을 활성화할 때 시스템은 분산자원 경제성 평가 원칙 「부록 A. 편익 항목 추가 시 실무 적용 절차」 의 4문항 판정을 통과했는지 확인하고, 지불 주체가 특… | 자동 | test_payer_structure_contract.py 3건, test_mapping_requirements.py, test_tou_arbitrage.py |
 |  |  | 1 | `FR-402-AC6` | 리포트에 "편익 계상 내역" 을 표시한다: 계상된 편익 / 배타로 제외된 편익 / 증분만 계상된 편익(유형 B) / 미화폐화로 0 처리된 편익 | 자동 | test_phase1_dod.py, test_benefit_breakdown_sheet.py 5건, test_mapping_requirements.py |
-|  |  | 1 | `FR-402-AC7` | 관점별(FR-704) 편익 집합이 서로 다름을 리포트에 명시하고, 보조금은 사회 관점에서 이전지출로 처리하여 편익에 포함하지 않는다 | 자동 | test_transfer.py, test_perspective_report.py |
+|  |  | 1 | `FR-402-AC7` | 관점별(FR-704) 편익 집합이 서로 다름을 리포트에 명시하고, 보조금은 사회 관점에서 이전지출로 처리하여 편익에 포함하지 않는다 | 자동 | test_perspective_wiring.py, test_transfer.py, test_perspective_report.py |
 | `FR-403` | Must-have | 1 | `FR-403-AC1` | 편익별 제약을 개별 제약으로 쌓지 않고, 제약 유형별 단일 시계열로 min/max 합성한다 | 자동 | test_conflict.py 3건 |
 |  |  | 1 | `FR-403-AC2` | 각 시각별로 어느 편익이 그 제약값에 기여했는지 기록한다 | 자동 | test_conflict.py |
 |  |  | 1 | `FR-403-AC3` | 시뮬레이션·최적화 실행 전에 min > max 충돌을 검사하고, 충돌 시 "2027-01-15 18:00에 ESS 방전 하한(예비력 확보)과 상한(SOC 제약)… | 자동 | test_conflict.py |
@@ -262,8 +262,8 @@
 | `FR-704` | Must-have | 1 | `FR-704-AC1` | 주민: 자부담액 대비 요금 절감 회수기간 | 자동 | test_transfer.py |
 |  |  | 1 | `FR-704-AC2` | 사업자: 총투자 대비 IRR | 자동 | test_transfer.py |
 |  |  | 1 | `FR-704-AC3` | 정부: 투입 국비 1억원당 확보 설비용량(kW)·감축량(tCO2)·유발 민간투자액 — 재정효율 지표 | 자동 | test_transfer.py |
-|  |  | 1 | `FR-704-AC4` | 세 관점이 하나의 리포트에 병렬 표시 | 자동 | test_perspective_report.py 7건 |
-|  |  | 1 | `FR-704-AC5` | 사회 관점 산출 시 보조금은 이전지출로 처리하여 편익에 포함하지 않는다 (분산자원 경제성 평가 원칙 원칙 2-3 관점 분리 — 「핵심 규칙 세 가지」 1항) | 자동 | test_transfer.py |
+|  |  | 1 | `FR-704-AC4` | 세 관점이 하나의 리포트에 병렬 표시 | 자동 | test_perspective_wiring.py, test_perspective_report.py 6건 |
+|  |  | 1 | `FR-704-AC5` | 사회 관점 산출 시 보조금은 이전지출로 처리하여 편익에 포함하지 않는다 (분산자원 경제성 평가 원칙 원칙 2-3 관점 분리 — 「핵심 규칙 세 가지」 1항) | 자동 | test_perspective_wiring.py, test_transfer.py |
 |  |  | 1 | `FR-704-AC6` | 타 사업 기지원 설비(FR-611)의 관점별 계상 (v0.5 추가): 정부 관점 재정효율 지표의 분모(투입 국비)에는 본 사업 국비만 포함한다. 타 사업 국비는… | 자동 | test_transfer.py |
 |  |  | 1 | `FR-704-AC7` | 관점 전환 시 어떤 항목이 왜 포함/제외되었는지를 리포트에 표시한다 (관점 섞기가 가장 흔한 중복 오류 — 도메인 원칙 2-3) | 자동 | test_transfer.py, test_perspective_report.py |
 | `FR-705` | Must-have | 1 | `FR-705-AC1` | "설비 미설치 시 전기·열 비용"을 기준선으로 계산하고 모든 편익을 증분으로 산출. 기준선 자체 비용도 리포트에 표시 | 자동 | test_baseline.py, test_heatpump.py |

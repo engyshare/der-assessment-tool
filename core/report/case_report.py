@@ -65,6 +65,7 @@ from core.casegrid.ledger_levels import (
     ledger_unit_scales,
 )
 from core.casegrid.models import CaseBasis, CashflowSplit
+from core.casegrid.perspectives import PerspectiveWiring
 from core.casegrid.profiles import DailyShapes, load_daily_shapes
 from core.casegrid.variants import run_order
 from core.contracts.assumptions import AssumptionValue
@@ -291,6 +292,8 @@ class CaseReport:
     #: *「그 합계가 어느 항에서 왔는가」* 다 — 1년차 값으로 되지으면 물가
     #: 상승이 빠져 합계가 결손과 어긋난다(`CashflowSplit` 독스트링).
     cashflows: CashflowSplit
+    #: 관점 넷 — 4.5 절이 이 재료로 병렬표를 낸다 (R52/WP-A).
+    perspectives: PerspectiveWiring
 
     @property
     def uncertain_influences(self) -> tuple[InfluenceEntry, ...]:
@@ -943,4 +946,5 @@ def build_case_report(
         # 여기서 다시 묶거나 태그로 분류하지 않는다 — 그 순간 5.3 의 분해가
         # 러너의 사본이 된다(`CashflowSplit` 독스트링).
         cashflows=outcome.cashflows,
+        perspectives=outcome.perspectives,
     )

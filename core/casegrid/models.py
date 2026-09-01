@@ -3,12 +3,21 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
+from typing import TYPE_CHECKING
 
 from core.contracts.der import DER
 from core.contracts.engine import SystemDispatch
 from core.contracts.schemas import CashFlowRow
 from core.contracts.validation import ValidationError
 from core.engine.rule_based import DispatchRule
+
+if TYPE_CHECKING:
+    # ⚠ **런타임 import 가 아니다** — `core.casegrid.perspectives` 가
+    # `core.casegrid.operating_lines` 를 부르고 그 파일이 이 모듈(`models.py`)을
+    # 부른다. 런타임에 이 줄을 실행하면 순환 import 가 된다. `from __future__
+    # import annotations` 가 있어 타입 주석은 문자열로 미뤄지므로 타입 검사
+    # 시점에만 필요하다.
+    from core.casegrid.perspectives import PerspectiveWiring
 
 
 @dataclass(frozen=True)
@@ -627,6 +636,12 @@ class CaseOutcome:
     #: 것은 *「그 합계가 어느 항에서 왔는가」* 다. 1년차 값으로 되지으면
     #: 물가 상승이 빠져 469,314원이 어긋난다(`CashflowSplit` 독스트링의 실측).
     cashflows: CashflowSplit
+    #: ★★★ 관점 넷(사회·참여 주민·사업자·정부) — R52/WP-A.
+    #:
+    #: `core/casegrid/perspectives.py::build_perspective_wiring()` 이 짓는다.
+    #: 사업자 열은 결론축을 **그대로** 담고(위 `metrics` 와 같은 값), 나머지
+    #: 셋은 `payer` 로 편익을 가른다 — 새로 계산하지 않는다.
+    perspectives: PerspectiveWiring
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "metrics", MappingProxyType(dict(self.metrics)))

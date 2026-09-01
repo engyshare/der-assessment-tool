@@ -86,6 +86,7 @@ from core.report.method_sections import (
     model_section,
     resource_detail_section,
 )
+from core.report.perspective_section import perspective_section
 from core.report.policy_warnings import policy_warning_section
 from core.report.shortfall import (
     SECTION_NUMBER as SHORTFALL_SECTION,
@@ -878,6 +879,7 @@ def _result_section(report: CaseReport) -> list[str]:
     lines += _variant_section(report)
     lines += cost_benefit_section(basis)
     lines += capacity_section(report.capacity_review)
+    lines += perspective_section(report)
     return lines
 
 
