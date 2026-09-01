@@ -64,8 +64,11 @@ def test_the_table_comes_from_the_data_file() -> None:
     # (R31 이 계약구조 축 규칙 하나를 더해 4 → 5, R32 가 집합 PPA 배타 둘을 더해
     #  5 → 7 이 됐다 — PPA 는 전량 판매이므로 잉여판매·자가소비 **둘 다** 막는다.
     #  R48 이 **운전 주체 축**(유형 E) 넷을 더해 7 → 11 이 됐다 — 계통 급전 편익
-    #  둘(`NWAs`·`CP`) × 사용자 운전 편익 둘(`SelfConsumption`·`PeakShaving`).)
-    assert len(from_file) == 11
+    #  둘(`NWAs`·`CP`) × 사용자 운전 편익 둘(`SelfConsumption`·`PeakShaving`).
+    #  R50 이 `TouArbitrage` 를 세워 셋을 더해 11 → 14 가 됐다 — `SurplusSale` 과
+    #  유형 A 하나(같은 kWh 를 둘 다 **판매**로 계상한다) + 계통 급전 편익 둘과
+    #  유형 E 둘. 그래서 운전 주체 축은 **2 × 3 = 6쌍**이다.)
+    assert len(from_file) == 14
 
 
 @pytest.mark.contract

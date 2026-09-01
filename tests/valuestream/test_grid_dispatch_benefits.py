@@ -32,12 +32,25 @@ from core.valuestream.exclusion_table import (
 )
 from core.valuestream.report import STATE_EXCLUDED, build_report
 
-#: 계통 급전 편익 × 사용자 운전 편익 — **넷이다** (R48 판정 §2 · spec
-#: FR-402-AC2.E). 목록을 여기 한 번만 두고 검사들이 함께 돈다 — 갈래마다
-#: 손으로 적으면 하나가 빠져도 초록불이다.
+#: 계통 급전 편익 × 사용자 운전 편익 — **이 파일이 보는 것은 넷이다** (R48
+#: 판정 §2 · spec FR-402-AC2.E). 목록을 여기 한 번만 두고 검사들이 함께 돈다 —
+#: 갈래마다 손으로 적으면 하나가 빠져도 초록불이다.
+#:
+#: ⚠ **축 전체는 여섯이다** (R50). 사업자 운전 편익에 `TouArbitrage` 가 섰으므로
+#: `2 × 3 = 6` 이며, 그 셋째 열은 `tests/valuestream/test_tou_arbitrage.py` 가
+#: 소유한다 — 여기 목록에 더하지 않는 이유는 이 파일의 나머지 검사들이 **계통
+#: 급전 편익 둘의 산식·제도 표시**를 재고 있어서, 편익이 늘 때마다 이 파일이
+#: 자라면 「무엇을 재는 파일인가」가 흐려지기 때문이다.
 GRID_DISPATCH_TAGS = ("NWAs", "CP")
 USER_OPERATED_TAGS = ("SelfConsumption", "PeakShaving")
 TYPE_E_PAIRS = [(a, b) for a in GRID_DISPATCH_TAGS for b in USER_OPERATED_TAGS]
+
+#: 운전 주체 축의 유형 `E` 쌍 **총수** — `2 × 3`. R48 은 사업자 운전 편익을
+#: **둘**로 세어 4 였고, R50 이 `TouArbitrage` 를 세워 **6** 이 됐다.
+#: ⚠ 이 수를 늘릴 때는 `docs/exclusion-rules.yaml` 의 「⚠ 여섯을 다 적는다」
+#: 문장도 함께 고쳐야 한다 — 다음 사람이 「빠진 쌍이 없다」를 그 문장으로
+#: 판정한다.
+TYPE_E_ROWS_IN_TABLE = 6
 
 
 def _dispatch_electric(values: list[float]) -> DispatchResult:
@@ -218,11 +231,15 @@ def test_the_two_policy_warnings_are_not_the_same_sentence() -> None:
 
 @pytest.mark.req("FR-402-AC2.E")
 def test_all_four_grid_dispatch_pairs_are_declared_as_type_e() -> None:
-    """★ **넷을 다 적었는가** — 계통 급전 둘 × 사용자 운전 둘.
+    """★ **넷을 다 적었는가** — 계통 급전 둘 × (`SelfConsumption`·`PeakShaving`).
 
     하나라도 빠지면 그 조합만 조용히 열린 채 남고, 남은 조합은 아무 예외 없이
     그럴듯한 금액을 낸다 — R32 가 집합 PPA 에서 *「잉여판매만 막으면 자가소비와
     동시에 켤 수 있다」* 로 밟은 자리와 같다.
+
+    ⚠ **표의 유형 `E` 총수는 넷이 아니라 `TYPE_E_ROWS_IN_TABLE`(=6)이다** —
+    R50 이 `TouArbitrage` 를 사업자 운전 편익으로 세웠다. 그 셋째 열의 쌍 둘은
+    `tests/valuestream/test_tou_arbitrage.py` 가 재고, 여기서는 **총수만** 본다.
 
     ⚠ **`applies_to_profile` 이 비어 있어야 한다** — 제도 한정이 아니다. 제도가
     바뀌어도 성립하지 않으므로 유형 `D` 가 아니며, 프로파일을 달면 프로파일을
@@ -248,9 +265,10 @@ def test_all_four_grid_dispatch_pairs_are_declared_as_type_e() -> None:
         assert "방전" in rule.rationale
 
     type_e_rows = [r for r in DEFAULT_EXCLUSION_RULES if r.exclusion_type is ExclusionType.E]
-    assert len(type_e_rows) == 4, (
-        "유형 E 규칙이 넷이 아닙니다 — 운전 주체 축은 계통 급전 편익 둘 × 사용자 "  # noqa: RUF001
-        f"운전 편익 둘입니다: {[(r.benefit_a, r.benefit_b) for r in type_e_rows]}"
+    assert len(type_e_rows) == TYPE_E_ROWS_IN_TABLE, (
+        f"유형 E 규칙이 {TYPE_E_ROWS_IN_TABLE}건이 아닙니다 — 운전 주체 축은 계통 "
+        "급전 편익 둘 × 사업자 운전 편익 셋입니다"  # noqa: RUF001
+        f": {[(r.benefit_a, r.benefit_b) for r in type_e_rows]}"
     )
 
 

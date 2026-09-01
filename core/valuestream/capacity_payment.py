@@ -140,6 +140,12 @@ class CapacityPayment(ValueStream):
                 "준중앙급전 등록 자원은 사용자가 원하는 시각에 방전할 수 없다 — "
                 "자가 피크 저감이 성립하지 않는다 (유형 E)",
             ),
+            (
+                "TouArbitrage",
+                ExclusionType.E,
+                "준중앙급전 등록 자원은 사업자가 피크 시각을 골라 팔 수 없다 — "
+                "요금차 차익거래가 성립하지 않는다 (유형 E)",
+            ),
         ]
 
     def policy_warnings(self) -> list[str]:

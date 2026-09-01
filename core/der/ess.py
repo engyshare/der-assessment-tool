@@ -785,21 +785,32 @@ class ESS(DER):
         혼합 모드는 가중치 0보다 큰 **모든** 모드의 편익을 갖는다. 대표 모드만
         보면 30% 섞인 피크 저감 편익이 통째로 사라진다.
 
-        ⚠⚠ **`TOU_ARBITRAGE` 는 지금 아무 편익도 내지 않는다 — 임시다.** 종전에는
-        이 모드가 `SelfConsumption` 을 냈는데, **계통에 파는 운전인데 자가소비
-        편익이 붙는** 오매핑이었다(판정 §4 ⚠⚠). 그 편익(충·방전 요금차,
-        `tou_arbitrage_benefit()` 이 이미 그 산식으로 구현돼 있다)에 해당하는
-        `FR-401-AC2.<키>` 가 저장소에 아직 없어 **WP-C 가 편익 항목을 세우면
-        그때 매핑한다.** 이 자리를 「TOU 차익거래는 편익이 없다」로 읽지 마라 —
-        미구현이지 무편익이 아니다.
+        ⚠⚠ **`TOU_ARBITRAGE` 는 `TouArbitrage` 를 낸다 (R50 · 비어 있던 자리를
+        채웠다).** 종전에는 이 모드가 `SelfConsumption` 을 냈는데, **계통에 파는
+        운전인데 자가소비 편익이 붙는** 오매핑이었다(판정 §4 ⚠⚠). R48 이 그
+        오매핑을 떼면서 **자리를 비워 두었고**, 그동안 이 메서드는 그 모드에서
+        빈 튜플을 돌려주었으며 `tou_arbitrage_benefit()`(`RC-ESS-B1`)은
+        **호출자가 단위시험 하나뿐**이었다. R50 이 `FR-401-AC2.TouArbitrage`
+        (`core/valuestream/tou_arbitrage.py`)를 세워 그 자리를 채운다 —
+        **같은 산식이며 시험이 두 값을 대조한다.**
+
+        ⚠ **`TouArbitrage` 는 `SelfConsumption`·`PeakShaving` 과 배타가 아니다.**
+        셋 다 운전 주체가 사업자이고 이 메서드가 이미 혼합 모드를 그렇게 다룬다 —
+        `NWAs`·`CP` 와의 유형 `E` 배타가 갈라내는 축은 **방전 시점을 누가
+        정하는가**이며 그 축에서 셋은 같은 쪽이다 (`docs/exclusion-rules.yaml`
+        「R48 신설 — 운전 주체 축」).
         """
+        # ⚠ **`if` 갈래 대신 표로 둔다.** 갈래로 짜면 편익이 늘 때마다 이 메서드가
+        # 자라고, 이 파일은 이미 `NFR-206` 코드 줄 수 상한(500)에 **정확히 걸려
+        # 있었다** — R50 이 편익 한 종을 더하며 그 상한을 실제로 넘겼고, 표로
+        # 바꿔 되돌렸다. **다음에 한 종이 더 늘면 표에 한 줄만 붙는다.**
         active = {m for m, w in self.mode_weights.items() if w > 0.0}
-        streams: list[str] = []
-        if ESSOperatingMode.SELF_CONSUMPTION in active:
-            streams.append("SelfConsumption")
-        if ESSOperatingMode.PEAK_SHAVING in active:
-            streams.append("PeakShaving")
-        return tuple(streams)
+        by_mode = {
+            ESSOperatingMode.SELF_CONSUMPTION: "SelfConsumption",
+            ESSOperatingMode.TOU_ARBITRAGE: "TouArbitrage",
+            ESSOperatingMode.PEAK_SHAVING: "PeakShaving",
+        }
+        return tuple(tag for mode, tag in by_mode.items() if mode in active)
 
     def dispatch(self, ctx: DispatchContext) -> DispatchResult:
         """하루 1주기 충·방전 프로파일을 스텝별로 전개한다.

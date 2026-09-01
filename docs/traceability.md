@@ -11,8 +11,8 @@
 |---|---|
 | 요구사항 | 105 |
 | 그중 Must-have | 79 |
-| 수용기준 총계 | 324 |
-| 자동 검증 매핑 | 293 |
+| 수용기준 총계 | 325 |
+| 자동 검증 매핑 | 294 |
 | 수동 검증 매핑 | 4 |
 | **Must-have 미매핑** | **9** |
 | 우선순위 미지정 요구사항 | 0 |
@@ -79,7 +79,7 @@
 |  |  | 1 | `FR-104-AC3` | 수명 도달 자원은 replace / retire 선택 가능. 선택의 결과는 아래 「retire 의 의미」 다섯으로 정한다 (v0.14 명확화 — 조항이 선택지만… | 자동 | test_der_contract.py 2건, test_ess.py 5건, test_ev_v2g.py 4건, test_heatpump.py 5건, test_load.py 7건, test_pv.py 5건, test_thermal_load.py 6건 |
 |  |  | 1 | `FR-104-AC4` | 인버터 등 부속설비의 독립 수명(10~12년)을 본체와 분리 관리 | 자동 | test_smoke_wave0.py, test_ess.py 2건, test_heatpump.py 2건, test_load.py, test_pv.py 5건, test_thermal_load.py 3건 |
 |  |  | 1 | `FR-104-AC5` | 분석기간 종료 시 잔존 수명 비례 잔존가치를 최종연도에 계상 | 자동 | test_from_resource_conventions.py, test_lifecycle_wiring.py 2건, test_salvage_row.py 2건, test_der_contract.py 3건, test_ess.py 3건, test_ev_v2g.py, test_heatpump.py 3건, test_load.py 2건, test_pv.py 3건, test_thermal_load.py |
-| `FR-105` | Must-have | 1 | `FR-105-AC1` | 자원 클래스는 자신이 지원하는 운전 방법 목록을 선언한다. ESS 는 운전 방법과 함께 「충전원(charge_source)」 축을 선언한다 — 시간창만으로는 「… | 자동 | test_der_contract.py, test_dv_rule_enforcement.py 2건, test_ess.py 5건, test_ev_v2g.py 4건, test_heatpump.py 5건, test_operating_mode_mapping.py, test_pv.py 5건, test_pv_validation.py |
+| `FR-105` | Must-have | 1 | `FR-105-AC1` | 자원 클래스는 자신이 지원하는 운전 방법 목록을 선언한다. ESS 는 운전 방법과 함께 「충전원(charge_source)」 축을 선언한다 — 시간창만으로는 「… | 자동 | test_der_contract.py, test_dv_rule_enforcement.py 2건, test_ess.py 7건, test_ev_v2g.py 4건, test_heatpump.py 5건, test_operating_mode_mapping.py, test_pv.py 5건, test_pv_validation.py, test_tou_arbitrage.py |
 |  |  | 1 | `FR-105-AC2` | 운전 방법은 자원 클래스에 함께 정의되며, 신규 운전 방법 추가 시 코어 엔진 수정이 발생하지 않는다 (NFR-201과 동일 기준). 운전 방법과 충전원은 시나… | 자동 | test_17_11_sg5.py, test_pv.py |
 |  |  | 1 | `FR-105-AC3` | 동일 시나리오 내에서 같은 유형의 두 인스턴스가 서로 다른 운전 방법을 가질 수 있다 (예: 가구용 ESS는 자가소비 우선, 공용부 ESS는 피크 저감) | 자동 | test_ess.py, test_pv.py |
 |  |  | 1 | `FR-105-AC4` | 선택한 운전 방법이 FR-302 디스패치 우선순위와 어떻게 결합되는지 리포트에 표기한다 | 자동 | test_dispatch_notes.py 5건, test_operation_appendices.py 3건 |
@@ -118,7 +118,7 @@
 |  |  | 1 | `FR-301-AC5` | (v0.15 신설) 해상도를 바꿔도 겹치는 구간의 결과가 일치한다 — | 자동 | test_der_contract.py 2건, test_money_boundary.py |
 |  |  | 1 | `FR-301-AC6` | (v0.15 신설) **가격 신호가 없으면 0원으로 대체하지 않고 오류로 | 자동 | test_der_contract.py 2건 |
 | `FR-302` | Must-have | 1 | `FR-302-AC1` | 다음 우선순위를 설정 가능한 순서로 적용 | 자동 | test_rule_based.py |
-|  |  | 1 | `FR-302-AC2` | TOU 하 경부하 충전 / 최대부하 방전 차익거래 규칙을 옵션 활성화 | 자동 | test_ess.py, test_rule_based.py |
+|  |  | 1 | `FR-302-AC2` | TOU 하 경부하 충전 / 최대부하 방전 차익거래 규칙을 옵션 활성화 | 자동 | test_ess.py, test_rule_based.py, test_tou_arbitrage.py |
 |  |  | 1 | `FR-302-AC3` | 규칙 순서·활성화를 UI에서 변경 가능하며 효과가 결과에 반영된다 | 자동 | test_rule_based.py |
 | `FR-303` | Should-have | - | `FR-303-AC1` | 목적함수: 분석기간 총비용 최소화. 자원·SOC·계통 제약을 선형 제약으로 표현 | **미매핑** | — |
 |  |  | - | `FR-303-AC2` | 최적화 창: 월 또는 연 단위 선택 | **미매핑** | — |
@@ -126,7 +126,7 @@
 |  |  | - | `FR-303-AC4` | Infeasible 시 어떤 제약이 충돌했고 어느 편익이 원인인지 진단 (FR-403 연계) | **미매핑** | — |
 | `FR-304` | Nice-to-have | 3 | `FR-304-AC1` | PV·ESS 용량을 결정변수로 NPV 최대화 조합 산출. 연간 손익과 자본비의 시간 스케일 정합을 위해 연금 환산 계수를 적용한다 (부록 C.3 B-2) | **미매핑** | — |
 | `FR-305` | Nice-to-have | 3 | `FR-305-AC1` | 임의 시점 N시간 정전 시 부하 지속 시간 산출, EENS 화폐가치를 편익 계상 | **미매핑** | — |
-| `FR-401` | Must-have | 1 | `FR-401-AC1` | 편익 1종 = 독립 클래스 1개로 구현되고, 각 편익은 활성화 여부를 개별 토글할 수 있다. 편익을 추가하거나 비활성화해도 코어 엔진(core/engine/·c… | 자동 | test_benefit_line_rendering.py 3건, test_annualisation_convention.py 4건, test_benefit_formula.py 4건, test_der_contract.py 2건, test_aggregated_ppa.py, test_formulas.py, test_grid_dispatch_benefits.py 2건 |
+| `FR-401` | Must-have | 1 | `FR-401-AC1` | 편익 1종 = 독립 클래스 1개로 구현되고, 각 편익은 활성화 여부를 개별 토글할 수 있다. 편익을 추가하거나 비활성화해도 코어 엔진(core/engine/·c… | 자동 | test_benefit_line_rendering.py 3건, test_annualisation_convention.py 4건, test_benefit_formula.py 4건, test_der_contract.py 2건, test_aggregated_ppa.py, test_formulas.py, test_grid_dispatch_benefits.py 2건, test_tou_arbitrage.py |
 |  |  | 1 | `FR-401-AC2.SelfConsumption` | SelfConsumption 자가소비 전기요금 절감 — (기존요금 − 신규요금), 누진·TOU 구조 반영 | 자동 | test_pv.py, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.SurplusSale` | SurplusSale 잉여전력 판매 — 잉여량 × 판매단가(직거래/상계/SMP) | 자동 | test_pv.py 2건, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.REC` | REC REC 수익 — 발전량 × 가중치 × REC 단가 | 자동 | test_pv.py 2건, test_formulas.py |
@@ -136,19 +136,20 @@
 |  |  | 1 | `FR-401-AC2.AggregatedPPA` | AggregatedPPA 집합 PPA 수익 — 발전량 전량 × PPA 계약단가(약관요금 × 비율) (v0.16 신설) | 자동 | test_e2e_settlement_wiring.py 2건, test_annualisation_convention.py, test_aggregated_ppa.py 5건 |
 |  |  | 1 | `FR-401-AC2.NWAs` | NWAs 계통 기여 보상 (비망대안) — 계통 방전량에 대한 계통 기여 수준 보상. 제도 표시 「제도 필요」 · 기본 비활성(값 0) + 활성화 시 정책 경고 … | 자동 | test_grid_dispatch_benefits.py 4건 |
 |  |  | 1 | `FR-401-AC2.CP` | CP 용량정산금 — 준중앙급전 등록 자원의 용량정산금. 제도 표시 「제도 보완 필요」 · 기본 비활성(값 0) + 활성화 시 정책 경고 표시 · 배타 FR-40… | 자동 | test_grid_dispatch_benefits.py 3건 |
+|  |  | 1 | `FR-401-AC2.TouArbitrage` | TouArbitrage TOU 차익거래 — 연간 방전 kWh × 피크단가 − 연간 충전 kWh × 경부하단가(사용자 문면의 「충방전요금차이」). 배타 FR-40… | 자동 | test_ess.py, test_tou_arbitrage.py 7건 |
 |  |  | 2 | `FR-401-AC2.DemandResponse` | DemandResponse 수요반응 정산금 — 감축량 × 정산단가 (중복·배타 규칙 반영) | **미매핑** | — |
 |  |  | 2 | `FR-401-AC2.VPPMarket` | VPPMarket VPP 시장참여 수익 — 시장정산 − 운영수수료 | **미매핑** | — |
 |  |  | 3 | `FR-401-AC2.Resilience` | Resilience 정전 회피 편익 — EENS × VoLL | **미매핑** | — |
 |  |  | 3 | `FR-401-AC2.DistributedBenefit` | DistributedBenefit 분산편익 크레딧 — 송배전 회피 + 손실 감소 + 계통서비스 + 온실가스 + 회복력 (기본 0, FR-404) | 자동 | test_formulas.py |
 |  |  | 3 | `FR-401-AC2.CarbonCredit` | CarbonCredit 배출권 수익 — 감축량(tCO2) × KAU 단가 | **미매핑** | — |
-| `FR-402` | Must-have | 1 | `FR-402-AC1` | 동시 발생 효과는 중복이 아니다 — 지불 주체가 다르거나 물리량이 다르면 정상 계상한다. 중복은 같은 화폐 흐름을 두 번 세는 것으로 한정한다. 시스템은 자가소… | 자동 | test_phase1_dod.py, test_exclusion_rules_contract.py, test_exclusion.py, test_exclusion_reject_wp28b.py |
-|  |  | 1 | `FR-402-AC2.A` | 동일 물리량 이중 판매 — 같은 1 kWh를 자가소비 절감과 잉여판매로 동시 계상하거나 같은 시각 ESS 방전을 피크저감과 DR로 동시 계상하는 조합은 선언적 … | 자동 | test_phase1_dod.py, test_e2e_exclusion_wiring.py 3건, test_exclusion_rules_contract.py, test_pv.py, test_pv_validation.py, test_aggregated_ppa.py, test_exclusion.py 2건, test_exclusion_reject_wp28b.py, test_settlement.py |
+| `FR-402` | Must-have | 1 | `FR-402-AC1` | 동시 발생 효과는 중복이 아니다 — 지불 주체가 다르거나 물리량이 다르면 정상 계상한다. 중복은 같은 화폐 흐름을 두 번 세는 것으로 한정한다. 시스템은 자가소… | 자동 | test_phase1_dod.py, test_exclusion_rules_contract.py, test_ess.py, test_exclusion.py, test_exclusion_reject_wp28b.py, test_tou_arbitrage.py |
+|  |  | 1 | `FR-402-AC2.A` | 동일 물리량 이중 판매 — 같은 1 kWh를 자가소비 절감과 잉여판매로 동시 계상하거나 같은 시각 ESS 방전을 피크저감과 DR로 동시 계상하는 조합은 선언적 … | 자동 | test_phase1_dod.py, test_e2e_exclusion_wiring.py 3건, test_exclusion_rules_contract.py, test_pv.py, test_pv_validation.py, test_aggregated_ppa.py, test_exclusion.py 2건, test_exclusion_reject_wp28b.py, test_settlement.py, test_tou_arbitrage.py |
 |  |  | 1 | `FR-402-AC2.B` | 인과 하류 편익이 상류에 이미 포함 — 배전망 회피 편익 ↔ 전기요금 절감처럼 망 비용이 이미 망이용요금으로 회수된 경우, 하류 편익은 요금에 미반영된 증분만 … | 자동 | test_exclusion.py |
 |  |  | 3 | `FR-402-AC2.C` | 동일 효과의 이중 화폐화 — 같은 tCO2에 배출권 수익(사업자 현금)과 사회적 탄소비용(사회 편익)을 동시 계상하지 않는다. 관점당 하나의 화폐화 방법만 허용… | **미매핑** | — |
 |  |  | 1 | `FR-402-AC2.D` | 제도적 배타 — 상계거래 참여 시 REC 발급 제한, DR 정산금과 요금 인센티브 중복 수취 금지 등은 규제 프로파일에 종속된 배타 규칙으로 관리하고 제도 개정… | 자동 | test_exclusion.py, test_exclusion_reject_wp28b.py |
-|  |  | 1 | `FR-402-AC2.E` | 동시에 성립할 수 없는 운전 — 운전 주체가 계통운영자인 급전 편익(FR-401-AC2.NWAs·FR-401-AC2.CP)과 운전 주체가 사업자인 편익(FR-4… | 자동 | test_exclusion.py 2건, test_grid_dispatch_benefits.py 4건 |
+|  |  | 1 | `FR-402-AC2.E` | 동시에 성립할 수 없는 운전 — 운전 주체가 계통운영자인 급전 편익(FR-401-AC2.NWAs·FR-401-AC2.CP)과 운전 주체가 사업자인 편익(FR-4… | 자동 | test_exclusion.py 2건, test_grid_dispatch_benefits.py 4건, test_tou_arbitrage.py 5건 |
 |  |  | 1 | `FR-402-AC4` | 배타 규칙은 코드가 아닌 선언적 규칙 테이블로 관리한다. 각 규칙은 (편익A, 편익B, 배타유형 A~E, 근거, 적용 규제 프로파일) 을 보유한다 (v0.21:… | 자동 | test_exclusion_declaration_matches_table.py, test_exclusion_rules_contract.py 4건, test_exclusion_structure_axis.py 7건, test_mapping_requirements.py |
-|  |  | 1 | `FR-402-AC5` | 편익을 활성화할 때 시스템은 분산자원 경제성 평가 원칙 「부록 A. 편익 항목 추가 시 실무 적용 절차」 의 4문항 판정을 통과했는지 확인하고, 지불 주체가 특… | 자동 | test_payer_structure_contract.py 3건, test_mapping_requirements.py |
+|  |  | 1 | `FR-402-AC5` | 편익을 활성화할 때 시스템은 분산자원 경제성 평가 원칙 「부록 A. 편익 항목 추가 시 실무 적용 절차」 의 4문항 판정을 통과했는지 확인하고, 지불 주체가 특… | 자동 | test_payer_structure_contract.py 3건, test_mapping_requirements.py, test_tou_arbitrage.py |
 |  |  | 1 | `FR-402-AC6` | 리포트에 "편익 계상 내역" 을 표시한다: 계상된 편익 / 배타로 제외된 편익 / 증분만 계상된 편익(유형 B) / 미화폐화로 0 처리된 편익 | 자동 | test_phase1_dod.py, test_benefit_breakdown_sheet.py 5건, test_mapping_requirements.py |
 |  |  | 1 | `FR-402-AC7` | 관점별(FR-704) 편익 집합이 서로 다름을 리포트에 명시하고, 보조금은 사회 관점에서 이전지출로 처리하여 편익에 포함하지 않는다 | 자동 | test_transfer.py, test_perspective_report.py |
 | `FR-403` | Must-have | 1 | `FR-403-AC1` | 편익별 제약을 개별 제약으로 쌓지 않고, 제약 유형별 단일 시계열로 min/max 합성한다 | 자동 | test_conflict.py 3건 |
@@ -327,7 +328,7 @@
 | `NFR-004` | Should-have | 1 | `NFR-004-M1` | 동시 사용자 20명 부하 테스트 | 자동 | test_performance_and_golden.py 2건 |
 | `NFR-101` | Must-have | 1 | `NFR-101-M1` | 동일 시나리오 10회 실행 결과 해시 일치 | 자동 | test_rule_based.py, test_report.py |
 | `NFR-102` | Must-have | 1 | `NFR-102-M1` | 시뮬레이션 종료 시 자동 assertion, 위반 시 실행 실패 | 자동 | test_rule_based.py |
-| `NFR-103` | Must-have | 1 | `NFR-103-M1` | 20년 프로포마 합계와 항목별 합계 일치 검증 | 자동 | test_common_asset.py, test_der_contract.py, test_money_boundary.py 7건, test_smoke_wave0.py, test_ev_v2g.py |
+| `NFR-103` | Must-have | 1 | `NFR-103-M1` | 20년 프로포마 합계와 항목별 합계 일치 검증 | 자동 | test_common_asset.py, test_der_contract.py, test_money_boundary.py 7건, test_smoke_wave0.py, test_ev_v2g.py, test_tou_arbitrage.py 2건 |
 | `NFR-104` | Must-have | 1 | `NFR-104-M1` | CI 회귀 테스트 | 자동 | test_17_7_dod7.py 3건, test_performance_and_golden.py 3건, test_regression_scenarios.py |
 | `NFR-105` | Must-have | 1 | `NFR-105-AC1` | 모든 계산 코드는 테스트 우선(TDD) 으로 작성되어야 한다. 구현보다 그 구현을 규정하는 실패 테스트가 먼저 존재해야 한다 | 자동 | test_ci_gates.py 24건 |
 | `NFR-106` | Must-have | 1 | `NFR-106-M1` | CI가 자원 레지스트리를 순회하여 각 자원에 대해 비용측 5종·편익측 전건 케이스의 존재와 통과를 확인한다. 케이스가 누락된 자원이 1건이라도 있으면 실패 | 자동 | test_17_8_dod8.py 7건, test_phase1_measurements.py |

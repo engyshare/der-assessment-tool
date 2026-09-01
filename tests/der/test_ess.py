@@ -857,6 +857,61 @@ def test_operating_modes_declared_match_spec_list() -> None:
     }
 
 
+@pytest.mark.req("FR-105-AC1", "FR-401-AC2.TouArbitrage")
+def test_value_streams_follow_the_operating_mode_including_tou_arbitrage() -> None:
+    """★★ **`TOU_ARBITRAGE` 가 `TouArbitrage` 를 낸다** (R50 · 비었던 자리).
+
+    R48 이 `TOU_ARBITRAGE` → `SelfConsumption` **오매핑을 떼면서 자리를 비워
+    두었고**, 그동안 이 모드는 **빈 튜플**을 돌려주었다 —
+    `tou_arbitrage_benefit()`(`RC-ESS-B1`)은 구현돼 있으면서 **호출자가 단위시험
+    하나뿐**이었다. 「TOU 차익거래는 편익이 없다」가 아니라 **받을 항목이
+    없었던 것**이며, `FR-401-AC2.TouArbitrage` 가 그 자리를 채운다.
+
+    ⚠ **자가소비가 다시 붙지 않는 것까지 함께 잰다** — 되돌아오면 R48 이 뗀
+    오매핑이 조용히 부활하고, 계통에 파는 kWh 가 자가소비 절감으로 계상된다.
+    """
+    tou = _p1_ess(operating_mode=ESSOperatingMode.TOU_ARBITRAGE)
+    assert tou.value_streams() == ("TouArbitrage",)
+
+    assert _p1_ess(
+        operating_mode=ESSOperatingMode.SELF_CONSUMPTION
+    ).value_streams() == ("SelfConsumption",)
+    assert _p1_ess(operating_mode=ESSOperatingMode.PEAK_SHAVING).value_streams() == (
+        "PeakShaving",
+    )
+    # 백업 예비 확보의 `Resilience` 는 Phase 3 이므로 선언하지 않는다 — 값 0인
+    # 행은 「편익 없음」과 「미구현」을 구분하지 못한다.
+    assert _p1_ess(operating_mode=ESSOperatingMode.BACKUP_RESERVE).value_streams() == ()
+
+
+@pytest.mark.req("FR-105-AC1", "FR-402-AC1")
+def test_mixed_mode_declares_every_weighted_benefit_at_once() -> None:
+    """★ **혼합 모드는 가중치 0보다 큰 모든 모드의 편익을 갖는다.**
+
+    대표 모드만 보면 20% 섞인 피크 저감 편익이 통째로 사라진다. 그리고 이 셋은
+    **배타가 아니다** — 셋 다 운전 주체가 사업자이고, 동시 발생하는 다중 효과는
+    중복이 아니다(`FR-402-AC1`). 배타로 적으면 정당한 동시 계상이 지워진다.
+    """
+    mixed = _p1_ess(
+        operating_mode=ESSOperatingMode.HYBRID,
+        mode_weights={
+            ESSOperatingMode.SELF_CONSUMPTION: 0.3,
+            ESSOperatingMode.TOU_ARBITRAGE: 0.5,
+            ESSOperatingMode.PEAK_SHAVING: 0.2,
+        },
+    )
+
+    assert set(mixed.value_streams()) == {
+        "SelfConsumption",
+        "TouArbitrage",
+        "PeakShaving",
+    }
+    assert len(mixed.value_streams()) == 3, (
+        f"편익 tag 가 중복됐습니다: {mixed.value_streams()} — 같은 편익을 두 번 "
+        "선언하면 이중 계상됩니다"
+    )
+
+
 @pytest.mark.req("FR-105-AC3")
 def test_two_instances_may_take_different_modes() -> None:
     """FR-105-AC3 — 같은 유형 두 인스턴스가 서로 다른 운전 방법을 갖는다."""

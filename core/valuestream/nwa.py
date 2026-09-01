@@ -129,6 +129,12 @@ class NWAs(ValueStream):
                 "방전 시점을 계통운영자가 정하므로 사용자가 원하는 시각에 방전할 "
                 "수 없다 — 자가 피크 저감이 성립하지 않는다 (유형 E)",
             ),
+            (
+                "TouArbitrage",
+                ExclusionType.E,
+                "방전 시점을 계통운영자가 정하므로 사업자가 피크 시각을 골라 팔 수 "
+                "없다 — 요금차 차익거래가 성립하지 않는다 (유형 E)",
+            ),
         ]
 
     def policy_warnings(self) -> list[str]:

@@ -40,6 +40,7 @@ from core.valuestream import (
     PeakShaving,
     SelfConsumption,
     SurplusSale,
+    TouArbitrage,
 )
 from core.valuestream.exclusion_table import (
     DEFAULT_EXCLUSION_RULES,
@@ -432,6 +433,25 @@ def _create_valuestream_for_tag(  # noqa: PLR0911 — 태그 하나에 갈래 �
             capacity_price_won_per_kw_month=6_000.0,
             enabled=True,
         )
+    elif tag == "TouArbitrage":
+        # R50 신설. **첨두·경부하 단가가 대장에 항목으로 없다** — 대장이 가진
+        # 것은 실효단가(`tariff.hv_single_contract.avg`)·전력량요금
+        # (`...energy_only`)·기본요금(`...demand_charge`) 셋이고 TOU 시간대별
+        # 단가는 요금표(`core/regulation/tariff.py`)가 든다. 여기서 대장을 읽는
+        # 척하면 없는 항목을 가리키는 코드가 되므로 탐침 단가를 그대로 준다 —
+        # 이 테스트가 보는 것은 금액이 아니라 **배타 판정**이다
+        # (`RC-ESS-B1` 오라클과 같은 200/80 을 쓴다).
+        #
+        # ⚠ 수량은 **연간값**이며 창에서 읽지 않는다
+        # (`scales_with_dispatch_window = False`) — 이 테스트가 24스텝 **0원**
+        # 디스패치를 주는데도 금액이 나야 유형 A 거부 검증이 0원끼리 비교가
+        # 되지 않는다.
+        return TouArbitrage(
+            discharge_kwh=2_920.0,
+            charge_kwh=2_920.0 / 0.9,
+            peak_price_won_per_kwh=200.0,
+            offpeak_price_won_per_kwh=80.0,
+        )
     else:
         raise ValueError(f"지원하지 않는 편익 태그입니다: {tag}")
 
@@ -468,8 +488,9 @@ EXPECTED_RATIONALES: dict[tuple[str, str], str] = {
     ("AggregatedPPA", "SelfConsumption"): (
         "집합 PPA 로 넘긴 kWh 는 자가소비가 아니다 — 동일 물리량 이중 계상"
     ),
-    # ↓ R48 — **운전 주체 축**(유형 E · 판정 §2). 계통 급전 편익 둘 × 사용자 운전
-    # 편익 둘 = 넷이며, 하나라도 빠지면 그 조합만 조용히 열린 채 남는다.
+    # ↓ R48 — **운전 주체 축**(유형 E · 판정 §2). 계통 급전 편익 둘 × 사업자 운전
+    # 편익 셋 = **여섯**이며(R48 은 편익 둘로 세어 넷이었고 R50 이 `TouArbitrage`
+    # 를 세웠다), 하나라도 빠지면 그 조합만 조용히 열린 채 남는다.
     # 유형 `A` 가 아니다(같은 kWh 를 두 번 파는 것이 아니다) · 유형 `D` 도
     # 아니다(제도가 바뀌어도 성립하지 않는다).
     ("NWAs", "SelfConsumption"): (
@@ -491,6 +512,23 @@ EXPECTED_RATIONALES: dict[tuple[str, str], str] = {
         "준중앙급전으로 등록하면 방전 시점을 계통운영자가 정하므로 사용자가 원하는 "
         "시각에 방전할 수 없고 사용자의 전기사용량에 영향이 없다 — 자가 피크 저감이 "
         "성립하지 않는다 (R48 판정 §2)"
+    ),
+    # ↓ R50 — `TouArbitrage` 가 서면서 셋이 늘었다. **유형이 상대에 따라 갈린다**:
+    # `SurplusSale` 과는 `A`(같은 kWh 를 둘 다 **판매**로 계상한다), 계통 급전
+    # 편익 둘과는 `E`(애초에 같은 운전에 함께 존재할 수 없다).
+    ("TouArbitrage", "SurplusSale"): (
+        "TOU 차익거래는 계통으로 방전하고 잉여판매는 시스템 총 역송량으로 계산되므로 "
+        "같은 kWh 가 두 항목에 각각 판매로 들어간다 — R48 판정 §4 「계통 방전분이 "
+        "태양광의 잉여판매에 얹혀 있다」와 같은 자리다"
+    ),
+    ("NWAs", "TouArbitrage"): (
+        "방전 시점을 계통운영자가 정하면 사업자가 피크 시각을 골라 팔 수 없다 — "
+        "요금차 차익거래가 성립하지 않는다 (R48 판정 §2 의 운전 주체 축)"
+    ),
+    ("CP", "TouArbitrage"): (
+        "준중앙급전으로 등록하면 방전 시점을 계통운영자가 정하므로 사업자가 피크 "
+        "시각을 골라 팔 수 없다 — 요금차 차익거래가 성립하지 않는다 "
+        "(R48 판정 §2 의 운전 주체 축)"
     ),
 }
 

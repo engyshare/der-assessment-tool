@@ -1,4 +1,4 @@
-"""편익 10종의 **탐침 인자** — 계약 검사 둘이 함께 쓴다.
+"""편익 11종의 **탐침 인자** — 계약 검사 둘이 함께 쓴다.
 
 ## 왜 한 표인가
 
@@ -75,6 +75,16 @@ PROBES: dict[str, dict[str, object]] = {
         "registered_capacity_kw": 7.0,
         "capacity_price_won_per_kw_month": 6_500.0,
         "enabled": True,
+    },
+    #: ★ **넷을 서로 다른 수로 둔다** (R50 신설 편익). 방전량과 충전량이 같으면
+    #: 산식이 한쪽만 싣고도 「전건 실렸다」로 통과하고, 두 단가가 같으면 피크와
+    #: 경부하를 뒤바꿔 적어도 문면이 그대로다 — 이 편익은 **뺄셈**이라 그 뒤바뀜이
+    #: 금액의 부호까지 바꾼다.
+    "TouArbitrage": {
+        "discharge_kwh": 2_500.0,
+        "charge_kwh": 2_800.0,
+        "peak_price_won_per_kwh": 180.0,
+        "offpeak_price_won_per_kwh": 70.0,
     },
 }
 

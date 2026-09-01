@@ -23,6 +23,7 @@ from core.valuestream.peak_shaving import PeakShaving
 from core.valuestream.rec import REC
 from core.valuestream.self_consumption import SelfConsumption
 from core.valuestream.surplus_sale import SurplusSale
+from core.valuestream.tou_arbitrage import TouArbitrage
 
 __all__ = (
     "REC",
@@ -36,4 +37,5 @@ __all__ = (
     "PeakShaving",
     "SelfConsumption",
     "SurplusSale",
+    "TouArbitrage",
 )
