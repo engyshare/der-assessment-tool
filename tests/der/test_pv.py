@@ -15,7 +15,8 @@ import pytest
 
 from core.contracts.der import DER, EOL_RETIRE, DispatchContext
 from core.contracts.units import HOURS_PER_YEAR, Money, to_won, won_sum
-from core.der.pv import PV, OperatingMode
+from core.contracts.validation import ValidationError
+from core.der.pv import PV, OperatingMode, PVAllocationPriority, resolve_pv_allocation_priority
 from tests.contract.test_der_contract import DERContractTests
 
 # §13.2.2 예시 열이 고정한 공통 재무 전제. 테스트마다 다시 적으면 한 곳만
@@ -667,6 +668,41 @@ def test_same_type_instances_can_hold_different_modes() -> None:
     a = make_pv_1kw(name="옥상PV", operating_mode=OperatingMode.SELF_CONSUMPTION_FIRST)
     b = make_pv_1kw(name="벽면BIPV", operating_mode=OperatingMode.FULL_EXPORT)
     assert a.operating_mode is not b.operating_mode
+
+
+# ── PV 배분 우선순위 (`docs/decisions-2026-09-01-R51.md` §1) ─────────
+
+def test_pv_allocation_priority_members_match_the_decision() -> None:
+    """멤버 셋이 판정 §1 문면과 같다 — 다듬으면 리포트 표기가 판정과 갈린다."""
+    assert {p.value for p in PVAllocationPriority} == {"집 우선", "배터리 우선", "가격 기반"}
+
+
+def test_pv_allocation_priority_does_not_grow_operating_modes() -> None:
+    """별개 축이다 — `PV.OPERATING_MODES` 를 늘리면 FR-105-AC1 이 말하는 대상이
+    달라진다(래칫)."""
+    assert set(PV.OPERATING_MODES) == set(OperatingMode)
+
+
+def test_resolve_pv_allocation_priority_accepts_string() -> None:
+    """케이스 그리드가 문자열로 값을 건넨다(FR-105-AC5 의 관례)."""
+    assert resolve_pv_allocation_priority("집 우선") is PVAllocationPriority.HOUSEHOLD_FIRST
+
+
+def test_resolve_pv_allocation_priority_rejects_unknown_value() -> None:
+    """선언 목록 밖의 값은 거부한다."""
+    with pytest.raises(ValidationError, match="배분 우선순위"):
+        resolve_pv_allocation_priority("전량 판매")
+
+
+def test_resolve_pv_allocation_priority_rejects_price_based() -> None:
+    """구현이 없는 갈래는 조용히 다른 갈래로 떨어지지 않고 **거부**한다(판정
+    §1 ⑤) — 메시지가 사유(구현 없음)와 처방(나머지 둘)을 함께 갖는다."""
+    with pytest.raises(ValidationError) as exc_info:
+        resolve_pv_allocation_priority(PVAllocationPriority.PRICE_BASED)
+    message = str(exc_info.value)
+    assert "구현" in message
+    assert "집 우선" in message
+    assert "배터리 우선" in message
 
 
 # ── 경계·위반 (RC-PV-X1) ────────────────────────────────────────────

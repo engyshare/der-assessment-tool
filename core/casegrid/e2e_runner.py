@@ -57,7 +57,7 @@ from core.contracts.units import Money, Year
 from core.contracts.valuestream import ValueStream
 from core.der.ess import ESS, ESSChargeSource, ESSOperatingMode
 from core.der.load import Load
-from core.der.pv import PV, OperatingMode
+from core.der.pv import PV, OperatingMode, PVAllocationPriority, resolve_pv_allocation_priority
 from core.engine.rule_based import RuleBasedEngine
 from core.incentive.schemas import IncentiveScheme
 from core.regulation.tariff import TariffEngine
@@ -189,6 +189,14 @@ ESS_FIXED_OM_WON_PER_YEAR = 100_000
 ESS_OPERATING_MODE_DEFAULT = ESSOperatingMode.SELF_CONSUMPTION
 ESS_CHARGE_SOURCE_DEFAULT = ESSChargeSource.PV_SURPLUS
 
+#: PV 낮 전기 배분 우선순위 기본값 (판정 근거: `docs/decisions-2026-09-01-R51.md`
+#: §1). ⚠⚠ **판정 §1 은 `MC-1`(지산지소 모델) 기본값을 「집 우선」으로 정했다.
+#: 여기서 뒤집지 않은 이유는 결론축을 한 번만 흔들기 위해서이며(같은 문서
+#: 머리말·`status.md` 「다음에 집을 것」 머리말), R51 닫기 WP 가 ④(잉여판매
+#: 수량 분리)와 함께 한 번에 뒤집는다.** 그 전까지는 `BATTERY_FIRST`(지금
+#: 동작)가 배포 기본값이고, 이 WP 는 그 갈래의 수를 한 kWh 도 바꾸지 않는다.
+PV_ALLOCATION_PRIORITY_DEFAULT = PVAllocationPriority.BATTERY_FIRST
+
 
 def _resolve(
     level: str | object,
@@ -293,29 +301,36 @@ def _resolve_ess_dispatch_inputs(
     case_values: dict[str, object],
     pv: PV,
     ctx: DispatchContext,
+    *,
+    pv_allocation_priority: PVAllocationPriority | str | None,
+    household: Load | None,
 ) -> tuple[ESSOperatingMode | str, ESSChargeSource | str, list[float]]:
-    """운전 방법·충전원을 고르고 PV 잉여 시계열을 만든다 (판정 §1·§3·A-3·A-6).
+    """운전 방법·충전원·PV 잉여 배분 순서를 고른다 (판정 §1·§3·A-3·A-6,
+    `docs/decisions-2026-09-01-R51.md` §1).
 
-    우선순위: 호출 인자 → `case_values`(문자열로 와도 받는다 — `FR-105-AC5` 가
-    이미 그 관례다) → 모듈 상수(`ESS_OPERATING_MODE_DEFAULT`·
-    `ESS_CHARGE_SOURCE_DEFAULT`, 근거는 그 상수 옆 주석).
+    우선순위(운전 방법·충전원·배분 순서 셋 모두 같은 모양): 호출 인자 →
+    `case_values`(문자열로 와도 받는다 — `FR-105-AC5` 가 이미 그 관례다) →
+    모듈 상수(`ESS_OPERATING_MODE_DEFAULT`·`ESS_CHARGE_SOURCE_DEFAULT`·
+    `PV_ALLOCATION_PRIORITY_DEFAULT`, 근거는 각 상수 옆 주석).
 
     ⚠ `ESS(...)` 자신이 문자열을 승격·검증한다(`ESS._coerce_charge_source` ·
     `DER._check_operating_mode`) — 여기서 미리 승격하지 않는다, 잘못된 값의
-    오류 메시지는 그 자원이 내는 것이 맞다.
+    오류 메시지는 그 자원이 내는 것이 맞다. **`pv_allocation_priority` 는
+    다르다** — 이 축은 어느 자원 계약에도 속하지 않으므로(별개 축,
+    `PVAllocationPriority` 독스트링 참조) 여기서 직접
+    `resolve_pv_allocation_priority()` 로 승격·거부한다(판정 §1 ⑤).
 
-    **PV 잉여 시계열은 PV 를 먼저 디스패치해** 시각별 전기 출력을 얻고, 그
-    발전량 중 자가소비로 가는 몫을 뺀 잉여만 돌려준다. ⚠ **모듈 상수를 읽어
-    대신하지 않는다** — 읽으면 이 케이스의 실제 PV 용량·형상이 아니라
-    기준값을 쓰게 되어 `pv_capacity_kw` 축이 도는 동안에도 잉여가 그대로다
-    (`pv_inverter_share`·`demand_charge` 주석이 같은 함정을 적어 두었다).
+    **PV 잉여 시계열은 PV 를 먼저 디스패치해** 시각별 전기 출력을 얻는다.
+    ⚠ **모듈 상수를 읽어 대신하지 않는다** — 읽으면 이 케이스의 실제 PV
+    용량·형상이 아니라 기준값을 쓰게 되어 `pv_capacity_kw` 축이 도는 동안에도
+    잉여가 그대로다(`pv_inverter_share`·`demand_charge` 주석이 같은 함정을
+    적어 두었다).
 
     ## ★★ PV 출력을 **누가 먼저 가져가는가** — 그 순서를 만드는 자리가 여기다
 
-    아래 세 줄(`pv.dispatch` → `surplus_ratio` → `surplus_profile_kwh`)은 잉여를
-    *계산*만 하는 것처럼 보이지만 실제로는 **PV 출력의 배분 순서를 정한다.**
-    그 순서는 어느 자원에도 적혀 있지 않다 — `PV` 도 `ESS` 도 가구 부하를 보지
-    않으므로 **둘을 이어 붙이는 이 자리가 유일한 임자**다. 실물은 이렇다.
+    `pv_allocation_priority` 가 **어느 계산으로 잉여를 만들지**를 고른다.
+
+    ### `BATTERY_FIRST`(지금 배포 기본값) — 연간 고정 비율
 
         ① PV 출력 중 「자가소비 비율」분    → 가구 자가소비 (PV 가 비율로 정한다)
         ② 그 나머지(= 잉여) 중 ESS 가 받을 수 있는 만큼 → ESS 충전 (PV_SURPLUS)
@@ -334,36 +349,56 @@ def _resolve_ess_dispatch_inputs(
     방법도 전량 판매라 `PV._self_consumption_ratio_effective()` 가 한 번 더 0 으로
     덮는다. 그래서 `surplus_ratio` 는 1.0 이고 **PV 출력 전량이 ② 의 몫으로
     간다** — 가구 부하는 한 kWh 도 ① 로 가지 못하고 전부 계통 수전이 된다.
+    **`PV_SELF_CONSUMPTION_RATIO` 는 이 갈래에서만 읽힌다** — `HOUSEHOLD_FIRST`
+    는 아래에서 보듯 이 상수를 쓰지 않는다.
 
     **물리적으로 부정확하지는 않다** — 넘치는 몫은 계통 수전으로 메워지므로
     에너지 수지는 맞는다(`RuleBasedEngine.verify_media_balance` 와 그 위의 수지
-    검사가 그것을 잰다). 그런데도 적어 두는 이유는 **선언이 없으면 다음 사람이
-    이 순서를 결정이 아니라 사고로 읽거나 아예 알아채지 못하기** 때문이다.
+    검사가 그것을 잰다).
+
+    ### `HOUSEHOLD_FIRST` — 그 스텝의 실제 가구 부하 (판정 §1·④)
+
+    스텝별 잉여 = `max(0, PV 스텝 출력 − 그 스텝 가구 부하)`. **`household` 가
+    `None`(부하를 아예 세우지 않는 실행)이면 뺄 것이 없으므로 `BATTERY_FIRST`
+    와 완전히 같은 결과**다 — 채울 집이 없다(아래 분기가 그것을 그대로
+    구현한다: `household is None` 이면 이 갈래를 골라도 아래로 떨어진다).
+
+    이것이 `FR-302-AC1` 의 *「① PV 발전 → 즉시 자가소비」* 다 — 「즉시」는 그
+    스텝의 실제 부하를 뜻하며, `BATTERY_FIRST` 의 연간 고정 비율과 다르다.
+    사용자 판정(`docs/decisions-2026-09-01-R51.md` §1)은 `MC-1`(지산지소
+    모델)의 **기본값을 이 갈래로 정했다** — ⚠⚠ **그러나 배포 기본값
+    (`PV_ALLOCATION_PRIORITY_DEFAULT`)은 이 WP 에서 뒤집지 않는다**(그 상수
+    옆 주석에 이유가 있다).
+
+    ### `PRICE_BASED` — 자리만 있다
+
+    선택하면 `resolve_pv_allocation_priority()` 가 **`ValidationError` 로
+    거부한다**(구현 없음) — 조용히 다른 갈래로 떨어뜨리지 않는다.
 
     ⚠ **자원에게 부하를 넘길 통로가 없어서가 아니다.** `_site_load_kw` 가 이미
     같은 부하를 `ESS.reducible_peak_kw()` 로 넘긴다 — 즉 **피크 저감 편익에는
-    부하를 주고 충전 계획(`ESS._pv_surplus_charge_kwh_by_hour`)에는 주지 않기로
-    되어 있는 것**이며, 그 선택이 곧 위 우선순위다.
+    부하를 주고 `BATTERY_FIRST` 의 충전 계획
+    (`ESS._pv_surplus_charge_kwh_by_hour`)에는 주지 않기로 되어 있는 것**이며,
+    `HOUSEHOLD_FIRST` 는 그 부하를 충전 계획에도 준다 — 그것이 이 축이 만드는
+    유일한 차이다.
 
-    ⚠ **조항은 이 순서를 이미 말한다** — `FR-302-AC1` 의 7단계 우선순위가
-    ①②③ 과 계통 수전을 그대로 적고(「PV 발전 → 즉시 자가소비」 → 「잉여 → ESS
-    충전」 → 「잔여 잉여 → 계통 판매」 … 「잔여 부족 → 계통 구매」),
-    `DEFAULT_RULE_ORDER` 가 같은 일곱을 이름으로 든다. 사용자 판정도 같은 순서를
-    적는다 — `docs/decisions-2026-08-31-R48.md` §11 의 *「자가소비량을 초과하는
-    태양광발전량은 ESS 충전되고 …」*. **어긋나는 것은 순서가 아니라 ① 의 뜻이다**
-    — 조항·판정의 ① 은 *「즉시」* 자가소비(그 스텝의 실제 부하)이고 구현의 ① 은
-    **연간 고정 비율**이다.
+    ⚠ **조항은 순서를 이미 말한다** — `FR-302-AC1` 의 7단계 우선순위가 ①②③
+    과 계통 수전을 그대로 적는다. `DEFAULT_RULE_ORDER` 가 같은 일곱을 이름으로
+    든다. **`BATTERY_FIRST` 에서 어긋나는 것은 순서가 아니라 ① 의 뜻이다** —
+    조항의 ① 은 *「즉시」* 자가소비이고 `BATTERY_FIRST` 의 ① 은 연간 고정
+    비율이다. `HOUSEHOLD_FIRST` 는 그 어긋남이 없다.
 
     ★ **이것이 최선인가는 판정이며 이 자리가 답하지 않는다.** *「가구 부하가
-    ESS 충전보다 먼저여야 하는 것 아닌가」* 는 결론축을 움직이는 물음이고
-    사용자가 답한다. 답이 오기 전까지 **동작을 바꾸지 않으며**, 지금 동작이
-    조용히 달라지지 않도록 검사가 붙든다 —
-    `tests/casegrid/test_pv_surplus_allocation_priority.py` 가 부하를 크게 준
-    실행과 0 인 실행에서 **ESS 연간 충전량이 같고 계통 수전만 다름**을 잰다.
+    ESS 충전보다 먼저여야 하는 것 아닌가」* 는 결론축을 움직이는 물음이었고
+    사용자가 §1 에서 「축을 만들라」로 답했다 — 배포 기본값을 지금 뒤집지
+    않기로 한 것은 오케스트레이터의 가정이다(위 참조).
+    `tests/casegrid/test_pv_surplus_allocation_priority.py` 가 두 갈래를 각각
+    붙든다.
     """
     # `case_values` 는 `dict[str, object]` 다(케이스 그리드가 변수 종류를 섞어
-    # 담는 자리라 값 타입을 하나로 좁힐 수 없다) — 그래서 아래 두 `cast` 는
-    # **런타임 변환이 아니라 타입 단정**이다. 실제 검증은 여전히 `ESS` 가 한다.
+    # 담는 자리라 값 타입을 하나로 좁힐 수 없다) — 그래서 아래 `cast` 셋은
+    # **런타임 변환이 아니라 타입 단정**이다. 실제 검증은 `ESS` 와
+    # `resolve_pv_allocation_priority()` 가 한다.
     mode = cast(
         "ESSOperatingMode | str",
         ess_operating_mode
@@ -376,12 +411,25 @@ def _resolve_ess_dispatch_inputs(
         if ess_charge_source is not None
         else case_values.get("ess_charge_source", ESS_CHARGE_SOURCE_DEFAULT),
     )
-    pv_dispatch = pv.dispatch(ctx)
-    annual_generation_kwh = pv.annual_generation_kwh(year=1)
-    surplus_ratio = (
-        pv.surplus_kwh(year=1) / annual_generation_kwh if annual_generation_kwh > 0.0 else 0.0
+    raw_priority = (
+        pv_allocation_priority
+        if pv_allocation_priority is not None
+        else case_values.get("pv_allocation_priority", PV_ALLOCATION_PRIORITY_DEFAULT)
     )
-    surplus_profile_kwh = [v * surplus_ratio for v in pv_dispatch.electric]
+    priority = resolve_pv_allocation_priority(cast("PVAllocationPriority | str", raw_priority))
+    pv_dispatch = pv.dispatch(ctx)
+    if priority is PVAllocationPriority.HOUSEHOLD_FIRST and household is not None:
+        household_kwh = [-v for v in household.dispatch(ctx).electric]
+        surplus_profile_kwh = [
+            max(0.0, gen - load)
+            for gen, load in zip(pv_dispatch.electric, household_kwh, strict=True)
+        ]
+    else:
+        annual_generation_kwh = pv.annual_generation_kwh(year=1)
+        surplus_ratio = (
+            pv.surplus_kwh(year=1) / annual_generation_kwh if annual_generation_kwh > 0.0 else 0.0
+        )
+        surplus_profile_kwh = [v * surplus_ratio for v in pv_dispatch.electric]
     return mode, source, surplus_profile_kwh
 
 
@@ -402,6 +450,7 @@ def run_single_case_e2e(
     viewpoint: Viewpoint = "OWNER",
     ess_operating_mode: ESSOperatingMode | str | None = None,
     ess_charge_source: ESSChargeSource | str | None = None,
+    pv_allocation_priority: PVAllocationPriority | str | None = None,
 ) -> CaseOutcome:
     """Execute the full DER → Engine → Benefit → CBA pipeline for one case.
 
@@ -500,6 +549,14 @@ def run_single_case_e2e(
     아니었다. 이제 인자 → `case_values` → 모듈 상수 순으로 값을 고른다.
     `pv_surplus_profile_kwh` 는 이 함수가 PV 를 먼저 디스패치해 만들고
     (충전원이 `PV_SURPLUS` 일 때만) 넘긴다 — 호출자가 줄 수 있는 값이 아니다.
+
+    ★ **`pv_allocation_priority` — 낮 전기를 「가구」·「배터리」 중 누구에게 먼저
+    주는가** (판정 §1, `docs/decisions-2026-09-01-R51.md`). 같은 인자 →
+    `case_values` → 모듈 상수(`PV_ALLOCATION_PRIORITY_DEFAULT`) 순서를 따르되,
+    이 축의 승격·거부는 `_resolve_ess_dispatch_inputs` 가 `resolve_pv_
+    allocation_priority()` 로 직접 한다 — 어느 자원 계약도 이 축을 모른다.
+    배포 기본값은 지금도 `BATTERY_FIRST`(연간 고정 비율)다 — 그 상수 옆
+    주석에 뒤집지 않은 이유가 있다.
 
     ★ **`extra_appliance_load_kwh` — 「추가 기기 비례 증가」** (판정 §5·B-2,
     `docs/decisions-2026-08-31-R48.md`). 히트펌프 등 추가 전력사용기기가
@@ -633,13 +690,28 @@ def run_single_case_e2e(
         operating_mode=OperatingMode.FULL_EXPORT,
     )
 
-    # ★ **운전 방법·충전원·PV 잉여 시계열 — 하드코딩을 두 갈래로 노출한다**
-    # (판정 §1·§3·A-3·A-6, `docs/decisions-2026-08-31-R48.md`). 한 statement 로
+    # ★ **부하는 편익을 만들지 않는다** (`RC-LD-B0` · `Load.value_streams()` 는
+    # 비어 있다). 그래서 여기 더해도 편익 갈래는 늘지 않고 **운전만** 달라진다 —
+    # 계통 수전이 실제 수량으로 나온다. 화폐화(자가소비 절감·구매 비용)는 요금
+    # 엔진의 몫이며, 한쪽만 계상하면 사업에 불리한 쪽으로 틀린다(NSPM 대칭성).
+    # ⚠ **여기로 옮겼다(판정 §1 ④)** — `_household_load_if_total_given` 은
+    # 함수 인자만 쓰고 그 사이에 만들어지는 어떤 것도 쓰지 않으므로, PV 잉여
+    # 배분(`HOUSEHOLD_FIRST`)이 이 부하 시계열을 봐야 하는 지금 자리로 옮겨도
+    # 안전하다.
+    household = _household_load_if_total_given(
+        daily_shapes, annual_load_kwh, extra_appliance_load_kwh
+    )
+
+    # ★ **운전 방법·충전원·PV 잉여 배분 순서 — 하드코딩을 세 갈래로 노출한다**
+    # (판정 §1·§3·A-3·A-6, `docs/decisions-2026-09-01-R51.md`). 한 statement 로
     # 묶어 부르는 이유는 계산 자체가 아니라 `PLR0915`(이 함수의 statement 상한)
     # 다 — 이 함수는 이미 그 상한에 닿아 있었다(브리프 실측).
     ctx = DispatchContext(steps=STEPS_PER_DAY, dt=SECONDS_PER_HOUR, year=Year(1))
     resolved_ess_operating_mode, resolved_ess_charge_source, ess_pv_surplus_profile_kwh = (
-        _resolve_ess_dispatch_inputs(ess_operating_mode, ess_charge_source, case_values, pv, ctx)
+        _resolve_ess_dispatch_inputs(
+            ess_operating_mode, ess_charge_source, case_values, pv, ctx,
+            pv_allocation_priority=pv_allocation_priority, household=household,
+        )
     )
 
     ess = ESS(
@@ -695,13 +767,6 @@ def run_single_case_e2e(
 
     # 2. Dispatch
     engine = RuleBasedEngine()
-    # ★ **부하는 편익을 만들지 않는다** (`RC-LD-B0` · `Load.value_streams()` 는
-    # 비어 있다). 그래서 여기 더해도 편익 갈래는 늘지 않고 **운전만** 달라진다 —
-    # 계통 수전이 실제 수량으로 나온다. 화폐화(자가소비 절감·구매 비용)는 요금
-    # 엔진의 몫이며, 한쪽만 계상하면 사업에 불리한 쪽으로 틀린다(NSPM 대칭성).
-    household = _household_load_if_total_given(
-        daily_shapes, annual_load_kwh, extra_appliance_load_kwh
-    )
     resources: list[DER] = [pv, ess] if household is None else [pv, ess, household]
     dispatch = engine.run(resources, ctx)
 

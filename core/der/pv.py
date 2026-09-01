@@ -61,6 +61,60 @@ class OperatingMode(StrEnum):
     CURTAILMENT = "출력제어 수용"
 
 
+class PVAllocationPriority(StrEnum):
+    """낮 전기(PV 잉여)를 「가구」와 「배터리」 중 누구에게 먼저 주는가 — 사용자
+    판정 `docs/decisions-2026-09-01-R51.md` §1.
+
+    ⚠ **`OperatingMode` 와는 별개 축이다.** `PV.OPERATING_MODES` 는
+    `tuple(OperatingMode)` 이므로 이 열거를 거기 더하면 「PV 의 운전 방법
+    목록」이 늘어 `FR-105-AC1` 이 말하는 대상이 달라진다. 이 축은 그 목록에
+    들지 않는다 — 배분 순서를 정하는 자리는 `e2e_runner._resolve_ess_dispatch_
+    inputs` 이지 이 자원의 운전이 아니다.
+
+    ⚠ **`PRICE_BASED` 는 자리만 있다.** 구현이 없어 고르면
+    `resolve_pv_allocation_priority()` 가 거부한다 — 조용히 다른 갈래로
+    떨어뜨리면 「골랐는데 안 골라졌다」가 된다.
+    """
+
+    #: 그 스텝의 실제 가구 부하를 먼저 채우고 남는 것만 ESS 충전
+    HOUSEHOLD_FIRST = "집 우선"
+    #: ESS 충전을 먼저 채우고 가구는 계통 수전 (배포 기본값)
+    BATTERY_FIRST = "배터리 우선"
+    #: 그 시각의 요금·판매단가를 보고 더 이득인 쪽 (미구현)
+    PRICE_BASED = "가격 기반"
+
+
+def resolve_pv_allocation_priority(
+    priority: PVAllocationPriority | str,
+) -> PVAllocationPriority:
+    """문자열을 승격하고 미구현 갈래(`PRICE_BASED`)를 거부한다 (판정 §1 ⑤).
+
+    문자열을 받는 이유는 `PV._coerce_mode()` 와 같다 — 케이스 그리드가 문자열로
+    값을 건넨다(`FR-105-AC5` 의 관례). ⚠ 이 축은 `PV`·`ESS` 어느 계약에도 속하지
+    않아(별개 축, 위 참조) 자원 생성자가 대신 승격·거부해 주지 않는다 — 여기가
+    유일한 검증 지점이다.
+    """
+    try:
+        resolved = PVAllocationPriority(priority)
+    except ValueError as e:
+        allowed = ", ".join(p.value for p in PVAllocationPriority)
+        raise ValidationError(
+            field="pv.allocation_priority",
+            reason=f"선언되지 않은 배분 우선순위입니다: {priority!r}",
+            action=f"배분 우선순위 중 하나를 지정하십시오 — [{allowed}]",
+        ) from e
+    if resolved is PVAllocationPriority.PRICE_BASED:
+        choices = ", ".join(
+            p.value for p in PVAllocationPriority if p is not PVAllocationPriority.PRICE_BASED
+        )
+        raise ValidationError(
+            field="pv.allocation_priority",
+            reason=f"{resolved.value}: 아직 구현되어 있지 않습니다",
+            action=f"다음 중 하나를 지정하십시오 — [{choices}]",
+        )
+    return resolved
+
+
 class PV(DER):
     """태양광 발전 자원 (옥상·벽면 BIPV 공통).
 

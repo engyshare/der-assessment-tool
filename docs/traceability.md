@@ -117,7 +117,7 @@
 |  |  | 1 | `FR-301-AC4` | (v0.14 신설) 계통 연계 용량 상한을 초과하는 운전 계획은 명확한 | 자동 | test_ess.py, test_pv_validation.py |
 |  |  | 1 | `FR-301-AC5` | (v0.15 신설) 해상도를 바꿔도 겹치는 구간의 결과가 일치한다 — | 자동 | test_der_contract.py 2건, test_money_boundary.py |
 |  |  | 1 | `FR-301-AC6` | (v0.15 신설) **가격 신호가 없으면 0원으로 대체하지 않고 오류로 | 자동 | test_der_contract.py 2건 |
-| `FR-302` | Must-have | 1 | `FR-302-AC1` | 다음 우선순위를 설정 가능한 순서로 적용 | 자동 | test_rule_based.py |
+| `FR-302` | Must-have | 1 | `FR-302-AC1` | 다음 우선순위를 설정 가능한 순서로 적용 | 자동 | test_pv_surplus_allocation_priority.py 2건, test_rule_based.py |
 |  |  | 1 | `FR-302-AC2` | TOU 하 경부하 충전 / 최대부하 방전 차익거래 규칙을 옵션 활성화 | 자동 | test_ess.py, test_rule_based.py, test_tou_arbitrage.py |
 |  |  | 1 | `FR-302-AC3` | 규칙 순서·활성화를 UI에서 변경 가능하며 효과가 결과에 반영된다 | 자동 | test_rule_based.py |
 | `FR-303` | Should-have | - | `FR-303-AC1` | 목적함수: 분석기간 총비용 최소화. 자원·SOC·계통 제약을 선형 제약으로 표현 | **미매핑** | — |
