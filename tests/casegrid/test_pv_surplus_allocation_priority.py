@@ -49,6 +49,7 @@ ESS 로 가므로 부하가 크면 ESS 충전이 준다.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -58,6 +59,8 @@ from core.casegrid.ledger_levels import build_level_map
 from core.casegrid.models import CaseOutcome
 from core.casegrid.profiles import load_daily_shapes
 from core.der.pv import PVAllocationPriority
+from core.report.dispatch_notes import build_hourly_profile
+from core.report.unreflected import _measured_quantities
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -112,6 +115,26 @@ def _annual_grid_import_kwh(outcome: CaseOutcome) -> float:
 
 def _annual_grid_export_kwh(outcome: CaseOutcome) -> float:
     return sum(outcome.dispatch.grid_export) * DAYS_PER_YEAR
+
+
+def _pv_resource_line(outcome: CaseOutcome):
+    """리포트 0절이 실제로 실은 PV 행 — 실물 문면을 붙드는 검사가 여기서 읽는다."""
+    return next(line for line in outcome.basis.resources if line.name == "e2e-pv")
+
+
+def _self_consumption_ratio_pct(outcome: CaseOutcome) -> int:
+    """PV 행의 `capacity` 문면에서 「자가소비율 N%」 를 그대로 읽는다.
+
+    ⚠ **재계산하지 않는다** — 검사 대상은 *리포트가 인쇄한 문자열*이지 별도
+    계산이 아니다. 재계산하면 이 검사와 배포 코드가 같은 도우미를 불러 같은
+    답을 내는 동어반복이 된다(`status.md` 「함정」 절).
+    """
+    match = re.search(r"자가소비율 (\d+)% \(본 실행 실측\)", _pv_resource_line(outcome).capacity)
+    assert match is not None, (
+        f"PV 행 capacity 에 「자가소비율 N% (본 실행 실측)」 문면이 없다: "
+        f"{_pv_resource_line(outcome).capacity!r}"
+    )
+    return int(match.group(1))
 
 
 def test_both_priorities_stand_the_load_resource() -> None:
@@ -281,3 +304,103 @@ def test_deployment_default_is_household_first() -> None:
     assert _annual_grid_import_kwh(default_run) == pytest.approx(
         _annual_grid_import_kwh(household)
     ), "갈래를 지정하지 않은 실행이 「집 우선」과 다른 계통 수전을 냈다"
+
+
+# ── 판정 §4 — 「자가소비율」은 본 실행 실측치이지 모듈 상수가 아니다 ──────────
+#
+# 여기서 재는 것은 ⓑ(**실제 배분** — 이 실행에서 집이 실제로 얼마를 썼나)다.
+# ⓐ(**반사실** — 「자가소비했다면 얼마였을까」, `core/report/unreflected.py::
+# _measured_quantities`)와는 값이 다르고 공존한다 — `pv_allocation.
+# measured_self_consumption_ratio` 독스트링 참조.
+
+
+@pytest.mark.req("FR-703-AC1.self-consumption")
+def test_household_first_self_consumption_ratio_is_measured_and_nonzero() -> None:
+    """★★★ 「집 우선」 — 리포트 0절의 자가소비율이 0% 가 아니다.
+
+    R51 이 「집 우선」을 기본값으로 만든 뒤에도 이 칸은 계속 `PV_SELF_
+    CONSUMPTION_RATIO`(모듈 상수, = 0)를 인쇄해 왔다 — 가구가 그 스텝의
+    태양광을 실제로 먼저 쓰는데도 표시는 0% 였다(판정 §4). 그 결함이 남아
+    있으면 이 단언이 실패한다.
+    """
+    outcome = _run(_CROSS_PRIORITY_LOAD_KWH, priority=PVAllocationPriority.HOUSEHOLD_FIRST)
+    ratio_pct = _self_consumption_ratio_pct(outcome)
+    assert ratio_pct > 0, (
+        f"집 우선인데 자가소비율이 {ratio_pct}% 다 — 모듈 상수를 계속 읽고 "
+        "있을 수 있다(판정 §4)"
+    )
+
+
+@pytest.mark.req("FR-703-AC1.self-consumption")
+def test_battery_first_self_consumption_ratio_is_exactly_zero() -> None:
+    """★★★ 「배터리 우선」 — 자가소비율이 **정확히 0%** 다(판정 §4 ⚠).
+
+    갈래마다 값이 갈리는 것이 옳은 동작이다 — 판정 문면이 못 박았다:
+    *「「배터리 우선」 갈래에서도 참이어야 한다 — 그 갈래의 실제 자가소비는
+    0 이므로 0% 가 맞다」*. `_measured_quantities`(ⓐ, 반사실)로 재면 이
+    갈래에서도 0 이 아닌 값이 나온다 — 그것과 혼동하면 거짓 표시가 된다.
+    """
+    outcome = _run(_CROSS_PRIORITY_LOAD_KWH, priority=PVAllocationPriority.BATTERY_FIRST)
+    ratio_pct = _self_consumption_ratio_pct(outcome)
+    assert ratio_pct == 0, (
+        f"배터리 우선인데 자가소비율이 {ratio_pct}% 다 — 그 갈래는 가구가 PV 를 "
+        "한 kWh 도 못 쓰고 전부 계통 수전으로 메워진다(`pv_allocation` 독스트링)"
+    )
+
+
+@pytest.mark.req("FR-703-AC1.self-consumption")
+def test_household_first_self_consumption_ratio_matches_unreflected_layer() -> None:
+    """★★ 층을 건너 대조한다 — 붙임 8 의 자가소비 수량(ⓐ 자료 원천)과 리포트
+    0절의 자가소비율 × PV 발전량(ⓑ)이 **같아야 한다** (`HOUSEHOLD_FIRST` 한정).
+
+    ⚠ 이 갈래에서는 ⓐ(`min(발전,부하)` 반사실)와 ⓑ(발전 − 잉여, 실제 배분)가
+    **수치로 같다** — 가구가 그 스텝에 쓸 수 있는 만큼 실제로 쓰기 때문이다
+    (`_resolve_ess_dispatch_inputs` 독스트링의 `HOUSEHOLD_FIRST` 절 참조).
+    `BATTERY_FIRST` 에서는 둘이 다르므로(ⓐ ≠ 0, ⓑ = 0) 여기서 견주지 않는다.
+
+    ⚠⚠ **동어반복이 아니다** — 두 값을 각각 다른 자리에서 읽는다: ⓐ 는
+    `core/report/unreflected.py::_measured_quantities`(대표일 시간대별 운전
+    결과에서 `min(발전,부하)` 를 스텝마다 합산)로, ⓑ 는 리포트 0절이 실제로
+    인쇄한 퍼센트 문자열(`_self_consumption_ratio_pct`)에 **실제 PV 운전
+    결과**(`outcome.dispatch.per_resource["e2e-pv"]`)의 발전량을 곱해 얻는다 —
+    어느 쪽도 `pv_allocation.measured_self_consumption_ratio` 를 다시 부르지
+    않는다.
+    """
+    outcome = _run(_CROSS_PRIORITY_LOAD_KWH, priority=PVAllocationPriority.HOUSEHOLD_FIRST)
+    hours = build_hourly_profile(outcome.dispatch)
+    measured = _measured_quantities(hours)
+    assert measured is not None, "부하 자원이 서지 않아 ⓐ 를 잴 수 없다"
+
+    generation_kwh = sum(outcome.dispatch.per_resource["e2e-pv"].electric)
+    ratio_pct = _self_consumption_ratio_pct(outcome)
+    implied_self_consumption_kwh = generation_kwh * ratio_pct / 100
+
+    # 표시가 정수 %로 반올림되므로 최대 오차는 발전량의 0.5%다 — 여유를 두어
+    # 판정한다(실제 어긋남을 가리지 않을 만큼 좁게).
+    tolerance_kwh = 0.006 * generation_kwh + 1e-6
+    assert implied_self_consumption_kwh == pytest.approx(
+        measured.self_consumption, abs=tolerance_kwh
+    ), (
+        f"붙임 8 자가소비(ⓐ) {measured.self_consumption:,.4f}kWh/일 과 "
+        # RUF001: 「×」는 사람이 읽는 산식 문면이다 — `x` 로 바꾸면 곱셈이 변수
+        # 이름으로 읽힌다(`core/casegrid/operating_lines.py` 가 세운 규약).
+        f"리포트 0절 자가소비율({ratio_pct}%) × PV 발전량({generation_kwh:,.4f}kWh/일) = "  # noqa: RUF001
+        f"{implied_self_consumption_kwh:,.4f}kWh/일 이 다르다"
+    )
+
+
+def test_pv_operating_mode_shows_declaration_and_actual_allocation() -> None:
+    """★★ 「운전 방식」 칸 — 선언(`전량 판매`)과 본 실행 배분 순서를 함께 적는다
+    (판정 §4 나-4). 두 값이 달라 보이는 것은 결함이 아니라 같은 뿌리다.
+    """
+    for priority in (PVAllocationPriority.HOUSEHOLD_FIRST, PVAllocationPriority.BATTERY_FIRST):
+        outcome = _run(_CROSS_PRIORITY_LOAD_KWH, priority=priority)
+        operating_mode = _pv_resource_line(outcome).operating_mode
+        assert "전량 판매" in operating_mode and "(선언)" in operating_mode, (
+            f"{priority.value}: 선언값(전량 판매)이 「운전 방식」 칸에서 사라졌다: "
+            f"{operating_mode!r}"
+        )
+        assert f"본 실행 배분: {priority.value}" in operating_mode, (
+            f"{priority.value} 로 돌렸는데 「운전 방식」 칸이 그 배분을 보이지 "
+            f"않는다: {operating_mode!r}"
+        )

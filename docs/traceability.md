@@ -256,7 +256,7 @@
 |  |  | 1 | `FR-703-AC1.payback-simple` | 단순 회수기간 누적 현금흐름 0 도달 — 소수점 보간 | 자동 | test_indicators.py 3건 |
 |  |  | 1 | `FR-703-AC1.payback-discounted` | 할인 회수기간 할인 후 누적 0 도달 — 주 지표. 오라클 §13.0.2 순위 2 / 0.01% | 자동 | test_metrics.py 8건 |
 |  |  | 1 | `FR-703-AC1.household-saving` | 가구당 월 절감액 원/호·월 — 주민 설득용 | 자동 | test_indicators.py |
-|  |  | 1 | `FR-703-AC1.self-consumption` | 연간 자가소비율 % | 자동 | test_indicators.py |
+|  |  | 1 | `FR-703-AC1.self-consumption` | 연간 자가소비율 % | 자동 | test_pv_surplus_allocation_priority.py 3건, test_indicators.py |
 |  |  | 1 | `FR-703-AC1.supply-duty` | 초과발전량 우선공급 의무 충족률 % — 제도 준수 지표. 현행 기준값 70%는 규제 프로파일(FR-504)이 들고 있으며 이 조항에 고정하지 않는다 | 자동 | test_indicators.py |
 |  |  | 1 | `FR-703-AC1.fiscal-pv` | 정부 재정 부담 현가 원 — 지원 조합 비교용 (FR-609) | 자동 | test_indicators.py |
 | `FR-704` | Must-have | 1 | `FR-704-AC1` | 주민: 자부담액 대비 요금 절감 회수기간 | 자동 | test_transfer.py |

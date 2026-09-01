@@ -25,8 +25,10 @@ import 한다 — **순환 import**가 되어 `lint-imports` 의 계층 계약�
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import cast
 
+from core.cba.metrics import self_consumption_rate
 from core.contracts.der import DispatchContext
 from core.der.ess import ESSChargeSource, ESSOperatingMode
 from core.der.load import Load
@@ -77,9 +79,16 @@ def _resolve_ess_dispatch_inputs(
     *,
     pv_allocation_priority: PVAllocationPriority | str | None,
     household: Load | None,
-) -> tuple[ESSOperatingMode | str, ESSChargeSource | str, list[float]]:
+) -> tuple[ESSOperatingMode | str, ESSChargeSource | str, list[float], PVAllocationPriority]:
     """운전 방법·충전원·PV 잉여 배분 순서를 고른다 (판정 §1·§3·A-3·A-6,
     `docs/decisions-2026-09-01-R51.md` §1).
+
+    ★ **넷째 반환값(`priority`)은 판정 §4 나-4 의 재료다** — 리포트가 「운전
+    방식」 칸에 *이 실행이 실제로 고른* 배분 순서를 적으려면 승격·거부까지
+    끝난 값이 필요하고, 그 승격은 이 함수 안에서만 일어난다. 호출부가
+    `case_values`·인자를 다시 따라가며 같은 우선순위 사슬을 재현하면 이 함수의
+    사슬과 갈릴 수 있다(둘이 따로 바뀌면 조용히 어긋난다) — 그래서 여기서
+    돌려준다.
 
     우선순위(운전 방법·충전원·배분 순서 셋 모두 같은 모양): 호출 인자 →
     `case_values`(문자열로 와도 받는다 — `FR-105-AC5` 가 이미 그 관례다) →
@@ -206,4 +215,32 @@ def _resolve_ess_dispatch_inputs(
             pv.surplus_kwh(year=1) / annual_generation_kwh if annual_generation_kwh > 0.0 else 0.0
         )
         surplus_profile_kwh = [v * surplus_ratio for v in pv_dispatch.electric]
-    return mode, source, surplus_profile_kwh
+    return mode, source, surplus_profile_kwh, priority
+
+
+def measured_self_consumption_ratio(
+    pv: PV, ctx: DispatchContext, surplus_profile_kwh: Sequence[float]
+) -> float:
+    """대표일 자가소비율 — 판정 §4 ⓑ(**실제 배분**). 리포트 0절 「자가소비율」
+    칸의 실측치다.
+
+    ⚠⚠ **이것은 `core/report/unreflected.py::_measured_quantities` 의
+    ⓐ(**반사실** — 「자가소비했다면 얼마였을까」, `min(발전,부하)` 스텝합)와
+    다른 값을 낸다.** 갈래가 `BATTERY_FIRST` 면 ⓑ 는 항등적으로 0 이고 ⓐ 는
+    0 이 아니다 — 판정 §4 가 요구하는 것은 ⓑ 다(*「배터리 우선」 갈래에서도
+    참이어야 한다 — 그 갈래의 실제 자가소비는 0 이므로 0% 가 맞다*). 두 값은
+    공존하며 어느 쪽도 다른 쪽을 대신하지 않는다.
+
+    자가소비 kWh = Σ(PV 스텝 발전) − Σ(그 실행의 PV 잉여 시계열). `surplus_
+    profile_kwh` 는 `_resolve_ess_dispatch_inputs()` 의 셋째 반환값이며 **여기서
+    다시 계산하지 않는다** — 새로 지으면 이 함수가 부른 갈래와 잉여를 만든
+    갈래가 갈릴 수 있다.
+
+    분자·분모 나눗셈은 `core.cba.metrics.self_consumption_rate`
+    (`FR-703-AC1.self-consumption`)에 위임한다 — 그 함수가 이미 「발전 0 이면
+    0」 규약과 오차 범위를 검사로 붙들고 있다(`tests/cba/test_indicators.py`).
+    이 저장소가 그 함수를 배포 경로에서 부르는 첫 자리다.
+    """
+    generation_kwh = sum(pv.dispatch(ctx).electric)
+    self_consumed_kwh = generation_kwh - sum(surplus_profile_kwh)
+    return self_consumption_rate(self_consumed_kwh, generation_kwh)

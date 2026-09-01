@@ -54,6 +54,7 @@ from core.casegrid.pv_allocation import (
     ESS_OPERATING_MODE_DEFAULT,  # noqa: F401
     PV_ALLOCATION_PRIORITY_DEFAULT,  # noqa: F401
     _resolve_ess_dispatch_inputs,
+    measured_self_consumption_ratio,
 )
 from core.cba.metrics import npv, payback_discounted
 from core.cba.proforma import (
@@ -642,11 +643,14 @@ def run_single_case_e2e(
     # 묶어 부르는 이유는 계산 자체가 아니라 `PLR0915`(이 함수의 statement 상한)
     # 다 — 이 함수는 이미 그 상한에 닿아 있었다(브리프 실측).
     ctx = DispatchContext(steps=STEPS_PER_DAY, dt=SECONDS_PER_HOUR, year=Year(1))
-    resolved_ess_operating_mode, resolved_ess_charge_source, ess_pv_surplus_profile_kwh = (
-        _resolve_ess_dispatch_inputs(
-            ess_operating_mode, ess_charge_source, case_values, pv, ctx,
-            pv_allocation_priority=pv_allocation_priority, household=household,
-        )
+    (
+        resolved_ess_operating_mode,
+        resolved_ess_charge_source,
+        ess_pv_surplus_profile_kwh,
+        resolved_pv_allocation_priority,
+    ) = _resolve_ess_dispatch_inputs(
+        ess_operating_mode, ess_charge_source, case_values, pv, ctx,
+        pv_allocation_priority=pv_allocation_priority, household=household,
     )
 
     ess = ESS(
@@ -913,7 +917,13 @@ def run_single_case_e2e(
         # 곱해서 나온 합계만 보면 드러나지 않는다.
         dispatch=grid_export_result,
     )
-    resource_lines = _resource_lines(pv, pv_capex, ess, ess_capex, benefit_lines)
+    resource_lines = _resource_lines(
+        pv, pv_capex, ess, ess_capex, benefit_lines,
+        self_consumption_ratio=measured_self_consumption_ratio(
+            pv, ctx, ess_pv_surplus_profile_kwh
+        ),
+        pv_allocation_priority=resolved_pv_allocation_priority,
+    )
 
     return CaseOutcome(
         metrics=_metrics_for(initial_investment, all_rows, discount_rate),
@@ -1043,12 +1053,20 @@ def _resource_lines(
     ess: ESS,
     ess_capex: float,
     benefits: Sequence[BenefitLine],
+    *,
+    self_consumption_ratio: float,
+    pv_allocation_priority: PVAllocationPriority,
 ) -> tuple[ResourceLine, ...]:
     """평가 대상 자원 제원 — 리포트 0절의 재료 (`ResourceLine` 독스트링).
 
     ★ **정책 가정 경고도 여기서 실린다** (`FR-404-AC1` · R48 §7). 훅은 `DER`
     계약에 있으므로 자원 종류를 묻지 않는다 — 새 자원이 경고를 내기 시작해도
     이 함수도 리포트도 한 줄이 바뀌지 않는다.
+
+    ★★ **`self_consumption_ratio`·`pv_allocation_priority` 는 호출자가 이미
+    본 실행에서 잰 값을 받는다 — 여기서 다시 재지 않는다** (판정 §4 나-2).
+    모듈 상수(`PV_SELF_CONSUMPTION_RATIO`)에서 읽으면 실제 배분 결과가 바뀌어도
+    이 칸이 그대로여서 아무 예외도 나지 않는다 — 위 정책 경고와 같은 함정.
     """
 
     def produced_by(resource: str) -> tuple[str, ...]:
@@ -1063,11 +1081,24 @@ def _resource_lines(
             # ★ **세운 자원에서 읽는다.** 모듈 상수에서 읽으면 용량 스윕이
             # 도는 동안에도 리포트가 기준 용량을 계속 인쇄한다 — 값이 바뀌어도
             # 아무 예외가 나지 않는 형태다.
+            # ★★ **자가소비율은 `PV_SELF_CONSUMPTION_RATIO`(모듈 상수)가 아니라
+            # 본 실행의 실측치를 받는다** (판정 §4). `BATTERY_FIRST` 갈래에서만
+            # 그 상수가 계속 쓰이며(`pv_allocation._resolve_ess_dispatch_inputs`
+            # 독스트링), 여기 인쇄되는 값은 갈래와 무관하게 이 실행이 실제로
+            # 배분한 결과다 — 「(본 실행 실측)」 문면이 그 사실을 표시한다.
             capacity=(
                 f"{pv.capacity_kw:g} kW · 이용률 {PV_CAPACITY_FACTOR:.0%} · "
-                f"자가소비율 {PV_SELF_CONSUMPTION_RATIO:.0%}"
+                f"자가소비율 {self_consumption_ratio:.0%} (본 실행 실측)"
             ),
-            operating_mode=str(pv.operating_mode),
+            # ★★ **선언(전량 판매)과 본 실행 배분 순서를 함께 적는다** (판정
+            # §4 나-4). 두 값이 서로 달라 보이는 것은 결함이 아니다 — PV 는
+            # 잉여를 전량 판매로 「선언」했고, 그 잉여가 무엇인지는 `pv_
+            # allocation_priority` 축이 낮 동안 따로 정한다(같은 뿌리, 판정
+            # §4 ⚠). 배분 순서는 실행이 실제로 고른 값(`resolved_pv_allocation_
+            # priority`)에서 읽는다 — 지어내지 않는다.
+            operating_mode=(
+                f"{pv.operating_mode} (선언) · 본 실행 배분: {pv_allocation_priority}"
+            ),
             lifetime_years=int(pv.lifetime),
             unit_capex=f"{pv_capex:,.0f}원/kW",
             capex_won=int(pv.capex(year=1)),
