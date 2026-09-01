@@ -1,9 +1,12 @@
-"""TOU 차익거래 편익 — FR-401-AC2.TouArbitrage · FR-402-AC2.A · .E.
+"""TOU 차익거래 편익 — FR-401-AC2.TouArbitrage · FR-402-AC2.E.
 
 R48 판정 §4 가 비워 둔 자리다. `TOU_ARBITRAGE` 는 **계통에 파는 운전**인데
 `SelfConsumption` 편익이 붙어 있었고, R48 이 그 오매핑을 떼면서 자리를 비웠다 —
 그래서 `ESS.value_streams()` 가 그 모드에서 **빈 튜플**을 돌려주고
 `ESS.tou_arbitrage_benefit()`(`RC-ESS-B1`)은 **호출자가 단위시험 하나뿐**이었다.
+
+⚠ **`SurplusSale` 과의 관계는 R51/WP-5 가 유형 A 배타에서 수량 차감으로
+바꿨다**(사용자 판정 §4) — 이 파일의 「더는 배타가 아니다」절이 그것을 잰다.
 
 **오라클**: 순위 1 (해석해) — 곱 둘의 차이라 손계산으로 재현 가능하며,
 `ESS.tou_arbitrage_benefit()` 과 **대조한다**(같은 산식이 두 자리에 있으므로
@@ -16,7 +19,6 @@ import pytest
 
 from core.contracts.der import DispatchResult
 from core.contracts.units import Money, to_won
-from core.contracts.validation import ValidationError
 from core.contracts.valuestream import ExclusionType, Payer
 from core.der.ess import ESS, ESSOperatingMode
 from core.valuestream import (
@@ -260,37 +262,40 @@ def test_negative_inputs_are_refused(field: str, value: float) -> None:
         _tou(**{field: value})
 
 
-# ── 배타 유형 A — SurplusSale (FR-402-AC2.A) ─────────────────────────────
+# ── 더는 배타가 아니다 — 수량 차감으로 대신한다 (R51/WP-5 · 판정 §4) ────────
 
 
 @pytest.mark.req("FR-402-AC2.A")
-def test_surplus_sale_pair_is_type_a_and_is_refused_on_the_execution_path() -> None:
-    """★★ `SurplusSale` 과는 **유형 A** 이고 **거부**된다.
+def test_surplus_sale_pair_is_no_longer_an_exclusion() -> None:
+    """★★ `SurplusSale` 과는 **더는 배타가 아니다** — 수량에서 뺀다.
 
-    TOU 차익거래는 **계통으로 방전**하고 잉여판매는 **시스템 총 역송량**으로
-    계산되므로 같은 kWh 가 두 항목에 각각 **판매**로 들어간다 — R48 판정 §4 의
-    *「계통 방전분이 태양광의 잉여판매에 얹혀 있다」* 와 같은 자리다.
+    R50 은 이 쌍을 유형 A(같은 kWh 가 두 항목에 각각 판매로 들어간다)로 막았다.
+    사용자 판정 §4(`docs/decisions-2026-09-01-R51.md`)는 그것을 *「두 번 센
+    것」*이 아니라 *「같은 전력이 길을 돌아간 것」*으로 다시 읽는다 — 답은
+    「둘 중 하나를 끄라」가 아니라 **「잉여판매 수량에서 그 몫을 빼라」**다.
+    차감은 `SurplusSale.non_pv_ess_discharge_kwh` 가 지고, 그 값을 계산해
+    넘기는 것은 러너(`core/casegrid/e2e_runner.py`)다 — 이 파일은 편익 계약
+    수준의 배타 여부만 본다(수량 차감 자체는
+    `tests/valuestream/test_surplus_sale.py`·
+    `tests/casegrid/test_surplus_sale_charge_source_deduction.py` 가 잰다).
 
-    ⚠ **표시가 아니라 거부여야 한다.** 유형 A 는 「차단 100%」이며
-    `assert_no_exclusions()` 가 실행 경로에 배선돼 있다 — 유형 `E` 가 아직
-    표시까지인 것과 다르다(`tests/valuestream/test_grid_dispatch_benefits.py`
-    의 부채 래칫).
+    ⚠ **정당한 동시 운전을 지우지 않는다는 것까지 함께 본다** — 배타로 막으면
+    ESS 는 `GRID` 충전으로 차익거래를 하고 PV 잉여는 따로 파는 구성이
+    사라진다(판정 §4 의 요점).
     """
-    rule = find_rule("TouArbitrage", "SurplusSale")
-    assert rule is not None, (
-        "TouArbitrage ↔ SurplusSale 배타 규칙이 docs/exclusion-rules.yaml 에 "
-        "없습니다 (FR-402-AC2.A · R48 판정 §4)"
+    assert find_rule("TouArbitrage", "SurplusSale") is None, (
+        "TouArbitrage ↔ SurplusSale 배타 규칙이 아직 docs/exclusion-rules.yaml 에 "
+        "있습니다 — R51/WP-5 가 뗐어야 합니다(판정 §4)"
     )
-    assert rule.exclusion_type is ExclusionType.A
-    assert rule.applies_to_profile is None
-    assert rule.applies_to_structure is None
 
-    with pytest.raises(ValidationError, match="TouArbitrage ↔ SurplusSale"):
-        build_report(
-            [_tou(), SurplusSale(sale_price_won_per_kwh=120.0)],
-            _dispatch_electric([10.0, 20.0]),
-            year=1,
-        )
+    report = build_report(
+        [_tou(), SurplusSale(sale_price_won_per_kwh=120.0)],
+        _dispatch_electric([10.0, 20.0]),
+        year=1,
+    )
+    states = {line.tag: line.state for line in report.all_lines()}
+    assert states["TouArbitrage"] != STATE_EXCLUDED
+    assert states["SurplusSale"] != STATE_EXCLUDED
 
 
 @pytest.mark.req("FR-402-AC1", "FR-402-AC2.E")

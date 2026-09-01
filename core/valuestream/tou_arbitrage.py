@@ -139,14 +139,23 @@ class TouArbitrage(ValueStream):
         )
 
     def exclusions(self) -> list[tuple[str, ExclusionType, str]]:
-        """`SurplusSale` 과 **유형 A** 배타 (FR-402-AC2.A · R48 §4).
+        """더는 `SurplusSale` 과 배타가 아니다 (R51/WP-5 · 사용자 판정 §4).
 
-        TOU 차익거래는 **계통으로 방전**하고, `SurplusSale` 은 **시스템 총
-        역송량**으로 계산된다 — 같은 kWh 가 두 항목에 각각 판매로 들어간다.
-        R48 §4 의 *「⚠⚠⚠ 계통 방전분이 태양광의 잉여판매에 얹혀 있다」* 와
-        **같은 자리**이며, 그것이 유형 `A`(동일 물리량 이중 판매)다.
+        R50 은 여기서 `SurplusSale` 과 유형 `A`(동일 물리량 이중 판매)를
+        선언했다 — TOU 차익거래는 계통으로 방전하고 `SurplusSale` 은 시스템
+        총 역송량으로 계산되므로 같은 kWh 가 두 항목에 각각 판매로 들어간다는
+        근거였다(R48 §4). **방향은 맞았지만 답이 틀렸다.**
 
-        ## ⚠⚠ `SelfConsumption`·`PeakShaving` 과는 **배타가 아니다**
+        사용자 판정 §4(`docs/decisions-2026-09-01-R51.md`)는 그것을 *「두 번
+        센 것」*이 아니라 *「같은 전력이 길을 돌아간 것」*으로 다시 읽는다 —
+        ESS 의 충전원이 태양광 잉여면 그 방전분은 태양광 판매로 세는 것이
+        맞고, 계통이면 세면 안 된다. **답은 배타(둘 중 하나를 끄라)가 아니라
+        `SurplusSale` 의 수량에서 그 몫을 빼는 것**이다 — `core/valuestream/
+        surplus_sale.py::SurplusSale` 의 `non_pv_ess_discharge_kwh` 인자.
+        배타로 남겨 두면 ESS 는 계통 충전으로 차익거래를 하고 태양광 잉여는
+        따로 파는 **정당한 동시 운전**을 지운다.
+
+        ## ⚠⚠ `SelfConsumption`·`PeakShaving` 과도 **배타가 아니다**
 
         셋 다 **운전 주체가 사업자**이고 `ESS.mode_weights` 가 혼합 모드를
         **명시로 허용**한다. 배타로 적으면 **정당한 동시 계상을 지운다** —
@@ -155,14 +164,8 @@ class TouArbitrage(ValueStream):
 
         ⚠ 선언은 아무것도 강제하지 않는다. 정본은 `docs/exclusion-rules.yaml`
         이며(FR-402-AC4) 이 선언이 그 표와 어긋나지 못하게
-        `tests/contract/test_exclusion_declaration_matches_table.py` 가 붙든다.
+        `tests/contract/test_exclusion_declaration_matches_table.py` 가 붙든다
+        — 그래서 정본에서 뗀 규칙은 여기서도 함께 뗀다(안 떼면 「선언은
+        하는데 표에는 없다」로 그 검사가 잡는다).
         """
-        return [
-            (
-                "SurplusSale",
-                ExclusionType.A,
-                "TOU 차익거래는 계통으로 방전하고 잉여판매는 시스템 총 역송량으로 "
-                "계산된다 — 같은 kWh 를 두 항목에 각각 판매로 계상할 수 없다 "
-                "(유형 A)",
-            ),
-        ]
+        return []

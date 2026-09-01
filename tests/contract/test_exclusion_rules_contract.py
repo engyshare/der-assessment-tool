@@ -67,8 +67,12 @@ def test_the_table_comes_from_the_data_file() -> None:
     #  둘(`NWAs`·`CP`) × 사용자 운전 편익 둘(`SelfConsumption`·`PeakShaving`).
     #  R50 이 `TouArbitrage` 를 세워 셋을 더해 11 → 14 가 됐다 — `SurplusSale` 과
     #  유형 A 하나(같은 kWh 를 둘 다 **판매**로 계상한다) + 계통 급전 편익 둘과
-    #  유형 E 둘. 그래서 운전 주체 축은 **2 × 3 = 6쌍**이다.)
-    assert len(from_file) == 14
+    #  유형 E 둘. 그래서 운전 주체 축은 **2 × 3 = 6쌍**이다.
+    #  R51/WP-5 가 `TouArbitrage` ↔ `SurplusSale` 유형 A 한 줄을 떼어 14 → 13
+    #  이 됐다(사용자 판정 §4) — 같은 전력이 ESS 를 경유한 것이므로 배타가
+    #  아니라 잉여판매 수량에서 비-태양광 방전분을 빼는 것으로 바뀌었다.
+    #  유형 E 여섯은 그대로다.)
+    assert len(from_file) == 13
 
 
 @pytest.mark.contract

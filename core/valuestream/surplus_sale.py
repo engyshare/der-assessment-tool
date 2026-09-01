@@ -12,6 +12,7 @@ from typing import ClassVar
 
 from core.contracts.der import DispatchResult
 from core.contracts.units import Money, to_won
+from core.contracts.validation import ValidationError
 from core.contracts.valuestream import ExclusionType, Payer, ValueStream
 
 
@@ -56,38 +57,87 @@ class SurplusSale(ValueStream):
         sale_price_won_per_kwh: float,
         enabled: bool = True,
         structure: str | None = None,
+        non_pv_ess_discharge_kwh: float = 0.0,
     ) -> None:
+        """`non_pv_ess_discharge_kwh` — **태양광과 무관한**(`ESSChargeSource.GRID`
+        충전) ESS 방전분이며, 그만큼을 잉여판매 수량에서 뺀다(사용자 판정
+        §4, `docs/decisions-2026-09-01-R51.md`). `PV_SURPLUS` 충전분은 태양광
+        전력이 ESS 를 경유한 것이라 빼지 않는다 — 그 몫은 이 인자에 담지 않는다.
+
+        ⚠ **`dispatch`(대표일 창)와 같은 단위다 — 연간 kWh 가 아니다.**
+        `annual_value`·`formula` 가 받는 `dispatch` 는 대표일 하나이고 이
+        메서드의 반환값에 `DAYS_PER_YEAR` 를 곱하는 것은 호출측
+        (`core/casegrid/operating_lines.py::annualise`)이다. 연간 방전량을
+        그대로 넘기면 그 창의 하루치가 아니라 연간치를 대표일에서 빼게 된다.
+
+        기본값 **0.0** — 기존 호출자 전부가 그대로 동작한다.
+        """
         super().__init__(name="잉여전력 판매", enabled=enabled, structure=structure)
         if sale_price_won_per_kwh < 0:
             raise ValueError(
                 f"판매단가는 음수일 수 없습니다: {sale_price_won_per_kwh}. "
                 "음수 단가는 판매가 아닌 지불이며, 입력 부호가 바뀐 것인지 확인하십시오"
             )
+        if non_pv_ess_discharge_kwh < 0:
+            raise ValueError(
+                f"비-태양광 ESS 방전분은 음수일 수 없습니다: {non_pv_ess_discharge_kwh}. "
+                "충전원이 계통(GRID)인 ESS 의 방전량을 계산해 넘기고 있는지 확인하십시오"
+            )
         self._price = sale_price_won_per_kwh
+        self._non_pv_ess_discharge_kwh = non_pv_ess_discharge_kwh
 
     def annual_value(self, dispatch: DispatchResult, *, year: int) -> Money:
         if not self.enabled:
             return to_won(0)
-        # electric 양수 = 계통으로 내보낸 전력(잉여). 음수(소비)는 0으로 클램프.
-        surplus_kwh = self._surplus_kwh(dispatch)
-        return to_won(surplus_kwh * self._price)
+        return to_won(self._net_surplus_kwh(dispatch) * self._price)
 
     def formula(self, dispatch: DispatchResult, *, year: int) -> str:
-        """잉여 역송 × 판매단가 — `ValueStream.formula` 계약.
+        """잉여 역송(− 비PV ESS 방전) × 판매단가 — `ValueStream.formula` 계약.
 
-        ⚠ **수량을 `annual_value` 와 같은 함수에서 읽는다**(`_surplus_kwh`).
-        여기서 클램프를 다시 적으면 사본이 되고, 음수 처리 규칙이 한쪽만
+        ⚠ **수량을 `annual_value` 와 같은 함수에서 읽는다**(`_net_surplus_kwh`).
+        여기서 클램프·차감을 다시 적으면 사본이 되고, 그 규칙이 한쪽만
         바뀌면 산식과 금액이 조용히 갈린다.
         """
+        if self._non_pv_ess_discharge_kwh > 0.0:
+            return (
+                f"잉여 역송 {self._gross_surplus_kwh(dispatch):,.2f}kWh − "  # noqa: RUF001
+                f"비PV ESS 방전 {self._non_pv_ess_discharge_kwh:,.2f}kWh = "
+                f"{self._net_surplus_kwh(dispatch):,.2f}kWh "
+                f"× 판매단가 {self._price:,.0f}원/kWh"  # noqa: RUF001
+            )
         return (
-            f"잉여 역송 {self._surplus_kwh(dispatch):,.2f}kWh "
+            f"잉여 역송 {self._net_surplus_kwh(dispatch):,.2f}kWh "
             f"× 판매단가 {self._price:,.0f}원/kWh"  # noqa: RUF001
         )
 
     @staticmethod
-    def _surplus_kwh(dispatch: DispatchResult) -> float:
+    def _gross_surplus_kwh(dispatch: DispatchResult) -> float:
         """계통으로 내보낸 전력 — 음수(소비)는 0으로 클램프."""
         return sum(max(0.0, e) for e in dispatch.electric)
+
+    def _net_surplus_kwh(self, dispatch: DispatchResult) -> float:
+        """잉여판매로 계상할 수량 — 총 역송량에서 비-태양광 ESS 방전분을
+        뺀다(판정 §4).
+
+        ⚠ **결과가 음수면 조용히 0 으로 자르지 않고 거부한다** — 자르면
+        차감량이 실제 역송량을 초과했다는 사실이 사라진다.
+        """
+        net = self._gross_surplus_kwh(dispatch) - self._non_pv_ess_discharge_kwh
+        if net < 0.0:
+            raise ValidationError(
+                field="valuestream.SurplusSale.non_pv_ess_discharge_kwh",
+                reason=(
+                    "비-태양광 ESS 방전분"
+                    f"({self._non_pv_ess_discharge_kwh:,.2f}kWh)이 총 역송량"
+                    f"({self._gross_surplus_kwh(dispatch):,.2f}kWh)을 초과합니다"
+                ),
+                action=(
+                    "충전원이 계통(GRID)인 ESS 의 방전량이 그 창의 총 역송량을 "
+                    "넘지 않는지 확인하십시오 — 초과는 디스패치 구성이 어긋났다는 "
+                    "신호입니다"
+                ),
+            )
+        return net
 
     def exclusions(self) -> list[tuple[str, ExclusionType, str]]:
         # 자가소비한 kWh 와 잉여 kWh 는 같은 1 kWh 를 두 용도로 쓸 수 없다 (유형 A).

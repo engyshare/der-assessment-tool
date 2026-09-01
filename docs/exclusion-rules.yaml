@@ -154,11 +154,12 @@ rules:
   #
   # R48 이 `TOU_ARBITRAGE` → `SelfConsumption` **오매핑을 뗐고 그 자리를 비워
   # 두었다.** `FR-401-AC2.TouArbitrage` 가 그 자리를 채우면서 규칙 셋이 함께
-  # 선다 — **유형 A 하나 · 유형 E 둘**이다.
+  # 섰다 — **당시 유형 A 하나 · 유형 E 둘**(R51/WP-5 가 유형 A 를 뗀 경위는
+  # 바로 아래 블록).
   #
   # ⚠ **유형이 갈리는 지점을 헷갈리지 않는다.**
   #
-  #     SurplusSale 과는 A  같은 kWh 가 두 항목에 각각 **판매**로 들어간다
+  #     SurplusSale 과는 배타가 아니다(R51/WP-5 — 아래 블록 참조)
   #     NWAs·CP 와는 E     같은 운전에 **애초에 함께 존재할 수 없다**
   #
   # ⚠⚠ **`SelfConsumption`·`PeakShaving` 과는 배타를 적지 않는다.** 셋 다 운전
@@ -166,14 +167,27 @@ rules:
   # (`tests/der/test_ess.py` 가 `TOU_ARBITRAGE 0.5 + PEAK_SHAVING 0.2` 를 돌린다).
   # 배타로 적으면 **정당한 동시 계상을 지우며**, 그것은 `FR-402-AC1` 이 명시로
   # 금지한 방향이다 — 겁내서 하나만 세면 과대 지원을 요구하게 된다.
-  - benefit_a: TouArbitrage
-    benefit_b: SurplusSale
-    type: A
-    rationale: >-
-      TOU 차익거래는 계통으로 방전하고 잉여판매는 시스템 총 역송량으로 계산되므로
-      같은 kWh 가 두 항목에 각각 판매로 들어간다 — R48 판정 §4 「계통 방전분이
-      태양광의 잉여판매에 얹혀 있다」와 같은 자리다
-
+  #
+  # ── R51/WP-5 가 위 「`TouArbitrage` ↔ `SurplusSale` 유형 A」 한 줄을 **뗀다**
+  #    (사용자 판정 §4, `docs/decisions-2026-09-01-R51.md`) ─────────────────
+  #
+  # R50 이 유형 A 로 적은 근거는 *「TOU 차익거래는 계통으로 방전하고 잉여판매는
+  # 시스템 총 역송량으로 계산되므로 같은 kWh 가 두 항목에 각각 판매로 들어간다」*
+  # 였다 — **방향은 맞다.** 그런데 사용자 판정 §4 는 그것을 *「두 번 센 것」*이
+  # 아니라 *「같은 전력이 길을 돌아간 것」*으로 다시 읽는다: ESS 의 충전원이
+  # `PV_SURPLUS` 면 그 방전분은 **태양광 전력이 ESS 를 경유한 것**이라 태양광
+  # 판매로 세는 것이 맞고(손실 제외), `GRID` 면 태양광과 무관하므로 세면 안
+  # 된다. **답은 「둘 중 하나를 끄라」가 아니라 「잉여판매 수량에서 그 몫을
+  # 빼라」다** — 배타로 막으면 `TouArbitrage` 와 `SurplusSale` 의 **정당한 동시
+  # 운전**(예: ESS 는 `GRID` 충전으로 차익거래를 하고, PV 잉여는 따로 판매하는
+  # 구성)을 지운다.
+  #
+  # 차감은 `core/valuestream/surplus_sale.py::SurplusSale.__init__` 의
+  # `non_pv_ess_discharge_kwh` 인자가 지고, 러너(`core/casegrid/e2e_runner.py`)가
+  # ESS 의 충전원이 `GRID` 일 때만 그 ESS 의 방전량을 계산해 넘긴다(`PV_SURPLUS`
+  # 면 0.0). **그래서 이 쌍은 더는 배타가 아니다** — 수량 자체가 겹치지 않도록
+  # 만들었으므로 둘을 동시에 켜도 이중 계상이 없다. 규칙 총수가 14 → 13,
+  # 유형 A 가 5 → 4 로 준다(유형 E 는 6 그대로).
   - benefit_a: NWAs
     benefit_b: TouArbitrage
     type: E

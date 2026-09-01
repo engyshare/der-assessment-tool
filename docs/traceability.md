@@ -128,7 +128,7 @@
 | `FR-305` | Nice-to-have | 3 | `FR-305-AC1` | 임의 시점 N시간 정전 시 부하 지속 시간 산출, EENS 화폐가치를 편익 계상 | **미매핑** | — |
 | `FR-401` | Must-have | 1 | `FR-401-AC1` | 편익 1종 = 독립 클래스 1개로 구현되고, 각 편익은 활성화 여부를 개별 토글할 수 있다. 편익을 추가하거나 비활성화해도 코어 엔진(core/engine/·c… | 자동 | test_benefit_line_rendering.py 3건, test_annualisation_convention.py 4건, test_benefit_formula.py 4건, test_der_contract.py 2건, test_aggregated_ppa.py, test_formulas.py, test_grid_dispatch_benefits.py 2건, test_tou_arbitrage.py |
 |  |  | 1 | `FR-401-AC2.SelfConsumption` | SelfConsumption 자가소비 전기요금 절감 — (기존요금 − 신규요금), 누진·TOU 구조 반영 | 자동 | test_pv.py, test_formulas.py |
-|  |  | 1 | `FR-401-AC2.SurplusSale` | SurplusSale 잉여전력 판매 — 잉여량 × 판매단가(직거래/상계/SMP) | 자동 | test_pv.py 2건, test_formulas.py |
+|  |  | 1 | `FR-401-AC2.SurplusSale` | SurplusSale 잉여전력 판매 — 잉여량 × 판매단가(직거래/상계/SMP) (v0.24: 잉여량에서 비-태양광(계통충전) ESS 방전분을 뺀다 — 아래 참… | 자동 | test_surplus_sale_charge_source_deduction.py, test_pv.py 2건, test_formulas.py, test_surplus_sale.py 6건 |
 |  |  | 1 | `FR-401-AC2.REC` | REC REC 수익 — 발전량 × 가중치 × REC 단가 | 자동 | test_pv.py 2건, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.DirectTrade` | DirectTrade 분산특구 직접거래 차익 — (약관요금 − 직접거래단가) × 거래량 − 거래지원수수료 | 자동 | test_formulas.py |
 |  |  | 1 | `FR-401-AC2.PeakShaving` | PeakShaving 기본요금(피크) 절감 — 월 최대수요 저감분 × 기본요금 단가 | 자동 | test_ess.py 2건, test_formulas.py |
@@ -136,7 +136,7 @@
 |  |  | 1 | `FR-401-AC2.AggregatedPPA` | AggregatedPPA 집합 PPA 수익 — 발전량 전량 × PPA 계약단가(약관요금 × 비율) (v0.16 신설) | 자동 | test_e2e_settlement_wiring.py 2건, test_annualisation_convention.py, test_aggregated_ppa.py 5건 |
 |  |  | 1 | `FR-401-AC2.NWAs` | NWAs 계통 기여 보상 (비망대안) — 계통 방전량에 대한 계통 기여 수준 보상. 제도 표시 「제도 필요」 · 기본 비활성(값 0) + 활성화 시 정책 경고 … | 자동 | test_ess.py, test_grid_dispatch_benefits.py 5건 |
 |  |  | 1 | `FR-401-AC2.CP` | CP 용량정산금 — 준중앙급전 등록 자원의 용량정산금. 제도 표시 「제도 보완 필요」 · 기본 비활성(값 0) + 활성화 시 정책 경고 표시 · 배타 FR-40… | 자동 | test_ess.py, test_grid_dispatch_benefits.py 4건 |
-|  |  | 1 | `FR-401-AC2.TouArbitrage` | TouArbitrage TOU 차익거래 — 연간 방전 kWh × 피크단가 − 연간 충전 kWh × 경부하단가(사용자 문면의 「충방전요금차이」). 배타 FR-40… | 자동 | test_ess.py, test_tou_arbitrage.py 7건 |
+|  |  | 1 | `FR-401-AC2.TouArbitrage` | TouArbitrage TOU 차익거래 — 연간 방전 kWh × 피크단가 − 연간 충전 kWh × 경부하단가(사용자 문면의 「충방전요금차이」). SurplusS… | 자동 | test_surplus_sale_charge_source_deduction.py, test_ess.py, test_tou_arbitrage.py 7건 |
 |  |  | 2 | `FR-401-AC2.DemandResponse` | DemandResponse 수요반응 정산금 — 감축량 × 정산단가 (중복·배타 규칙 반영) | **미매핑** | — |
 |  |  | 2 | `FR-401-AC2.VPPMarket` | VPPMarket VPP 시장참여 수익 — 시장정산 − 운영수수료 | **미매핑** | — |
 |  |  | 3 | `FR-401-AC2.Resilience` | Resilience 정전 회피 편익 — EENS × VoLL | **미매핑** | — |
@@ -147,7 +147,7 @@
 |  |  | 1 | `FR-402-AC2.B` | 인과 하류 편익이 상류에 이미 포함 — 배전망 회피 편익 ↔ 전기요금 절감처럼 망 비용이 이미 망이용요금으로 회수된 경우, 하류 편익은 요금에 미반영된 증분만 … | 자동 | test_exclusion.py |
 |  |  | 3 | `FR-402-AC2.C` | 동일 효과의 이중 화폐화 — 같은 tCO2에 배출권 수익(사업자 현금)과 사회적 탄소비용(사회 편익)을 동시 계상하지 않는다. 관점당 하나의 화폐화 방법만 허용… | **미매핑** | — |
 |  |  | 1 | `FR-402-AC2.D` | 제도적 배타 — 상계거래 참여 시 REC 발급 제한, DR 정산금과 요금 인센티브 중복 수취 금지 등은 규제 프로파일에 종속된 배타 규칙으로 관리하고 제도 개정… | 자동 | test_exclusion.py, test_exclusion_reject_wp28b.py |
-|  |  | 1 | `FR-402-AC2.E` | 동시에 성립할 수 없는 운전 — 운전 주체가 계통운영자인 급전 편익(FR-401-AC2.NWAs·FR-401-AC2.CP)과 운전 주체가 사업자인 편익(FR-4… | 자동 | test_ess.py, test_exclusion.py 2건, test_grid_dispatch_benefits.py 4건, test_tou_arbitrage.py 5건 |
+|  |  | 1 | `FR-402-AC2.E` | 동시에 성립할 수 없는 운전 — 운전 주체가 계통운영자인 급전 편익(FR-401-AC2.NWAs·FR-401-AC2.CP)과 운전 주체가 사업자인 편익(FR-4… | 자동 | test_surplus_sale_charge_source_deduction.py, test_ess.py, test_exclusion.py 2건, test_grid_dispatch_benefits.py 4건, test_tou_arbitrage.py 5건 |
 |  |  | 1 | `FR-402-AC4` | 배타 규칙은 코드가 아닌 선언적 규칙 테이블로 관리한다. 각 규칙은 (편익A, 편익B, 배타유형 A~E, 근거, 적용 규제 프로파일) 을 보유한다 (v0.21:… | 자동 | test_exclusion_declaration_matches_table.py, test_exclusion_rules_contract.py 4건, test_exclusion_structure_axis.py 7건, test_mapping_requirements.py |
 |  |  | 1 | `FR-402-AC5` | 편익을 활성화할 때 시스템은 분산자원 경제성 평가 원칙 「부록 A. 편익 항목 추가 시 실무 적용 절차」 의 4문항 판정을 통과했는지 확인하고, 지불 주체가 특… | 자동 | test_payer_structure_contract.py 3건, test_mapping_requirements.py, test_tou_arbitrage.py |
 |  |  | 1 | `FR-402-AC6` | 리포트에 "편익 계상 내역" 을 표시한다: 계상된 편익 / 배타로 제외된 편익 / 증분만 계상된 편익(유형 B) / 미화폐화로 0 처리된 편익 | 자동 | test_phase1_dod.py, test_benefit_breakdown_sheet.py 5건, test_mapping_requirements.py |
