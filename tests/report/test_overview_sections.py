@@ -206,11 +206,18 @@ def test_body_stays_within_the_form_length_budget() -> None:
     가 무너진다. 여기서는 본문(표제~6절 끝)의 줄 수를 본다.
 
     ⚠ `req()` 마커는 달지 않았다 — 분량 규정은 양식 소관이다.
+
+    ⚠ **상한을 200 → 202 로 올렸다 (R51/WP-2).** 고정 O&M 둘
+    (`opex.pv.fixed_om`·`opex.ess.fixed_om`)이 스윕 축이 되면서 본문 5.1
+    영향도 표에 행이 둘 늘었다 — 실측(변경 전 199줄 → 변경 후 201줄, 이
+    골든 시나리오 기준). 사용자 판정 §2 의 *「대장에 오르면 5.1 영향도 축이
+    하나 는다」* 가 예고한 변화이며(이 항목은 둘로 갈랐으므로 둘이 늘었다),
+    값이 아니라 **표의 행 수**가 바뀐 것이다 — 결론축(NPV)은 그대로다.
     """
     text = render_markdown(_report())
     body = text[: text.index("# 붙임")]
     lines = [line for line in body.splitlines() if line.strip()]
-    assert len(lines) <= 200, (
+    assert len(lines) <= 202, (
         f"본문이 {len(lines)}줄이다 — 양식이 정한 부피를 넘었다. "
         "늘어난 것을 붙임으로 내릴 것"
     )

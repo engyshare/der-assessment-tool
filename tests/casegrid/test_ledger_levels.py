@@ -299,6 +299,35 @@ _TARIFF_KEYS_OUTSIDE_THE_SWEEP: dict[str, str] = {
 }
 
 
+#: **운영비 대장 항목 중 스윕 축이 아닌 것과 그 사유** (R51/WP-2 신설).
+#:
+#: 이 이름공간은 지금 막 열렸다(`opex.pv.fixed_om`·`opex.ess.fixed_om` 둘뿐 —
+#: R51/WP-2, 사용자 판정 §2). 설비단가 쪽 래칫과 같은 형태다: 러너가 세우지
+#: 않는 자원의 운영비를 흔들면 변동폭 0원이 나와 「진짜 무영향」과 「미배선」이
+#: 구별되지 않는다.
+#:
+#: ⚠ **지금은 비어 있다** — 러너가 세우는 자원(`PV`·`ESS`·`Load`)의 고정
+#: O&M 둘을 이번에 함께 배선했으므로 면제할 것이 없다. 다음 `opex.*` 항목이
+#: 오면(예: 변동 O&M, `status.md` 착수 순서 23번) 이 자리에 사유와 함께 적는다.
+_OPEX_KEYS_OUTSIDE_THE_SWEEP: dict[str, str] = {}
+
+
+@pytest.mark.req("NFR-202-M1")
+def test_every_opex_ledger_item_is_a_sweep_axis_or_says_why_not() -> None:
+    """★ **래칫.** 운영비 항목이 **축 없이 대장에만 오르면** 빨간불이다.
+
+    `opex.` 이름공간은 R51/WP-2 가 처음 연다. 설비단가·요금 쪽 래칫은
+    접두어로 좁혀져 있어 새 이름공간에는 아무 검사도 없었다 — 다음 사람이
+    `opex.` 항목을 축 없이 대장에만 올려도 조용히 지나갔을 자리다.
+    """
+    _assert_prefix_is_swept_or_says_why_not(
+        prefix="opex.",
+        what="운영비",
+        exemptions=_OPEX_KEYS_OUTSIDE_THE_SWEEP,
+        exemption_name="_OPEX_KEYS_OUTSIDE_THE_SWEEP",
+    )
+
+
 @pytest.mark.req("NFR-202-M1")
 def test_every_tariff_ledger_item_is_a_sweep_axis_or_says_why_not() -> None:
     """★ **래칫.** 요금 단가 항목이 **축 없이 결론에 들어오면** 빨간불이다.

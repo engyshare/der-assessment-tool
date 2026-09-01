@@ -49,6 +49,14 @@
 정책 수치인데 대장에 없어 이 검사를 통과한다. 그것은 lint 의 한계가 아니라
 **대장의 결손**이며, 고칠 자리는 `docs/assumptions.yaml` 이다.
 
+**우연한 충돌 — `COINCIDENTAL_LITERALS`(R51/WP-2-fix).** 차단 규칙은 소스
+리터럴의 맥락(금액인지 개수인지)을 보지 않는다 — 일부러 그렇다, 사람이 한
+번은 보게 만드는 것이 요점이다. 사람이 보고 「우연이다」로 판정한 (경로, 값)
+쌍만 이 목록에 올려 차단을 경고로 내린다. **감추지 않는다** — 면제된 줄도
+경고로 계속 인쇄되고 사유가 붙는다. **사유가 비면 검사가 거부하고**(rc=2),
+**스캔에 있는 경로인데 더 이상 충돌하지 않으면 검사가 rc=1 로 말한다**(낡은
+면제는 다음 사람에게 없는 위험이 있다고 거짓말한다).
+
 ── NFR-205 무엇을 위반으로 보는가 ───────────────────────────────────────
 
 모듈·클래스 수준에서 **가변 컨테이너**(dict·list·set)에 묶인 이름. 근거는
@@ -123,6 +131,61 @@ class Finding:
     lineno: int
     detail: str
     blocking: bool
+    #: 면제 사유 — `COINCIDENTAL_LITERALS` 가 이 (경로, 값)을 잡았을 때만 채운다.
+    #: `None` 이면 면제되지 않은 보통의 경고/차단이다.
+    exempt_reason: str | None = None
+
+
+#: **대장 값과 우연히 같은 소스 리터럴** — (경로, 리터럴) → 사유.
+#:
+#: 이 검사의 차단 규칙(`LedgerValue.blocking`)은 일부러 무디다 — 소스 리터럴의
+#: 맥락(금액인지 개수인지)을 보지 않는다. 그 무딤이 요점이다: 사람이 한 번은
+#: 보게 만든다. **사람이 보고 「우연이다」로 판정한 자리만** 여기 적는다 — 값을
+#: 바꾸거나(사용자 판정으로 금지된 경우가 있다) 소스 리터럴의 표기를 비틀어
+#: (예: `10 * 10_000`) 리터럴 스캔을 피하는 것은 검사기를 속이는 것이며 이
+#: 목록의 대체재가 아니다.
+#:
+#: ⚠ **사유가 비면 검사가 거부한다** (`_blank_exemption_keys`) — 사유 없는
+#: 면제는 면제가 아니다.
+#: ⚠ **경로는 슬래시(POSIX)로 적는다** — `Path.relative_to(root).as_posix()`
+#: 와 같은 표기여야 매칭된다. 역슬래시로 적으면 조용히 아무것도 면제되지 않는다.
+#: ⚠ **낡으면 검사가 말한다** (`_stale_exemptions`) — 스캔에 포함된 경로인데
+#: 더 이상 그 값과 충돌하지 않으면 rc=1 로 「지우십시오」를 낸다. 조용히 지우지
+#: 않는 이유는 낡은 면제가 다음 사람에게 「여기 위험이 있다」고 거짓말하기
+#: 때문이다.
+COINCIDENTAL_LITERALS: dict[tuple[str, float], str] = {
+    ("core/assumption/timeseries.py", 100_000.0): (
+        "CSV 업로드 「행수」 상한이며 금액이 아니다 (FR-905 · NFR-404-AC1). "
+        "대장 opex.pv.fixed_om · opex.ess.fixed_om (100,000원/년, R51/WP-2)"
+        "과 값만 우연히 같다 — 행수와 금액이므로 어느 쪽을 고쳐도 해소되지 "
+        "않는다"
+    ),
+}
+
+
+def _blank_exemption_keys(
+    mapping: dict[tuple[str, float], str],
+) -> list[tuple[str, float]]:
+    """사유가 비어 있는 면제 항목. **사유 없는 면제는 면제가 아니다**
+    (`tests/casegrid/test_ledger_levels.py` 의 같은 이름의 판정과 같은 형태).
+    """
+    return [key for key, reason in mapping.items() if not reason.strip()]
+
+
+def _stale_exemptions(
+    mapping: dict[tuple[str, float], str],
+    used: set[tuple[str, float]],
+    scanned_paths: set[str],
+) -> list[tuple[str, float]]:
+    """스캔에 **포함된 경로**인데 이번 실행에서 실제로는 걸리지 않은 면제.
+
+    ⚠ **경로가 이번 스캔에 없으면 낡았다고 보지 않는다** — `negtest_
+    hardcoded_params.py` 는 임시 저장소 트리 하나만 스캔하며 그 트리에는
+    `core/assumption/timeseries.py` 자체가 없다. 「이 실행에 그 파일이
+    없다」와 「그 파일은 있는데 값이 더 이상 안 맞는다」는 다르다 — 후자만
+    낡은 것이다.
+    """
+    return [key for key in mapping if key[0] in scanned_paths and key not in used]
 
 
 def ledger_values(path: Path) -> list[LedgerValue]:
@@ -169,13 +232,18 @@ def scan_literals(tree: ast.AST) -> list[tuple[int, float]]:
     return out
 
 
-def check_hardcoded(files: list[Path], values: list[LedgerValue],
-                    root: Path) -> list[Finding]:
+def check_hardcoded(
+    files: list[Path], values: list[LedgerValue], root: Path,
+) -> tuple[list[Finding], set[tuple[str, float]]]:
+    """반환값 둘째 자리는 **이번 스캔에서 실제로 쓰인 면제 키 집합**이다 —
+    `main()` 이 그것으로 `_stale_exemptions()` 를 물어 낡은 면제를 잡는다.
+    """
     by_value: dict[float, list[LedgerValue]] = {}
     for v in values:
         by_value.setdefault(v.value, []).append(v)
 
     findings: list[Finding] = []
+    used_exemptions: set[tuple[str, float]] = set()
     for path in files:
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -188,11 +256,17 @@ def check_hardcoded(files: list[Path], values: list[LedgerValue],
                 continue
             blocking = any(m.blocking for m in matches)
             keys = ", ".join(m.key for m in matches)
+            # ⚠ 사람이 「우연이다」로 판정한 (경로, 값)만 차단에서 내린다 —
+            # `COINCIDENTAL_LITERALS` 독스트링 참조.
+            reason = COINCIDENTAL_LITERALS.get((rel, float(literal)))
+            if reason:
+                used_exemptions.add((rel, float(literal)))
+                blocking = False
             findings.append(Finding(
                 path=rel, lineno=lineno, blocking=blocking,
-                detail=f"{literal!r} ← 대장 {keys}",
+                detail=f"{literal!r} ← 대장 {keys}", exempt_reason=reason,
             ))
-    return findings
+    return findings, used_exemptions
 
 
 def toplevel_bindings(tree: ast.Module):
@@ -248,6 +322,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ledger", default="docs/assumptions.yaml")
     args = parser.parse_args(argv)
 
+    blank = _blank_exemption_keys(COINCIDENTAL_LITERALS)
+    if blank:
+        print("COINCIDENTAL_LITERALS 에 사유 없는 면제 항목이 있습니다:",
+              file=sys.stderr)
+        for path, literal in blank:
+            print(f"  {path}  {literal!r}", file=sys.stderr)
+        print("사유 없는 면제는 면제가 아닙니다 — 지우거나 사유를 채우십시오",
+              file=sys.stderr)
+        return 2
+
     root = Path(args.root).resolve()
     ledger = root / args.ledger
     if not ledger.is_file():
@@ -265,8 +349,10 @@ def main(argv: list[str] | None = None) -> int:
     values = ledger_values(ledger)
     judged = [v for v in values if v.judged]
     skipped = [v for v in values if not v.judged]
-    hardcoded = check_hardcoded(files, judged, root)
+    hardcoded, used_exemptions = check_hardcoded(files, judged, root)
     globals_ = check_global_mutable(files, root)
+    scanned_paths = {p.relative_to(root).as_posix() for p in files}
+    stale = _stale_exemptions(COINCIDENTAL_LITERALS, used_exemptions, scanned_paths)
 
     print(f"NFR-202 · NFR-205 — 대상 {len(files)}개 파일 / 대장 수치 {len(values)}건")
     print("─" * 78)
@@ -278,7 +364,15 @@ def main(argv: list[str] | None = None) -> int:
     for f in blocking:
         print(f"  ✗ {f.path}:{f.lineno}  {f.detail}")
     for f in warning:
-        print(f"  · {f.path}:{f.lineno}  {f.detail}  [값 충돌 가능 — 사람이 판정]")
+        if f.exempt_reason:
+            print(f"  · {f.path}:{f.lineno}  {f.detail}  [면제: {f.exempt_reason}]")
+        else:
+            print(f"  · {f.path}:{f.lineno}  {f.detail}  [값 충돌 가능 — 사람이 판정]")
+
+    if stale:
+        print(f"  낡은 면제 {len(stale)}건 — 이번 스캔에서 더 이상 충돌하지 않습니다")
+        for path, literal in stale:
+            print(f"    ⚠ {path}  {literal!r}  ({COINCIDENTAL_LITERALS[(path, literal)]})")
 
     print(f"  판정하지 않은 대장 수치 {len(skipped)}건 — |값| < {JUDGE_FLOOR:,}")
     if skipped:
@@ -293,7 +387,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print("─" * 78)
 
-    if not blocking and not globals_:
+    if not blocking and not globals_ and not stale:
         if warning:
             print("통과 — 차단 대상 없음. 위 경고는 물리·시간 상수와 값이 겹친")
             print("       것일 수 있습니다. 대장 키를 보고 판정하십시오")
@@ -313,6 +407,10 @@ def main(argv: list[str] | None = None) -> int:
         print("  병렬 실행에서 한 번의 변형은 다른 케이스의 결과를 조용히")
         print("  바꿉니다 (FR-805 · §16 W-5).")
         print("  `MappingProxyType` · `tuple` · `frozenset` 로 바꾸십시오.")
+    if stale:
+        print("**COINCIDENTAL_LITERALS 에 낡은 면제가 있습니다.**")
+        print("  더 이상 소스와 충돌하지 않는 값을 면제하고 있습니다 — 지우지")
+        print("  않으면 다음 사람에게 「여기 위험이 있다」고 거짓말하는 셈입니다.")
     return 1
 
 

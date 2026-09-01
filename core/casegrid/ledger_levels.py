@@ -140,6 +140,22 @@ _LEDGER_VARS: tuple[tuple[str, str, float], ...] = (
     #
     # ⚠ **배율 1.0 이다** — 대장·러너 둘 다 kWh/호·년 을 쓴다.
     ("household_load_annual_kwh", "load.household.annual", 1.0),
+    # ★ **고정 O&M 둘** — R51/WP-2 에 배선했다 (사용자 판정 §2,
+    # `docs/decisions-2026-09-01-R51.md`).
+    #
+    # 종전에는 `e2e_runner.PV_FIXED_OM_WON_PER_YEAR`·`ESS_FIXED_OM_WON_PER_YEAR`
+    # (각 100,000원/년) 라는 **소스 상수**였고 어느 케이스 축에도 없었다.
+    # 사용자 문면 *「관리비는 분석 전제 사항을 모두 총괄 관리하는 데이터셋에
+    # 저장되야 하며, 쉽게 수정가능해야 함」* 을 따라 대장으로 옮긴다. 값은
+    # 바꾸지 않는다(*「현재 설정된 값을 사용하되」*).
+    #
+    # ⚠ **PV·ESS 는 값이 같아도 축이 둘이다** — 다른 설비이고 값이 갈릴 수
+    # 있다(판정 근거는 대장 항목 `opex.pv.fixed_om`·`opex.ess.fixed_om` 의
+    # `derivation_method` 에도 적었다).
+    #
+    # ⚠ **배율 1.0 이다** — 대장·러너 둘 다 원/년 을 쓴다.
+    ("pv_fixed_om", "opex.pv.fixed_om", 1.0),
+    ("ess_fixed_om", "opex.ess.fixed_om", 1.0),
 )
 
 #: 대장 항목이 **아닌** 모형 파라미터. 위 독스트링 참조.

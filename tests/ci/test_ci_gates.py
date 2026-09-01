@@ -637,6 +637,116 @@ def test_no_module_or_class_level_mutable_containers() -> None:
     )
 
 
+# ── COINCIDENTAL_LITERALS 면제 기제 (R51/WP-2-fix) ───────────────────
+#
+# 입력을 캐릭터가 정하고 출력을 잰다 — 검사 대상이 스스로 답을 정하는 동어반복을
+# 피하려고 `check_hardcoded_params.COINCIDENTAL_LITERALS`(실물)를 그대로 쓰지
+# 않고, `monkeypatch` 로 시험용 목록·시험용 저장소 트리를 각자 만든다
+# (`test_missing_sensitivity_is_refused_not_filled` 와 같은 형태).
+
+
+def _bare_ledger(tmp_path: Path, *, value: int) -> None:
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "assumptions.yaml").write_text(
+        'price_basis: "명목"\nassumptions:\n'
+        '  - key: "capex.pv.rooftop"\n'
+        f'    value: {value}\n'
+        f'    sensitivity: {{low: 1, base: {value}, high: {value}}}\n'
+        '    value_unit: "원/kW"\n'
+        '    base_year: "2026"\n'
+        '    applicable_scope: "s"\n'
+        '    derivation_method: "d"\n'
+        '    source: null\n'
+        '    verified_at: null\n'
+        '    confidence: "가정"\n'
+        '    replace_when: "r"\n',
+        encoding="utf-8",
+    )
+
+
+def _bare_source(tmp_path: Path, *, body: str) -> None:
+    (tmp_path / "core" / "der").mkdir(parents=True)
+    (tmp_path / "core" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "core" / "der" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "core" / "der" / "sample.py").write_text(body, encoding="utf-8")
+
+
+@pytest.mark.req("NFR-202-M1")
+def test_blank_exemption_reason_is_refused() -> None:
+    """★ 사유가 비면 **면제가 아니다** — 목록 자체를 거부한다.
+
+    `check_hardcoded_params.COINCIDENTAL_LITERALS`(실물)를 건드리지 않는다 —
+    `_blank_exemption_keys` 는 받은 사전만 본다.
+    """
+    mod = _script("check_hardcoded_params")
+    mapping = {("core/x.py", 1.0): "   ", ("core/y.py", 2.0): "정당한 사유"}
+    assert mod._blank_exemption_keys(mapping) == [("core/x.py", 1.0)]
+
+
+@pytest.mark.req("NFR-202-M1")
+def test_check_hardcoded_params_rejects_blank_exemption_at_entry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """`main()` 이 사유 없는 면제를 만나면 **본 스캔을 시작하기 전에** rc=2 로 멈춘다."""
+    mod = _script("check_hardcoded_params")
+    monkeypatch.setattr(mod, "COINCIDENTAL_LITERALS", {("core/x.py", 1.0): ""})
+    code = mod.main(["--root", str(tmp_path)])
+    assert code == 2
+
+
+@pytest.mark.req("NFR-202-M1")
+def test_stale_exemption_is_reported_only_when_its_path_was_scanned() -> None:
+    """★ 「낡았다」는 **스캔된 경로인데 안 걸렸다**일 때만 성립한다.
+
+    스캔에 없는 경로(예: `negtest_hardcoded_params.py` 의 임시 트리처럼 그
+    파일 자체가 없는 실행)까지 낡았다고 하면, 이 검사기의 음성 시험이 돌 때마다
+    거짓 rc=1 이 난다 — 그것을 막는 것이 이 시험의 요점이다.
+    """
+    mod = _script("check_hardcoded_params")
+    mapping = {("core/x.py", 5.0): "사유"}
+    assert mod._stale_exemptions(mapping, used=set(), scanned_paths={"core/x.py"}) == [
+        ("core/x.py", 5.0)
+    ]
+    assert mod._stale_exemptions(mapping, used=set(), scanned_paths=set()) == []
+    assert mod._stale_exemptions(
+        mapping, used={("core/x.py", 5.0)}, scanned_paths={"core/x.py"}
+    ) == []
+
+
+@pytest.mark.req("NFR-202-M1")
+def test_check_hardcoded_params_reports_stale_exemption_end_to_end(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """면제 목록에 있는데 소스에 그 리터럴이 없으면 `main()` 이 rc=1 로 말한다."""
+    mod = _script("check_hardcoded_params")
+    _bare_ledger(tmp_path, value=999_999)
+    _bare_source(tmp_path, body="VALUE = 1\n")  # 999_999 는 여기 없다 — 낡았다
+    monkeypatch.setattr(
+        mod, "COINCIDENTAL_LITERALS", {("core/der/sample.py", 999_999.0): "더 이상 없음"}
+    )
+    code = mod.main(["--root", str(tmp_path)])
+    assert code == 1
+
+
+@pytest.mark.req("NFR-202-M1")
+def test_check_hardcoded_params_demotes_an_exempted_match_to_a_labelled_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """★ **감추지 않는다** — 면제된 충돌은 사라지지 않고 사유와 함께 경고로 남는다."""
+    mod = _script("check_hardcoded_params")
+    _bare_ledger(tmp_path, value=424_242)
+    _bare_source(tmp_path, body="LIMIT = 424_242\n")
+    monkeypatch.setattr(
+        mod, "COINCIDENTAL_LITERALS",
+        {("core/der/sample.py", 424_242.0): "무관한 예시 상한"},
+    )
+    code = mod.main(["--root", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert code == 0, out
+    assert "✗ core/der/sample.py" not in out, "면제됐는데 여전히 차단으로 인쇄된다"
+    assert "면제: 무관한 예시 상한" in out, "사유가 인쇄되지 않는다 — 감춘 것과 같다"
+
+
 # ── SC-3 · SC-5 · SC-8 비공개 유입 차단 (작업 2.3) ───────────────────
 
 PRECOMMIT = REPO_ROOT / ".pre-commit-config.yaml"

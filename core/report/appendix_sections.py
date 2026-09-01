@@ -62,6 +62,11 @@ UNREAD_NOTE = (
 #: 생겼다는 사실이 보이지 않는다.
 TOPIC_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("설비 단가", ("capex.",)),
+    # ★ `opex.` 는 R51/WP-2 가 처음 연 이름공간이다(`capex.` 의 대응짝 — 취득비
+    # 대 운영비). 선언하지 않으면 `test_unclassified_key_is_shown_not_absorbed`
+    # 가 그 자리를 「미분류」로 드러낸다(실측 확인) — 이 파일은 그 래칫이 지키는
+    # 대상이므로 조용히 넘기지 않고 여기서 선언한다.
+    ("운영비", ("opex.",)),
     ("설비 성능 · 수요", ("capacity_factor.", "load.")),
     ("요금 · 정산 단가", ("tariff.", "escalation.", "fee.")),
     ("제도 · 세제", ("rule.", "tax.", "benefit.", "cost.")),

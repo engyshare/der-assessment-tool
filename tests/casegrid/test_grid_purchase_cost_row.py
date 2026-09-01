@@ -79,6 +79,10 @@ def _level_map(grid_purchase_price: float) -> dict[str, Mapping[str, float]]:
         # 대장의 사본을 하나 갖게 되고, 대장이 바뀔 때 여기가 따라오지 않아도
         # 아무 일이 없다(위 단가들과 같은 규약이다). 이 파일은 이 축을 재지 않는다.
         "demand_charge": MappingProxyType({"base": 7_700.0}),
+        # 고정 O&M 둘 — 러너가 요구한다(R51/WP-2 에 스윕 축으로 올렸다). **대장의
+        # 100,000 과 다른 수를 일부러 쓴다** — 위 단가들과 같은 규약이다.
+        "pv_fixed_om": MappingProxyType({"base": 70_000.0}),
+        "ess_fixed_om": MappingProxyType({"base": 65_000.0}),
         **design_levels(),
     }
 

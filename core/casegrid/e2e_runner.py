@@ -127,7 +127,10 @@ HOURS_PER_YEAR = DAYS_PER_YEAR * STEPS_PER_DAY
 # 를 묻지도 답하지도 못한 이유다. 기본값을 여기 남기지 않는 것이 요점이다:
 # 남기면 수준표를 고쳐도 러너가 옛 용량을 쓰고 **NPV 만 조용히 달라진다**.
 PV_CAPACITY_FACTOR = 0.15
-PV_FIXED_OM_WON_PER_YEAR = 100_000
+#: ⚠ **고정 O&M 은 여기 없다** — `PV_FIXED_OM_WON_PER_YEAR` 모듈 상수를
+#: R51/WP-2 가 지웠다. 대장 `opex.pv.fixed_om` 에서 `level_map` 으로 온다
+#: (사용자 판정 §2, `docs/decisions-2026-09-01-R51.md`) — 소스에 기본값을
+#: 남기면 대장 한 곳만 고쳐도 실행에 반영된다는 그 판정의 요구가 깨진다.
 #: **물가 계수 — 자원의 속성이 아니라 사업 전제다.** 이름이 두 번 움직였다:
 #: `PV_OM_ESCALATION`(「O&M 전용」이라 주장했지만 아니었다) → `PV_ESCALATION_RATE`
 #: (R38-D2, 「PV 의 것」이라 주장했지만 그것도 아니다) → 지금 이름(R39-E).
@@ -178,7 +181,9 @@ ESS_CYCLE_LIFE = 6_000
 ESS_CALENDAR_LIFE = 20
 ESS_EOL_SOH_PCT = 80.0
 ESS_CYCLES_PER_YEAR = 365.0
-ESS_FIXED_OM_WON_PER_YEAR = 100_000
+#: ⚠ **고정 O&M 은 여기 없다** — `ESS_FIXED_OM_WON_PER_YEAR` 모듈 상수를
+#: R51/WP-2 가 지웠다. 대장 `opex.ess.fixed_om` 에서 `level_map` 으로 온다
+#: (사용자 판정 §2) — `opex.pv.fixed_om` 과 같은 이유다.
 
 #: 이 사업의 ESS 운전 방법·충전원 기본값 (판정 근거: `docs/decisions-
 #: 2026-08-31-R48.md` §1·§4 — 「이 사업의 ESS 는 태양광 연계다. PV 잉여로
@@ -649,8 +654,18 @@ def run_single_case_e2e(
     # (문의사항 나-8 · `ledger_levels.py::_LEDGER_VARS` 의 그 줄에 경위가 있다).
     # 상수를 **지웠다** — 남기면 이 축이 도는 동안에도 러너가 기준값을 계속
     # 쓰고 변동폭이 0원으로 나온다(인버터 몫에서 적어 둔 그 함정이다).
-    demand_charge = _resolve(
-        case_values.get("demand_charge", "base"), "demand_charge", level_map
+    # ★ **고정 O&M 둘** (`opex.pv.fixed_om`·`opex.ess.fixed_om` · R51/WP-2,
+    # 사용자 판정 §2). 종전에는 `PV_FIXED_OM_WON_PER_YEAR`·`ESS_FIXED_OM_
+    # WON_PER_YEAR` 모듈 상수였다 — 값은 그대로 옮겼고(100,000원/년 각각),
+    # 신뢰도만 「가정」으로 대장에 드러난다. **두 자원의 값이 지금은 같아도
+    # 축은 둘이다** — PV·ESS 는 다른 설비이고 값이 갈릴 수 있다.
+    # ⚠ **`demand_charge` 와 한 statement 로 묶었다** — `PLR0915`(이 함수의
+    # statement 상한 50)에 이미 닿아 있었다(R51/WP-1 브리프 실측). 계산이
+    # 얽혀 있어서가 아니라 셋 다 `_resolve()` 스칼라 조회이기 때문이다.
+    demand_charge, pv_fixed_om, ess_fixed_om = (
+        _resolve(case_values.get("demand_charge", "base"), "demand_charge", level_map),
+        _resolve(case_values.get("pv_fixed_om", "base"), "pv_fixed_om", level_map),
+        _resolve(case_values.get("ess_fixed_om", "base"), "ess_fixed_om", level_map),
     )
 
     # 1. Resources
@@ -683,7 +698,7 @@ def run_single_case_e2e(
         generation_profile_kwh=generation_profile,
         unit_capex_won_per_kw=pv_capex,
         inverter_unit_capex_won_per_kw=pv_capex * pv_inverter_share,
-        fixed_om_won_per_year=PV_FIXED_OM_WON_PER_YEAR,
+        fixed_om_won_per_year=pv_fixed_om,
         escalation_rate=PRICE_ESCALATION_RATE,
         replacement_escalation_rate=replacement_escalation_rate,
         self_consumption_ratio=PV_SELF_CONSUMPTION_RATIO,
@@ -742,7 +757,7 @@ def run_single_case_e2e(
             else None
         ),
         capex_unit_won_per_kwh=ess_capex,
-        fixed_om_won_per_year=ESS_FIXED_OM_WON_PER_YEAR,
+        fixed_om_won_per_year=ess_fixed_om,
         # ★★ **명목 기준을 ESS 에도 물린다 (R39-E · R38 판정 ②나).** 이 인자가
         # 없는 동안 `ess.escalation_factor()` 는 1.0 이었고, 그래서 18년차
         # 배터리 교체비가 **오늘의 원**으로 적혔다 — 대장이 `price_basis:
