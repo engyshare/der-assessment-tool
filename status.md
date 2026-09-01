@@ -185,16 +185,30 @@ R44-12 가 spec 을 **v0.19 → v0.20** 으로 올렸으나 **§13.2.2 `C-5` 의
 실행 경로의 행 구성이 확정돼 있어야 한다」 — 두 번 흔들지 않는다.
 ⚠ **22·23(종전 18·19)과 5(종전 3)의 실제 수정은 「골든 3건 + `MC-1` 리포트 + `status-human.md` 인용 수치를 한 단위로 다시 뽑는」 무거운 후속을 수반한다.** R45 도 이 판단을 먼저 하라. (일부러 시작하지 않으면 미완으로 넘겨야 하는데 `.orch/` 가 `.gitignore` 안이라 위험이 크다)
 
+> ## ★★ 2026-09-01 **사용자 판정이 왔다 — 재료 정본은 `docs/decisions-2026-09-01-R51.md`**
+>
+> R50 이 물은 여덟에 **사용자가 전부 답했다.** 아래 ①~⑤ 는 **판정이 끝났고 구현만
+> 남은 것**이다 — *「무엇이 옳은가」를 다시 묻지 마라.* 문면·근거·결론축 영향은
+> **그 문서가 정본**이고 아래 표는 **착수 순서**만 갖는다.
+>
+> ⚠⚠ **①과 ④는 결론축을 움직인다.** 「기준선을 흔드는 것은 한 번만」이므로
+> **골든 3건 + `MC-1` 리포트는 맨 마지막에 한 번만** 다시 뽑는다.
+
 | # | 무엇 | 시작 자리 | 나온 곳 |
 |---|---|---|---|
-| **★D** | **`NWAs`·`CP` 를 내는 자원이 없다** — 편익 클래스와 유형 `E` 배타 규칙은 섰으나(`0e77ec0`) **어느 자원의 `value_streams()` 에도 배선되지 않았다.** 배선하려면 `ESSOperatingMode` 에 **「계통 방전」·「준중앙급전 등록」** 두 종을 신설해야 하고, 그러면 `FR-105-AC1` 조항도 함께 움직인다(§16.5) | `core/der/ess.py::ESSOperatingMode` · `core/casegrid/e2e_runner.py` | R48/WP-C |
-| **★E** | **정책 경고의 임자를 판정해야 한다** — §6 은 **편익**(`NWAs`·`CP`) 단위로 갈랐는데 `policy_warnings()` 는 **자원**의 훅이고 편익은 자원에 1:1 이 아니다(R43-E2 가 잉여 판매에서 만난 형태). ⚠ **리포트 쪽에서 편익을 보고 경고를 지으면 안 된다** — D2 가 없앤 `isinstance` 분기가 태그 분기로 돌아온다 | `core/der/` · `core/report/policy_warnings.py` | R48/WP-D2 |
-| **★L** | ★★ **배터리가 가구보다 먼저 태양광을 가져간다 — 이대로 둘 것인가** ⚠ **사용자 판정 대기.** 실측: 가구 부하를 0 → 10호분(36,000kWh/년)으로 늘려도 ESS 연간 충전은 **3,244.4444kWh 로 소수점까지 같고** 계통 수전만 **0 → 32,382kWh** 로 는다. 조항 `FR-302-AC1` 의 ①은 *「**즉시** 자가소비」*(그 스텝의 실제 부하)인데 구현의 ①은 **연간 고정 비율**이고 배포 경로에서 `PV_SELF_CONSUMPTION_RATIO = 0.0` 이라 **가구 몫이 한 kWh 도 없다.** 곧 **낮에 집 옆에서 만든 전기를 두고 한전에서 사 오는** 모습이며, 바꾸면 **결론축이 움직이고 골든·`MC-1` 리포트를 다시 뽑아야 한다.** 갈래와 「좋은 점/아쉬운 점」은 `.orch/R50/result_3.md` §5 가 쉬운 말로 갖는다 ⚠ **답 없이 동작을 바꾸지 마라** — 지금 동작은 `tests/casegrid/test_pv_surplus_allocation_priority.py` 가 붙든다 | `core/casegrid/e2e_runner.py::_resolve_ess_dispatch_inputs`(선언 정본) · `PV_SELF_CONSUMPTION_RATIO` | R50/WP-3 |
-| **★M** | **`TouArbitrage` 를 러너에 세우면 `SurplusSale` 과 부딪힌다** — 유형 `A` 배타를 선언해 두었다(계통 방전분이 **시스템 총 역송량**에 얹혀 같은 kWh 가 두 항목에 각각 판매로 들어간다). 그래서 **「잉여판매의 수량에서 ESS 방전분을 뗄 것인가」** 를 정해야 러너 배선이 선다 — **★D 가 `NWAs`·`CP` 로 만날 같은 자리다.** ⚠ 지금은 러너 기본 모드가 `SELF_CONSUMPTION` 이라 부딪히지 않는다(그래서 R50 이 배선하지 않았다) | `core/casegrid/e2e_runner.py` 의 `settlement_streams` · `core/valuestream/surplus_sale.py` | R50/WP-1 |
-| **★N** | **`core/der/ess.py` 가 `NFR-206` 코드 줄 수 상한(500)에 정확히 걸려 여유가 0 이다** — R50 이 편익 한 종을 더하며 실제로 넘겼고 `value_streams()` 의 `if` 갈래를 표로 접어 되돌렸다(지금 **정확히 500**). **이 파일에 다음 편익·모드·메서드가 한 줄이라도 들어오면 `check_file_size --code-strict` 가 빨간불이다.** 조항이 요구하는 조치는 *「파일을 쪼개십시오」* 이고 그것은 **구조 판정**이다 ⚠ 독스트링은 상한 밖이라 R50/WP-3 은 안 걸렸다 | `core/der/ess.py` · `scripts/check_file_size.py --code-strict` | R50/WP-1 |
+| **①** | ★★ **낮 전기의 배분을 「고를 수 있는 축」으로 만든다** — 갈래 셋(**집 우선** · **배터리 우선**(지금 동작) · **가격 기반**). ★ **지산지소 모델(`MC-1`)의 기본값은 「집 우선」이다.** ⚠ 지금은 `PV_SELF_CONSUMPTION_RATIO = 0.0` 이라 **가구 몫이 한 kWh 도 없다** — 바꾸면 **결론축이 움직인다.** ⚠ 「가격 기반」은 자리를 만들되 구현이 없으면 **선택 시 거부**한다(조용히 다른 갈래로 떨어뜨리지 마라) | `core/casegrid/e2e_runner.py::_resolve_ess_dispatch_inputs`(선언 정본은 R50 이 세웠다) · `PV_SELF_CONSUMPTION_RATIO` · `ESSOperatingMode`·`ESSChargeSource` 와 같은 형태의 새 축 | 판정 **§1** |
+| **②** | **고정 O&M 을 대장에 올린다 — 값은 그대로, 신뢰도는 「가정」** `PV_FIXED_OM_WON_PER_YEAR`·`ESS_FIXED_OM_WON_PER_YEAR`(각 100,000원/년)을 `docs/assumptions.yaml` 로 옮긴다. ⚠ **소스에 기본값을 남겨 두 곳이 되게 하지 마라**(*「쉽게 수정가능해야 함」*). **결론축은 안 움직이고** 5.1·붙임 2 의 표가 바뀐다(합 **−3,070,898원** · 적자 분해 3위 급) | `docs/assumptions.yaml` · `ledger_levels.py::_LEDGER_VARS` · `e2e_runner.py` 의 두 상수 | 판정 **§2** |
+| **③** | **`NWAs`·`CP` 를 자원에 배선한다** — `ESSOperatingMode` 에 「계통 방전」·「준중앙급전 등록」 신설, `ESS.value_streams()` 가 선언. ⚠ **유형 `E` 배타는 유지**한다(「고를 수 있다」 ≠ 「동시에 성립한다」) · ⚠ **`NWAs` 기본 비활성을 지켜라**(제도가 없다 — 켜면 필요 지원액을 과소 산정한다). `FR-105-AC1` 이 함께 움직인다 | `core/der/ess.py::ESSOperatingMode` · `core/casegrid/e2e_runner.py` | 판정 **§3** |
+| **④** | ★★ **잉여판매 수량을 「충전원」으로 가른다 + `REC` 를 배선한다** `PV_SURPLUS` 로 충전한 ESS 방전분은 **태양광 전력이 ESS 를 경유한 것**이라 태양광 판매로 **센다**(⚠ **손실을 뺀 뒤**) 그리고 **재생전력이므로 `REC` 를 기대할 수 있다**. `GRID` 로 충전한 몫은 **태양광과 무관하므로 세면 안 된다.** ⚠⚠ **R50 이 선언한 `TouArbitrage` ↔ `SurplusSale` 유형 `A` 배타를 다시 보아야 한다** — 방향은 맞으나 답은 「하나를 끄라」가 아니라 **「수량에서 빼라」**다. ⚠ `REC` 는 **클래스만 있고 배선이 0곳**이다(실측) | `core/valuestream/surplus_sale.py` · `core/valuestream/rec.py` · `core/der/ess.py::ESSChargeSource` · `e2e_runner.py` | 판정 **§4** |
+| **⑤** | **「남는 경우」 골든을 만든다** — `NWAs` 를 활성화하고 보상단가를 **충분히 크게** 준 시나리오로 `GAP_MARGIN`(「여유」) 갈래를 덮는다. ⚠ **③이 선행이다.** ⚠⚠ **이것은 사업 전망이 아니라 코드 경로를 지키는 시험이다** — 단가는 **시험용 가정값**이며, `MC-1` 결론과 나란히 인용되면 「NWAs 를 켜면 남는다」로 읽힌다. 파일과 리포트가 그 사실을 들게 하라 | `fixtures/golden/` · `core/report/narrative.py::GAP_MARGIN` | 판정 **§7** |
+| **★E** | **정책 경고의 임자 — 「순편익을 계산해 저장·관리」로 답이 왔다** ⚠⚠ **그 문면을 「편익 쪽에서 관리하라」로 읽은 것은 오케스트레이터이고 확인을 받지 못했다.** 구현 전에 **그 읽기를 가정으로 명시**하고 시작하라. ⚠ 급하지 않다 — 사용자가 순서를 바꾸지 않았다 | `core/der/` · `core/report/policy_warnings.py` | 판정 **§6** |
+| **★N** | ⏸ **`core/der/ess.py` 줄 수 상한 — 「나중에 처리」**(사용자 판정 §8) ⚠ 그래도 **여유가 0 이다**(정확히 500/500). ①③④가 이 파일에 **코드 줄을 더하면 그 자리에서 빨간불**이다 — 그때는 **쪼개지 말고** `value_streams()` 가 그랬듯 **표로 접어라.** 그것도 안 되면 **멈추고 적어라** | `core/der/ess.py` · `scripts/check_file_size.py --code-strict` | 판정 **§8** |
+
+### 판정을 기다리지 않는 나머지 — **위 다섯을 끝낸 뒤**
+
+| # | 무엇 | 시작 자리 | 나온 곳 |
+|---|---|---|---|
 | **★P** | **검사 대상을 어디까지 넓힐 것인가 — 「운영 문서」와 「기록」을 가르는 규칙이 필요하다** R50 이 세운 `check_doc_line_citations.py` 는 **`rslt/` 두 문서만** 본다. 실측으로 세어 보니 — **`status.md` 는 넷이었고 R50 이 전부 이름으로 바꿨다**(그중 셋이 이미 낡아 딴 행을 가리키고 있었다. 지금 **0건**) · `status-history.md` **10건 이상** · `docs/*.md` **9건 이상**. ⚠ **남은 둘은 단순히 「넓히면」 되는 것이 아니다** — `status-history.md` 와 `docs/decisions-*.md` 는 **그 시점의 기록**이라 고치면 이력이 거짓이 되고, `docs/domain-rules.md`·`docs/evidence-standard.md` 는 **바이트 동일해야 하는 정본 사본**이라 한 글자도 못 고친다(`check_source_rules`). `docs/traceability.md` 는 **자동 생성물**이다. 그러므로 넓히려면 **「무엇이 지금 참이어야 하는 운영 문서이고 무엇이 기록인가」를 규칙으로** 세워야 하고, 그것은 면제 목록이 아니라 규칙이어야 한다 | `scripts/check_doc_line_citations.py` 의 대상 목록 | R50/WP-4 |
-| **★I** | ★ **고정 O&M 이 대장 항목이 아니다** — `PV_FIXED_OM_WON_PER_YEAR` · `ESS_FIXED_OM_WON_PER_YEAR`(각 100,000원/년)은 **소스 상수**이고 대장 키가 없다(29건 전건을 세었다). **둘을 합치면 −3,070,898원으로 적자 분해 3위 급**이라 5.1 축이 되어야 마땅하나, 대장에 세우려면 **출처·신뢰도·기준연도**가 필요하다 — **R49 판정 범위 밖이라 열어 두었다.** ⚠ 축이 되면 5.1·붙임 2 가 함께 움직인다 | `core/casegrid/e2e_runner.py` 의 `PV_FIXED_OM_WON_PER_YEAR`·`ESS_FIXED_OM_WON_PER_YEAR` · `docs/assumptions.yaml` · `ledger_levels.py::_LEDGER_VARS` | R49/WP-4 |
-| **★J** | **회수 갈래가 골든에 하나도 없다** — `GAP_MARGIN`(여유) 갈래를 **어느 검사도 지키지 않는다.** 전에는 `scenario_subsidy_80` 이 그 갈래였으나 R48 이후 그것도 미회수다. 갈래는 **지우지 않았다**(회수하는 실행이 다시 생길 수 있다). *「회수 갈래 골든을 새로 세울 것인가」* 는 **골든 파일을 만드는 일이라 사람 판정**이다 | `fixtures/golden/` · `core/report/narrative.py::GAP_MARGIN` | R49/WP-2·5 |
 | **25** | **리포트가 안 내는 표시 다섯** — `FR-106-AC5`(안분 규칙) · `FR-602-AC2`(변경 항목 목록 · 호출자가 **저장소 전체에 0곳**) · `FR-603-AC2` · `FR-705-AC1` · `FR-905-AC8`. 종전 1번의 잔여이며 **`FR-404-AC1` 만 R48 이 닫았다** | `core/report/` · `.orch/R44/result_15.md` 의 표 | WP-15 |
 | **5** | `Load`·`ThermalLoad` 의 잔존가치 비대칭 — `Load` 는 러너에 있으나 **비용 인자가 전부 0/미지정**이고 `ThermalLoad` 는 **러너가 아예 만들지 않는다** ⇒ **지금은 결론축에 영향이 없다.** ⚠ 그러나 **WP-12 가 `C-5` 를 명문화해 이 둘의 부채가 「미확인」에서 「명시적 위반」으로 격상됐다** — **러너에 들어오는 날 터진다.** | 부채 래칫 `KNOWN_SALVAGE_IGNORES_REPLACEMENT_RATE` (2건) | WP-D2 |
 | **7** | 안분 **잔차를 받는 자리**(최종 몫)가 **임의로 정해진 규약**이다 — 합성 시험은 **이미 있다**(`test_benefit_attribution.py` 가 `[33,33,34]` 과 `rows[RESIDUAL_HOLDER_INDEX]` 를 단언한다). ⚠ **「검증된 적이 없다」는 「시험이 없다」가 아니라 「MC-1 케이스의 잔차가 0원이라 프로덕션 경로에서 한 번도 발동한 적이 없다」는 뜻이다**(R47 이 이것을 오독해 WP 하나를 헛돌렸다). 남은 것은 **그 규약이 옳은가**라는 판정이다 | `core/casegrid/attribution.py::RESIDUAL_HOLDER_INDEX` | WP-E2 |
@@ -214,7 +228,6 @@ R44-12 가 spec 을 **v0.19 → v0.20** 으로 올렸으나 **§13.2.2 `C-5` 의
 | **22** | ⚠ **옛 `todo.md` 5-② 의 나머지 절반** — 최초 인버터 몫을 본체 취득가에서 뗀다. **필요한 값이 이제 대장에 있다**(R39-E 가 미룬 조건 해소). **떼면 결론축이 움직인다** | `core/der/pv.py::_acquisitions` · `capex.pv.inverter_share` | WP-F |
 | **23** | 변동 O&M **배선**(빌더 + 단가 대장 + 러너) — 붙임 8 이 좌표를 갖는다 | `core/cba/proforma.py` · `e2e_runner.py` | WP-C |
 | **24** | R38 이 남기고 아무도 손대지 않은 다섯 — 전문은 **부록 A** | 부록 A | 종전 6 |
-| **32** | 「없음」이 **1절 요약 첫 화면에는 그대로 남아 있다** — ⚠ 사용자 판단 대기(검토자가 먼저 보는 규정을 바꾸는 일이다) | `docs/report-form-심의보고서.md` 【1】 · `core/report/narrative.py::_summary_section` | R35 ③ |
 | **26** | 새 PV 결론을 다시 재기 — **평탄 발전 프로파일**(야간 발전) 때문에 PV 가 좋아 보인다. 일사 곡선이 배선되면 뒤집힐 수 있다 | `core/casegrid/profiles.py::DailyShapes` · `e2e_runner.py` 의 `generation_profile` | R35 |
 | **27** | 프로포마 행 목록을 `CaseOutcome` 에 실을 것인가 — R36 판정 *「검사를 세우려고 산출물 자료형을 넓히는 것은 순서가 거꾸로다」* | `core/casegrid/models.py::CaseOutcome` | R34 |
 | **28** | `FR-401-AC2.VPPMarket` (Phase 2) — 자료가 아니라 **순서 문제**. `VPP` 가 계약에 앉는가가 선행 | spec `AC1.VPP` | R33 |
