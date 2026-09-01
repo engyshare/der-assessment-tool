@@ -19,6 +19,7 @@ from decimal import Decimal
 from typing import cast
 
 from core.casegrid.attribution import attribute_benefits
+from core.casegrid.grid_support import _resolve_nwas_cp
 from core.casegrid.incentive_cases import (
     Viewpoint,
     build_capex_cashflows_for_all_cases,
@@ -365,6 +366,8 @@ def run_single_case_e2e(
     annual_load_kwh: float | None = None,
     extra_appliance_load_kwh: float = 0.0,
     rec_price_won_per_unit: float = 0.0,
+    nwas_price_won_per_kwh: float = 0.0,
+    cp_price_won_per_kw_month: float = 0.0,
     settlement_inputs: SettlementInputs | None = None,
     tariff_engine: TariffEngine | None = None,
     scheme: IncentiveScheme | None = None,
@@ -734,7 +737,16 @@ def run_single_case_e2e(
             inputs=_with_model_generation(settlement_inputs, pv),
             tariff_engine=tariff_engine,
         )
-        settlement_streams: tuple[ValueStream, ...] = (*plan.streams, _rec(rec_price_won_per_unit))
+        # ★★ **`NWAs`·`CP` 는 `_resolve_nwas_cp()` 가 짓는다** (판정 §3, `docs/
+        # decisions-2026-09-01-R51.md`) — 도우미로 뺀 이유는 `_rec` 와 같지만
+        # 여기서는 **별도 statement 를 만들지 않는다**(`PLR0915` 여유가 0 이라
+        # 새 대입 자체가 빨간불이다). `*` 로 풀어 기존 대입 표현식 안에 넣는다
+        # — `core/casegrid/grid_support.py::_resolve_nwas_cp` 독스트링 참조.
+        settlement_streams: tuple[ValueStream, ...] = (
+            *plan.streams,
+            _rec(rec_price_won_per_unit),
+            *_resolve_nwas_cp(ess, nwas_price_won_per_kwh, cp_price_won_per_kw_month),
+        )
         # ★ **구조가 만드는 비용을 비용으로 나른다 (R32).** 조립기가 편익에서
         # 빼 주는 것이 아니라 여기서 프로포마 행이 된다 — 근거는
         # `core/cba/proforma.py::fee_row`. `core.cba` 가 `core.valuestream` 보다
@@ -764,6 +776,7 @@ def run_single_case_e2e(
                 ),
             ),
             _rec(rec_price_won_per_unit),
+            *_resolve_nwas_cp(ess, nwas_price_won_per_kwh, cp_price_won_per_kw_month),
         )
         settlement_costs = ()
 

@@ -213,11 +213,21 @@ def test_body_stays_within_the_form_length_budget() -> None:
     골든 시나리오 기준). 사용자 판정 §2 의 *「대장에 오르면 5.1 영향도 축이
     하나 는다」* 가 예고한 변화이며(이 항목은 둘로 갈랐으므로 둘이 늘었다),
     값이 아니라 **표의 행 수**가 바뀐 것이다 — 결론축(NPV)은 그대로다.
+
+    ⚠ **상한을 202 → 204 로 다시 올렸다 (R51/WP-7).** `NWAs`·`CP` 를 화폐화
+    경로(`_resolve_nwas_cp`)에 세우면서 `CaseBasis.benefits` 가 두 갈래
+    늘었고, 2절 「4.3 자원별 수지」의 `_attribution_notes()` 가 편익마다
+    한 줄씩(귀속 없어도) 적으므로 본문에 줄이 둘 늘었다 — 실측(변경 전
+    202줄 → 변경 후 204줄, 이 골든 시나리오 기준). 사용자 판정 §3 이
+    요구한 배선이며(`docs/decisions-2026-09-01-R51.md`), 두 편익 모두
+    배포 기본 운전 방법에서는 0원이라 **결론축(NPV)은 그대로다** —
+    `REC` 가 R51/WP-6 에서 이미 같은 자리(0원 갈래도 줄을 만든다)를
+    지났으나 그때는 남은 여유(202줄 상한의 1줄)로 흡수됐다.
     """
     text = render_markdown(_report())
     body = text[: text.index("# 붙임")]
     lines = [line for line in body.splitlines() if line.strip()]
-    assert len(lines) <= 202, (
+    assert len(lines) <= 204, (
         f"본문이 {len(lines)}줄이다 — 양식이 정한 부피를 넘었다. "
         "늘어난 것을 붙임으로 내릴 것"
     )

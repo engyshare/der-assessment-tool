@@ -706,6 +706,79 @@ assumptions:
       바꾸고 단가·민감도 3수준을 등재하며, **같은 편집에서 가중치도 함께
       대장에 올린다**
 
+  # ─────────────────────────────────────────────────────────────────
+  # ★ R51/WP-7 신설 — `NWAs`·`CP` 단가. **`q_ref` 가 없다**(WP-2 의
+  # `opex.*`·WP-6 의 `benefit.rec_price` 와 같은 판단이며 사유도 같다):
+  # 새 `Q-*` 는 spec §15.1 표에 행이 있어야 성립하고 spec 개정은 사람 몫
+  # (§16.5)이라 이 WP 가 열 수 없다.
+  # ─────────────────────────────────────────────────────────────────
+  - key: "benefit.nwas_price"
+    title: "계통 기여 보상(NWAs) 단가"
+    track: "default0"
+    value: 0
+    sensitivity: null
+    value_unit: "원/kWh"
+    base_year: "2026"
+    applicable_scope: >-
+      계통 기여 보상(비망대안, NWAs) 정산단가. 실행 경로가 이 값을
+      `FR-401-AC2.NWAs` 편익(`계통 방전 kWh × 단가`)의 단가로 읽는다 —
+      `core/der/ess.py::ESSOperatingMode.GRID_DISCHARGE`(「계통 방전」)를
+      고른 실행에서만 켜진다(사용자 판정 §3, `docs/decisions-2026-09-01-
+      R51.md`).
+    derivation_method: >-
+      **가정하지 않는다.** 제도 자체가 없다(R48 §6 — *「NWAs는 현행이
+      아님. 현재 설계중」*) — 제도가 없으면 편익은 작은 것이 아니라 0
+      이며, 단가를 추정해 넣으면 없는 제도 위에 편익을 쌓아 필요
+      지원액을 과소 산정하게 된다. 사용자 판정 §3 이 「기본 비활성(값
+      0)을 유지한다」로 명시한다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    disclosure: "공개 가능"
+    impact: "낮음"
+    impact_note: >-
+      배포 기본 운전 방법(「자가소비 우선」)에서는 이 단가가 얼마이든
+      `NWAs` 가 켜지지 않는다(`ess.operating_mode != GRID_DISCHARGE`) —
+      그러므로 `MC-1` 무보조 `npv` 는 이 항목의 값과 무관하다. 「계통
+      방전」을 고른 실행에서 켰을 때의 크기는 R51/WP-7 result 파일이
+      직접 잰 값을 갖는다.
+    replace_when: >-
+      NWAs 제도 신설·단가 확정 시. 확인되면 track 을 assume 으로 바꾸고
+      단가·민감도 3수준을 등재한다.
+
+  - key: "benefit.cp_price"
+    title: "용량정산금(CP) 단가"
+    track: "default0"
+    value: 0
+    sensitivity: null
+    value_unit: "원/kW·월"
+    base_year: "2026"
+    applicable_scope: >-
+      용량정산금(CP) 정산단가. 실행 경로가 이 값을 `FR-401-AC2.CP` 편익
+      (`등록 용량 kW × 단가 × 12개월`)의 단가로 읽는다 —
+      `core/der/ess.py::ESSOperatingMode.SEMI_CENTRAL_DISPATCH`(「준중앙
+      급전 등록」)를 고른 실행에서만 켜진다(사용자 판정 §3).
+    derivation_method: >-
+      **가정하지 않는다.** CP 는 현행 제도이나 분산특구 내 ESS 에 적용할
+      산정 기준이 부재하다(R48 §6 — CP 는 등록 발전기 기준으로 설정돼
+      있음) — 기준이 없으면 단가를 고를 수 없고, 고른 단가로 편익을
+      쌓으면 필요 지원액을 과소 산정하게 된다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    disclosure: "공개 가능"
+    impact: "낮음"
+    impact_note: >-
+      배포 기본 운전 방법(「자가소비 우선」)에서는 이 단가가 얼마이든
+      `CP` 가 켜지지 않는다(`ess.operating_mode != SEMI_CENTRAL_DISPATCH`)
+      — 그러므로 `MC-1` 무보조 `npv` 는 이 항목의 값과 무관하다. 「준중앙
+      급전 등록」을 고른 실행에서 켰을 때의 크기는 R51/WP-7 result 파일이
+      직접 잰 값을 갖는다.
+    replace_when: >-
+      분산특구 내 ESS 에 적용할 CP 산정 기준이 보완되고 단가가 확정될
+      시. 확인되면 track 을 assume 으로 바꾸고 단가·민감도 3수준을
+      등재한다.
+
 # ─────────────────────────────────────────────────────────────────────
 # 갈래 C — 가정 불가. 값을 넣으면 검증이 자기충족이 된다
 # ─────────────────────────────────────────────────────────────────────
