@@ -186,7 +186,31 @@ def test_capacity_payment_is_disabled_by_default_for_a_different_reason() -> Non
     assert default.annual_value(dispatch, year=1) == to_won(0)
     assert default.policy_warnings() == []
     assert "등록 용량" in default.formula(dispatch, year=1)
-    assert CapacityPayment.payer is Payer.GRID_OPERATOR
+    assert CapacityPayment.payer is Payer.POWER_MARKET
+
+
+@pytest.mark.req("FR-401-AC2.NWAs", "FR-401-AC2.CP")
+def test_the_two_grid_dispatch_benefits_are_not_paid_from_the_same_wallet() -> None:
+    """★★ **계통 급전 편익 둘의 지불 주체는 서로 다르다** (R50).
+
+    ⚠ 이 단언이 필요한 이유: 위 두 시험은 편익마다 **자기 값**만 재므로, 둘이
+    다시 한 값으로 뭉쳐도(예: 누군가 `POWER_MARKET` 을 지우고 `GRID_OPERATOR`
+    로 되돌리면) **각각을 고치는 순간 둘 다 초록불이 된다.** 갈라 둔 것은
+    「두 값이 각각 무엇인가」가 아니라 **「둘이 같지 않다」** 이므로 그것을
+    직접 잰다.
+
+    `NWAs` 는 배전망 증설 회피가 근거라 **배전사업자**이고, `CP` 는 **전력시장
+    정산**이다. 한 값으로 두면 시장 정산금이 배전사업자 부담으로 잡히고, 그
+    값은 리포트의 「지불 주체」 칸에 **그대로 인쇄된다.**
+    """
+    assert NWAs.payer is not CapacityPayment.payer, (
+        "계통 급전 편익 둘은 지불 주체가 다릅니다 — NWAs 는 배전사업자, "
+        "CP 는 전력시장입니다 (R50)"
+    )
+    assert NWAs.payer.value != CapacityPayment.payer.value, (
+        "리포트에 인쇄되는 것은 열거 이름이 아니라 **값**입니다 — 값이 같으면 "
+        "검토자에게는 갈린 것이 아닙니다"
+    )
 
 
 # ── 제도 표시 문구 — 뭉뚱그리지 않는다 (R48 §6) ──────────────────────────
