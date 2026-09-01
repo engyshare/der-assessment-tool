@@ -134,8 +134,8 @@
 |  |  | 1 | `FR-401-AC2.PeakShaving` | PeakShaving 기본요금(피크) 절감 — 월 최대수요 저감분 × 기본요금 단가 | 자동 | test_ess.py 2건, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.HeatCostSaving` | HeatCostSaving 열 비용 절감 (히트펌프) — (기존 열원 연료비 − 히트펌프 전력비) | 자동 | test_heatpump.py 2건, test_formulas.py |
 |  |  | 1 | `FR-401-AC2.AggregatedPPA` | AggregatedPPA 집합 PPA 수익 — 발전량 전량 × PPA 계약단가(약관요금 × 비율) (v0.16 신설) | 자동 | test_e2e_settlement_wiring.py 2건, test_annualisation_convention.py, test_aggregated_ppa.py 5건 |
-|  |  | 1 | `FR-401-AC2.NWAs` | NWAs 계통 기여 보상 (비망대안) — 계통 방전량에 대한 계통 기여 수준 보상. 제도 표시 「제도 필요」 · 기본 비활성(값 0) + 활성화 시 정책 경고 … | 자동 | test_grid_dispatch_benefits.py 4건 |
-|  |  | 1 | `FR-401-AC2.CP` | CP 용량정산금 — 준중앙급전 등록 자원의 용량정산금. 제도 표시 「제도 보완 필요」 · 기본 비활성(값 0) + 활성화 시 정책 경고 표시 · 배타 FR-40… | 자동 | test_grid_dispatch_benefits.py 3건 |
+|  |  | 1 | `FR-401-AC2.NWAs` | NWAs 계통 기여 보상 (비망대안) — 계통 방전량에 대한 계통 기여 수준 보상. 제도 표시 「제도 필요」 · 기본 비활성(값 0) + 활성화 시 정책 경고 … | 자동 | test_grid_dispatch_benefits.py 5건 |
+|  |  | 1 | `FR-401-AC2.CP` | CP 용량정산금 — 준중앙급전 등록 자원의 용량정산금. 제도 표시 「제도 보완 필요」 · 기본 비활성(값 0) + 활성화 시 정책 경고 표시 · 배타 FR-40… | 자동 | test_grid_dispatch_benefits.py 4건 |
 |  |  | 1 | `FR-401-AC2.TouArbitrage` | TouArbitrage TOU 차익거래 — 연간 방전 kWh × 피크단가 − 연간 충전 kWh × 경부하단가(사용자 문면의 「충방전요금차이」). 배타 FR-40… | 자동 | test_ess.py, test_tou_arbitrage.py 7건 |
 |  |  | 2 | `FR-401-AC2.DemandResponse` | DemandResponse 수요반응 정산금 — 감축량 × 정산단가 (중복·배타 규칙 반영) | **미매핑** | — |
 |  |  | 2 | `FR-401-AC2.VPPMarket` | VPPMarket VPP 시장참여 수익 — 시장정산 − 운영수수료 | **미매핑** | — |

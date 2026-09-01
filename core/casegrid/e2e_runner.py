@@ -72,7 +72,7 @@ from core.valuestream.settlement import SettlementInputs, assemble
 #: 여기에 적어야 `core/report/dispatch_sections.py:32` 의
 #: `from core.casegrid.e2e_runner import DAYS_PER_YEAR` 가 성립한다.
 #: ⚠ **목록을 줄이지 말 것** — 이 이름들은 밖이 이 경로로 부르고 있고
-#: (`tests/report/test_assumed_operation.py` 가 넷 중 셋을 함께 읽는다),
+#: (`tests/report/test_shaped_run_invariants.py` 가 넷 중 셋을 함께 읽는다),
 #: 줄이면 그 호출이 조용히 끊긴다.
 __all__ = (
     "DAYS_PER_YEAR",

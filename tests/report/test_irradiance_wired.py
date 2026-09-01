@@ -6,7 +6,7 @@
 붙임 8 이 「일중 발전 프로파일 (평탄)」으로 정직하게 싣고 있었는데도 결함이
 살아 있었던 이유는 검사 쪽에 있다 —
 
-    tests/report/test_assumed_operation.py
+    tests/report/test_shaped_run_invariants.py
         ::test_the_shaped_run_has_no_generation_at_night   ← **형상을 명시적으로
                                                              준 실행**을 본다
                                                 (R49/★A 에 지웠다 — 아래 참조)
