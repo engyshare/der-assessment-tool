@@ -36,6 +36,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from core.casegrid.models import (
     COST_TAG_VARIABLE_OM,
@@ -43,6 +44,7 @@ from core.casegrid.models import (
     ONE_OFF_SALVAGE,
     CaseBasis,
 )
+from core.casegrid.profiles import PROFILE_PATH, Season, load_daily_shapes
 from core.report.case_report import CaseReport
 from core.report.dispatch_notes import DispatchHour
 
@@ -72,6 +74,11 @@ _GRID_PURCHASE_TAG = "GridPurchase"
 
 #: 한 해를 스텝으로 다 덮었는지 가르는 수.
 _STEPS_PER_YEAR = 8_760
+
+#: 형상 자산의 **저장소 상대 경로**. 붙임 8 의 해소 조건이 *「어느 파일의 어느
+#: 칸을 채우면 되는가」* 를 가리키므로 자리가 필요하다. 리터럴로 적지 않는다 —
+#: 자산이 옮겨지면 문면만 조용히 낡고, 검토자는 없는 파일을 찾는다.
+_PROFILE_ASSET = PROFILE_PATH.relative_to(PROFILE_PATH.parents[2]).as_posix()
 
 #: 스텝별 출력이 이 폭 안에서 같으면 **평탄**으로 본다 (kWh). 부동소수 오차만
 #: 흡수한다 — 넓히면 「완만한 곡선」까지 평탄으로 세어 진짜 곡선을 가린다.
@@ -646,20 +653,112 @@ def _flat_generation_item(
     ]
 
 
-def _season_item(hours: tuple[DispatchHour, ...]) -> list[UnreflectedItem]:
-    """대표 구간을 되풀이했는가 — 스텝 수로 판정한다."""
+def _season_reason(seasons: tuple[Season, ...]) -> str:
+    """**비어 있는 자리** — 계절 수가 가르는 두 상태를 갈라 적는다.
+
+    하나면 *축은 섰으나 값이 비었다*, 여럿이면 *접혔으나 그 안은 여전히 한
+    하루다*. 한 문장으로 뭉뚱그리면 둘 중 하나가 거짓이 된다.
+    """
+    if len(seasons) == 1:
+        return (
+            "계절 축은 있으나 자산이 계절을 선언하지 않았다 (연중 1계절)"
+        )
+    names = " · ".join(season.name for season in seasons)
+    return (
+        f"계절 {len(seasons)}개({names})로 접었다 · 계절 안에서는 대표일 "
+        "되풀이 · 요일 변동 없음"
+    )
+
+
+def _season_resolves_when(seasons: tuple[Season, ...], *, steps: int) -> str:
+    """**해소 조건** — 계절 접기와 8,760 실측, **두 갈래를 함께** 적는다.
+
+    옛 문면은 *「연간 시계열(일사량·부하) 입력 배선」* 하나였다. 그것은 요일
+    갈래로 여전히 참이지만, R56/WP-1 이 계절 축을 세운 지금 **계절은 그보다
+    훨씬 성긴 자산으로 접힌다.** 한쪽만 적으면 요구를 실제보다 크게 적는
+    것이고, 검토자는 그것을 *「그러면 당장은 못 한다」* 로 읽는다.
+
+    ⚠ **몫을 빼놓지 않는다.** 계절별 형상만 채우고 총량을 일수에 비례해
+    나누면 겨울 하루와 여름 하루가 **같아진다** — 계절을 넣고도 계절 차이를
+    표현하지 못한다. `core/casegrid/profiles.py` 의 `Season.share` 가 그
+    차이를 담는 유일한 자리이며, 그래서 자동 정규화하지 않는다.
+    """
+    annual = f"연간 시계열(일사량·부하) {_STEPS_PER_YEAR:,}스텝 입력 배선"
+    if len(seasons) == 1:
+        return (
+            f"자산(`{_PROFILE_ASSET}`)의 `seasons:` 에 계절별 대표일 형상과 "
+            "**계절별 몫(`share`)** 을 함께 채우면 계절이 접힌다 "
+            f"(계절마다 {steps}스텝 대표일 한 벌 · {_STEPS_PER_YEAR:,} 전량 불필요 · 몫 "
+            "없이 형상만 채우면 계절 간 하루 에너지가 같아진다) · 요일 변동은 "
+            f"그것으로도 남으며 {annual}에서 닫힌다"
+        )
+    return (
+        f"계절은 자산의 `seasons:` 로 접혔다 (계절 {len(seasons)}개 · 계절별 "
+        f"형상과 몫(`share`)이 둘 다 채워진 자산 · 계절마다 {steps}스텝) · "
+        "계절 안 일별 변동과 요일 "
+        f"변동은 남으며 {annual}에서 닫힌다"
+    )
+
+
+def _season_item(
+    hours: tuple[DispatchHour, ...],
+    profile_path: Path | None = None,
+) -> list[UnreflectedItem]:
+    """대표 구간을 되풀이했는가 — **스텝 수와 계절 수 둘을** 본다 (R56/WP-2).
+
+    ## 왜 계절 수를 함께 보는가
+
+    R56/WP-1 이전에는 대표일 하나를 365번 되풀이하는 것이 전부였고, 그래서
+    이 항목의 해소 조건은 *「연간 시계열 입력 배선」* — 곧 8,760 전량 —
+    하나뿐이었다. 계절 축이 선 지금 **계절별 대표일 몇 벌만으로도 계절이
+    접힌다.** 그러므로 자산이 계절을 **몇 개 선언했는가**가 이 항목의 실제
+    상태이며, 문면이 그것을 읽어서 갈라 적는다.
+
+    ⚠ **8,760 갈래를 지우지 않는다.** 스텝이 한 해를 다 덮으면 이 항목이
+    사라지는 것은 그대로 옳다 — 계절 접기는 그 갈래를 대신하는 것이 아니라
+    **그보다 성긴 갈래**다.
+
+    ⚠ **계절을 넷 선언해도 항목은 남는다.** 이름이 「계절·**요일** 변동」이고
+    요일은 그대로 미반영이며, 계절 안에서는 여전히 같은 하루가 되풀이된다.
+
+    ## 자산을 여기서 직접 읽는 근거
+
+    `core/report/case_report.py` 가 **이미** `load_daily_shapes()` 를 부른다 —
+    같은 자산을 같은 방식으로 읽으므로 정본이 갈리지 않는다. 그리고
+    `.importlinter` 의 `layers` 계약에서 `core.report` 는 `core.casegrid`
+    보다 위이므로 위에서 아래로 부르는 것은 허용된다. 산출물 자료형
+    (`CaseReport`)에 계절 칸을 더하지 않은 이유는 *「검사를 세우려고 산출물
+    자료형을 넓히는 것은 순서가 거꾸로다」*(R36 판정)이다.
+
+    ⚠ **예외를 감싸지 않는다.** `load_daily_shapes()` 는 자산이 없거나
+    어긋나면 던지는데, 배포 경로는 `build_case_report` 가 **이미 같은 자산을
+    읽고 지난 뒤**라 거기서 던졌다면 이 자리까지 오지 않는다. 여기서 삼키면
+    자산 결손이 **미반영 항목 문면 속으로 숨는다.**
+
+    ## `profile_path` — 시험이 계절 갈래를 밟는 통로
+
+    인자 없이 안에서만 부르면 계절 여럿 갈래를 부르는 곳이 하나도 없고,
+    그러면 이 함수 자신이 이 저장소가 다섯 번 밟은 *「선언은 있는데 읽는
+    쪽이 없다」*(`scripts/check_unread_extension_points.py` 머리말이 그 다섯을
+    센다)가 된다 — 이 WP 가 고치려는 바로 그 형태다. 기본값은 배포 자산이므로
+    **배포 경로의 동작은 인자가 없는 것과 같다.**
+    """
     if len(hours) >= _STEPS_PER_YEAR:
         return []
+    # 부하와 발전은 같은 달력 위에 서야만 자산이 통과한다(`load_daily_shapes`
+    # 의 `_calendar_of` 대조). 그러므로 어느 쪽을 읽어도 계절 수·스텝 수는 같다.
+    shape = load_daily_shapes(profile_path).generation
+    seasons = shape.seasons
     return [
         UnreflectedItem(
             label="계절·요일 변동",
             direction=DIRECTION_UNKNOWN,
             magnitude=(
                 f"미정량 · 모의 {len(hours)}스텝 되풀이 "
-                f"(연간 {_STEPS_PER_YEAR:,}스텝)"
+                f"(연간 {_STEPS_PER_YEAR:,}스텝) · 계절 {len(seasons)}개"
             ),
-            reason="대표일 1일 모의 · 연간 일사량·부하 시계열 없음",
-            resolves_when="연간 시계열(일사량·부하) 입력 배선",
+            reason=_season_reason(seasons),
+            resolves_when=_season_resolves_when(seasons, steps=shape.steps),
             measured=True,
         )
     ]
