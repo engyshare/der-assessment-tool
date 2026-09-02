@@ -217,9 +217,9 @@ R44-12 가 spec 을 **v0.19 → v0.20** 으로 올렸으나 **§13.2.2 `C-5` 의
 > | **★교체비** | **교체비의 크기 근거** — *「더 저렴」*의 **방향만** 확인됐다 | 통로는 이미 있다 |
 > | **★어휘** | **`FR-704` 어휘(사업자·주민·정부) ↔ 사용자 어휘(국가·전기사용자·분산E)** 어긋남 · **「국가 = 사회」는 미확인 가정** | spec 개정 여부는 **사람 몫** |
 >
-> ⚠⚠⚠ **`core/casegrid/e2e_runner.py` 코드 줄이 500/500 이다 — 한 줄도 못 넣는다.**
-> `core/der/ess.py` 도 498/500. **그 함수를 건드리는 WP 는 먼저 분리해야 한다**
-> (본: `pv_allocation.py` · `perspectives.py` · `perspective_section.py`).
+> ⚠⚠⚠ **코드 줄 예산이 바닥난 파일이 셋이다** — `case_report.py` **500/500(여유 0)** ·
+> `ess.py` 498/500 · `e2e_runner.py` 496/500. ★ **R52 가 남긴 「러너 500/500」은 틀린
+> 수였다**(R53 이 세니 494였다). **표와 처방은 「함정」 절이 갖는다 — 쓰기 전에 세라.**
 >
 > ⚠ 아래 옛 표의 **★V·★R·★S·★T 는 R52 가 닫았다.** ⑤(「남는 경우」 골든)는
 > **이제 선행이 풀렸다**(유형 `E` 거부가 섰다).
@@ -386,7 +386,7 @@ R38 이 세운 검사는 **「선언된 셋을 넘지 않는다」는 래칫**�
 PY=~/miniconda3/python.exe
 PYTHONUTF8=1 $PY -m pytest -q                                   # rc=0. 2분 초과 — 배경 실행
 PYTHONUTF8=1 $PY -m ruff check core tests scripts app infra web # --fix 는 마지막에
-PYTHONUTF8=1 $PY -m mypy                                        # 117파일
+PYTHONUTF8=1 $PY -m mypy                                        # 127파일 (R53 실측)
 PYTHONUTF8=1 ~/miniconda3/Scripts/lint-imports.exe              # 4 kept 0 broken
 #   ⚠ 이것도 PYTHONUTF8 이 필요하다 (2026-08-17 실측). 켜지 않으면
 #   `'cp949' codec can't decode byte 0xe2` 로 rc=1 이 나고, 그것은 계약 위반이
@@ -397,7 +397,7 @@ git diff --stat docs/traceability.md            # ← 커밋 전 이것이 반�
 PYTHONUTF8=1 $PY scripts/check_task_mapping.py  # rc=0 이어야 한다 — CI 차단이다
 for g in check_marker_substance check_hardcoded_params check_source_rules          check_partition_assignment check_disclosure check_assumptions          check_precommit_installed check_unread_extension_points          check_docstring_references check_status_round_blocks; do PYTHONUTF8=1 $PY scripts/$g.py; done
 PYTHONUTF8=1 $PY scripts/check_file_size.py --code-strict
-for f in scripts/negtest_*.py; do PYTHONUTF8=1 $PY "$f"; done   # 12종. 배경 실행
+for f in scripts/negtest_*.py; do PYTHONUTF8=1 $PY "$f"; done   # 15종. 배경 실행
 PYTHONUTF8=1 ~/miniconda3/envs/r31py311/python.exe -m pytest -q # CI 는 3.11 이다
 ```
 
@@ -408,6 +408,25 @@ PYTHONUTF8=1 ~/miniconda3/envs/r31py311/python.exe -m pytest -q # CI 는 3.11 �
 R42 가 여기서 한 건(`core/model/parameters.py`)을 잡혀 커밋을 하나 더 했고,
 **R43 도 두 건(`narrative.py`·`unreflected.py`)을 잡혀 넷째 커밋을 했다.**
 라운드 전체를 볼 때는 `--base <라운드 시작 ref>` 가 맞다(R43 은 `c4ce0e5`).
+★ **R53 은 `--base origin/main`** 으로 돌렸다 — 그것이 **CI 와 같은 기준**이다.
+
+> ### ⚠⚠⚠ **그 둘은 CI 에서 「PR 일 때만」 판정된다 — 직접 푸시는 「미수행」이다** (R53 실측)
+>
+> `.github/workflows/tests.yml` 이 스텝을 `if: github.event_name == 'pull_request'`
+> 로 갈라 두었고 머리말도 그렇게 적는다. 이 저장소는 라운드를
+> **`git push origin HEAD:main`** 으로 닫아 왔으므로 **그 경로에서 게이트 ①②가
+> 판정된 적이 없다.** 워크플로는 조용히 넘기지 않고 *「통과가 아니라 **미수행**
+> 입니다」* 를 로그에 적지만(§13.0.1 ④) **아무도 그 줄을 읽지 않으면 초록불과
+> 구별되지 않는다.**
+>
+> ⚠⚠ **그래서 손으로 돌리는 것이 유일한 판정이다.** R53 이 닫기 전에 돌려
+> `NFR-105` 위반 하나(`core/report/perspective_section.py` 동반 없음)를 잡고
+> 커밋을 하나 더 했다 — R42·R43 과 같은 자리에서 **셋째**다.
+>
+> ⚠ **이 검사는 「커밋 경계」에서만 판정된다** — `scripts/_gitdiff.py::changed_files()`
+> 가 `git diff --name-status base...HEAD` 로 **커밋된 트리끼리만** 비교하므로
+> 작업 트리·스테이징의 새 검사 파일을 **보지 못한다.** 커밋 전에 rc=0 을 만들
+> 방법이 없으니, 판정 함수(`check()`)를 직접 불러 미리 재고 커밋한 뒤 다시 돌린다.
 
 **CI 에서만 되는 것 하나**(R42 신설): `check_dependency_audit` 는 `pip-audit` 의
 `audit.txt` 를 읽는다. 로컬에는 그 파일이 없어 **rc=2** 이며 그것이 옳다 —
@@ -530,12 +549,30 @@ yaml 의 `>-` 접힌 스칼라에서 줄바꿈이 **공백**이 되어
 ⚠ 그 판단을 **관점 이름으로 하드코딩하지 말고** 자료에서 읽어라
 (`PerspectiveColumn.cost_basis_defined` 가 그 본이다).
 
-### ⚠⚠⚠ **`core/casegrid/e2e_runner.py` 코드 줄이 500/500 이다** (R52 실측)
+### ⚠⚠⚠ **코드 줄 예산이 바닥난 파일이 셋이다** (R53 실측 — ⚠ **베끼지 말고 세라**)
 
-**한 줄도 못 넣는다.** `core/der/ess.py` 도 **498/500**.
-**처방**: 그 함수를 건드리는 WP 는 **먼저 분리를 검토한다** — 본은
-`core/casegrid/pv_allocation.py`(R51) · `core/casegrid/perspectives.py` ·
-`core/report/perspective_section.py`(R52). ⚠ `PLR0915`(statement 상한)도 함께 걸려 있다.
+| 파일 | 코드 줄 | 여유 |
+|---|---|---|
+| `core/report/case_report.py` | **500/500** | ★★★ **0 — 한 줄도 못 넣는다** |
+| `core/der/ess.py` | 498/500 | 2 |
+| `core/casegrid/e2e_runner.py` | 496/500 | 4 |
+
+⚠⚠ **R52 가 남긴 「`e2e_runner.py` 는 500/500」은 틀린 수였다** — R53 이 착수 때
+직접 세니 **494/500(여유 6)** 이었다. 그래서 R53 은 인계본이 권한 「먼저 분리」를
+**하지 않고** 일을 `perspectives.py` 로 밀어 **분리 WP 하나를 아꼈다.**
+★ **이 표의 수도 같은 운명이다 — 쓰기 전에 세라**:
+`PYTHONUTF8=1 ~/miniconda3/python.exe scripts/check_file_size.py --code-strict`
+
+★★ **`case_report.py` 가 R53/WP-1 로 정확히 상한에 닿았다.** 그래서 그 WP 는
+`_Sweeper` 쪽 배선을 **넣을 자리가 없어 생략했다**(넣으면 코드 3줄이 늘어 502~504가
+된다). ⚠ **그 파일을 만지는 다음 WP 는 분리가 선행이다.**
+
+**처방**: 그 함수들을 건드리는 WP 는 **일을 여유 있는 모듈로 밀거나 먼저 분리한다** —
+본은 `core/casegrid/pv_allocation.py`(R51) · `core/casegrid/perspectives.py` ·
+`core/report/perspective_section.py`(R52) · `build_society_annualised()`(R53 —
+러너는 인자 하나 + 호출 인자 하나만 늘었다).
+⚠ `PLR0915`(statement 상한 50)도 함께 걸려 있다 — **새 top-level statement 를 만들지
+말고 기존 대입·호출 인자 표현식 안에 접는다**(R53/WP-1 이 그렇게 했다).
 
 ### ⚠⚠⚠ **검사가 「배포 코드가 부르지 않는 함수」를 직접 불러 통과한다** (R51 실물 · R26 의 되풀이)
 
