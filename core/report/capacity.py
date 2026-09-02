@@ -168,7 +168,7 @@ def build_capacity_review(
     """설계 변수마다 탐색 구간을 훑는다.
 
     `probe` 는 *「그 변수를 이 값으로 두었을 때의 결론 축」* 이다 —
-    `core/report/case_report.py::_Sweeper.conclusion_at` 이 그것이며, 1변수
+    `core/report/case_influences.py::_Sweeper.conclusion_at` 이 그것이며, 1변수
     스윕과 **같은 기계**를 쓴다. 갈라 두면 용량 쪽만 변형(`as_planned`)을 읽지
     않는 어긋남이 생기고, 그때 두 절이 서로 다른 사업을 그린다.
 
