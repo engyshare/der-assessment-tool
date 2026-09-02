@@ -77,9 +77,15 @@ CASES: tuple[tuple[str, str, str, str, str], ...] = (
         "test_type_a_violation_is_refused_not_merely_labelled",
     ),
     (
+        # ⚠ **R52/WP-3 이 이 자리의 문면을 바꿨다.** 유형 `E` 도 차단 100% 라는
+        # 조항(`FR-402-AC2.E`)에 구현을 맞추면서 `kind is ExclusionType.A` 가
+        # `kind in (ExclusionType.A, ExclusionType.E)` 가 됐고, 옛 대상 문면은
+        # **더 이상 실물에 없어** 이 하네스가 `[설정오류]` 로 멈췄다.
+        # ★ 그것이 이 하네스의 설계 의도다 — *「방어가 이미 없거나 코드가 바뀌었다」*
+        # 를 조용히 통과시키지 않는다. 대상 문면을 새 실물에 맞춘다.
         "★ 반대 방향 — 유형 B~D 까지 거부해 오탐 0 을 깨뜨림 (FR-402-AC1)",
         "core/valuestream/exclusion_table.py",
-        "        if kind is ExclusionType.A",
+        "        if kind in (ExclusionType.A, ExclusionType.E)",
         "        if kind is not None  # NEGCHECK",
         "tests/contract/test_exclusion_rules_contract.py::test_types_b_to_d_are_not_refused",
     ),

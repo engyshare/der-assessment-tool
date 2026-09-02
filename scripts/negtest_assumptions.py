@@ -45,8 +45,19 @@ def m2(items):
 case("blocked 인데 blocks 없음", m2, "blocks")
 
 # 3 — 근거 없이 신뢰도를 올린다
+#
+# ⚠ **R52/WP-6 이 이 사례의 전제를 무너뜨렸다.** 판정 §1(*「어떤 조사를 통해서
+# 설정된 값임을 기재」*)에 따라 `capex.pv.rooftop` 에 `source`·`verified_at` 이
+# 채워졌고, 그러자 `confidence` 만 「확정」으로 올려도 **결함이 0건**이 되어
+# 이 음성 사례가 조용히 미감지로 돌아섰다.
+# ★ 대장이 좋아진 것이지 검사가 나빠진 것이 아니다 — 그러므로 **대장 항목의
+# 상태에 기대지 말고 「근거 없는 확정」이라는 상태를 이 자리가 직접 세운다.**
+# 그러면 다음에 어느 항목의 출처가 채워져도 이 사례는 계속 성립한다.
 def m3(items):
-    find(items, "capex.pv.rooftop")["confidence"] = "확정"
+    item = find(items, "capex.pv.rooftop")
+    item["confidence"] = "확정"
+    item["source"] = None
+    item["verified_at"] = None
 case("source 없이 확정 주장", m3, "source")
 
 # 4 — 폐기된 어휘 (축 1 토큰을 축 2에 사용)
