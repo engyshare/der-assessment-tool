@@ -763,26 +763,122 @@ assumptions:
     impact_note: "DR은 Phase 2 편익(FR-401-AC2.DemandResponse)이므로 Phase 1 결과에 영향 없음"
     replace_when: "계통운영기관·배전사업자 확인 시"
 
+  # ─────────────────────────────────────────────────────────────────
+  # ★ R54/WP-3 — 「분산편익 크레딧 화폐화」 한 항목을 **다섯 칸**으로 나눴다
+  # (사용자 판정 §3, `docs/decisions-2026-09-02-R54.md`). `DistributedBenefit`
+  # 은 하위 항목별 구조(`DistributedSubItems`)를 요구하는데 이 대장은 종전에
+  # 합계 하나만 가졌다 — R53/WP-1 이 그 틈을 전액을 `grid_service_won` 한
+  # 칸에 몰아넣는 임의 선택으로 넘겼다(값이 0이라 무해했다). 이 다섯은 그
+  # 틈을 없앤다. **다섯 모두 같은 `q_ref`(Q-12)를 쓴다** — spec §15.1 표의
+  # 질문 한 줄이 대장에서는 다섯 칸으로 나뉜 것이며, `check_assumptions.py`
+  # 의 Q 목록 대조는 `q_ref` 중복을 결함으로 세지 않는다(`key` 만 유일해야
+  # 한다).
   - q_ref: "Q-12"
-    key: "benefit.distributed_credit"
-    title: "분산편익 크레딧 화폐화"
+    key: "benefit.distributed_credit.transmission_avoidance"
+    title: "분산편익 크레딧 화폐화 — 송배전 회피"
     track: "default0"
     value: 0
     sensitivity: null
     value_unit: "원"
     base_year: "2026"
-    applicable_scope: "송배전 회피·손실 감소·계통서비스·온실가스·회복력"
+    applicable_scope: "송배전 설비 증설 회피분 화폐화"
     derivation_method: >-
-      **가정하지 않는다.** FR-404가 이미 기본 비활성(값 0)으로 규정하고
-      있다 — 현행 제도 미도입, 국내 정량 연구 부재. 이 항목은 Q 대장에
-      있으나 실질적으로는 이미 해소된 설계 결정이다.
+      **가정하지 않는다.** FR-404가 송배전 회피분을 기본 비활성(값 0)으로
+      규정한다 — 이 항목이 화폐화되려면 배전사업자의 증설 계획 대비 회피량이
+      확인되어야 하는데 그 자료가 없고, 현행 요금에 이미 반영된 부분과
+      미래 증설 회피 증분을 가르는 방법론도 없다(도메인 원칙 2-1).
     source: null
     verified_at: null
     confidence: "가정"
     disclosure: "공개 가능"
     impact: "낮음"
     impact_note: "Phase 3. 활성화 시에도 본편익과 분리 소계로만 표시된다"
-    replace_when: "해외 VOS 연구 검토 후 Phase 3에서 판단"
+    replace_when: "배전사업자 증설 계획 대비 회피량 자료 확보 시"
+
+  - q_ref: "Q-12"
+    key: "benefit.distributed_credit.loss_reduction"
+    title: "분산편익 크레딧 화폐화 — 손실 감소"
+    track: "default0"
+    value: 0
+    sensitivity: null
+    value_unit: "원"
+    base_year: "2026"
+    applicable_scope: "배전 손실 감소분 화폐화"
+    derivation_method: >-
+      **가정하지 않는다.** FR-404가 손실 감소분을 기본 비활성(값 0)으로
+      규정한다 — 배전 손실률 감소를 화폐화하려면 계통운영기관의 손실률
+      통계와 화폐화 단가가 필요한데 국내 정량 연구가 없다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    disclosure: "공개 가능"
+    impact: "낮음"
+    impact_note: "Phase 3. 활성화 시에도 본편익과 분리 소계로만 표시된다"
+    replace_when: "계통운영기관 손실률 통계·화폐화 단가 확보 시"
+
+  - q_ref: "Q-12"
+    key: "benefit.distributed_credit.grid_service"
+    title: "분산편익 크레딧 화폐화 — 계통서비스"
+    track: "default0"
+    value: 0
+    sensitivity: null
+    value_unit: "원"
+    base_year: "2026"
+    applicable_scope: "계통서비스(전압조정·주파수조정 등) 제공분 화폐화"
+    derivation_method: >-
+      **가정하지 않는다.** FR-404가 계통서비스 제공분을 기본 비활성(값 0)
+      으로 규정한다 — 분산자원이 전압조정·주파수조정 등을 제공하고
+      정산받는 제도 자체가 국내에 아직 도입되지 않았다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    disclosure: "공개 가능"
+    impact: "낮음"
+    impact_note: "Phase 3. 활성화 시에도 본편익과 분리 소계로만 표시된다"
+    replace_when: "분산자원 계통서비스 정산 제도 도입 시"
+
+  - q_ref: "Q-12"
+    key: "benefit.distributed_credit.ghg_reduction"
+    title: "분산편익 크레딧 화폐화 — 온실가스"
+    track: "default0"
+    value: 0
+    sensitivity: null
+    value_unit: "원"
+    base_year: "2026"
+    applicable_scope: "온실가스 감축분 화폐화"
+    derivation_method: >-
+      **가정하지 않는다.** FR-404가 온실가스 감축분을 기본 비활성(값 0)
+      으로 규정한다 — 배출권 가격이나 탄소중립 인센티브로 이 감축분을
+      화폐화하는 제도적 통로가 국내에 없고, 국내 정량 연구도 확인되지
+      않는다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    disclosure: "공개 가능"
+    impact: "낮음"
+    impact_note: "Phase 3. 활성화 시에도 본편익과 분리 소계로만 표시된다"
+    replace_when: "온실가스 감축분 화폐화 제도(배출권 연계 등) 도입 또는 국내 정량 연구 확보 시"
+
+  - q_ref: "Q-12"
+    key: "benefit.distributed_credit.resilience"
+    title: "분산편익 크레딧 화폐화 — 회복력"
+    track: "default0"
+    value: 0
+    sensitivity: null
+    value_unit: "원"
+    base_year: "2026"
+    applicable_scope: "정전 대응·복원력(회복력) 기여분 화폐화"
+    derivation_method: >-
+      **가정하지 않는다.** FR-404가 회복력 기여분을 기본 비활성(값 0)으로
+      규정한다 — 분산자원의 회복력 기여를 화폐화하는 제도·시장이 국내에
+      없고, 국내 정량 연구도 확인되지 않는다.
+    source: null
+    verified_at: null
+    confidence: "가정"
+    disclosure: "공개 가능"
+    impact: "낮음"
+    impact_note: "Phase 3. 활성화 시에도 본편익과 분리 소계로만 표시된다"
+    replace_when: "회복력 기여 화폐화 방법론·제도 확보 시"
 
   # ─────────────────────────────────────────────────────────────────
   # ★ R51/WP-6 신설, ★★★ R52/WP-6 이 `default0` → `assume` 으로 올렸다

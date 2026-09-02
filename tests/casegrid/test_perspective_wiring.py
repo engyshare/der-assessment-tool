@@ -21,6 +21,7 @@ from core.contracts.units import ZERO
 from core.report.case_report import CONCLUSION_METRIC, build_case_report
 from core.report.narrative import render_markdown
 from core.report.perspective_report import REQUIRED_PERSPECTIVES
+from core.valuestream import DistributedSubItems
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _GOLDEN = _REPO_ROOT / "fixtures" / "golden" / "scenario_unsubsidized.yaml"
@@ -167,12 +168,12 @@ def test_header_row_pairs_repository_and_user_vocabulary(report) -> None:
 # ── R53/WP-1 — 사회 관점 편익(`DistributedBenefit`)의 배선 ──────────────────
 #
 # ⚠ 아래 세 검사는 `run_single_case_e2e()`(배포 진입점)를 직접 지난다 — 대장의
-# `benefit.distributed_credit` 값이 항상 0(`default0`)이라 `report` 픽스처만
-# 으로는 ⓒ(0이 아닌 값에서 축이 안 움직이는가)를 잴 수 없다.
+# `benefit.distributed_credit.*` 다섯 칸이 항상 0(`default0`)이라 `report`
+# 픽스처만으로는 ⓒ(0이 아닌 값에서 축이 안 움직이는가)를 잴 수 없다.
 
 
-def _run_with_distributed_credit(distributed_credit_won_per_year: float):
-    """`distributed_credit_won_per_year` 하나만 바꿔 배포 경로를 돈다.
+def _run_with_distributed_credit(sub_items: DistributedSubItems):
+    """`distributed_sub_items` 하나만 바꿔 배포 경로를 돈다.
 
     `test_rec_wiring.py::_run` 과 같은 이유로 대장 수준표를 그대로 쓴다 —
     이 파일이 재는 것이 배선이지 값이 아니기 때문이다.
@@ -184,7 +185,7 @@ def _run_with_distributed_credit(distributed_credit_won_per_year: float):
         horizon_years=20,
         daily_shapes=load_daily_shapes(),
         annual_load_kwh=level_map["household_load_annual_kwh"]["base"],
-        distributed_credit_won_per_year=distributed_credit_won_per_year,
+        distributed_sub_items=sub_items,
     )
 
 
@@ -194,7 +195,7 @@ def test_society_column_receives_a_distributed_benefit_row() -> None:
     「행이 없어서 0원」과 「값이 0이어서 0원」은 뜻이 정반대다(러너
     `GridPurchase` 주석 — 826~830줄 — 이 같은 규칙을 적는다).
     """
-    outcome = _run_with_distributed_credit(0.0)
+    outcome = _run_with_distributed_credit(DistributedSubItems())
     society = next(
         r for r in outcome.perspectives.results if r.perspective is Perspective.SOCIETY
     )
@@ -220,7 +221,7 @@ def test_distributed_benefit_wiring_leaves_the_conclusion_axis_untouched_when_em
     without_kwarg = build_perspective_wiring((), (), (), ZERO, 0.05, horizon_years=1)
     with_kwarg = build_perspective_wiring(
         (), (), (), ZERO, 0.05, horizon_years=1,
-        society_annualised=build_society_annualised(0.0),
+        society_annualised=build_society_annualised(),
     )
     op_without = next(
         r for r in without_kwarg.results if r.perspective is Perspective.OPERATOR
@@ -236,8 +237,10 @@ def test_distributed_benefit_structurally_cannot_touch_the_conclusion_axis() -> 
     「값이 0이라 축이 안 움직인다」가 아니라 「구조적으로 축에 닿을 수
     없다」는 것을 잰다 — R53/WP-1 판정 ①의 핵심 단언.
     """
-    zero = _run_with_distributed_credit(0.0)
-    large = _run_with_distributed_credit(50_000_000.0)
+    zero = _run_with_distributed_credit(DistributedSubItems())
+    large = _run_with_distributed_credit(
+        DistributedSubItems(transmission_avoidance_won=50_000_000.0)
+    )
 
     zero_society = next(
         r for r in zero.perspectives.results if r.perspective is Perspective.SOCIETY

@@ -75,7 +75,7 @@ from core.casegrid.models import CaseBasis, CashflowSplit
 from core.casegrid.perspectives import PerspectiveWiring
 from core.casegrid.profiles import load_daily_shapes
 from core.casegrid.variants import run_order
-from core.contracts.assumptions import AssumptionValue
+from core.contracts.assumptions import AssumptionProvider, AssumptionValue
 from core.engine.rule_based import DispatchRule
 from core.incentive.schemas import IncentiveScheme
 from core.report.capacity import CapacityFinding, build_capacity_review
@@ -99,6 +99,7 @@ from core.report.dispatch_notes import (
     build_hourly_profile,
 )
 from core.report.manifest import create_manifest
+from core.valuestream import DistributedSubItems
 
 #: R54/WP-2 재수출 — 이 여섯은 `core/report/case_influences.py` 에서 왔다.
 #: 밖(`narrative.py`·`shortfall.py`·`verification.py`·검사 파일)이 이 모듈
@@ -136,8 +137,31 @@ REC_PRICE_LEDGER_KEY = "benefit.rec_price"
 #: 없는 이유는 그 파일 옆 주석에 있다(폭을 지어낼 수 없어 스윕 축이 아니다).
 REC_WEIGHT_LEDGER_KEY = "benefit.rec_weight_pv"
 
-#: 분산편익 크레딧 대장 키 (R53/WP-1). `REC_PRICE_LEDGER_KEY` 와 같은 통로.
-DISTRIBUTED_CREDIT_LEDGER_KEY = "benefit.distributed_credit"
+#: 분산편익 크레딧 대장 키 다섯 (R53/WP-1 · R54/WP-3 — 대장이 다섯 칸으로
+#: 나뉘었다). `REC_PRICE_LEDGER_KEY` 와 같은 통로. `DistributedSubItems`
+#: 필드명과 짝지어 `_read_distributed_sub_items()` 가 다섯을 한 번에 읽는다.
+DISTRIBUTED_CREDIT_LEDGER_KEYS: tuple[tuple[str, str], ...] = (
+    ("transmission_avoidance_won", "benefit.distributed_credit.transmission_avoidance"),
+    ("loss_reduction_won", "benefit.distributed_credit.loss_reduction"),
+    ("grid_service_won", "benefit.distributed_credit.grid_service"),
+    ("ghg_reduction_won", "benefit.distributed_credit.ghg_reduction"),
+    ("resilience_won", "benefit.distributed_credit.resilience"),
+)
+
+
+def _read_distributed_sub_items(provider: AssumptionProvider) -> DistributedSubItems:
+    """대장 다섯 칸을 읽어 `DistributedSubItems` 를 짓는다 (R54/WP-3 판정 ①).
+
+    `required_scalar()` 를 다섯 번 부른다 — 없으면 0 으로 메우지 않고
+    멈춘다(그 함수 독스트링과 같은 이유, `REC_PRICE_LEDGER_KEY` 와 같은
+    통로). 항목 하나가 대장에서 빠지면 곧바로 예외로 드러나야 한다 —
+    조용히 0 으로 메우면 「대장에 없다」와 「대장이 0 이다」가 산출물에서
+    구별되지 않는다.
+    """
+    return DistributedSubItems(**{
+        field: required_scalar(provider, key, note="분산편익")
+        for field, key in DISTRIBUTED_CREDIT_LEDGER_KEYS
+    })
 
 
 @dataclass(frozen=True)
@@ -617,15 +641,16 @@ def build_case_report(
     rec_weight = required_scalar(
         provider, REC_WEIGHT_LEDGER_KEY, note="REC 편익 가중치 (사용자 판정 §5, R52/WP-6)"
     )
-    # ★ **분산편익 크레딧도 대장에서 온다** (R53/WP-1). 지금 값은 0이며
-    # (`track: default0`) 사회 열 편익이 0원을 낸다 — `build_society_
-    # annualised()` 가 이 값으로 사회 열만 짓고 결론축에는 닿지 않는다.
+    # ★ **분산편익 크레딧도 대장에서 온다** (R53/WP-1 · R54/WP-3 판정 ① — 대장이
+    # 다섯 칸으로 나뉘었다). 지금 값은 다섯 모두 0이며(`track: default0`) 사회
+    # 열 편익이 0원을 낸다 — `build_society_annualised()` 가 이 값으로 사회
+    # 열만 짓고 결론축에는 닿지 않는다.
     # ⚠ `_Sweeper` 에도 넘긴다 (R54/WP-2 판정 ③ — R53 이 줄 상한에 걸려
     # 생략했던 배선). 스윕 결과는 지금 `variants[..][CONCLUSION_METRIC]`
     # 만 읽고 `.perspectives` 를 안 보므로 이 값이 어떤 수도 바꾸지는
     # 않지만, 읽는 날을 대비해 본 실행과 같은 값을 본다 — result_1.md 8절의
-    # 「판정 필요」를 이 WP 가 답한 자리다.
-    distributed_credit = required_scalar(provider, DISTRIBUTED_CREDIT_LEDGER_KEY, note="분산편익")
+    # 「판정 필요」를 R54/WP-3 이 답한 자리다.
+    distributed_sub_items = _read_distributed_sub_items(provider)
     # ★ **가구 부하를 본 실행에 세운다** (판정 B-1, `docs/decisions-
     # 2026-08-31-R48.md` §5·§1·§4). 종전에는 이 호출이 `annual_load_kwh` 를
     # 넘기지 않아 결론이 부하 없는 사업(PV+ESS 만) 위에 섰고, 그래서 §4 가
@@ -637,12 +662,12 @@ def build_case_report(
         daily_shapes=shapes,
         annual_load_kwh=level_map["household_load_annual_kwh"]["base"],
         rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
-        distributed_credit_won_per_year=distributed_credit,
+        distributed_sub_items=distributed_sub_items,
     )
     sweeper = _Sweeper(
         level_map=level_map, horizon_years=horizon_years, scheme=scheme,
         daily_shapes=shapes, rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
-        distributed_credit_won_per_year=distributed_credit,
+        distributed_sub_items=distributed_sub_items,
     )
     # ★ 부기 칸 만들기(`_provenance`)를 주입한다 — 그 함수는 이 파일에 남아
     # 있고(R54/WP-2 는 영향도 스윕 한 덩어리만 뗐다), `case_influences` 가

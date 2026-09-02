@@ -4,9 +4,10 @@
 
 `case_report.py` 가 `NFR-206` 코드 줄 상한(500)에 **정확히** 걸려 있었다.
 R53/WP-1 이 상한에 맞추느라 `_Sweeper` 쪽 배선 하나를 넣을 자리가 없어
-생략했고(경위는 `case_report.py` 의 `DISTRIBUTED_CREDIT_LEDGER_KEY` 옆
+생략했고(경위는 `case_report.py` 의 `DISTRIBUTED_CREDIT_LEDGER_KEYS` 옆
 주석이 갖는다), 이 WP 가 쪼개 자리를 내고 **그 배선을 넣는다** — 아래
-`_Sweeper.conclusion_at_many` 의 `distributed_credit_won_per_year`.
+`_Sweeper.conclusion_at_many` 의 `distributed_sub_items`(R54/WP-3 이후로는
+스칼라 하나가 아니라 `DistributedSubItems` 다섯 칸이다).
 
 ★ **분리는 동작을 바꾸지 않는다.** 여섯을 주석·독스트링째로 통째로 옮겼고
 호출 방향은 `case_report.py` → 이 모듈 하나뿐이다.
@@ -65,6 +66,7 @@ from core.casegrid.profiles import DailyShapes
 from core.contracts.assumptions import AssumptionValue
 from core.incentive.schemas import IncentiveScheme
 from core.report.sensitivity import rank_influences
+from core.valuestream import DistributedSubItems
 
 #: 주 지표 — 표시되는 결론이다 (`FR-1002-AC1`).
 HEADLINE_METRIC = "payback_years"
@@ -215,7 +217,7 @@ class _Sweeper:
         daily_shapes: DailyShapes,
         rec_price_won_per_unit: float,
         rec_weight_pv: float,
-        distributed_credit_won_per_year: float,
+        distributed_sub_items: DistributedSubItems | None,
     ) -> None:
         self._level_map = level_map
         self._horizon_years = horizon_years
@@ -223,7 +225,7 @@ class _Sweeper:
         self._daily_shapes = daily_shapes
         self._rec_price_won_per_unit = rec_price_won_per_unit
         self._rec_weight_pv = rec_weight_pv
-        self._distributed_credit_won_per_year = distributed_credit_won_per_year
+        self._distributed_sub_items = distributed_sub_items
         self._memo: dict[tuple[tuple[str, float], ...], float] = {}
 
     def conclusion_at(self, variable: str, value: float) -> float:
@@ -267,13 +269,14 @@ class _Sweeper:
             rec_price_won_per_unit=self._rec_price_won_per_unit,
             rec_weight_pv=self._rec_weight_pv,
             # ★ **본 실행과 같은 분산편익 크레딧을 쓴다** (R53/WP-1 ·
-            # R54/WP-2 판정 ③ — `case_report.py` 가 줄 상한에 걸려 R53 이
-            # 생략한 배선). 지금은 이 값이 사회 열(`.perspectives`)에만
-            # 닿고 결론 축(`variants` 의 `CONCLUSION_METRIC`)을 움직이지
-            # 않으므로 넘겨도 어떤 수도 바뀌지 않는다. 그러나 스윕 결과가
-            # `.perspectives` 를 읽는 날 이 자리가 비어 있으면 **본문과 5.1 이
-            # 서로 다른 사업을 그린다** — 위 둘이 적어 둔 것과 같은 함정이다.
-            distributed_credit_won_per_year=self._distributed_credit_won_per_year,
+            # R54/WP-2 판정 ③ · R54/WP-3 — 대장이 다섯 칸으로 나뉘어 이제는
+            # `DistributedSubItems` 하나를 그대로 넘긴다). 지금은 이 값이
+            # 사회 열(`.perspectives`)에만 닿고 결론 축(`variants` 의
+            # `CONCLUSION_METRIC`)을 움직이지 않으므로 넘겨도 어떤 수도
+            # 바뀌지 않는다. 그러나 스윕 결과가 `.perspectives` 를 읽는 날
+            # 이 자리가 비어 있으면 **본문과 5.1 이 서로 다른 사업을 그린다**
+            # — 위 둘이 적어 둔 것과 같은 함정이다.
+            distributed_sub_items=self._distributed_sub_items,
         )
         result = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
         self._memo[key] = result

@@ -37,6 +37,7 @@ import pytest
 from core.casegrid.profiles import load_daily_shapes
 from core.report import case_influences, case_report
 from core.report.case_report import CONCLUSION_METRIC, PLAN_VARIANT
+from core.valuestream import DistributedSubItems
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _MAIN_RUN_SOURCE = _REPO_ROOT / "core" / "report" / "case_report.py"
@@ -98,8 +99,8 @@ def test_the_sweep_and_the_main_run_pass_the_same_runner_kwargs() -> None:
     이 서로 다른 사업을 그린다** — 각 절은 자기 기준에서 매끈하므로 아무
     검사도 걸리지 않는다(R37 이 일사 곡선으로, R48/WP-F 가 가구 부하로,
     R52/WP-6 이 REC 로 각각 겪은 함정이며, R53 은
-    `distributed_credit_won_per_year` 를 빠뜨리고 이 검사가 없어서 사람이
-    찾아야 했다).
+    `distributed_credit_won_per_year`(R54/WP-3 이후 `distributed_sub_items`)
+    를 빠뜨리고 이 검사가 없어서 사람이 찾아야 했다).
 
     ⚠⚠ **어느 쪽도 손 목록이 아니다.** 두 자리에서 각각 읽어 서로 비교한다 —
     「지금 이 여덟 개다」를 박아 넣으면 인자가 늘 때마다 검사도 손으로
@@ -164,7 +165,7 @@ def test_the_reexports_are_the_same_objects() -> None:
 def test_the_sweeper_hands_the_distributed_credit_to_the_runner(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """★★ 생성자가 받은 `distributed_credit_won_per_year` 가 러너까지 **그대로** 흐른다.
+    """★★ 생성자가 받은 `distributed_sub_items` 가 러너까지 **그대로** 흐른다.
 
     검사 ① 이 「이름이 있다」를 재면 이것은 「값이 흐른다」를 잰다 — 이름은
     있으면서 다른 값을 넘기는 변이(예: 실수로 상수를 박는다)는 ① 이 못 본다.
@@ -185,7 +186,8 @@ def test_the_sweeper_hands_the_distributed_credit_to_the_runner(
 
     monkeypatch.setattr(case_influences, "run_single_case_e2e", fake_runner)
 
-    wired = 123_456.0  # ← 흘러들어온 그 수인지 알 수 있게, 헷갈릴 여지 없는 수
+    # ← 흘러들어온 그 객체인지 알 수 있게, 헷갈릴 여지 없는 수를 담는다
+    wired = DistributedSubItems(grid_service_won=123_456.0)
     sweeper = case_influences._Sweeper(
         level_map={
             "household_load_annual_kwh": {"low": 1.0, "base": 2.0, "high": 3.0}
@@ -195,14 +197,14 @@ def test_the_sweeper_hands_the_distributed_credit_to_the_runner(
         daily_shapes=load_daily_shapes(),
         rec_price_won_per_unit=70.0,
         rec_weight_pv=0.5,
-        distributed_credit_won_per_year=wired,
+        distributed_sub_items=wired,
     )
     sweeper.conclusion_at_many({"household_load_annual_kwh": 5.0})
 
     assert recorded, "스파이가 호출을 녹음하지 못했다 — 이 검사가 아무것도 보지 못했다"
-    assert recorded["distributed_credit_won_per_year"] == wired, (
-        f"생성자는 {wired:,.0f}원을 받았는데 러너에는 "
-        f"{recorded.get('distributed_credit_won_per_year')!r} 이 닿았다 — "
+    assert recorded["distributed_sub_items"] is wired, (
+        f"생성자는 {wired!r} 를 받았는데 러너에는 "
+        f"{recorded.get('distributed_sub_items')!r} 이 닿았다 — "
         "스윕이 본 실행과 다른 사업을 그린다(R53/WP-1 이 저지르고 R54/WP-2 가 "
         "메운 바로 그 배선이다)"
     )

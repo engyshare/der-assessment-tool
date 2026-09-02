@@ -107,24 +107,22 @@ class PerspectiveWiring:
 
 
 def build_society_annualised(
-    distributed_credit_won: float,
+    sub_items: DistributedSubItems | None = None,
 ) -> tuple[tuple[ValueStream, int], ...]:
-    """대장 스칼라 하나로 `DistributedBenefit` 스트림을 짓는다 (R53/WP-1).
+    """대장 다섯 칸을 그대로 받아 `DistributedBenefit` 스트림을 짓는다 (R54/WP-3).
 
     ``build_perspective_wiring()`` 의 ``society_annualised`` 로만 들어간다 —
     `annualised`(결론축 재료)에는 절대 섞지 않는다(위 머리말 「사업자 열은
     결론축 그대로다」, R53/WP-1 판정 ①). 이 함수는 러너의 `annualised`·
     `annual_benefit`·`benefit_rows` 를 하나도 건드리지 않는다.
 
-    ⚠ 대장(`benefit.distributed_credit`)은 하위 항목 다섯을 나누지 않고
-    합계 하나만 낸다. `DistributedBenefit` 은 하위 항목별 구조를 요구하므로
-    ``grid_service_won`` 한 항목에 전액을 담는다 — 지금 값이 0이라 무해하나,
-    대장이 0이 아닌 값을 갖는 날 이 배분은 사실과 다르게 읽힌다(판정 필요 —
-    `.orch/R53/result_1.md` 8절 참조).
+    ⚠ 대장(`benefit.distributed_credit.*`)이 다섯 칸으로 나뉘었다(R54/WP-3
+    판정 ①). R53/WP-1 은 그 틈을 ``grid_service_won`` 한 칸에 전액을 몰아
+    넣는 임의 선택으로 넘겼었다 — 이 함수는 이제 그 임의 배분을 하지 않고
+    `DistributedSubItems` 다섯을 받은 그대로 흘려보낸다. ``sub_items`` 가
+    `None` 이면 `DistributedBenefit` 자신의 기본값(전부 0)을 쓴다.
     """
-    stream: ValueStream = DistributedBenefit(
-        sub_items=DistributedSubItems(grid_service_won=distributed_credit_won)
-    )
+    stream: ValueStream = DistributedBenefit(sub_items=sub_items)
     annual_won = int(stream.annual_value(DispatchResult.zeros(1), year=1))
     return ((stream, annual_won),)
 

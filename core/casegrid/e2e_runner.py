@@ -83,7 +83,7 @@ from core.der.pv import PV, OperatingMode, PVAllocationPriority
 from core.engine.rule_based import RuleBasedEngine
 from core.incentive.schemas import IncentiveScheme
 from core.regulation.tariff import TariffEngine
-from core.valuestream import REC, PeakShaving, SurplusSale
+from core.valuestream import REC, DistributedSubItems, PeakShaving, SurplusSale
 from core.valuestream.exclusion_table import assert_no_exclusions
 from core.valuestream.settlement import SettlementInputs, assemble
 
@@ -355,7 +355,7 @@ def run_single_case_e2e(
     extra_appliance_load_kwh: float = 0.0,
     rec_price_won_per_unit: float = 0.0,
     rec_weight_pv: float = 1.0,
-    distributed_credit_won_per_year: float = 0.0,
+    distributed_sub_items: DistributedSubItems | None = None,
     nwas_price_won_per_kwh: float = 0.0,
     cp_price_won_per_kw_month: float = 0.0,
     settlement_inputs: SettlementInputs | None = None,
@@ -960,7 +960,7 @@ def run_single_case_e2e(
         perspectives=build_perspective_wiring(
             annualised, benefit_rows, [*operating_cost_rows, *lifecycle_rows],
             initial_investment, discount_rate, horizon_years=horizon_years,
-            society_annualised=build_society_annualised(distributed_credit_won_per_year)),
+            society_annualised=build_society_annualised(distributed_sub_items)),
         basis=CaseBasis(
             initial_investment_won=int(initial_investment),
             annual_benefit_won=annual_benefit,

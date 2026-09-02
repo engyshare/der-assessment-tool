@@ -140,3 +140,31 @@ def test_distributed_network_items_are_type_b_increment_only() -> None:
             exclusions[0][2],
         )
     ]
+
+
+@pytest.mark.req("FR-404-AC2")
+def test_distributed_sub_items_each_land_in_their_own_slot() -> None:
+    """R54/WP-3 판정 ④ — 다섯 칸에 **서로 다른** 값을 주면 `formula()` 가 그
+    다섯을 각각 제 이름표에 적는다.
+
+    ⚠ 다섯에 같은 값을 주면 자리가 뒤바뀌어도 초록이 된다 — 그래서 다섯을
+    모두 다르게 준다. ⚠ 0으로만 재면 「0이라 맞다」와 「자리가 맞다」가
+    구별되지 않는다 — 그래서 전부 0이 아니다.
+    """
+    stream = DistributedBenefit(
+        sub_items=DistributedSubItems(
+            transmission_avoidance_won=11.0,
+            loss_reduction_won=22.0,
+            grid_service_won=33.0,
+            ghg_reduction_won=44.0,
+            resilience_won=55.0,
+        )
+    )
+    formula = stream.formula(_dispatch_zeros(), year=1)
+
+    assert "송배전 회피 11원" in formula
+    assert "손실 감소 22원" in formula
+    assert "계통서비스 33원" in formula
+    assert "온실가스 44원" in formula
+    assert "회복력 55원" in formula
+    assert stream.annual_value(_dispatch_zeros(), year=1) == to_won(11 + 22 + 33 + 44 + 55)
