@@ -19,7 +19,7 @@ from decimal import Decimal
 from typing import cast
 
 from core.casegrid.attribution import attribute_benefits
-from core.casegrid.grid_support import _resolve_nwas_cp
+from core.casegrid.grid_support import _resolve_nwas_cp, peak_shaving_enabled
 from core.casegrid.incentive_cases import (
     Viewpoint,
     build_capex_cashflows_for_all_cases,
@@ -790,9 +790,14 @@ def run_single_case_e2e(
     peak_reduction_kw = ess.reducible_peak_kw(
         year=1, site_load_kw=_site_load_kw(household, dispatch, ctx)
     )
+    # ★ **방식 「나」(배전망 사업자 지시)에서는 `PeakShaving` 을 애초에 만들지
+    # 않는다** (사용자 판정 §1, `docs/decisions-2026-09-02-R54.md`). 「한 번에
+    # 하나」는 둘이 있으면 막는다는 뜻이 아니라 한 가지만 한다는 뜻이다.
+    # 술어는 `grid_support.py::peak_shaving_enabled` — `HYBRID` 는 켠 채 둔다.
     peak = PeakShaving(
         monthly_peak_reduction_kw=[peak_reduction_kw] * MONTHS_PER_YEAR,
         demand_charge_won_per_kw_month=demand_charge,
+        enabled=peak_shaving_enabled(ess),
     )
 
     # ★ **CBA 에 닿기 전에 거부한다.** 계산한 뒤에 막으면 「예외는 나지만 이미

@@ -73,3 +73,31 @@ def _resolve_nwas_cp(
             enabled=cp_enabled,
         ),
     )
+
+
+#: 방식 「나」(배전망 사업자 지시)의 운전 방법 둘 — 사용자 판정 §1
+#: (`docs/decisions-2026-09-02-R54.md`). `PeakShaving` 은 방식 「가」의 편익이므로
+#: 이 모드들에서는 **애초에 만들지 않는다**(값 0 인 채 태그만 서는 것이 아니다).
+#:
+#: **`frozenset` 인 이유 (`NFR-205`).** `_MODE_WINDOWS` 가 `MappingProxyType`
+#: 인 것과 같은 이유다 — 평범한 `set` 은 모듈 수준 가변 상태이며, 케이스 그리드
+#: 병렬 실행에서 한 번의 변형이 다른 케이스의 결과를 조용히 바꾼다.
+GRID_DIRECTED_MODES: frozenset[ESSOperatingMode] = frozenset(
+    {ESSOperatingMode.GRID_DISCHARGE, ESSOperatingMode.SEMI_CENTRAL_DISPATCH}
+)
+
+
+def peak_shaving_enabled(ess: ESS) -> bool:
+    """`PeakShaving` 을 켤지 — 방식 「가」만 켠다 (사용자 판정 §1 · R54).
+
+    ⚠ **`ess.operating_mode` 를 읽는다 — 호출부의 원시 인자를 다시 보지
+    않는다.** `_resolve_nwas_cp()` 가 독스트링에 적어 둔 원칙과 같다(「세운
+    자원에서 읽는다」) — 호출부가 넘긴 인자로 다시 판단하면 두 벌이 되어
+    어긋날 수 있다.
+
+    ⚠ **`HYBRID`(혼합)는 `True` 다 — 건드리지 않는다.** 혼합 모드에서
+    `NWAs`·`CP` 와 `PeakShaving` 이 함께 켜지는 경우의 배타는
+    `ESS.value_streams()` 독스트링이 적어 둔 별개 자리이며 이 함수의 범위
+    밖이다(사용자 판정 §1 ⚠ — 혼합을 함께 끄면 결론축이 움직일 수 있다).
+    """
+    return ess.operating_mode not in GRID_DIRECTED_MODES
