@@ -157,7 +157,7 @@
 |  |  | 1 | `FR-403-AC3` | 시뮬레이션·최적화 실행 전에 min > max 충돌을 검사하고, 충돌 시 "2027-01-15 18:00에 ESS 방전 하한(예비력 확보)과 상한(SOC 제약)… | 자동 | test_conflict.py |
 |  |  | 1 | `FR-403-AC4` | 무한대 표현에는 math.inf를 사용하며 유한 대형 상수를 sentinel로 쓰지 않는다 | 자동 | test_conflict.py |
 | `FR-404` | Must-have | 1 | `FR-404-AC1` | 활성화 시 "정책 가정 편익 — 현행 제도 미반영" 경고를 리포트 상단에 표시 | 자동 | test_policy_warning_wiring.py 2건, test_der_contract.py 2건, test_ev_v2g.py 4건, test_policy_warning_section.py 5건 |
-|  |  | 1 | `FR-404-AC2` | 활성화하더라도 본편익 합계와 분리된 별도 소계로 표시하며, 주 지표(할인 회수기간)는 본편익 기준값과 크레딧 포함값을 모두 제시한다 | 자동 | test_mapping_requirements.py |
+|  |  | 1 | `FR-404-AC2` | 활성화하더라도 본편익 합계와 분리된 별도 소계로 표시하며, 주 지표(할인 회수기간)는 본편익 기준값과 크레딧 포함값을 모두 제시한다 | 자동 | test_mapping_requirements.py 2건 |
 |  |  | 1 | `FR-404-AC3` | 하위 항목(송배전 회피·손실 감소)은 FR-402 유형 B에 해당하므로, 현행 요금에 이미 반영된 부분을 제외한 미래 증설 회피 증분만 계상한다. 증분 분리 근… | 자동 | test_mapping_requirements.py |
 | `FR-501` | Must-have | 1 | `FR-501-AC1` | 주택용 누진제 (구간별 단가·기본요금·필수사용량 공제) | 자동 | test_tariff.py |
 |  |  | 1 | `FR-501-AC2` | TOU (계절 × 요일 × 시간대 매트릭스) — 2026 계절시간대별 개편안 반영 | 자동 | test_tariff.py |

@@ -1,0 +1,37 @@
+# ⚠⚠⚠ 시험용 가정 픽스처 — 사업 전망이 아니다 (R54/WP-4)
+#
+# **이 값은 시험용 가정이며 이 사업이 흑자가 된다는 주장이 아니다.** 진짜
+# 대장(`docs/assumptions.yaml`)으로는 이 시나리오가 뒤집히지 않는다 —
+# 전환지원율이 117.7%(전액 지원으로도 20년 안에 회수되지 않는다). 이 파일은
+# `subsidy_rate` 하나만 나른다(`core/report/case_report.py::_load_scenario`
+# 의 계약 그대로다) — 흑자를 만드는 손잡이는 이 파일이 아니라
+# `fixtures/probe/assumptions_probe_gap_margin.yaml`(시험용 파생 대장, 그
+# 머리말이 자세한 경위를 갖는다) 쪽에 있다.
+#
+# `fixtures/golden/scenario_subsidy_80.yaml` 의 머리말 형식을 따르되, 위
+# 경고를 맨 앞에 둔다(R54/WP-4 판정 ①).
+#
+# ── 무엇을 재는가 ─────────────────────────────────────────────────────
+# `core/report/narrative.py::GAP_MARGIN`(흑자 렌더 경로)을 붙든다. 골든
+# 3종(`fixtures/golden/scenario_*.yaml`)이 전부 `.inf`(미회수)이고 결론축이
+# 결손이라 그 경로가 저장소에서 한 번도 실행된 적이 없었다
+# (`tests/golden/test_regression_scenarios.py` 모듈 독스트링 참조). 검사는
+# `tests/golden/test_probe_gap_margin_scenario.py` 이며, `fixtures/golden/`
+# 의 자동 수집(`GOLDEN_DIR.glob("scenario_*.yaml")`)에 걸리지 않도록 이
+# 파일은 **`fixtures/probe/`** 에 둔다(그 glob 은 `fixtures/golden/` 만
+# 본다 — R54/WP-4 판정 ③, `result_4.md` 2절 참조). `oracle_rank`·
+# `oracle_source` 를 적지 않는 이유도 같다 — `tests/ci/
+# test_performance_and_golden.py::
+# test_repo_golden_files_are_readable_and_declare_an_oracle_rank_and_source`
+# 는 `fixtures/golden/` 만 globbing 하므로 이 파일을 집지 않는다(실측
+# 확인, `result_4.md` 참조). 이 파일은 골든 회귀 오라클이 아니라 **코드
+# 경로 프로브**이므로 오라클 순위·출처 개념 자체가 적용되지 않는다.
+#
+# subsidy_rate 는 `fixtures/golden/scenario_subsidy_80.yaml`(기존 골든,
+# 건드리지 않았다)과 같은 0.80 을 그대로 썼다 — R54/WP-4 판정 ④의 대조군
+# (control group)이 그 파일의 실측(진짜 대장, npv_won: -3697129)과
+# 정확히 같은 입력으로 짝지어져야 하기 때문이다. 다른 subsidy_rate 를
+# 골랐다면 대조군이 「다른 시나리오」를 재는 것이 되어 무엇이 결론을
+# 뒤집었는지(대장이냐 지원율이냐) 갈렸을 것이다.
+scenario: "probe_gap_margin_never_executed_before"
+subsidy_rate: 0.80
