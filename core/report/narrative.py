@@ -96,6 +96,7 @@ from core.report.shortfall import (
     build_shortfall,
     shortfall_section,
 )
+from core.report.sizing import self_sufficiency_section
 from core.report.unreflected import (
     build_unreflected,
     unreflected_direction_tally,
@@ -851,6 +852,7 @@ def render_markdown(report: CaseReport) -> str:
     lines += glossary_section()
     lines += ["---", ""]
     lines += capacity_appendix(report.capacity_review)
+    lines += self_sufficiency_section(report.self_sufficiency)
     return "\n".join(lines)
 
 

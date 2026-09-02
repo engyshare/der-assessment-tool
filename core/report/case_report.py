@@ -65,9 +65,10 @@ from typing import Any
 import yaml  # type: ignore[import-untyped]
 
 from core.assumption.provider import AssumptionSet
-from core.casegrid.e2e_runner import run_single_case_e2e
+from core.casegrid.e2e_runner import PV_CAPACITY_FACTOR, run_single_case_e2e
 from core.casegrid.ledger_levels import (
     build_level_map,
+    design_variables,
     ledger_unit_scales,
     required_scalar,
 )
@@ -76,6 +77,7 @@ from core.casegrid.perspectives import PerspectiveWiring
 from core.casegrid.profiles import load_daily_shapes
 from core.casegrid.variants import run_order
 from core.contracts.assumptions import AssumptionProvider, AssumptionValue
+from core.contracts.validation import ValidationError
 from core.engine.rule_based import DispatchRule
 from core.incentive.schemas import IncentiveScheme
 from core.report.capacity import CapacityFinding, build_capacity_review
@@ -99,6 +101,12 @@ from core.report.dispatch_notes import (
     build_hourly_profile,
 )
 from core.report.manifest import create_manifest
+from core.report.sizing import (
+    MONTHS_PER_YEAR,
+    USER_EXAMPLE_MONTHLY_KWH,
+    SelfSufficiencySizing,
+    build_self_sufficiency_sizing,
+)
 from core.valuestream import DistributedSubItems
 
 #: R54/WP-2 재수출 — 이 여섯은 `core/report/case_influences.py` 에서 왔다.
@@ -228,6 +236,10 @@ class CaseReport:
     #: 설계 변수(용량)를 탐색 구간에서 훑은 결과 — 4.4 · 붙임 10.
     #: *「적정 용량 검토가 선행되어야 한다」* 는 지적이 만든 절이다.
     capacity_review: tuple[CapacityFinding, ...]
+    #: 경우 「가」(100% 에너지 자립) 역산 — 붙임 10 의 별도 소절 (R55/WP-2).
+    #: **진단이지 결론이 아니다** — `capacity_review` 의 탐색 구간·기준 구성을
+    #: 여기서 바꾸지 않는다(검토서 §1-⑥).
+    self_sufficiency: SelfSufficiencySizing
     #: ★ 엔진이 만든 현금흐름 행 — **5.3 이 결손을 가르는 재료** (판정 §3 ⓐ).
     #:
     #: ⚠ 여기서 요약하지 않는다. `metrics` 는 합계 하나이고 5.3 이 묻는 것은
@@ -695,6 +707,34 @@ def build_case_report(
         },
     )
 
+    # ★ 경우 「가」(100% 자립) 역산 — 붙임 10 의 별도 소절 (R55/WP-2 · 검토서 §1).
+    # `pv_capacity_kw` 탐색 구간은 `design_variables()` 에서 읽는다 — 1.0·9.0 을
+    # 여기 리터럴로 적으면 `_DESIGN_VARS` 가 바뀌어도 이 소절만 낡는다.
+    if "household_load_annual_kwh" not in level_map:
+        raise ValidationError(
+            field="load.household.annual",
+            reason="대장에 가구 연간 사용량(household_load_annual_kwh) 수준표가 없습니다",
+            action="docs/assumptions.yaml 의 load.household.annual 을 확인하십시오",
+        )
+    pv_design_variable = next(
+        v for v in design_variables() if v.name == "pv_capacity_kw"
+    )
+    self_sufficiency = build_self_sufficiency_sizing(
+        load_levels=level_map["household_load_annual_kwh"],
+        capacity_factor=PV_CAPACITY_FACTOR,
+        capacity_factor_source=(
+            "core/casegrid/e2e_runner.py::PV_CAPACITY_FACTOR (소스 상수 · 대장 미등재)"
+        ),
+        search_low_kw=pv_design_variable.low,
+        search_high_kw=pv_design_variable.high,
+        reference_loads=[
+            (
+                f"사용자 예시(월 {USER_EXAMPLE_MONTHLY_KWH:g}kWh)",
+                USER_EXAMPLE_MONTHLY_KWH * MONTHS_PER_YEAR,
+            ),
+        ],
+    )
+
     manifest = create_manifest({
         "scenario": scenario.get("scenario", scenario_path.stem),
         "subsidy_rate": subsidy_rate,
@@ -751,6 +791,7 @@ def build_case_report(
         rule_order=outcome.rule_order,
         dispatch_hours=build_hourly_profile(outcome.dispatch),
         capacity_review=capacity_review,
+        self_sufficiency=self_sufficiency,
         # ★ 러너가 **가른 채로** 낸 현금흐름 행을 그대로 받는다 (판정 §3 ⓐ).
         # 여기서 다시 묶거나 태그로 분류하지 않는다 — 그 순간 5.3 의 분해가
         # 러너의 사본이 된다(`CashflowSplit` 독스트링).

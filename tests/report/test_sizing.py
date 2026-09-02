@@ -14,6 +14,8 @@ from core.casegrid.ledger_levels import build_level_map, design_variables
 from core.contracts.units import HOURS_PER_YEAR
 from core.contracts.validation import ValidationError
 from core.der.pv import PV
+from core.report.case_report import build_case_report
+from core.report.narrative import render_markdown
 from core.report.sizing import (
     MONTHS_PER_YEAR,
     USER_EXAMPLE_MONTHLY_KWH,
@@ -23,6 +25,7 @@ from core.report.sizing import (
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
+_GOLDEN = _REPO_ROOT / "fixtures" / "golden"
 
 
 def test_the_inverse_closes_the_oracle_round_trip() -> None:
@@ -160,3 +163,46 @@ def test_validation_errors_carry_field_reason_and_action() -> None:
         assert payload["field"] == expected_field
         assert payload["reason"], f"{expected_field}: reason 이 비어 있다"
         assert payload["action"], f"{expected_field}: action 이 비어 있다"
+
+
+def test_the_report_appendix_carries_the_self_sufficiency_section() -> None:
+    """★ **붙임 10 에 실린다 — 본문에는 없다** (R55/WP-2 지시문 5절 6번 · WP-2-fix).
+
+    본문 분량 예산(219줄 — `test_body_stays_within_the_form_length_budget`)을
+    다시 밀지 않으려고 이 소절은 붙임 10 으로 옮겨졌다. 소제목과 역산 용량
+    값이 `appendix` 안에는 있고 `body` 안에는 없는지 본다. 값은
+    `report.self_sufficiency` 에서 꺼내지 리터럴로 박지 않는다 — 대장이
+    바뀌면 이 검사도 함께 값을 바꿔 읽는다.
+    """
+    report = build_case_report(
+        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    body, appendix = render_markdown(report).split("# 붙임", 1)
+
+    assert "경우 「가」" in appendix, "소제목이 붙임에 없다"
+    assert "경우 「가」" not in body, "소제목이 본문에 남아 있다"
+    for point in report.self_sufficiency.points:
+        capacity_text = f"{point.required_capacity_kw:.2f}"
+        assert capacity_text in appendix, (
+            f"{point.source_label} 의 역산 용량이 붙임에 없다"
+        )
+        assert capacity_text not in body, (
+            f"{point.source_label} 의 역산 용량이 본문에 남아 있다"
+        )
+
+
+def test_the_capacity_factor_source_prints_as_a_source_constant_not_ledger() -> None:
+    """★ **이용률의 출처가 「소스 상수」로 붙임에 인쇄된다** (R55/WP-2 지시문 5절 7번 · WP-2-fix).
+
+    문면에 `PV_CAPACITY_FACTOR` 와 「대장」이라는 말이 함께 있고, 그 일치를
+    근거로 쓸 수 없다는 경고가 있는지 본다 — 「좋아 보이는 수를 근거처럼
+    인쇄하지 않는다」를 지키는 검사다. 이 소절은 **붙임**에 있다(WP-2-fix).
+    """
+    report = build_case_report(
+        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    _body, appendix = render_markdown(report).split("# 붙임", 1)
+
+    assert "PV_CAPACITY_FACTOR" in appendix
+    assert "대장" in appendix
+    assert "근거로 쓸 수 없다" in appendix

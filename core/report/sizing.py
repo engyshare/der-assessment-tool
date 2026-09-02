@@ -163,3 +163,75 @@ def build_self_sufficiency_sizing(
         search_high_kw=search_high_kw,
         points=tuple(points),
     )
+
+
+def _range_note(sizing: SelfSufficiencySizing, point: SelfSufficiencyPoint) -> str:
+    if point.within_search_range:
+        return "예"
+    if point.required_capacity_kw > sizing.search_high_kw:
+        return f"아니오 — 구간 상한 {sizing.search_high_kw:g}kW 초과"
+    return f"아니오 — 구간 하한 {sizing.search_low_kw:g}kW 미만"
+
+
+def _mismatch_lines(sizing: SelfSufficiencySizing) -> list[str]:
+    """대장 base 와 참고 부하(있으면 첫째)의 필요 용량을 **원문 값 그대로** 나란히 낸다."""
+    base_point = sizing.points[_LOAD_LEVEL_NAMES.index("base")]
+    reference_points = sizing.points[len(_LOAD_LEVEL_NAMES):]
+    if not reference_points:
+        return []
+    reference_point = reference_points[0]
+    return [
+        f"- 어긋남 — 대장 base(연 {base_point.annual_load_kwh:,.0f}kWh)의 필요 용량 "
+        f"**{base_point.required_capacity_kw:.2f}kW**와 {reference_point.source_label}"
+        f"(연 {reference_point.annual_load_kwh:,.0f}kWh)의 필요 용량 "
+        f"**{reference_point.required_capacity_kw:.2f}kW**가 두 배 가까이 다르고, "
+        "어느 쪽이 맞는지는 답이 오지 않았다(검토서 §7)",
+    ]
+
+
+def self_sufficiency_section(sizing: SelfSufficiencySizing) -> list[str]:
+    """**붙임 10** 의 소절 — 경우 「가」(100% 자립) 역산 결과 (R55/WP-2-fix).
+
+    ## 왜 본문 4.4 가 아니라 붙임 10 인가
+
+    처음에는 본문 4.4 안에 실었다(R55/WP-2). 그런데
+    `tests/report/test_overview_sections.py::test_body_stays_within_the_form_length_budget`
+    가 본문 분량 상한(219줄 — 「4~5쪽·130~170줄」기준에서 이미 다섯 번
+    밀려 있었다)을 넘겨 빨간불을 냈고, 그 실패 문면 자체가 *「늘어난 것을
+    붙임으로 내릴 것」* 이라 적었다. 상한을 여섯 번째로 미는 대신 이 소절을
+    붙임 10 으로 옮겼다 — `capacity_appendix` 가 이미 설계 변수마다
+    `### {label}` 소절을 쌓는 자리이므로 같은 층에 나란히 세운다.
+
+    이 표는 **진단이지 답이 아니다** — 대장 세 수준과 참고 부하를 나란히
+    역산해 보일 뿐, `_DESIGN_VARS` 탐색 구간도 `PV_CAPACITY_FACTOR` 도 여기서
+    바꾸지 않는다(검토서 §1-⑥). 구간 밖 점도 지우지 않는다 — `capacity_section`
+    이 지키는 태도(「계산되지 않는 점을 버리지 않는다」)와 같다.
+    """
+    lines = [
+        "### 경우 「가」 — 100% 에너지 자립에 필요한 용량 (역산)",
+        "",
+        "| 연간 사용량의 출처 | 연간 사용량 (kWh) | 필요 용량 (kW) | 탐색 구간 안인가 |",
+        "|---|---|---|---|",
+    ]
+    for point in sizing.points:
+        lines.append(
+            f"| {point.source_label} | {point.annual_load_kwh:,.0f} | "
+            f"{point.required_capacity_kw:.2f} | {_range_note(sizing, point)} |"
+        )
+    lines.append("")
+    lines += [
+        "- 산식 — 필요 용량(kW) = 연간 사용량(kWh) ÷ "
+        f"({HOURS_PER_YEAR:,}h × 이용률)",  # noqa: RUF001
+        (
+            f"- 이용률 {sizing.capacity_factor:.0%} — 출처: {sizing.capacity_factor_source}. "
+            "대장 항목이 아니라 소스 상수이며, 사용자 예시의 이용률과 값이 우연히 같다 — "
+            "그 일치를 근거로 쓸 수 없다"
+        ),
+    ]
+    lines += _mismatch_lines(sizing)
+    lines.append(
+        "- 이 표는 진단이다 — 이 용량을 채택한 것이 아니다. 채택하려면 탐색 구간·"
+        "기준 구성을 바꿔야 하고 그것은 결론축을 움직인다"
+    )
+    lines.append("")
+    return lines
