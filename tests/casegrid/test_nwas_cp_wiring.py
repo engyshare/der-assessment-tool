@@ -32,6 +32,7 @@ from core.casegrid.e2e_runner import run_single_case_e2e
 from core.casegrid.ledger_levels import build_level_map
 from core.casegrid.models import CaseOutcome
 from core.casegrid.profiles import load_daily_shapes
+from core.contracts.validation import ValidationError
 from core.der.ess import ESSOperatingMode
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -86,10 +87,19 @@ def test_nwas_and_cp_stand_in_the_monetisation_path() -> None:
 
 
 def test_nwas_enabled_only_when_grid_discharge_selected() -> None:
-    """★★ 「계통 방전」을 고른 실행에서만 `NWAs` 가 돈을 번다 (사용자 판정 §3).
+    """★★ 「계통 방전」을 고르면 이제 **실행이 거부된다** (R52 판정 §3 · 유형 E).
 
     배포 기본 운전 방법에서는 단가를 올려도 **결론축이 움직이지 않는다** —
-    그것이 §3 ⚠ 이 요구한 「기본 비활성」이다.
+    그것이 §3 ⚠ 이 요구한 「기본 비활성」이다(위쪽은 R51/WP-7 그대로).
+
+    ⚠⚠ **아래쪽은 R52/WP-3 이 뒤집었다.** `e2e_runner` 는 운전 방법과 무관하게
+    `PeakShaving` 을 항상 태우므로(`run_single_case_e2e` 의 `peak =
+    PeakShaving(...)`), 「계통 방전」을 고르면 단가가 0 이어도 `NWAs` 와
+    `PeakShaving` 이 함께 활성화되어 **유형 E 로 거부된다** — 배터리는 한
+    번에 하나의 역할만 수행해야 한다(R52 판정 §3 앞 문장). R51/WP-7 은 이
+    자리에서 「거부 없이 서고 npv 가 올랐다」를 실증했는데, 그것은 그 시점
+    실물의 정확한 기록이었을 뿐 지금은 거짓이다 — 지우지 않고 반대로
+    단언한다.
     """
     default_off = _run(nwas_price=0.0).metrics["npv"]
     default_on = _run(nwas_price=_PROBE_NWAS_PRICE_WON_PER_KWH).metrics["npv"]
@@ -99,22 +109,27 @@ def test_nwas_enabled_only_when_grid_discharge_selected() -> None:
         "비활성」이 깨졌다"
     )
 
-    off = _run(
-        ess_operating_mode=ESSOperatingMode.GRID_DISCHARGE, nwas_price=0.0
-    ).metrics["npv"]
-    on = _run(
-        ess_operating_mode=ESSOperatingMode.GRID_DISCHARGE,
-        nwas_price=_PROBE_NWAS_PRICE_WON_PER_KWH,
-    ).metrics["npv"]
-    assert on > off, (
-        f"「계통 방전」에서 NWAs 단가를 0 → {_PROBE_NWAS_PRICE_WON_PER_KWH}원/kWh "
-        f"로 올렸는데 npv 가 {off:,.0f} → {on:,.0f} 로 오르지 않았다 — 단가가 "
-        "계산에 닿지 않았거나 활성화가 `ess.operating_mode` 를 못 읽었다"
+    with pytest.raises(ValidationError) as caught:
+        _run(ess_operating_mode=ESSOperatingMode.GRID_DISCHARGE, nwas_price=0.0)
+    err = caught.value
+    assert err.rule == "DV-12"
+    assert "NWAs" in err.reason and _PEAK_TAG in err.reason, (
+        f"어느 쌍이 걸렸는지 사유에 없다: {err.reason!r}"
     )
+
+    with pytest.raises(ValidationError):
+        _run(
+            ess_operating_mode=ESSOperatingMode.GRID_DISCHARGE,
+            nwas_price=_PROBE_NWAS_PRICE_WON_PER_KWH,
+        )
 
 
 def test_cp_enabled_only_when_semi_central_dispatch_selected() -> None:
-    """★★ 「준중앙급전 등록」을 고른 실행에서만 `CP` 가 돈을 번다 — 위와 대칭."""
+    """★★ 「준중앙급전 등록」을 고르면 이제 **실행이 거부된다** — 위와 대칭.
+
+    이유는 위 시험과 같다 — `PeakShaving` 이 항상 함께 서므로 `CP` 와 유형
+    E 로 부딪힌다.
+    """
     default_off = _run(cp_price=0.0).metrics["npv"]
     default_on = _run(cp_price=_PROBE_CP_PRICE_WON_PER_KW_MONTH).metrics["npv"]
     assert default_on == default_off, (
@@ -123,33 +138,35 @@ def test_cp_enabled_only_when_semi_central_dispatch_selected() -> None:
         "비활성」이 깨졌다"
     )
 
-    off = _run(
-        ess_operating_mode=ESSOperatingMode.SEMI_CENTRAL_DISPATCH, cp_price=0.0
-    ).metrics["npv"]
-    on = _run(
-        ess_operating_mode=ESSOperatingMode.SEMI_CENTRAL_DISPATCH,
-        cp_price=_PROBE_CP_PRICE_WON_PER_KW_MONTH,
-    ).metrics["npv"]
-    assert on > off, (
-        f"「준중앙급전 등록」에서 CP 단가를 0 → {_PROBE_CP_PRICE_WON_PER_KW_MONTH}"
-        f"원/kW·월 로 올렸는데 npv 가 {off:,.0f} → {on:,.0f} 로 오르지 않았다"
+    with pytest.raises(ValidationError) as caught:
+        _run(ess_operating_mode=ESSOperatingMode.SEMI_CENTRAL_DISPATCH, cp_price=0.0)
+    err = caught.value
+    assert err.rule == "DV-12"
+    assert _CP_TAG in err.reason and _PEAK_TAG in err.reason, (
+        f"어느 쌍이 걸렸는지 사유에 없다: {err.reason!r}"
     )
 
+    with pytest.raises(ValidationError):
+        _run(
+            ess_operating_mode=ESSOperatingMode.SEMI_CENTRAL_DISPATCH,
+            cp_price=_PROBE_CP_PRICE_WON_PER_KW_MONTH,
+        )
 
-@pytest.mark.parametrize(
-    "ess_operating_mode",
-    [None, ESSOperatingMode.GRID_DISCHARGE, ESSOperatingMode.SEMI_CENTRAL_DISPATCH],
-)
-def test_peak_shaving_is_still_the_last_annualised_entry(
-    ess_operating_mode: ESSOperatingMode | None,
-) -> None:
+
+def test_peak_shaving_is_still_the_last_annualised_entry() -> None:
     """★★ `NWAs`·`CP` 를 `settlement_streams` **안**에 넣었다 — `peak` 가 마지막이다.
 
-    `_resolve_nwas_cp()` 를 `*` 로 풀어 기존 튜플 안에 넣었을 뿐이므로 세
-    운전 방법 전부에서 자리가 흔들리지 않아야 한다(`test_rec_wiring.py` 의
-    같은 검사와 같은 근거 — `annualised[:-1]`·`annualised[-1]` 자리 쪼개기).
+    `_resolve_nwas_cp()` 를 `*` 로 풀어 기존 튜플 안에 넣었을 뿐이므로 자리가
+    흔들리지 않아야 한다(`test_rec_wiring.py` 의 같은 검사와 같은 근거 —
+    `annualised[:-1]`·`annualised[-1]` 자리 쪼개기).
+
+    ⚠⚠ **세 운전 방법 중 하나만 남았다 (R52/WP-3).** 종전에는 이 시험이
+    `None`·`GRID_DISCHARGE`·`SEMI_CENTRAL_DISPATCH` 셋을 매개변수화했다.
+    뒤 둘은 이제 유형 E 로 거부되어 출력 자체가 나지 않으므로(바로 위 두
+    시험이 그것을 붙든다) 「편익 목록의 마지막 자리」를 잴 출력이 없다 —
+    그 불변은 정상 출력이 나는 `None`(배포 기본값)에서만 의미가 있다.
     """
-    tags = _stream_tags(_run(ess_operating_mode=ess_operating_mode))
+    tags = _stream_tags(_run(ess_operating_mode=None))
     assert tags[-1] == _PEAK_TAG, (
         f"편익 목록의 마지막이 {tags[-1]!r} 다 — {_PEAK_TAG} 여야 한다"
     )

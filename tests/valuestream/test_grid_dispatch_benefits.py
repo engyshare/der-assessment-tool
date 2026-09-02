@@ -298,19 +298,23 @@ def test_all_four_grid_dispatch_pairs_are_declared_as_type_e() -> None:
 
 @pytest.mark.req("FR-402-AC2.E")
 @pytest.mark.parametrize(("grid_tag", "user_tag"), TYPE_E_PAIRS)
-def test_type_e_pair_is_kept_out_of_accounting_on_the_execution_path(
+def test_type_e_pair_is_refused_on_the_execution_path(
     grid_tag: str, user_tag: str
 ) -> None:
     """★★ **실행 경로에서 잰다** — `build_report()` 를 지난다.
 
     이 저장소는 *「거부 기계는 있는데 배포 코드가 아무도 안 부른다」* 를 실물로
     겪었다(R26 · R17/WP-28B). 그래서 `collect_exclusions()` 를 직접 부르는
-    것으로 끝내지 않고, 리포트를 만드는 **그 경로**가 이 조합을 계상에서
-    빼는지를 고정한다.
+    것으로 끝내지 않고, 리포트를 만드는 **그 경로**가 이 조합을 거부하는지를
+    고정한다.
 
-    ⚠ **금액이 있는 상태로 재는 것이 요점이다.** 두 편익 다 0원이면 「배타로
-    빠졌다」와 「원래 0이다」가 같아 보인다 — 그래서 계통 급전 편익을 켜서 값이
-    나오게 두고, 그 값이 `total_accounted()` 에 **들어가지 않는** 것을 본다.
+    ⚠⚠ **R52/WP-3 이 뒤집었다.** `build_report()` 는 라벨링 전에
+    `assert_no_exclusions()` 를 부르므로(`core/valuestream/report.py`), 유형
+    `E` 가 거부 대상이 된 지금은 **라벨링까지 가지 않고 그 자리에서 거부된다**
+    — 종전처럼 `STATE_EXCLUDED` 로 표시되고 계상 합계가 0으로 남는 것이 아니라
+    `ValidationError` 가 난다. 「금액이 있는 상태로 재는 것이 요점」이라는
+    원칙은 그대로 지킨다 — 0원끼리 비교하면 거부와 「원래 0이다」가 같아
+    보인다.
     """
     grid = _grid_dispatch(grid_tag)
     user = _user_operated(user_tag)
@@ -320,15 +324,14 @@ def test_type_e_pair_is_kept_out_of_accounting_on_the_execution_path(
     assert grid.annual_value(dispatch, year=1) > to_won(0)
     assert user.annual_value(dispatch, year=1) > to_won(0)
 
-    report = build_report([grid, user], dispatch, year=1)
+    with pytest.raises(ValidationError) as caught:
+        build_report([grid, user], dispatch, year=1)
 
-    states = {line.tag: line.state for line in report.all_lines()}
-    assert states[grid_tag] == STATE_EXCLUDED
-    assert states[user_tag] == STATE_EXCLUDED
-    assert {line.tag for line in report.accounted} == set()
-    assert report.total_accounted() == to_won(0), (
-        f"{grid_tag} ↔ {user_tag} 는 동시에 성립할 수 없는 운전인데 계상 합계에 "
-        "값이 남았습니다 (FR-402-AC2.E)"
+    err = caught.value
+    assert err.rule == "DV-12"
+    assert grid_tag in err.reason and user_tag in err.reason, (
+        f"{grid_tag} ↔ {user_tag} 는 동시에 성립할 수 없는 운전인데 그 쌍이 "
+        f"거부 사유에 없습니다: {err.reason!r} (FR-402-AC2.E)"
     )
 
 
@@ -352,31 +355,26 @@ def test_type_e_does_not_fire_when_the_grid_dispatch_benefit_is_off() -> None:
 
 
 @pytest.mark.req("FR-402-AC2.E")
-def test_type_e_is_not_yet_refused_and_that_gap_is_pinned_as_debt() -> None:
-    """★★★ **부채 래칫 — 조항은 「거부」인데 실행 경로는 「표시」까지다.**
+def test_type_e_is_now_refused_closing_the_debt_ratchet() -> None:
+    """★★★ **부채 래칫을 닫는다 — 조항 「거부」와 실행 경로가 이제 같다.**
 
     spec `FR-402-AC2.E` 는 *「선언적 배타 규칙 테이블로 금지하고 **선택 시 검증
-    오류로 거부**한다. **차단 100%**」* 이다. 그런데 `assert_no_exclusions()` 는
-    `kind is ExclusionType.A` 만 거른다 — 유형 `E` 조합은 `ValidationError` 없이
-    통과하고 리포트에 「배타제외」로 **표시**될 뿐이다. **표시와 거부는 다르다**
-    (R16 이 유형 A 에서 지난 자리와 같은 자리다).
+    오류로 거부**한다. **차단 100%**」* 이다. R48~R51 동안 `assert_no_
+    exclusions()` 는 `kind is ExclusionType.A` 만 걸러 유형 `E` 조합이
+    `ValidationError` 없이 통과하고 리포트에 「배타제외」로 **표시**만 됐다 —
+    그 갈림을 이 시험이 부채로 못박아 두고 있었다.
 
-    ## 왜 여기서 고치지 않았는가
+    ## R52/WP-3 이 그 갈림을 닫았다
 
-    그 거름막은 `core/valuestream/exclusion_table.py` 에 있고, **이 작업 구획이
-    바꿔도 되는 파일 목록 밖이다**(R48/WP-C §5). 계약 쪽 주석과 로더 오류 문면도
-    유형 `E` 를 *「오탐 0」* 으로 적고 있어 **조항(차단 100%)과 어긋나 있는데**,
-    그 둘(`core/contracts/valuestream.py`·`core/valuestream/exclusion_loader.py`)도
-    이 구획 밖이다.
+    사용자 판정 §3 앞 문장(*「배터리는 한 번에 하나의 역할만 수행하는 것으로
+    설계해야 함」*, `docs/decisions-2026-09-02-R52.md` §3)이 조항대로 만들라고
+    답했다 — `assert_no_exclusions()` 가 이제 유형 `A` 와 함께 `E` 도 거부한다
+    (`core/valuestream/exclusion_table.py`).
 
-    ## 그래서 「같음」이 아니라 **갈림을 부채로 고정한다**
-
-    조항이 요구하는 상태를 우리가 만들어 통과시키지 않고, **지금 갈려 있다는
-    사실**을 못 박는다. 거름막에 `E` 가 배선되면 이 검사가 **빨간불이 되어 그
-    사실을 알리고**, 그때 이 함수는 `pytest.raises(ValidationError)` 로 바뀐다.
-
-    ⚠ **`xfail` 을 쓰지 않았다** — `tests/der/test_pv.py` 의 부채 래칫과 같은
-    형태다. `xfail` 은 「검사가 있다」를 「실행·통과한다」와 다르게 만든다.
+    ⚠ **`core/contracts/valuestream.py`·`core/valuestream/exclusion_loader.py`
+    의 「B~E 는 오탐 0」 문면은 이 WP 의 대상이 아니다** — R52/WP-3 이 바꿔도
+    되는 파일 목록 밖이라 그대로 남아 있다(`.orch/R52/result_3.md` 참조). 그
+    문면이 조항(E 는 차단 100%)과 계속 어긋나 있다는 사실은 별개 WP 의 몫이다.
     """
     streams = [_grid_dispatch("NWAs"), _self_consumption()]
     rules_hit = [
@@ -386,13 +384,10 @@ def test_type_e_is_not_yet_refused_and_that_gap_is_pinned_as_debt() -> None:
     ]
     assert rules_hit == [("NWAs", "SelfConsumption")], "유형 E 감지 자체가 되지 않는다"
 
-    try:
+    with pytest.raises(ValidationError) as caught:
         assert_no_exclusions(streams)
-    except ValidationError as exc:  # pragma: no cover - 배선되면 이 갈래로 온다
-        raise AssertionError(
-            "유형 E 가 거부로 배선됐습니다 — 조항 FR-402-AC2.E 가 요구하던 상태이니 "
-            "이 부채 래칫을 `pytest.raises(ValidationError)` 로 바꾸고, "
-            "`core/valuestream/exclusion_table.py`·`core/contracts/valuestream.py`·"
-            "`core/valuestream/exclusion_loader.py` 의 「E 는 오탐 0」 문면도 "
-            "「차단 100%」로 함께 고치십시오"
-        ) from exc
+
+    err = caught.value
+    assert err.rule == "DV-12"
+    assert "NWAs" in err.reason and "SelfConsumption" in err.reason
+    assert err.action.strip()

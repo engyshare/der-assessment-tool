@@ -19,6 +19,7 @@ import pytest
 
 from core.contracts.der import DispatchResult
 from core.contracts.units import Money, to_won
+from core.contracts.validation import ValidationError
 from core.contracts.valuestream import ExclusionType, Payer
 from core.der.ess import ESS, ESSOperatingMode
 from core.valuestream import (
@@ -358,7 +359,7 @@ def test_both_grid_dispatch_pairs_are_declared_as_type_e() -> None:
 
 @pytest.mark.req("FR-402-AC2.E")
 @pytest.mark.parametrize("grid_tag", GRID_DISPATCH_TAGS)
-def test_type_e_pair_is_kept_out_of_accounting_on_the_execution_path(
+def test_type_e_pair_is_refused_on_the_execution_path(
     grid_tag: str,
 ) -> None:
     """★★ **실행 경로에서 잰다** — `build_report()` 를 지난다.
@@ -366,8 +367,11 @@ def test_type_e_pair_is_kept_out_of_accounting_on_the_execution_path(
     이 저장소는 *「거부 기계는 있는데 배포 코드가 아무도 안 부른다」* 를 실물로
     겪었다(R26 · R17/WP-28B). 그래서 규칙표를 직접 읽는 것으로 끝내지 않는다.
 
-    ⚠ **금액이 있는 상태로 재는 것이 요점이다.** 두 편익 다 0원이면 「배타로
-    빠졌다」와 「원래 0이다」가 같아 보인다.
+    ⚠⚠ **R52/WP-3 이 뒤집었다.** `build_report()` 는 라벨링 전에
+    `assert_no_exclusions()` 를 부르므로, 유형 `E` 가 거부 대상이 된 지금은
+    `STATE_EXCLUDED` 라벨이 아니라 `ValidationError` 가 난다. **금액이 있는
+    상태로 재는 것이 요점이다** — 두 편익 다 0원이면 「거부됐다」와 「원래
+    0이다」가 같아 보인다.
     """
     grid = _grid_dispatch(grid_tag)
     tou = _tou()
@@ -376,14 +380,14 @@ def test_type_e_pair_is_kept_out_of_accounting_on_the_execution_path(
     assert grid.annual_value(dispatch, year=1) > to_won(0)
     assert tou.annual_value(dispatch, year=1) > to_won(0)
 
-    report = build_report([grid, tou], dispatch, year=1)
-    states = {line.tag: line.state for line in report.all_lines()}
+    with pytest.raises(ValidationError) as caught:
+        build_report([grid, tou], dispatch, year=1)
 
-    assert states[grid_tag] == STATE_EXCLUDED
-    assert states["TouArbitrage"] == STATE_EXCLUDED
-    assert report.total_accounted() == to_won(0), (
-        f"{grid_tag} ↔ TouArbitrage 는 동시에 성립할 수 없는 운전인데 계상 "
-        "합계에 값이 남았습니다 (FR-402-AC2.E)"
+    err = caught.value
+    assert err.rule == "DV-12"
+    assert grid_tag in err.reason and "TouArbitrage" in err.reason, (
+        f"{grid_tag} ↔ TouArbitrage 는 동시에 성립할 수 없는 운전인데 그 쌍이 "
+        f"거부 사유에 없습니다: {err.reason!r} (FR-402-AC2.E)"
     )
 
 

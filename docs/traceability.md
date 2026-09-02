@@ -147,7 +147,7 @@
 |  |  | 1 | `FR-402-AC2.B` | 인과 하류 편익이 상류에 이미 포함 — 배전망 회피 편익 ↔ 전기요금 절감처럼 망 비용이 이미 망이용요금으로 회수된 경우, 하류 편익은 요금에 미반영된 증분만 … | 자동 | test_exclusion.py |
 |  |  | 3 | `FR-402-AC2.C` | 동일 효과의 이중 화폐화 — 같은 tCO2에 배출권 수익(사업자 현금)과 사회적 탄소비용(사회 편익)을 동시 계상하지 않는다. 관점당 하나의 화폐화 방법만 허용… | **미매핑** | — |
 |  |  | 1 | `FR-402-AC2.D` | 제도적 배타 — 상계거래 참여 시 REC 발급 제한, DR 정산금과 요금 인센티브 중복 수취 금지 등은 규제 프로파일에 종속된 배타 규칙으로 관리하고 제도 개정… | 자동 | test_exclusion.py, test_exclusion_reject_wp28b.py |
-|  |  | 1 | `FR-402-AC2.E` | 동시에 성립할 수 없는 운전 — 운전 주체가 계통운영자인 급전 편익(FR-401-AC2.NWAs·FR-401-AC2.CP)과 운전 주체가 사업자인 편익(FR-4… | 자동 | test_surplus_sale_charge_source_deduction.py, test_ess.py, test_exclusion.py 2건, test_grid_dispatch_benefits.py 4건, test_tou_arbitrage.py 5건 |
+|  |  | 1 | `FR-402-AC2.E` | 동시에 성립할 수 없는 운전 — 운전 주체가 계통운영자인 급전 편익(FR-401-AC2.NWAs·FR-401-AC2.CP)과 운전 주체가 사업자인 편익(FR-4… | 자동 | test_phase1_dod.py, test_surplus_sale_charge_source_deduction.py, test_ess.py, test_exclusion.py 2건, test_grid_dispatch_benefits.py 4건, test_tou_arbitrage.py 5건 |
 |  |  | 1 | `FR-402-AC4` | 배타 규칙은 코드가 아닌 선언적 규칙 테이블로 관리한다. 각 규칙은 (편익A, 편익B, 배타유형 A~E, 근거, 적용 규제 프로파일) 을 보유한다 (v0.21:… | 자동 | test_exclusion_declaration_matches_table.py, test_exclusion_rules_contract.py 4건, test_exclusion_structure_axis.py 7건, test_mapping_requirements.py |
 |  |  | 1 | `FR-402-AC5` | 편익을 활성화할 때 시스템은 분산자원 경제성 평가 원칙 「부록 A. 편익 항목 추가 시 실무 적용 절차」 의 4문항 판정을 통과했는지 확인하고, 지불 주체가 특… | 자동 | test_payer_structure_contract.py 3건, test_mapping_requirements.py, test_tou_arbitrage.py |
 |  |  | 1 | `FR-402-AC6` | 리포트에 "편익 계상 내역" 을 표시한다: 계상된 편익 / 배타로 제외된 편익 / 증분만 계상된 편익(유형 B) / 미화폐화로 0 처리된 편익 | 자동 | test_phase1_dod.py, test_benefit_breakdown_sheet.py 5건, test_mapping_requirements.py |

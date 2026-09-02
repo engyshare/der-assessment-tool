@@ -128,35 +128,78 @@ def assert_no_exclusions(
     streams: list[ValueStream],
     rules: tuple[ExclusionRule, ...] = DEFAULT_EXCLUSION_RULES,
 ) -> None:
-    """유형 A 위반이면 **거부한다** — FR-402-AC2.A · DV-12.
+    """유형 A·E 위반이면 **거부한다** — FR-402-AC2.A · FR-402-AC2.E · DV-12.
 
-    > **R16 이 채운 자리.** 조항은 *「선언적 배타 규칙 테이블로 금지하고,
-    > **선택 시 검증 오류로 거부**한다」* 인데 저장소에는 `collect_exclusions`
-    > 의 **감지·라벨링뿐**이었다 — 위반 쌍을 리스트로 돌려줄 뿐 아무것도 막지
-    > 않았고, 리포트는 그것을 「배타제외」로 **표시**했다. 표시와 거부는 다르다.
+    > **R16 이 채운 자리(유형 A).** 조항은 *「선언적 배타 규칙 테이블로
+    > 금지하고, **선택 시 검증 오류로 거부**한다」* 인데 저장소에는
+    > `collect_exclusions` 의 **감지·라벨링뿐**이었다 — 위반 쌍을 리스트로
+    > 돌려줄 뿐 아무것도 막지 않았고, 리포트는 그것을 「배타제외」로
+    > **표시**했다. 표시와 거부는 다르다.
 
-    **유형 A 만 거부한다.** 조항이 행마다 수용 수준을 반대로 정해 두었기
-    때문이다 — `A` 는 차단 100%(음성 검증)이고 `B`~`D` 는 **오탐 0**(양성
-    검증)이다. `B` 는 «증분만 계상», `D` 는 «프로파일 한정»이므로 거부가
-    아니라 계상 방식의 문제이며, 여기서 함께 막으면 정당한 동시 계상을
-    지우게 된다. 그것이 FR-402-AC1 이 명시로 금지한 방향이다.
+    > **R52/WP-3 이 마저 채운 자리(유형 E).** `FR-402-AC2.E` 조항 문면도
+    > 그대로 *「선언적 배타 규칙 테이블로 금지하고 선택 시 검증 오류로
+    > 거부한다. **차단 100%**」* 다. 그런데 R48 이 그 유형을 신설한 뒤로
+    > 이 함수는 유형 `A` 만 걸렀고, `tests/valuestream/test_grid_dispatch_
+    > benefits.py` 의 부채 래칫이 그 갈림(조항은 거부·구현은 표시만)을
+    > 못박아 두고 있었다. 사용자 판정 §3 앞 문장(*「배터리는 한 번에 하나의
+    > 역할만 수행하는 것으로 설계해야 함」*, `docs/decisions-2026-09-02-
+    > R52.md` §3)이 그 조항대로 만들라고 답한다 — spec 개정이 아니다.
+
+    **유형 A·E 를 거부한다. `B`~`D` 는 거부하지 않는다.** 조항이 행마다
+    수용 수준을 반대로 정해 두었기 때문이다 — `A`·`E` 는 차단 100%(음성
+    검증)이고 `B`~`D` 는 **오탐 0**(양성 검증)이다. `B` 는 «증분만 계상»,
+    `D` 는 «프로파일 한정»이므로 거부가 아니라 계상 방식의 문제이며,
+    여기서 함께 막으면 정당한 동시 계상을 지우게 된다. 그것이 FR-402-AC1
+    이 명시로 금지한 방향이다.
     """
     violations = [
-        (a, b, rationale)
+        (a, b, kind, rationale)
         for a, b, kind, rationale in collect_exclusions(streams, rules)
-        if kind is ExclusionType.A
+        if kind in (ExclusionType.A, ExclusionType.E)
     ]
     if not violations:
         return
 
-    pairs = "; ".join(f"{a} ↔ {b} ({why})" for a, b, why in violations)
-    raise ValidationError(
-        field="valuestream.enabled",
-        reason=f"동일 물리량을 이중 계상하는 편익 조합입니다 — {pairs}",
-        action=(
+    double_counted = [(a, b, why) for a, b, kind, why in violations if kind is ExclusionType.A]
+    conflicting_operation = [
+        (a, b, why) for a, b, kind, why in violations if kind is ExclusionType.E
+    ]
+
+    reason_parts = []
+    if double_counted:
+        pairs = "; ".join(f"{a} ↔ {b} ({why})" for a, b, why in double_counted)
+        reason_parts.append(f"동일 물리량을 이중 계상하는 편익 조합입니다 — {pairs}")
+    if conflicting_operation:
+        pairs = "; ".join(f"{a} ↔ {b} ({why})" for a, b, why in conflicting_operation)
+        reason_parts.append(
+            "동시에 성립할 수 없는 운전 조합입니다(방전 시점을 누가 정하는가가 "
+            f"갈립니다) — {pairs}"
+        )
+
+    if double_counted and conflicting_operation:
+        action = (
+            "두 편익 중 하나를 비활성화하거나 ESS 운전 방법을 하나로 고르십시오"
+            "(용량을 나누어 각 몫에 다른 역할을 맡기는 것은 허용됩니다). 물리량이"
+            " 실제로 다르거나 운전 주체가 실제로 같다면 배타 규칙 쪽이 틀린 "
+            "것이므로 docs/exclusion-rules.yaml 을 고쳐야 합니다"
+        )
+    elif conflicting_operation:
+        action = (
+            "ESS 운전 방법을 하나로 고르십시오(용량을 나누어 각 몫에 다른 "
+            "역할을 맡기는 것은 허용됩니다). 방전 시점을 정하는 주체가 실제로 "
+            "같다면 배타 규칙 쪽이 틀린 것이므로 docs/exclusion-rules.yaml 을 "
+            "고쳐야 합니다"
+        )
+    else:
+        action = (
             "두 편익 중 하나를 비활성화하십시오. 둘 다 필요한 상황이라면 "
             "물리량이 실제로 다른지 확인하고, 다르다면 배타 규칙 쪽이 틀린 "
             "것이므로 docs/exclusion-rules.yaml 을 고쳐야 합니다"
-        ),
+        )
+
+    raise ValidationError(
+        field="valuestream.enabled",
+        reason=" / ".join(reason_parts),
+        action=action,
         rule="DV-12",
     )

@@ -17,7 +17,7 @@ from core.der.ess import ESS, ESSChargeSource, ESSOperatingMode
 from core.incentive.calculator import build_capex_cashflows
 from core.incentive.schemas import IncentiveScheme
 from core.valuestream import NWAs, SelfConsumption
-from core.valuestream.report import STATE_EXCLUDED, build_report
+from core.valuestream.report import build_report
 from tests.contract.test_der_contract import DERContractTests
 
 
@@ -994,15 +994,21 @@ def test_default_operating_mode_still_excludes_grid_dispatch_benefits() -> None:
 
 
 @pytest.mark.req("FR-105-AC1", "FR-402-AC2.E")
-def test_grid_discharge_plus_self_consumption_is_excluded_on_the_execution_path() -> None:
+def test_grid_discharge_plus_self_consumption_is_refused_on_the_execution_path() -> None:
     """★★ **혼합 모드로 「계통 방전」+「자가소비 우선」을 켜면 유형 `E` 가 거부한다**
-    (R51/WP-3 · 판정 §3 · `docs/decisions-2026-09-01-R51.md` §3).
+    (R52/WP-3 · 판정 §3 앞 문장, `docs/decisions-2026-09-02-R52.md` §3).
 
     *「상황에 따라 변경될 수 있으며」* 는 **고를 수 있다**는 뜻이지 **동시에
     성립한다**는 뜻이 아니다 — `value_streams()` 가 두 태그를 함께 내는 것은
     결함이 아니라, **유형 `E` 배타가 실행 경로에서 그것을 걸러내는 것이 옳은
     동작이다.** `build_report()` 를 지나는 실행 경로에서 잰다 — 이 저장소는
     「거부 기계는 있는데 배포 코드가 아무도 안 부른다」를 실물로 겪었다(R26).
+
+    ⚠⚠ **R52/WP-3 이 뒤집었다.** R51/WP-3 이 이 이름으로 세운 자리는 그
+    시점에 「거부가 아니라 표시로 걸린다」는 사실을 `STATE_EXCLUDED` 로
+    붙들고 있었다 — `assert_no_exclusions()` 가 유형 `A` 만 걸렀기 때문이다.
+    이제 그 함수가 유형 `E` 도 거부하므로 `build_report()` 는 라벨링에
+    닿기 전에 `ValidationError` 를 던진다.
     """
     mixed = _p1_ess(
         operating_mode=ESSOperatingMode.HYBRID,
@@ -1024,13 +1030,14 @@ def test_grid_discharge_plus_self_consumption_is_excluded_on_the_execution_path(
     assert streams[0].annual_value(dispatch, year=1) > to_won(0)
     assert streams[1].annual_value(dispatch, year=1) > to_won(0)
 
-    report = build_report(streams, dispatch, year=1)
-    states = {line.tag: line.state for line in report.all_lines()}
-    assert states["NWAs"] == STATE_EXCLUDED
-    assert states["SelfConsumption"] == STATE_EXCLUDED
-    assert report.total_accounted() == to_won(0), (
-        "계통 방전과 자가소비는 동시에 성립할 수 없는 운전인데 계상 합계에 값이 "
-        "남았습니다 (FR-402-AC2.E)"
+    with pytest.raises(ValidationError) as caught:
+        build_report(streams, dispatch, year=1)
+
+    err = caught.value
+    assert err.rule == "DV-12"
+    assert "NWAs" in err.reason and "SelfConsumption" in err.reason, (
+        f"계통 방전과 자가소비는 동시에 성립할 수 없는 운전인데 그 쌍이 거부 "
+        f"사유에 없습니다: {err.reason!r} (FR-402-AC2.E)"
     )
 
 

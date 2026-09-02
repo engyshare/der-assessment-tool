@@ -543,7 +543,7 @@ EXPECTED_RATIONALES: dict[tuple[str, str], str] = {
 }
 
 
-@pytest.mark.req("FR-402-AC1", "FR-402-AC2.A", "FR-402-AC6")
+@pytest.mark.req("FR-402-AC1", "FR-402-AC2.A", "FR-402-AC2.E", "FR-402-AC6")
 def test_dod6_benefit_breakdown_and_exclusion_enforcement() -> None:
     """17.6 DoD 6: 편익 계상 내역 표시 및 배타 위반 조합 감지.
 
@@ -552,10 +552,14 @@ def test_dod6_benefit_breakdown_and_exclusion_enforcement() -> None:
     - [양성] 규칙 활성화 시 배타 수집(collect_exclusions)이 각 규칙에 해당하는
       (benefit_a, benefit_b, exclusion_type) 및 비어있지 않은 독립 기대 근거를 정확히 감지함.
     - [양성] 편익 리포트(build_report) 생성 시 유형별 분류:
-      - 유형 A/C/D 배타: '배타제외' 상태 분류
-      - 유형 B 배타 (인과 하류): benefit_a 가 '증분만' 상태로 분류
+      - 유형 `A`·`E` 배타: **`ValidationError` 로 거부**(R52/WP-3 이 `E` 를 거부로
+        올렸다 — `FR-402-AC2.E` 도 「선택 시 검증 오류로 거부한다·차단 100%」다)
+      - 유형 `C`·`D` 배타: '배타제외' 상태 분류
+      - 유형 `B` 배타 (인과 하류): benefit_a 가 '증분만' 상태로 분류
     - [음성] 해당 규칙을 활성 목록에서 제외(inactive_rules)할 경우, 동일한 조합이
       배타로 감지되지 않음을 확인하여 규칙의 실질적 판정 주도성을 입증함 (spec 13.2.1).
+      **유형에 상관없이 전건(A~E)에 적용된다** — `collect_exclusions()` 수준의
+      검증이라 어느 유형이 거부로 바뀌어도 이 갈래는 그대로다.
     """
     assert len(DEFAULT_EXCLUSION_RULES) > 0
 
@@ -606,17 +610,24 @@ def test_dod6_benefit_breakdown_and_exclusion_enforcement() -> None:
             f"감지값: {detected_rationale!r}\n기대값: {expected_rationale!r}"
         )
 
-        # ── 유형 A 는 **거부**, B 는 증분만, C·D 는 배타제외 (R17) ─────────
+        # ── 유형 A·E 는 **거부**, B 는 증분만, C·D 는 배타제외 (R17 · R52/WP-3) ──
         #
         # DoD 6 문면은 *「편익 계상 내역이 리포트에 표시되고, **배타 규칙 위반
-        # 조합은 실행이 거부됨**」* 이고 `FR-402-AC2.A` 도 *「선택 시 검증 오류로
-        # 거부한다」* 이다. **이 테스트는 「감지」에서 멈춰 있었다** — 유형 A 를
-        # `배타제외` 라벨로 확인했고, 그것은 거부가 구현되면 빨간불이 나는
-        # 형태다. WP-28B 가 거부를 배선하자 실제로 그렇게 됐다.
+        # 조합은 실행이 거부됨**」* 이고 `FR-402-AC2.A`·`FR-402-AC2.E` 둘 다
+        # *「선택 시 검증 오류로 거부한다. 차단 100%」* 이다. **이 테스트는 한동안
+        # 유형 A 만 거부로 재고 E 는 「감지」에서 멈춰 있었다** — `assert_no_
+        # exclusions()` 가 유형 A 만 걸렀기 때문이다(R48~R51). R52/WP-3 이
+        # `assert_no_exclusions()` 를 유형 A·E 둘 다 거부하도록 넓혔고, 이 시험도
+        # 그 갈래를 따라간다.
+        #
+        # ⚠⚠ **`E` 를 순회에서 빼지 않는다.** 빼면 유형 E 6쌍이 이 시험의 감시를
+        # 완전히 벗어나고, 그것이 이 라운드가 고치러 온 상태(문면·시험이 실물과
+        # 어긋난 채 남는 것) 그 자체를 되살린다 — 순회에 **그대로 남기고** 기대를
+        # 「거부」로 바꾼다.
         #
         # 되돌리지 않았다. **조항이 정본이고 테스트가 따라간다** — 라벨은
         # 「표시」이고 조항이 요구한 것은 「거부」다.
-        if rule.exclusion_type == ExclusionType.A:
+        if rule.exclusion_type in (ExclusionType.A, ExclusionType.E):
             with pytest.raises(ValidationError) as refused:
                 build_report(
                     streams, dispatch, year=1, profile=rule.applies_to_profile
