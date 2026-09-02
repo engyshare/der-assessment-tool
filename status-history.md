@@ -103,14 +103,15 @@
 >
 > | 무엇 | 값 |
 > |---|---|
-> | 전건 `pytest` | **1901 collected · 1897 passed / 4 skipped / 0 failed** · rc=0 (R54 종료 1899 collected·1890 passed → **검사 순증 7**: WP-1 다섯 + WP-2 둘) |
+> | 전건 `pytest` | **1903 collected · 1899 passed / 4 skipped / 0 failed** · rc=0 (R54 종료 1894 collected·1890 passed → **검사 순증 9**: WP-1 다섯 + WP-2 둘 + **커버리지 교정 둘**) |
 > | 결론축 | 무보조 `npv` **−11,537,129원** — R54 와 **같다.** `tests/golden` 7건 통과 |
 > | 본문 줄 수 | **218줄**(상한 219) — 붙임으로 내렸으므로 **한 줄도 늘지 않았다** |
 > | `ruff` · `mypy` · `lint-imports` | rc=0 · 129 파일 · **4 kept 0 broken**(`core.report → core.casegrid` 는 layers 상 정방향) |
 > | 검사 스크립트 | `check_marker_substance`·`check_hardcoded_params`·`check_source_rules`·`check_partition_assignment`·`check_disclosure`·`check_assumptions`·`check_precommit_installed`·`check_unread_extension_points`·`check_docstring_references`·`check_status_round_blocks`·`check_task_mapping` **11종 rc=0** |
 > | `check_file_size --code-strict` | rc=0 — 코드 줄 수 초과 **0건**. `narrative.py` 코드 **486 → 488**(예산 500) · `case_report.py` **403 → 437** · `sizing.py` **134** |
 > | `gen_traceability.py` | rc=1(정상 · 미매핑 9) 후 `git diff --stat docs/traceability.md` **빈 diff** — R54 가 밟은 함정을 이 라운드는 안 밟았다 |
-> | 커밋 경계 검사 | `check_test_accompaniment --base origin/main` **통과**(`sizing.py` ← `test_sizing.py`) · `check_coverage_inputs --base origin/main` rc=0 |
+> | 커밋 경계 검사 | `check_test_accompaniment` **통과**(구현 변경 3건 전건 동반) |
+> | ★ **게이트 ①(변경분 커버리지)** | 손으로 판정했다 — `pytest --cov` 로 `coverage.xml` 을 다시 만들고 `diff-cover --compare-branch=ee81077 --fail-under=95`. **처음엔 93% 로 빨간불**이었다(`sizing.py` 의 「구간 상한 초과」·「구간 하한 미만」·「참고 부하 없음」 세 갈래가 한 번도 안 밟혔다). 검사 둘을 더해 **98%** 로 올렸다. ⚠ 남은 1줄은 `case_report.py` 의 대장 축 결손 `raise` 이며 대장을 위조해야 밟히는 자리라 두었다 |
 >
 > ### 이 라운드가 닫은 것
 >
