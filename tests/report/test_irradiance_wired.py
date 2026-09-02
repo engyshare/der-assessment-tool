@@ -56,7 +56,7 @@ from core.report.case_report import (
     build_case_report,
 )
 from core.report.unreflected import build_unreflected
-from tests.report.conftest import report_shapes
+from tests.report.conftest import report_rec_terms, report_shapes
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -122,6 +122,7 @@ def test_the_conclusion_stands_on_the_shaped_run() -> None:
     """
     report = _report()
     levels = build_level_map(_ASSUMPTIONS)
+    rec_price, rec_weight = report_rec_terms()
     shaped = run_single_case_e2e(
         {},
         level_map=levels,
@@ -131,6 +132,9 @@ def test_the_conclusion_stands_on_the_shaped_run() -> None:
         # 넘기므로, 이 재실행도 넘기지 않으면 「곡선 대 평탄」이 아니라
         # 「곡선+부하 대 곡선」을 재는 것이 된다.
         annual_load_kwh=levels["household_load_annual_kwh"]["base"],
+        # ★ REC 도 같은 배선 (R52/WP-6) — 안 넘기면 리포트(REC 있음)와
+        # 재실행(REC 없음)이 서로 다른 사업을 그린다.
+        rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
     )
     flat = run_single_case_e2e(
         {},
@@ -235,6 +239,7 @@ def test_the_sensitivity_and_capacity_sections_run_the_same_business() -> None:
     # 여기서 형상을 검사가 직접 주므로, 스윕에만 배선을 빠뜨리는 변이는 사용값을
     # 지나지 않는 격자에서도 걸린다.
     probed = 0
+    rec_price, rec_weight = report_rec_terms()
     for finding in report.capacity_review:
         for point in finding.points:
             if point.conclusion is None:
@@ -251,6 +256,8 @@ def test_the_sensitivity_and_capacity_sections_run_the_same_business() -> None:
                 # ★★ 가구 부하도 같은 배선 (R48/WP-B → WP-F) — 4절 용량 검토는
                 # `_Sweeper.conclusion_at_many()` 를 거치므로 부하를 이미 본다.
                 annual_load_kwh=probe["household_load_annual_kwh"]["base"],
+                # ★ REC 도 같은 배선 (R52/WP-6).
+                rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
             )
             measured = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
             assert point.conclusion == pytest.approx(measured, abs=1.0), (

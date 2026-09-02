@@ -70,6 +70,10 @@ _LEVEL_MAP = {
     # 독립인지가 여기서도 드러난다.
     "pv_fixed_om": MappingProxyType({"base": 70_000.0}),
     "ess_fixed_om": MappingProxyType({"base": 65_000.0}),
+    # ESS 교체 단가 — 러너가 요구한다(R52/WP-6 에 스윕 축으로 올렸다).
+    # **대장과 다른 수를 일부러 쓴다** — 같은 수를 쓰면 이 파일이 대장의
+    # 사본을 하나 갖게 된다.
+    "ess_replacement": MappingProxyType({"base": 350_000.0}),
     **design_levels(),
 }
 

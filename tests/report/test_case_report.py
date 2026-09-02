@@ -41,7 +41,7 @@ from core.report.case_report import (
     _scheme_for,
     build_case_report,
 )
-from tests.report.conftest import report_shapes
+from tests.report.conftest import report_rec_terms, report_shapes
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -310,10 +310,12 @@ def _variant_at(
     """
     probe = {name: dict(levels) for name, levels in level_map.items()}
     probe[variable] = {**probe[variable], "base": value}
-    # ★ **리포트와 같은 배선으로 돌린다 (R37 · R48/WP-B).** `build_case_report`
-    # 가 일사 곡선과 **가구 부하**를 본 실행·스윕에 넘기므로(`_Sweeper`), 그
-    # 둘 없이 다시 돌리면 리포트의 수를 **다른 사업**의 0 선에 대고 재는 것이
-    # 된다. 형상은 검사가 자산에서 직접 읽는다(`conftest.report_shapes`).
+    # ★ **리포트와 같은 배선으로 돌린다 (R37 · R48/WP-B · R52/WP-6).**
+    # `build_case_report` 가 일사 곡선·**가구 부하**·REC 단가·가중치를 본
+    # 실행·스윕에 넘기므로(`_Sweeper`), 그것들 없이 다시 돌리면 리포트의 수를
+    # **다른 사업**의 0 선에 대고 재는 것이 된다. 형상·REC 는 검사가 자산·
+    # 대장에서 직접 읽는다(`conftest.report_shapes`·`report_rec_terms`).
+    rec_price, rec_weight = report_rec_terms()
     outcome = run_single_case_e2e(
         {},
         level_map=probe,
@@ -321,6 +323,7 @@ def _variant_at(
         scheme=scheme,
         daily_shapes=report_shapes(),
         annual_load_kwh=probe["household_load_annual_kwh"]["base"],
+        rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
     )
     return outcome.variants[PLAN_VARIANT]
 

@@ -440,6 +440,11 @@ def _level_map() -> Mapping[str, Mapping[str, float]]:
         # 상쇄된다 — 어떤 수를 골라도 대조가 성립한다.
         "pv_fixed_om": MappingProxyType({"base": 70_000.0}),
         "ess_fixed_om": MappingProxyType({"base": 65_000.0}),
+        # ESS 교체 단가 — 러너가 요구한다(R52/WP-6 에 스윕 축으로 올렸다).
+        # ⚠ `ess_replacement` 는 이 파일이 재는 축이 아니므로 `ess_unit_cost`
+        # 와 다른 값을 준다 — 같으면 「교체 단가가 취득가와 같을 때」만
+        # 재는 셈이 된다.
+        "ess_replacement": MappingProxyType({"base": 350_000.0}),
         **design_levels(),
     }
 

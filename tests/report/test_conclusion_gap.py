@@ -55,7 +55,7 @@ from core.report.shortfall import (
     SECTION_NUMBER as SHORTFALL_SECTION,
 )
 from core.report.shortfall import SENSITIVITY_SECTION
-from tests.report.conftest import report_shapes
+from tests.report.conftest import report_rec_terms, report_shapes
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -223,9 +223,11 @@ def test_support_at_the_ceiling_moves_the_conclusion_to_the_reported_residual() 
         "아니라면 이 검사의 전제가 다른 것이다"
     )
 
-    # ★ **리포트와 같은 배선으로 돌린다 (R37 · R48/WP-B).** `build_case_report`
-    # 가 일사 곡선과 **가구 부하**를 본 실행에 넘기므로, 둘 없이 다시 돌리면
-    # 리포트의 수를 **다른 사업**의 0 선에 대고 재는 것이 된다.
+    # ★ **리포트와 같은 배선으로 돌린다 (R37 · R48/WP-B · R52/WP-6).**
+    # `build_case_report` 가 일사 곡선·**가구 부하**·REC 단가·가중치를 본
+    # 실행에 넘기므로, 넷 없이 다시 돌리면 리포트의 수를 **다른 사업**의
+    # 0 선에 대고 재는 것이 된다.
+    rec_price, rec_weight = report_rec_terms()
     outcome = run_single_case_e2e(
         {},
         level_map=build_level_map(_ASSUMPTIONS),
@@ -233,6 +235,7 @@ def test_support_at_the_ceiling_moves_the_conclusion_to_the_reported_residual() 
         scheme=_scheme_for(MAX_SUBSIDY_RATE),
         daily_shapes=report_shapes(),
         annual_load_kwh=_load_kwh(),
+        rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
     )
     npv = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
 
@@ -377,17 +380,19 @@ def test_the_summary_row_carries_the_same_support_numbers_as_the_body() -> None:
         # ★ 다른 층 — 요약에 **인쇄된 그 금액**을 진입점의 실측과 맞댄다.
         # 지원을 상한까지 올린 실행의 결론 축이 그 금액이다.
         shown = float(_first_won(row).rstrip("원").replace(",", ""))
+        rec_price, rec_weight = report_rec_terms()
         outcome = run_single_case_e2e(
             {},
             level_map=build_level_map(_ASSUMPTIONS),
             horizon_years=report.basis.horizon_years,
             scheme=_scheme_for(MAX_SUBSIDY_RATE),
-            # ★ 리포트와 같은 배선 (R37 · R48/WP-B) — 형상·부하 없이 돌리면
-            # 리포트의 수를 **다른 사업**의 0 선에 대고 재게 된다. 실측으로
-            # 걸렸다: 곡선 배선 뒤 이 검사가 125,808원(≈ 곡선↔평탄 차이
-            # 128,194원)을 남겼다.
+            # ★ 리포트와 같은 배선 (R37 · R48/WP-B · R52/WP-6) — 형상·부하·
+            # REC 없이 돌리면 리포트의 수를 **다른 사업**의 0 선에 대고 재게
+            # 된다. 실측으로 걸렸다: 곡선 배선 뒤 이 검사가 125,808원(≈ 곡선↔
+            # 평탄 차이 128,194원)을 남겼다.
             daily_shapes=report_shapes(),
             annual_load_kwh=_load_kwh(),
+            rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
         )
         npv = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
         assert npv < 0.0, (
@@ -580,6 +585,7 @@ def test_the_endpoint_values_are_paired_with_the_run_that_produced_them() -> Non
     level_map = build_level_map(_ASSUMPTIONS)
     horizon = report.basis.horizon_years
     scheme = _scheme_for(report.subsidy_rate)
+    rec_price, rec_weight = report_rec_terms()
 
     for entry in report.uncertain_influences:
         levels = level_map[entry.variable]
@@ -594,13 +600,15 @@ def test_the_endpoint_values_are_paired_with_the_run_that_produced_them() -> Non
                 level_map=probe,
                 horizon_years=horizon,
                 scheme=scheme,
-                # ★ 리포트와 같은 배선 (R37) — `conftest.report_shapes` 참조.
+                # ★ 리포트와 같은 배선 (R37 · R52/WP-6) — `conftest.
+                # report_shapes`·`report_rec_terms` 참조.
                 daily_shapes=report_shapes(),
                 # ★★ 가구 부하도 같은 배선 (R48/WP-B → WP-F) — 본 실행·
                 # `_Sweeper.conclusion_at_many()` 모두 `annual_load_kwh` 를
                 # 넘긴다. 이 재실행만 안 넘기면 부하 있는 리포트 수를 부하 없는
                 # 재실행과 맞대는 것이 되어 항상 갈린다.
                 annual_load_kwh=probe["household_load_annual_kwh"]["base"],
+                rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
             )
             measured = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
             assert reported == pytest.approx(measured, abs=1.0), (
@@ -778,9 +786,16 @@ def test_the_table_is_ordered_by_how_much_it_removes() -> None:
     변동폭 순이므로, 정렬을 빠뜨린 구현은 *「변동폭 순으로 인쇄하고 줄임 열만
     붙인」* 표가 되고 그것은 다른 우선순위를 가리킨다.
 
-    ★ 실물에서 **두 순서가 실제로 갈린다** — 무보조에서 변동폭 1위는
-    `grid_purchase_price` 이지만 줄임 1위는 `surplus_sale_price` 다. 그
-    어긋남이 이 검사가 무언가를 재고 있다는 증거이므로 함께 확인한다.
+    ★ 실물에서 **두 순서가 실제로 갈린다.** ⚠ **R52/WP-6 이 갈리는 자리를
+    옮겼다** — REC 편익이 대장에서 켜지며 `household_load_annual_kwh` 가
+    (자가소비·계통구매·REC 셋을 함께 흔드는 축이 되어) 변동폭·줄임 **양쪽
+    1위**로 함께 올라섰다(종전 1위였던 `grid_purchase_price`·`surplus_sale_
+    price` 는 REC 도입 전 실측이며 낡았다). 그래서 이제 1위가 아니라
+    **6위(`grid_purchase_price` ↔ `surplus_sale_price` 의 순서가 뒤집히는
+    자리)** 로 갈라지는 것을 확인한다 — 실측:
+
+        변동폭 순 …[5]=grid_purchase_price · [6]=surplus_sale_price
+        줄임  순 …[5]=surplus_sale_price · [6]=grid_purchase_price
     """
     for name in ("scenario_unsubsidized", "scenario_subsidy_80"):
         rows = _reduction_rows(_section(_report(name)))
@@ -796,10 +811,10 @@ def test_the_table_is_ordered_by_how_much_it_removes() -> None:
         if not entry.flips_conclusion
     ]
     by_reduction = [variable for variable, _r, _g in _reduction_rows(_section(report))]
-    assert by_delta[0] != by_reduction[0], (
-        "변동폭 1위와 줄임 1위가 같아졌다 — 이 검사가 정렬을 재지 못한다. "
-        f"변동폭 {by_delta[0]} · 줄임 {by_reduction[0]}. 실물이 그렇게 "
-        "바뀌었으면 다른 갈래에서 순서를 재도록 고칠 것"
+    assert by_delta != by_reduction, (
+        "변동폭 순과 줄임 순 전체가 같아졌다 — 이 검사가 정렬을 재지 못한다. "
+        f"변동폭 {by_delta} · 줄임 {by_reduction}. 실물이 그렇게 바뀌었으면 "
+        "다른 갈래에서 순서를 재도록 고칠 것"
     )
 
 

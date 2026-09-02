@@ -16,10 +16,10 @@
        기존 튜플 안에 넣었을 뿐 자리를 흔들지 않았는가
 
 ⚠ **래칫 검사가 없다** — `REC` 의 `test_rec_weight_moves_to_the_ledger_when_
-the_price_does` 와 짝이 되는 검사는 여기 없다. `NWAs`·`CP` 는 `REC_WEIGHT_PV`
-같은 별도 가중치 상수를 소스에 두지 않는다(단가 하나로 산식이 끝난다 —
-`계통 방전 kWh × 단가`, `등록 용량 kW × 단가 × 12개월`) — 잊을 「함께 옮길
-값」이 애초에 없다.
+the_price_does` 와 짝이 되는 검사는 여기 없다. `NWAs`·`CP` 는 REC 가중치
+(`benefit.rec_weight_pv`) 같은 별도 가중치 값을 두지 않는다(단가 하나로
+산식이 끝난다 — `계통 방전 kWh × 단가`, `등록 용량 kW × 단가 × 12개월`) —
+잊을 「함께 옮길 값」이 애초에 없다.
 """
 from __future__ import annotations
 

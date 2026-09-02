@@ -314,6 +314,54 @@ def test_rc_all_c4_inverter_replacement_at_year_13() -> None:
     assert schedule[13] > Money(0)
 
 
+def test_inverter_replacement_price_defaults_to_the_acquisition_derived_price() -> None:
+    """★ `inverter_replacement_unit_won_per_kw` 를 생략하면 종전과 같다 (R52/WP-6).
+
+    사용자 판정 §7 이 요구한 것은 *「각각 별도 설정이 가능해야 함」* 이지
+    「지금 다른 값을 써라」가 아니다 — 조사(`docs/research-2026-09-02-R52-
+    전제값.md` §7)가 크기 근거를 찾지 못했으므로 기본값은 여전히
+    `inverter_unit_capex_won_per_kw` 와 같아야 한다. 인자를 생략한 자원과
+    같은 값을 명시로 준 자원의 13년차 교체비가 같아야 이 회귀가 안전하다.
+    """
+    implicit = make_pv_3kw(inverter_lifetime=12, lifetime=25)
+    explicit = make_pv_3kw(
+        inverter_lifetime=12,
+        lifetime=25,
+        inverter_replacement_unit_won_per_kw=implicit.inverter_unit_capex_won_per_kw,
+    )
+    assert implicit.inverter_replacement_unit_won_per_kw == pytest.approx(
+        implicit.inverter_unit_capex_won_per_kw
+    )
+    assert implicit.replacement_schedule(horizon=HORIZON) == explicit.replacement_schedule(
+        horizon=HORIZON
+    )
+
+
+def test_inverter_replacement_price_is_independently_settable() -> None:
+    """★★ 교체 단가를 취득가와 **다르게** 주면 교체비만 움직인다 (사용자 판정 §7).
+
+    *「교체 비용은 원래 산 값이 아니라 교체시 발생하는 비용… 각각 별도
+    설정이 가능해야 함」* — 취득가(`inverter_unit_capex_won_per_kw`)를 그대로
+    두고 교체 단가만 절반으로 주면 13년차 교체비도 절반이 되어야 하고,
+    최초 취득가(1년차 CAPEX)는 **움직이지 않아야 한다**(설치 완료 기준
+    단가가 최초 인버터를 이미 품고 있으므로).
+    """
+    baseline = make_pv_3kw(inverter_lifetime=12, lifetime=25)
+    cheaper_replacement = make_pv_3kw(
+        inverter_lifetime=12,
+        lifetime=25,
+        inverter_replacement_unit_won_per_kw=(
+            baseline.inverter_unit_capex_won_per_kw / 2.0
+        ),
+    )
+    assert cheaper_replacement.capex(year=1) == baseline.capex(year=1), (
+        "교체 단가만 바꿨는데 최초 취득가(1년차 CAPEX)가 움직였다"
+    )
+    assert int(cheaper_replacement.replacement_schedule(horizon=HORIZON)[13]) == pytest.approx(
+        int(baseline.replacement_schedule(horizon=HORIZON)[13]) / 2.0, abs=1
+    )
+
+
 @pytest.mark.req("FR-104-AC4")
 def test_rc_all_c4_body_replacement_excluded_from_20_year_horizon() -> None:
     """본체 25년 수명은 20년 분석기간 안에서 교체가 없다 (§13.2.2 C-4)."""

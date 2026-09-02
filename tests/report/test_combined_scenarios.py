@@ -29,7 +29,7 @@ from core.report.case_report import (
 )
 from core.report.combined import build_coupled_sweeps
 from core.report.narrative import NONE_IN_RANGE, SOLO_SWEEP, render_markdown
-from tests.report.conftest import report_shapes
+from tests.report.conftest import report_rec_terms, report_shapes
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -139,12 +139,14 @@ def _conclusion_at(level_map, assignment, horizon: int) -> float:
     # 직후 실측: 결합 기준행이 리포트 −12,956,180원인데 이 헬퍼는 −8,466,123원을
     # 냈다. 부하 없는 재실행은 리포트가 실제로 돈 실행이 아니므로 오라클이
     # 아니라 이 헬퍼 쪽이 낡아 있었다.
+    rec_price, rec_weight = report_rec_terms()
     outcome = run_single_case_e2e(
         {},
         level_map=probe,
         horizon_years=horizon,
         daily_shapes=report_shapes(),
         annual_load_kwh=probe["household_load_annual_kwh"]["base"],
+        rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
     )
     return float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
 

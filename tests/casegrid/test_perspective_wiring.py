@@ -48,12 +48,19 @@ def test_operator_perspective_keeps_the_conclusion_axis(report) -> None:
 
     ⚠ spec 조항이 아니라 R52/WP-A 판정 아-7(결론축 불변)의 검사다 —
     `@pytest.mark.req` 를 달지 않는다.
+
+    ⚠ **리터럴을 R52/WP-6 이 갱신했다** — `benefit.rec_price` 가
+    `default0`(0원) → `assume`(70원/kWh)으로 올라 결론축이 −12,591,162 →
+    **−11,537,129원**(+1,054,033원)으로 움직였다. 이 검사는 「관점이 축을
+    다시 계산하지 않는가」를 재는 것이지 축 자체의 값을 고정하는 자리가
+    아니므로, 위 첫 단언(`report.metrics[CONCLUSION_METRIC]` 과 같은가)이
+    실질이고 아래는 그 값을 실측으로 못박아 둔다.
     """
     operator = next(
         r for r in report.perspectives.results if r.perspective is Perspective.OPERATOR
     )
     assert int(operator.npv_value) == int(report.metrics[CONCLUSION_METRIC])
-    assert int(operator.npv_value) == -12_591_162
+    assert int(operator.npv_value) == -11_537_129
 
 
 @pytest.mark.req("FR-402-AC7")
@@ -107,11 +114,15 @@ def test_npv_row_prints_no_number_for_perspectives_without_cost_basis(report) ->
 
     WP-A-fix 결함 1 의 핵심 단언: 참여 주민 974,035원이 「이득」으로,
     사회·정부 0원이 「손익 0」으로 오독되던 것을 막는다.
+
+    ⚠ **리터럴을 R52/WP-6 이 갱신했다** — `benefit.rec_price` 가 결론축을
+    −12,591,162 → **−11,537,129원**으로 옮겼다(위
+    `test_operator_perspective_keeps_the_conclusion_axis` 참조).
     """
     text = render_markdown(report)
     npv_line = next(line for line in text.splitlines() if line.startswith("| NPV |"))
     assert npv_line.count("미산출") == 3, npv_line
-    assert "-12,591,162원" in npv_line, npv_line
+    assert "-11,537,129원" in npv_line, npv_line
     assert "0" not in npv_line.replace("미산출", ""), npv_line
 
 
@@ -126,12 +137,17 @@ def test_cost_total_row_prints_not_allocated_for_perspectives_without_cost_basis
 
 
 def test_benefit_total_row_always_prints_a_real_number(report) -> None:
-    """편익 합계 행은 비용 배분과 무관하게 늘 참인 수다 (WP-A-fix 결함 1 항목 2)."""
+    """편익 합계 행은 비용 배분과 무관하게 늘 참인 수다 (WP-A-fix 결함 1 항목 2).
+
+    ⚠ **사업자 리터럴을 R52/WP-6 이 갱신했다** — REC 편익(0 → 70원/kWh)이
+    사업자 편익 합계에 더해져 4,038,000 → **5,658,600원**이 됐다. 참여
+    주민은 REC 를 포함하지 않아 그대로다.
+    """
     text = render_markdown(report)
     benefit_line = next(line for line in text.splitlines() if line.startswith("| 편익 합계 |"))
     assert "미산출" not in benefit_line and "미배분" not in benefit_line
     assert "1,497,600원" in benefit_line  # 참여 주민
-    assert "4,038,000원" in benefit_line  # 사업자
+    assert "5,658,600원" in benefit_line  # 사업자
 
 
 def test_header_row_pairs_repository_and_user_vocabulary(report) -> None:

@@ -42,6 +42,9 @@ def _level_map(surplus_sale_price: float) -> dict[str, MappingProxyType[str, flo
         "demand_charge": MappingProxyType({"base": 7_700.0}),
         "pv_fixed_om": MappingProxyType({"base": 70_000.0}),
         "ess_fixed_om": MappingProxyType({"base": 65_000.0}),
+        # ESS 교체 단가 — 러너가 요구한다(R52/WP-6 에 스윕 축으로 올렸다).
+        # **대장과 다른 수를 일부러 쓴다.**
+        "ess_replacement": MappingProxyType({"base": 350_000.0}),
         **design_levels(),
     }
 

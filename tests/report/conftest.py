@@ -83,8 +83,11 @@ from pathlib import Path
 import pytest
 import yaml  # type: ignore[import-untyped]
 
+from core.assumption.provider import AssumptionSet
+from core.casegrid.ledger_levels import required_scalar
 from core.casegrid.models import COST_TAG_VARIABLE_OM, CostLine
 from core.casegrid.profiles import DailyShapes, load_daily_shapes
+from core.report.case_report import REC_PRICE_LEDGER_KEY, REC_WEIGHT_LEDGER_KEY
 
 
 def unwired_report(report):
@@ -127,6 +130,25 @@ def report_shapes() -> DailyShapes:
     읽고, 두 자리가 같은 값을 뜻한다는 사실 자체가 검사가 된다.
     """
     return load_daily_shapes()
+
+
+def report_rec_terms() -> tuple[float, float]:
+    """리포트가 쓰는 REC 단가·가중치 — 진입점을 다시 돌리는 검사가 쓴다 (R52/WP-6).
+
+    ## 왜 검사 쪽이 대장을 직접 읽는가
+
+    `build_case_report` 가 이제 `benefit.rec_price`·`benefit.rec_weight_pv`
+    를 대장에서 읽어 `run_single_case_e2e(rec_price_won_per_unit=…,
+    rec_weight_pv=…)` 로 넘긴다. 「보고된 값으로 다시 돌려 본다」 형태의
+    검사가 이 둘을 넘기지 않으면 러너 기본값(0.0·1.0 중 단가 0.0)이 쓰여
+    **REC 없는 다른 사업**의 결론에 대고 재게 된다 — `report_shapes()` 가
+    형상에서 막는 것과 같은 함정이다.
+    """
+    provider = AssumptionSet.load_from_yaml(str(_ASSUMPTIONS))
+    return (
+        required_scalar(provider, REC_PRICE_LEDGER_KEY, note="REC 단가(검사용 재실행)"),
+        required_scalar(provider, REC_WEIGHT_LEDGER_KEY, note="REC 가중치(검사용 재실행)"),
+    )
 
 
 #: (대장 키, 수준 이름, 넓힌 값). **탐침값이지 전망이 아니다.**

@@ -36,6 +36,8 @@ from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
+from core.contracts.assumptions import AssumptionProvider
+
 #: (케이스 변수, 대장 키, 배율). 배율은 **단위 환산**이며 값이 아니다 —
 #: 대장의 `%/년` 을 러너가 쓰는 비율로 옮긴다.
 _LEDGER_VARS: tuple[tuple[str, str, float], ...] = (
@@ -156,6 +158,22 @@ _LEDGER_VARS: tuple[tuple[str, str, float], ...] = (
     # ⚠ **배율 1.0 이다** — 대장·러너 둘 다 원/년 을 쓴다.
     ("pv_fixed_om", "opex.pv.fixed_om", 1.0),
     ("ess_fixed_om", "opex.ess.fixed_om", 1.0),
+    # ★ **ESS 교체 단가** — R52/WP-6 에 올렸다 (사용자 판정 §7).
+    #
+    # 종전에는 `ESS.replacement_unit_won_per_kwh` 인자가 있는데도 러너가 넘기지
+    # 않아 `capex.ess.new`(취득 단가)가 그대로 교체 단가로 쓰였다. 조사
+    # (`docs/research-2026-09-02-R52-전제값.md` §7)는 「교체가 통상 더 싸다」는
+    # 방향만 확인했고 크기를 뒷받침할 자료는 찾지 못했다 — 그래서 값은
+    # **취득 단가와 같다**(지어내지 않는다). 그런데도 별도 키로 올리는 이유는
+    # §7 이 요구한 *「각각 별도 설정이 가능해야 함」*을 충족하기 위해서다 — 값이
+    # 같아도 통로가 따로 있어야 다음에 견적이 오면 이 한 줄만 고치면 된다.
+    ("ess_replacement", "capex.ess.replacement", 1.0),
+    # ⚠ **`benefit.rec_weight_pv` 는 여기 없다** — `test_levels_come_from_
+    # the_ledger_not_from_a_copy` 가 모든 스윕 축에 `low < base < high` **강한
+    # 부등호**를 요구하는데, 이 라운드는 가중치 폭을 조사하지 않아 세 수준이
+    # 전부 1.0(폭 없음)이다. 폭을 지어내는 대신 `benefit.rec_price` 와 같은
+    # 통로(`provider.get()` 직접 읽기)로 뺐다 — `case_report.py`·
+    # `e2e_runner.py::run_single_case_e2e(rec_weight_pv=...)` 참조.
 )
 
 #: 대장 항목이 **아닌** 모형 파라미터. 위 독스트링 참조.
@@ -303,6 +321,44 @@ def _levels_of(item: Mapping[str, Any], key: str, scale: float) -> Mapping[str, 
     return MappingProxyType(
         {name: float(sensitivity[name]) * scale for name in LEVEL_NAMES}
     )
+
+
+def _resolve(
+    level: str | object,
+    var_name: str,
+    level_map: Mapping[str, Mapping[str, float]],
+) -> float:
+    """케이스 변수의 수준 이름을 실수값으로 옮긴다.
+
+    ★ **여기 있었던 자리는 `core/casegrid/e2e_runner.py` 였다** (R52/WP-6 이
+    옮겼다). 함수 자체는 그 파일 것이 맞지만, 그 파일이 `NFR-206` 코드 줄
+    상한(500줄)에 **정확히** 닿아 있어 이 라운드가 여는 두 축(`capex.ess.
+    replacement`·`benefit.rec_weight_pv`)의 해석을 더할 자리가 없었다 —
+    `pv_allocation.py`(R51/WP-5)·`perspectives.py`(R52/WP-A)와 같은 이유의
+    같은 처방이다. `e2e_runner.py` 는 이 이름을 그대로 다시 부른다(재수출).
+    """
+    key = str(level)
+    mapping = level_map.get(var_name, {})
+    if key in mapping:
+        return mapping[key]
+    raise ValueError(f"Unknown level {key!r} for variable {var_name!r}")
+
+
+def required_scalar(provider: AssumptionProvider, key: str, *, note: str) -> float:
+    """대장 스칼라 하나를 읽는다 — **없으면 0 으로 메우지 않고 멈춘다.**
+
+    ★ **왜 `provider.get()` 을 감싸는가** (R52/WP-6). `benefit.rec_price`·
+    `benefit.rec_weight_pv` 처럼 「없으면 0」과 「있는데 0」이 산출물에서
+    구별돼야 하는 항목에 쓴다 — 기본값으로 메우면 대장에서 항목이 사라져도
+    리포트가 조용히 옛 편익을 계속 싣는다(`AssumptionProvider` 계약의
+    「없으면 멈추며 기본값으로 메우지 않는다」와 같은 판단). `case_report.py`
+    가 이 함수를 부르는 이유는 그 파일이 `NFR-206` 코드 줄 상한에 가까이
+    닿아 있어 같은 패턴을 두 번 인라인으로 적을 자리가 없었기 때문이다.
+    """
+    item = provider.get(key)
+    if item is None:
+        raise ValueError(f"전제 대장에 {key!r} 항목이 없습니다 — {note}")
+    return float(item.value)
 
 
 def build_level_map(assumptions_path: Path) -> Mapping[str, Mapping[str, float]]:

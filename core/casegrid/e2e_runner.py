@@ -24,6 +24,12 @@ from core.casegrid.incentive_cases import (
     Viewpoint,
     build_capex_cashflows_for_all_cases,
 )
+
+# ★ **`_resolve` 는 이 파일 것이었다** — `NFR-206` 코드 줄 상한(500줄)에 정확히
+# 닿아 이 라운드가 여는 두 축을 더할 자리가 없어 `ledger_levels.py` 로
+# 옮겼다(R52/WP-6). 재수출이다 — 이 파일 안의 모든 `_resolve(...)` 호출은
+# 그대로 둔다.
+from core.casegrid.ledger_levels import _resolve
 from core.casegrid.lifecycle import lifecycle_rows as _lifecycle_rows
 from core.casegrid.models import (
     BenefitLine,
@@ -186,24 +192,13 @@ PV_CAPACITY_FACTOR = 0.15
 PRICE_ESCALATION_RATE = 0.02
 PV_SELF_CONSUMPTION_RATIO = 0.0
 
-#: REC 가중치 — 태양광 **1.0** (`core/valuestream/rec.py::REC` 독스트링의 값이며
-#: 이 WP 가 그 값을 다시 정하지 않았다). 규제 프로파일이 정하는 값이다.
-#:
-#: ⚠⚠ **왜 대장이 아니라 여기 있는가** (R51/WP-6 판정 · 되돌리는 법은
-#: `.orch` 밖에서는 이 주석이 정본이다). 대장에 올리려면 갈래를 골라야 하는데
-#: 셋 다 맞지 않는다 — `assume` 은 민감도 3수준을 **필수**로 요구하고 그 폭을
-#: 지어내는 순간 「어느 값이 더 그럴듯하다」는 근거 없는 주장이 된다,
-#: `fixed` 는 신뢰도 `확정` 이라 **출처를 요구**하는데 확인한 고시가 없다,
-#: `default0`(값 0)로 두면 단가만 등재해도 편익이 켜지지 않아
-#: 「대장 한 줄로 켜진다」가 거짓이 된다.
-#:
-#: ★ **그리고 단가가 0 인 동안 이 값은 어떤 수도 바꾸지 못한다** — 산식이
-#: `발전량 × 가중치 × 단가` 이므로 0 × 가중치 = 0 이다. 그러므로 지금 대장에
-#: 올려야 할 값은 **단가 하나**이고, 그 단가가 켜지는 날 가중치도 **같은
-#: 편집에서** 대장으로 가야 한다. 그것을 잊지 못하게 하는 래칫이
-#: `tests/casegrid/test_rec_wiring.py` 에 있다 — 대장의 `benefit.rec_price`
-#: 가 `default0` 를 벗어나는 순간 빨간불이 되고 이 자리를 가리킨다.
-REC_WEIGHT_PV = 1.0
+#: ⚠⚠ **R52/WP-6 이 대장으로 옮겼다** — 종전에는 여기 `REC_WEIGHT_PV = 1.0`
+#: 모듈 상수였다. `benefit.rec_price` 가 `assume` 으로 올라온 지금 가중치는
+#: 어떤 수도 바꾸지 못하던 상태를 벗어나 결론을 정하는 수가 됐다 —
+#: `docs/assumptions.yaml::benefit.rec_weight_pv` 가 정본이고, 아래
+#: `run_single_case_e2e` 가 `level_map` 에서 읽는다
+#: (`tests/casegrid/test_rec_wiring.py::
+#: test_rec_weight_moves_to_the_ledger_when_the_price_does` 래칫).
 
 #: ESS **정격출력**(kW). 용량과 달리 설계 변수로 올리지 않았다 — 이 값이
 #: `reducible_peak_kw = min(power_kw, 가용량/방전창)` 의 **상한**이라, 고정해
@@ -224,19 +219,6 @@ ESS_CYCLES_PER_YEAR = 365.0
 #: `core/casegrid/pv_allocation.py::ESS_OPERATING_MODE_DEFAULT`·
 #: `ESS_CHARGE_SOURCE_DEFAULT`·`PV_ALLOCATION_PRIORITY_DEFAULT` 를 R51/WP-5 가
 #: 옮겼다(위 import). 이름은 그대로이고 이 파일이 재수출한다.
-
-
-def _resolve(
-    level: str | object,
-    var_name: str,
-    level_map: Mapping[str, Mapping[str, float]],
-) -> float:
-    """Translate a case variable level name to a numeric value."""
-    key = str(level)
-    mapping = level_map.get(var_name, {})
-    if key in mapping:
-        return mapping[key]
-    raise ValueError(f"Unknown level {key!r} for variable {var_name!r}")
 
 
 def _household_load_if_total_given(
@@ -323,7 +305,7 @@ def _site_load_kw(
     ]
 
 
-def _rec(rec_price_won_per_unit: float) -> REC:
+def _rec(rec_price_won_per_unit: float, weight: float) -> REC:
     """★★ **REC 를 화폐화 경로에 세운다** (사용자 판정 §4, `docs/decisions-
     2026-09-01-R51.md` — *「태양광 전력을 ESS에 충전한 후에 계통에 판매하면,
     해당 전력은 재생전력이므로 … 재생에너지 차익(REC)을 기대할 수 있다」*).
@@ -352,8 +334,12 @@ def _rec(rec_price_won_per_unit: float) -> REC:
     ⚠ **함수로 뗀 이유는 갈래가 둘이기 때문이다** — 구조를 준 갈래와 주지
     않은 갈래가 각자 편익 튜플을 짓는데, 양쪽에 같은 생성자를 적으면 그것이
     사본이 되고 한쪽만 고치는 날 **구조를 준 실행에서만 REC 가 사라진다.**
+
+    ⚠ **`weight` 는 이제 대장에서 온다** (`benefit.rec_weight_pv` · R52/WP-6).
+    호출부가 `level_map` 에서 읽어 넘긴다 — 여기서 기본값을 두면 대장을
+    고쳐도 이 함수가 옛 값을 쓴다.
     """
-    return REC(weight=REC_WEIGHT_PV, rec_price_won_per_unit=rec_price_won_per_unit)
+    return REC(weight=weight, rec_price_won_per_unit=rec_price_won_per_unit)
 
 
 def run_single_case_e2e(
@@ -368,6 +354,7 @@ def run_single_case_e2e(
     annual_load_kwh: float | None = None,
     extra_appliance_load_kwh: float = 0.0,
     rec_price_won_per_unit: float = 0.0,
+    rec_weight_pv: float = 1.0,
     nwas_price_won_per_kwh: float = 0.0,
     cp_price_won_per_kw_month: float = 0.0,
     settlement_inputs: SettlementInputs | None = None,
@@ -583,11 +570,17 @@ def run_single_case_e2e(
     # 축은 둘이다** — PV·ESS 는 다른 설비이고 값이 갈릴 수 있다.
     # ⚠ **`demand_charge` 와 한 statement 로 묶었다** — `PLR0915`(이 함수의
     # statement 상한 50)에 이미 닿아 있었다(R51/WP-1 브리프 실측). 계산이
-    # 얽혀 있어서가 아니라 셋 다 `_resolve()` 스칼라 조회이기 때문이다.
-    demand_charge, pv_fixed_om, ess_fixed_om = (
+    # 얽혀 있어서가 아니라 넷 다 `_resolve()` 스칼라 조회이기 때문이다.
+    # ★ **R52/WP-6 이 `ess_replacement` 를 더했다**(`capex.ess.replacement` ·
+    # 사용자 판정 §7). 같은 이유로 새 statement 를 만들지 않고 이 대입에
+    # 얹는다. ⚠ **`rec_weight_pv` 는 여기 없다** — 이유는
+    # `ledger_levels.py::_LEDGER_VARS` 옆 주석에 있다(폭을 지어낼 수 없어
+    # 이 함수의 인자로 직접 받는다).
+    demand_charge, pv_fixed_om, ess_fixed_om, ess_replacement_price = (
         _resolve(case_values.get("demand_charge", "base"), "demand_charge", level_map),
         _resolve(case_values.get("pv_fixed_om", "base"), "pv_fixed_om", level_map),
         _resolve(case_values.get("ess_fixed_om", "base"), "ess_fixed_om", level_map),
+        _resolve(case_values.get("ess_replacement", "base"), "ess_replacement", level_map),
     )
 
     # 1. Resources
@@ -620,6 +613,11 @@ def run_single_case_e2e(
         generation_profile_kwh=generation_profile,
         unit_capex_won_per_kw=pv_capex,
         inverter_unit_capex_won_per_kw=pv_capex * pv_inverter_share,
+        # ★ **인버터 교체 단가** (사용자 판정 §7 · R52/WP-6). 조사가 크기 근거를
+        # 찾지 못해(WP-5 §7) **취득 단가와 같은 값**을 쓴다 — 위 줄과 같은
+        # 표현식이며 지어낸 차이가 아니다. `pv.py::inverter_replacement_unit_
+        # won_per_kw` 가 그 통로다.
+        inverter_replacement_unit_won_per_kw=pv_capex * pv_inverter_share,
         fixed_om_won_per_year=pv_fixed_om,
         escalation_rate=PRICE_ESCALATION_RATE,
         replacement_escalation_rate=replacement_escalation_rate,
@@ -688,10 +686,13 @@ def run_single_case_e2e(
         # 배터리 교체비가 **오늘의 원**으로 적혔다 — 대장이 `price_basis:
         # "명목"` 을 선언한 사업에서 그 지출만 실질이 된다.
         #
-        # ⚠ **교체 단가에 새 값을 정하지 않았다.** `replacement_unit_won_per_kwh`
-        # 를 여기서 넘기지 않으므로 `ess.py` 가 취득 단가(`capex.ess.new`)를
-        # 그대로 교체 단가로 쓴다 — 「배터리만/시스템 전체」(`Q-2`)는 그 **값
-        # 하나**를 바꾸는 물음이고 이 배선은 그것을 정하지 않는다.
+        # ★ **교체 단가가 이제 대장에서 온다** (`capex.ess.replacement` ·
+        # 사용자 판정 §7 · R52/WP-6). 종전에는 이 인자를 넘기지 않아 `ess.py`
+        # 가 취득 단가(`capex.ess.new`)를 그대로 교체 단가로 썼다 — 값은
+        # **여전히 같다**(조사가 크기 근거를 못 찾았다, WP-5 §7) 지만 통로가
+        # 이제 따로 있다 — 「배터리만/시스템 전체」(`Q-2`)가 값 하나만 바꾸는
+        # 물음이라면 이 자리를 고치면 된다.
+        replacement_unit_won_per_kwh=ess_replacement_price,
         escalation_rate=PRICE_ESCALATION_RATE,
         replacement_escalation_rate=replacement_escalation_rate,
     )
@@ -749,7 +750,7 @@ def run_single_case_e2e(
         # — `core/casegrid/grid_support.py::_resolve_nwas_cp` 독스트링 참조.
         settlement_streams: tuple[ValueStream, ...] = (
             *plan.streams,
-            _rec(rec_price_won_per_unit),
+            _rec(rec_price_won_per_unit, rec_weight_pv),
             *_resolve_nwas_cp(ess, nwas_price_won_per_kwh, cp_price_won_per_kw_month),
         )
         # ★ **구조가 만드는 비용을 비용으로 나른다 (R32).** 조립기가 편익에서
@@ -780,7 +781,7 @@ def run_single_case_e2e(
                     else 0.0
                 ),
             ),
-            _rec(rec_price_won_per_unit),
+            _rec(rec_price_won_per_unit, rec_weight_pv),
             *_resolve_nwas_cp(ess, nwas_price_won_per_kwh, cp_price_won_per_kw_month),
         )
         settlement_costs = ()

@@ -70,6 +70,9 @@ LEVEL_MAP = {
     # 100,000 과 다른 수를 일부러 쓴다** — 위 단가들과 같은 규약이다.
     "pv_fixed_om": MappingProxyType({"base": 70_000.0}),
     "ess_fixed_om": MappingProxyType({"base": 65_000.0}),
+    # ESS 교체 단가 — 러너가 요구한다(R52/WP-6 에 스윕 축으로 올렸다).
+    # **대장과 다른 수를 일부러 쓴다.**
+    "ess_replacement": MappingProxyType({"base": 350_000.0}),
     # 설계 변수(용량)는 이 파일의 관심이 아니지만 **러너가 요구한다** —
     # 기본값을 두지 않는 것이 규칙이라 기본 탐색점을 그대로 받아 온다.
     **design_levels(),

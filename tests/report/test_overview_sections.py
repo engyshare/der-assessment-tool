@@ -238,11 +238,19 @@ def test_body_stays_within_the_form_length_budget() -> None:
     0원 이유)을 더했다 — 실측(변경 전 213줄 → 변경 후 217줄, 이 골든
     시나리오 기준) 4줄이 늘었다. **결론축(NPV)은 그대로다** — 표시 문면만
     늘었다.
+
+    ⚠ **상한을 217 → 219 로 다시 올렸다 (R52/WP-6).** 대장에 새 스윕 축
+    둘(`capex.ess.replacement`·`benefit.rec_weight_pv`)이 오르면서 5.1
+    영향도 표에 행이 둘 늘었다 — 실측(변경 전 217줄 → 변경 후 219줄, 이
+    골든 시나리오 기준) 2줄이 늘었다. **결론축(NPV)은 이 배선 때문에
+    움직이지 않는다** — 두 축 모두 취득 단가·소스 상수와 같은 값을 유지한
+    채 대장으로만 옮겼다(사용자 판정 §5·§7). 결론축을 움직인 것은
+    `benefit.rec_price`(0 → 70원/kWh) 하나뿐이다.
     """
     text = render_markdown(_report())
     body = text[: text.index("# 붙임")]
     lines = [line for line in body.splitlines() if line.strip()]
-    assert len(lines) <= 217, (
+    assert len(lines) <= 219, (
         f"본문이 {len(lines)}줄이다 — 양식이 정한 부피를 넘었다. "
         "늘어난 것을 붙임으로 내릴 것"
     )

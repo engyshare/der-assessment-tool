@@ -63,6 +63,7 @@ from core.casegrid.ledger_levels import (
     design_variables,
     ledger_backed_variables,
     ledger_unit_scales,
+    required_scalar,
 )
 from core.casegrid.models import CaseBasis, CashflowSplit
 from core.casegrid.perspectives import PerspectiveWiring
@@ -124,6 +125,11 @@ MAX_SUBSIDY_RATE = 1.0
 #: 날 한 곳이 남고, 그때 `provider.get()` 이 **조용히가 아니라** 멈추긴 하지만
 #: 어느 쪽이 정본인지 다투게 된다.
 REC_PRICE_LEDGER_KEY = "benefit.rec_price"
+
+#: REC 가중치를 담은 대장 키 (사용자 판정 §5 · R52/WP-6). `REC_PRICE_LEDGER_KEY`
+#: 와 같은 이유로 이름을 여기 한 번만 적는다. `ledger_levels._LEDGER_VARS` 에
+#: 없는 이유는 그 파일 옆 주석에 있다(폭을 지어낼 수 없어 스윕 축이 아니다).
+REC_WEIGHT_LEDGER_KEY = "benefit.rec_weight_pv"
 
 
 def break_even_subsidy_rate(
@@ -488,12 +494,14 @@ class _Sweeper:
         scheme: IncentiveScheme | None,
         daily_shapes: DailyShapes,
         rec_price_won_per_unit: float,
+        rec_weight_pv: float,
     ) -> None:
         self._level_map = level_map
         self._horizon_years = horizon_years
         self._scheme = scheme
         self._daily_shapes = daily_shapes
         self._rec_price_won_per_unit = rec_price_won_per_unit
+        self._rec_weight_pv = rec_weight_pv
         self._memo: dict[tuple[tuple[str, float], ...], float] = {}
 
     def conclusion_at(self, variable: str, value: float) -> float:
@@ -529,11 +537,12 @@ class _Sweeper:
             # 그 변수가 올라도 변동폭이 항상 0원이다(`pv_inverter_share` 등이
             # 올라올 때 이 파일이 이미 겪은 함정).
             annual_load_kwh=probe["household_load_annual_kwh"]["base"],
-            # ★ **본 실행과 같은 REC 단가를 쓴다** (사용자 판정 §4 · R51/WP-6).
-            # 안 넘기면 러너의 기본값 0 이 쓰이고, 대장이 단가를 얻는 날
-            # **본문과 5.1 이 서로 다른 사업을 그린다** — 위 `annual_load_kwh`
-            # 가 적어 둔 것과 같은 함정이다.
+            # ★ **본 실행과 같은 REC 단가·가중치를 쓴다** (사용자 판정 §4·§5 ·
+            # R51/WP-6·R52/WP-6). 안 넘기면 러너의 기본값이 쓰이고, 대장이
+            # 값을 얻는 날 **본문과 5.1 이 서로 다른 사업을 그린다** — 위
+            # `annual_load_kwh` 가 적어 둔 것과 같은 함정이다.
             rec_price_won_per_unit=self._rec_price_won_per_unit,
+            rec_weight_pv=self._rec_weight_pv,
         )
         result = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
         self._memo[key] = result
@@ -841,14 +850,16 @@ def build_case_report(
     # 리포트가 조용히 「REC 0원」을 계속 싣고, 그 상태는 「단가가 0 이라 0원」과
     # 산출물에서 구별되지 않는다 — `AssumptionProvider` 계약이 *「없으면 멈추며
     # 기본값으로 메우지 않는다」* 로 세운 규약 그대로다.
-    rec_price_item = provider.get(REC_PRICE_LEDGER_KEY)
-    if rec_price_item is None:
-        raise ValueError(
-            f"전제 대장에 {REC_PRICE_LEDGER_KEY!r} 항목이 없습니다 — REC 편익이 "
-            "단가를 읽을 자리가 없습니다. docs/assumptions.yaml 에 등재하십시오"
-            "(사용자 판정 2026-09-01-R51 §4)"
-        )
-    rec_price = float(rec_price_item.value)
+    rec_price = required_scalar(
+        provider, REC_PRICE_LEDGER_KEY, note="REC 편익 단가 (사용자 판정 2026-09-01-R51 §4)"
+    )
+    # ★★ **REC 가중치도 대장에서 온다** (사용자 판정 §5 · R52/WP-6). 단가가
+    # `default0`(값 0)인 동안은 가중치를 몰라도 편익이 0원이라 상관없었으나,
+    # `assume`(70원/kWh)으로 오른 지금은 이 값이 결론을 정한다 — `rec_price`
+    # 와 같은 통로(`required_scalar`)로 읽는다.
+    rec_weight = required_scalar(
+        provider, REC_WEIGHT_LEDGER_KEY, note="REC 편익 가중치 (사용자 판정 §5, R52/WP-6)"
+    )
     # ★ **가구 부하를 본 실행에 세운다** (판정 B-1, `docs/decisions-
     # 2026-08-31-R48.md` §5·§1·§4). 종전에는 이 호출이 `annual_load_kwh` 를
     # 넘기지 않아 결론이 부하 없는 사업(PV+ESS 만) 위에 섰고, 그래서 §4 가
@@ -859,11 +870,11 @@ def build_case_report(
         {}, level_map=level_map, horizon_years=horizon_years, scheme=scheme,
         daily_shapes=shapes,
         annual_load_kwh=level_map["household_load_annual_kwh"]["base"],
-        rec_price_won_per_unit=rec_price,
+        rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
     )
     sweeper = _Sweeper(
         level_map=level_map, horizon_years=horizon_years, scheme=scheme,
-        daily_shapes=shapes, rec_price_won_per_unit=rec_price,
+        daily_shapes=shapes, rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
     )
     influences = _influences(
         sweeper=sweeper, level_map=level_map, provider=provider

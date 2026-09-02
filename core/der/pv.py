@@ -151,6 +151,7 @@ class PV(DER):
         bos_capex_won: float = 0.0,
         vat_rate: float = 0.0,
         inverter_unit_capex_won_per_kw: float | None = None,
+        inverter_replacement_unit_won_per_kw: float | None = None,
         fixed_om_won_per_year: float = 0.0,
         variable_om_won_per_kwh: float = 0.0,
         escalation_rate: float = 0.0,
@@ -213,6 +214,22 @@ class PV(DER):
             else inverter_unit_capex_won_per_kw,
             field="pv.inverter_unit_capex_won_per_kw",
             label="인버터 단가(원/kW)",
+            name=name,
+        )
+        # ★ **인버터 교체 단가 — 취득 단가와 분리해 설정할 수 있다** (사용자
+        # 판정 §7, `docs/decisions-2026-09-02-R52.md` — 교체 시 드는 값은
+        # 원래 산 값이 아니며 기존 부품 재사용으로 통상 더 싸다. 「각각 별도
+        # 설정이 가능해야 함」이 이 인자다). **기본값은 위 취득 단가와 같다**
+        # — R52/WP-6 조사(`docs/research-2026-09-02-R52-전제값.md` §7)가 PV
+        # 인버터 교체 단가의 **크기**를 뒷받침할 자료를 찾지 못했으므로
+        # 지어내지 않고 취득 단가를 그대로 쓴다. 견적이 오면 이 인자에
+        # 다른 값을 준다.
+        self.inverter_replacement_unit_won_per_kw = _non_negative(
+            self.inverter_unit_capex_won_per_kw
+            if inverter_replacement_unit_won_per_kw is None
+            else inverter_replacement_unit_won_per_kw,
+            field="pv.inverter_replacement_unit_won_per_kw",
+            label="인버터 교체 단가(원/kW)",
             name=name,
         )
         self.fixed_om_won_per_year = _non_negative(
@@ -714,8 +731,10 @@ class PV(DER):
             # 본체 — 최초 취득(1년차)은 `_gross_capex_won()`(부대비 포함)이고
             # 재취득분은 `replacement_schedule()` 과 같은 단가를 쓴다.
             (self.lifetime, self.unit_capex_won_per_kw, self._gross_capex_won()),
-            # 인버터 — 최초 취득분을 두지 않는다(위 ⚠ 참조).
-            (self.inverter_lifetime, self.inverter_unit_capex_won_per_kw, None),
+            # 인버터 — 최초 취득분을 두지 않는다(위 ⚠ 참조). 교체분은 취득
+            # 단가가 아니라 **교체 단가**를 쓴다(R52/WP-6, 사용자 판정 §7) —
+            # 기본값은 같은 값이나 통로가 갈렸다.
+            (self.inverter_lifetime, self.inverter_replacement_unit_won_per_kw, None),
         ):
             acquired: dict[int, float] = {} if initial is None else {1: initial}
             if unit_cost > 0.0:
