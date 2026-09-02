@@ -66,9 +66,11 @@ from core.cba.perspective import (
     society_excludes_subsidy,
 )
 from core.cba.proforma import benefit_row
+from core.contracts.der import DispatchResult
 from core.contracts.schemas import CashFlowRow
 from core.contracts.units import ZERO, Money
 from core.contracts.valuestream import Payer, ValueStream
+from core.valuestream.distributed_benefit import DistributedBenefit, DistributedSubItems
 
 #: `payer` 값 → 관점. `OPERATOR` 는 없다 — 그 열은 결론축을 그대로 쓰고
 #: 이 표로 다시 거르지 않는다(위 머리말). `MappingProxyType` — 모듈 수준
@@ -104,6 +106,29 @@ class PerspectiveWiring:
     outside: tuple[OutsideWalletBenefit, ...]
 
 
+def build_society_annualised(
+    distributed_credit_won: float,
+) -> tuple[tuple[ValueStream, int], ...]:
+    """대장 스칼라 하나로 `DistributedBenefit` 스트림을 짓는다 (R53/WP-1).
+
+    ``build_perspective_wiring()`` 의 ``society_annualised`` 로만 들어간다 —
+    `annualised`(결론축 재료)에는 절대 섞지 않는다(위 머리말 「사업자 열은
+    결론축 그대로다」, R53/WP-1 판정 ①). 이 함수는 러너의 `annualised`·
+    `annual_benefit`·`benefit_rows` 를 하나도 건드리지 않는다.
+
+    ⚠ 대장(`benefit.distributed_credit`)은 하위 항목 다섯을 나누지 않고
+    합계 하나만 낸다. `DistributedBenefit` 은 하위 항목별 구조를 요구하므로
+    ``grid_service_won`` 한 항목에 전액을 담는다 — 지금 값이 0이라 무해하나,
+    대장이 0이 아닌 값을 갖는 날 이 배분은 사실과 다르게 읽힌다(판정 필요 —
+    `.orch/R53/result_1.md` 8절 참조).
+    """
+    stream: ValueStream = DistributedBenefit(
+        sub_items=DistributedSubItems(grid_service_won=distributed_credit_won)
+    )
+    annual_won = int(stream.annual_value(DispatchResult.zeros(1), year=1))
+    return ((stream, annual_won),)
+
+
 def build_perspective_wiring(
     annualised: Sequence[tuple[ValueStream, int]],
     operator_benefit_rows: Sequence[CashFlowRow],
@@ -112,12 +137,17 @@ def build_perspective_wiring(
     discount_rate: float,
     *,
     horizon_years: int,
+    society_annualised: Sequence[tuple[ValueStream, int]] = (),
 ) -> PerspectiveWiring:
     """`run_single_case_e2e()` 가 이미 가진 재료에서 관점 넷을 짓는다.
 
     ``annualised`` 는 `core/casegrid/operating_lines.py::annualise` 의
     반환값 그대로다 — `(스트림, 1년차 연간액)` 목록이며 `PeakShaving` 도
     포함한다. 각 스트림의 `effective_payer` 를 읽어 관점별 편익 행을 짓는다.
+
+    ``society_annualised`` 는 `annualised` 와 같은 모양이지만 **결론축에는
+    닿지 않는다**(R53/WP-1 판정 ① — `build_society_annualised()` 참조). 비어
+    있으면 이 함수는 종전과 완전히 같게 동작한다.
 
     ``operator_benefit_rows``·``operator_cost_rows`` 는 호출측이 이미 지은
     편익·비용 행 **전부**다 — `OPERATOR` 열이 새로 거르지 않고 결론축 그대로
@@ -144,7 +174,7 @@ def build_perspective_wiring(
         Perspective.SOCIETY: [],
     }
     outside: list[OutsideWalletBenefit] = []
-    for stream, annual_won in annualised:
+    for stream, annual_won in (*annualised, *society_annualised):
         payer = stream.effective_payer
         if payer in OUTSIDE_PERSPECTIVE_PAYERS:
             if annual_won != 0:

@@ -47,7 +47,7 @@ from core.casegrid.operating_lines import annualise as _annualise
 from core.casegrid.operating_lines import benefit_line as _benefit_line  # noqa: F401
 from core.casegrid.operating_lines import benefit_lines as _benefit_lines
 from core.casegrid.operating_lines import cost_lines as _cost_lines
-from core.casegrid.perspectives import build_perspective_wiring
+from core.casegrid.perspectives import build_perspective_wiring, build_society_annualised
 from core.casegrid.profiles import DailyShapes
 
 # ★ **분리 이유는 `pv_allocation.py` 머리말에 있다** — `NFR-206` 코드 줄 상한에
@@ -355,6 +355,7 @@ def run_single_case_e2e(
     extra_appliance_load_kwh: float = 0.0,
     rec_price_won_per_unit: float = 0.0,
     rec_weight_pv: float = 1.0,
+    distributed_credit_won_per_year: float = 0.0,
     nwas_price_won_per_kwh: float = 0.0,
     cp_price_won_per_kw_month: float = 0.0,
     settlement_inputs: SettlementInputs | None = None,
@@ -949,9 +950,12 @@ def run_single_case_e2e(
             lifecycle=tuple(lifecycle_rows),
         ),
         # ★★★ 관점 넷 배선 (R52/WP-A) — `build_perspective_wiring()` 독스트링 참조.
+        # ★ 사회 편익은 `society_annualised` 로 따로 넣는다 (R53/WP-1 판정 ①) —
+        # `annualised` 는 위에서 한 글자도 고치지 않는다.
         perspectives=build_perspective_wiring(
             annualised, benefit_rows, [*operating_cost_rows, *lifecycle_rows],
-            initial_investment, discount_rate, horizon_years=horizon_years),
+            initial_investment, discount_rate, horizon_years=horizon_years,
+            society_annualised=build_society_annualised(distributed_credit_won_per_year)),
         basis=CaseBasis(
             initial_investment_won=int(initial_investment),
             annual_benefit_won=annual_benefit,

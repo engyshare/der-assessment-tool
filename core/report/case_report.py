@@ -131,6 +131,9 @@ REC_PRICE_LEDGER_KEY = "benefit.rec_price"
 #: 없는 이유는 그 파일 옆 주석에 있다(폭을 지어낼 수 없어 스윕 축이 아니다).
 REC_WEIGHT_LEDGER_KEY = "benefit.rec_weight_pv"
 
+#: 분산편익 크레딧 대장 키 (R53/WP-1). `REC_PRICE_LEDGER_KEY` 와 같은 통로.
+DISTRIBUTED_CREDIT_LEDGER_KEY = "benefit.distributed_credit"
+
 
 def break_even_subsidy_rate(
     *, subsidy_rate: float, npv_won: float, total_project_cost_won: float
@@ -860,6 +863,13 @@ def build_case_report(
     rec_weight = required_scalar(
         provider, REC_WEIGHT_LEDGER_KEY, note="REC 편익 가중치 (사용자 판정 §5, R52/WP-6)"
     )
+    # ★ **분산편익 크레딧도 대장에서 온다** (R53/WP-1). 지금 값은 0이며
+    # (`track: default0`) 사회 열 편익이 0원을 낸다 — `build_society_
+    # annualised()` 가 이 값으로 사회 열만 짓고 결론축에는 닿지 않는다.
+    # ⚠ `_Sweeper` 에는 넘기지 않는다 — 그 결과는 `variants[..][CONCLUSION_
+    # METRIC]` 만 쓰고 `.perspectives` 는 읽지 않으므로 결론축에 안 닿는 이
+    # 값을 넘겨도 어떤 수도 바뀌지 않는다(판정 필요 — result_1.md 8절).
+    distributed_credit = required_scalar(provider, DISTRIBUTED_CREDIT_LEDGER_KEY, note="분산편익")
     # ★ **가구 부하를 본 실행에 세운다** (판정 B-1, `docs/decisions-
     # 2026-08-31-R48.md` §5·§1·§4). 종전에는 이 호출이 `annual_load_kwh` 를
     # 넘기지 않아 결론이 부하 없는 사업(PV+ESS 만) 위에 섰고, 그래서 §4 가
@@ -871,6 +881,7 @@ def build_case_report(
         daily_shapes=shapes,
         annual_load_kwh=level_map["household_load_annual_kwh"]["base"],
         rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
+        distributed_credit_won_per_year=distributed_credit,
     )
     sweeper = _Sweeper(
         level_map=level_map, horizon_years=horizon_years, scheme=scheme,
