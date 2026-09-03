@@ -52,6 +52,12 @@ class EV_V2G(DER):
 
     tag: ClassVar[str] = "EV_V2G"
 
+    #: FR-101-AC3 — 자원이 **자기 디스패치 규칙을 선언**한다. 값은 엔진 어휘
+    #: `DispatchRule.V2G_CHARGE` 의 값 문자열이다. 열거형을 import 하지 않는
+    #: 이유(NFR-208-AC1 역방향 import 금지)는 `DER.DISPATCH_RULE` 독스트링에
+    #: 있다.
+    DISPATCH_RULE: ClassVar[str] = "v2g_charge"
+
     # 값은 spec FR-105-AC1 의 EV_V2G 행 원문이다 — 다듬으면 spec과 갈린다.
     MODE_UNIDIRECTIONAL: ClassVar[str] = "단방향 충전만"
     MODE_BIDIRECTIONAL: ClassVar[str] = "양방향(최소 SOC 보장)"

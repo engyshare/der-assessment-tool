@@ -109,6 +109,12 @@ class ESS(DER):
     #: 금지 — NFR-106 레지스트리 순회가 자원을 못 찾고도 초록불로 남는다.
     tag: ClassVar[str] = "ESS"
 
+    #: FR-101-AC3 — 자원이 **자기 디스패치 규칙을 선언**한다. 값은 엔진 어휘
+    #: `DispatchRule.ESS_CHARGE` 의 값 문자열이다. 열거형을 import 하지 않는
+    #: 이유(NFR-208-AC1 역방향 import 금지)는 `DER.DISPATCH_RULE` 독스트링에
+    #: 있다.
+    DISPATCH_RULE: ClassVar[str] = "ess_charge"
+
     #: FR-105-AC1 이 ESS 에 대해 열거한 운전 방법 전체
     OPERATING_MODES: ClassVar[tuple[ESSOperatingMode, ...]] = tuple(ESSOperatingMode)
 

@@ -26,6 +26,11 @@ class StubResource:
     name: str
     electric: list[float]
     tag: str = "Stub"
+    #: 자원이 스스로 선언하는 디스패치 규칙 (`DER.DISPATCH_RULE` · FR-101-AC3).
+    #: 기본값 빈 문자열은 「선언하지 않았다」이며 엔진의 기본 갈래로 떨어진다 —
+    #: 스텁도 실물과 **같은 경로**로 순위를 받아야 이 파일의 순서 검사가
+    #: 실물을 말한다.
+    DISPATCH_RULE: str = ""
     heat: list[float] | None = None
     cool: list[float] | None = None
     fuel: list[float] | None = None
@@ -246,11 +251,14 @@ def test_dispatch_digest_is_deterministic_and_uses_raw_step_series() -> None:
 @pytest.mark.req("FR-302-AC1")
 @pytest.mark.req("FR-302-AC3")
 def test_rule_order_is_configurable_and_reflected_in_dispatch_order() -> None:
+    # ⚠ **규칙은 자원이 선언한다** (R59 · FR-101-AC3). 엔진은 태그를 보지
+    # 않으므로 `tag=` 만 주면 넷이 모두 기본 갈래로 떨어져 이 검사가 순서를
+    # 재지 못한다 — 실물 자원(`core/der/*.py`)이 하는 선언을 스텁도 한다.
     resources = [
         StubResource("load", [-1.0], tag="Load"),
-        StubResource("ev", [0.0], tag="EV_V2G"),
-        StubResource("ess", [0.0], tag="ESS"),
-        StubResource("pv", [1.0], tag="PV"),
+        StubResource("ev", [0.0], tag="EV_V2G", DISPATCH_RULE="v2g_charge"),
+        StubResource("ess", [0.0], tag="ESS", DISPATCH_RULE="ess_charge"),
+        StubResource("pv", [1.0], tag="PV", DISPATCH_RULE="pv_self_consumption"),
     ]
 
     default_dispatch = RuleBasedEngine().run(resources, ctx(steps=1))
@@ -277,15 +285,27 @@ def test_rule_order_is_configurable_and_reflected_in_dispatch_order() -> None:
 # `test_smoke_wave0.py::test_reference_impl_imports_only_contracts`)은 **자원이
 # 엔진을 import 하지 않는가**를 보았고 그것은 `NFR-208-AC1`(역방향 import 금지)
 # 이다. 그 둘이 초록불인 채로 이 엔진은 `_rule_for()` 에서 자원 태그 셋을
-# **리터럴로 알고 있다** — 즉 「자원이 엔진을 모른다」가 참이면서 「엔진이 자원을
+# **리터럴로 알고 있었다** — 즉 「자원이 엔진을 모른다」가 참이면서 「엔진이 자원을
 # 모른다」가 거짓일 수 있다. 두 조항이 같은 것을 다른 말로 하는 것이 아니다.
+#
+# **R59 가 그 셋을 없앴다.** 자원이 `DER.DISPATCH_RULE` 로 자기 규칙을 선언하고
+# 엔진이 그것을 읽는다 — 엔진은 이제 어느 자원도 이름으로 알지 못한다. 아래
+# 넷이 그 상태를 잰다: ⓐ 계약만 구현한 자원이 **돈다**, ⓑ 엔진 소스에 자원 태그
+# 문면이 **한 건도 없다**, ⓒ 자원이 선언한 문자열이 엔진 어휘에 **실재한다**,
+# ⓓ 모르는 문자열·빈 문자열이 **기본 갈래로 떨어져 그래도 돈다**.
 
 #: 엔진이 `_rule_for()` 에서 **디스패치 순위를 배정하려고** 리터럴로 아는 태그.
 #:
-#: 이 셋은 **선언된 예외**다. 늘어나면 아래 검사가 빨간불이 되고, 늘리는 사람이
-#: 여기에 적으며 근거를 남기게 된다 — 목록을 손으로 유지하는 것이 목적이 아니라
-#: **목록이 늘어나는 것을 보이게** 하는 것이 목적이다.
-ENGINE_KNOWN_TAGS = frozenset({"PV", "ESS", "EV_V2G"})
+#: **★ R59 에 비었다.** R38-B2 가 이 자리를 세울 때는 셋(`PV`·`ESS`·`EV_V2G`)이
+#: 「선언된 예외」였고, 그 시험의 오류 문면이 갈 방향을 적어 두었다 — *「줄었다면:
+#: 좋은 방향이다. 선언에서 지우십시오」*. R59 가 방향을 뒤집어(**자원이 규칙을
+#: 선언하고 엔진이 읽는다** · `DER.DISPATCH_RULE`) 엔진에서 태그 리터럴이 **전부**
+#: 사라졌으므로 셋을 지웠다.
+#:
+#: **빈 채로 남겨 두는 것이 요점이다.** 목록을 손으로 유지하는 것이 목적이 아니라
+#: **늘어나는 것을 보이게** 하는 것이 목적이고, 이제 문턱이 0 이라 태그 리터럴이
+#: **한 건이라도** 되돌아오면 아래 검사가 빨간불이 된다.
+ENGINE_KNOWN_TAGS: frozenset[str] = frozenset()
 
 
 class ContractOnlyResource(DER):
@@ -445,11 +465,16 @@ def test_engine_source_names_no_resource_tag_beyond_the_declared_three() -> None
     알면 **자원 1종을 더할 때 엔진이 그 목록을 늘려야** 하고, 그 순간 조항이
     깨진다.
 
-    **지금 엔진은 셋을 안다** — `_rule_for()` 가 `PV`·`ESS`·`EV_V2G` 를
-    디스패치 **순위 배정**에 쓴다(`DEFAULT_RULE_ORDER`). 그것을 0 으로 만드는
-    것은 엔진 재설계이며 이 구획의 일이 아니다. 그래서 셋을 **선언된 예외**로
-    고정하고, **넷째가 생기는 순간 빨간불**이 되게 한다. 자원이 6종인데
-    엔진이 아는 것이 3종이라는 사실 자체가 「모르는 자원도 돈다」의 증거다.
+    **엔진이 아는 태그는 이제 0종이다** (R59). R38-B2 시점에는 `_rule_for()` 가
+    `PV`·`ESS`·`EV_V2G` 를 디스패치 **순위 배정**에 썼고, 그것을 0 으로 만드는
+    것은 그 구획의 일이 아니어서 셋을 **선언된 예외**로 고정해 두었다. R59 가
+    방향을 뒤집어 그 셋을 없앴다 — 자원이 `DER.DISPATCH_RULE` 로 규칙을
+    선언하고 엔진이 그것을 `DispatchRule(...)` 로 되돌린다. 그래서 문턱이
+    0 이고, 태그 리터럴이 **한 건이라도 되돌아오면 빨간불**이다.
+
+    ⚠ **순위 자체가 사라진 것이 아니다.** `DEFAULT_RULE_ORDER` 는 그대로이고
+    자원 여섯의 규칙 배정도 R59 전후로 한 건도 달라지지 않았다 — 바뀐 것은
+    **누가 그 배정을 아는가**뿐이다.
 
     비교 대상을 **레지스트리에서 읽는다**(`discover(core.der, DER)`) — 손으로
     적으면 자원을 추가할 때 반드시 빠지고, 빠진 자원은 검사받지 않는다.
@@ -485,3 +510,97 @@ def test_engine_source_names_no_resource_tag_beyond_the_declared_three() -> None
         "엔진이 자원 전건을 리터럴로 알고 있다 — 새 자원마다 엔진을 고쳐야 하는 "
         "상태이며 FR-101-AC3 이 성립하지 않는다"
     )
+
+
+@pytest.mark.req("FR-101-AC3")
+def test_every_declared_dispatch_rule_exists_in_the_engine_vocabulary() -> None:
+    """★ 조항의 ⓑ 를 **뒤집은 방향에서** 지킨다 — 선언이 어휘에 실재하는가.
+
+    R59 가 태그 리터럴을 없앤 대가로 결합이 **평문 문자열**이 됐다
+    (`DER.DISPATCH_RULE = "pv_self_consumption"`). 자원은 `DispatchRule` 을
+    import 할 수 없으므로(`NFR-208-AC1` 역방향 import 금지) 열거형이 오타를
+    막아 주지 않는다 — 그리고 **오타는 조용하다**: 엔진이 모르는 문자열을
+    기본 갈래로 떨어뜨리므로 `ess_charrge` 라고 적힌 ESS 는 예외 없이 돌면서
+    디스패치 순서만 맨 뒤로 간다. 그 조용함을 여기서 끊는다.
+
+    목록을 손으로 적지 않고 **레지스트리 전건**을 훑는다
+    (`discover(core.der, DER)`) — 위 검사가 쓰는 것과 같은 정본이다. 손으로
+    적으면 자원을 추가할 때 반드시 빠지고, 빠진 자원은 검사받지 않는다.
+
+    ⚠ **선언하지 않은 자원은 위반이 아니다.** `heatpump`·`load`·
+    `thermal_load` 는 선언이 없고 기본 갈래로 떨어지는데 그것이 **정상**이며,
+    「이 속성을 모르는 자원도 돈다」가 `FR-101-AC3` 의 증거다. 여기서 재는
+    것은 *「적었다면 실재하는가」* 뿐이다.
+    """
+    vocabulary = {rule.value for rule in DispatchRule}
+    registry = discover(core.der, DER)
+    assert len(registry) >= 4, (
+        f"레지스트리 자원이 {len(registry)}종이다 — 전건 순회가 성립하지 않는다"
+    )
+
+    declared = {
+        tag: cls.DISPATCH_RULE for tag, cls in registry.items() if cls.DISPATCH_RULE
+    }
+    assert declared, (
+        "규칙을 선언한 자원이 0종이다 — 그러면 엔진의 순위 배정이 전부 기본 "
+        "갈래로 무너진 것이고, 이 검사는 아무것도 말하지 않는다"
+    )
+
+    unknown = {
+        tag: value for tag, value in declared.items() if value not in vocabulary
+    }
+    assert not unknown, (
+        f"자원이 선언한 디스패치 규칙이 엔진 어휘에 없다: {unknown}.\n"
+        f"  어휘: {sorted(vocabulary)}\n"
+        "평문 문자열이라 오타가 조용하다 — 이 자원은 예외 없이 돌면서 "
+        "디스패치 순서만 맨 뒤(기본 갈래)로 간다. `DispatchRule` 의 **값 "
+        "문자열**을 그대로 적으십시오 (열거형을 import 하지 않는 이유는 "
+        "`DER.DISPATCH_RULE` 독스트링에 있다)"
+    )
+
+    fell_back = {
+        tag: value
+        for tag, value in declared.items()
+        if DispatchRule(value) is DispatchRule.GRID_IMPORT
+    }
+    assert not fell_back, (
+        f"자원이 기본 갈래를 명시적으로 선언했다: {fell_back}. 선언하지 않은 "
+        "것과 구별되지 않으므로 선언을 지우십시오 — 두 상태가 한 결과로 "
+        "겹치면 「선언을 잊었다」를 아무도 볼 수 없다"
+    )
+
+
+@pytest.mark.req("FR-101-AC3")
+def test_unknown_and_missing_dispatch_rule_declarations_still_dispatch() -> None:
+    """★ 조항의 ⓒ「동작」을 **예외가 새는 쪽에서** 못 박는다.
+
+    선언을 읽는 구조는 「읽을 것이 없을 때」와 「읽은 것이 틀렸을 때」 두 구멍을
+    함께 연다. 둘 중 하나라도 예외가 되면 **새 자원은 엔진을 고치지 않고는
+    아예 돌지 않으므로** 조항이 깨진다 — R59 가 태그 리터럴을 없애면서 산
+    위험이 정확히 이것이라 여기서 실행으로 잰다.
+
+    ⚠ 이 검사는 「기본 갈래로 떨어진다」를 **바람직하다고 말하지 않는다.**
+    오타를 잡는 것은 위
+    `test_every_declared_dispatch_rule_exists_in_the_engine_vocabulary` 의
+    몫이고, 여기서 재는 것은 *「그래도 돈다」* 뿐이다.
+    """
+    typo = StubResource("typo", [1.0], tag="ESS", DISPATCH_RULE="ess_charrge")
+    silent = StubResource("silent", [1.0], tag="HeatPump")
+    empty_ish = StubResource("blank", [1.0], tag="Load", DISPATCH_RULE="")
+    declared = StubResource("ess", [0.0], tag="ESS", DISPATCH_RULE="ess_charge")
+
+    assert rule_for(typo) is DispatchRule.GRID_IMPORT
+    assert rule_for(silent) is DispatchRule.GRID_IMPORT
+    assert rule_for(empty_ish) is DispatchRule.GRID_IMPORT
+    # 대조군 — 선언이 옳으면 그 규칙을 그대로 받는다. 없으면 위 셋은 「무엇을
+    # 해도 기본 갈래」와 구별되지 않아 아무것도 증명하지 못한다.
+    assert rule_for(declared) is DispatchRule.ESS_CHARGE
+
+    load = StubResource("load", [-3.0], tag="Load")
+    dispatch = RuleBasedEngine().run([typo, silent, empty_ish, declared, load], ctx(steps=1))
+
+    assert set(dispatch.per_resource) == {"typo", "silent", "blank", "ess", "load"}
+    assert dispatch.grid_export == [0.0]
+    assert dispatch.grid_import == [0.0]
+    # 선언한 자원이 앞, 선언하지 않은 셋은 기본 갈래라 **입력 순서**로 뒤에 선다.
+    assert list(dispatch.per_resource) == ["ess", "typo", "silent", "blank", "load"]

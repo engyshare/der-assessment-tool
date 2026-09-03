@@ -394,6 +394,34 @@ class DER(ABC):
     #: 운전 방법 개념이 없는 자원(부하 등)은 빈 튜플로 남긴다.
     OPERATING_MODES: ClassVar[tuple[str, ...]] = ()
 
+    #: 이 자원이 받을 **디스패치 규칙의 값 문자열** (FR-101-AC3).
+    #:
+    #: **엔진이 자원을 아는 것이 아니라 자원이 자기 규칙을 선언한다.** 예전에는
+    #: `core/engine/rule_based.py::_rule_for()` 가 자원 태그 셋(`PV`·`ESS`·
+    #: `EV_V2G`)을 리터럴로 알고 순위를 배정했다 — 그 상태에서는 **일곱째
+    #: 자원이 고유한 규칙을 필요로 하는 순간 엔진의 목록을 고쳐야** 하므로
+    #: 「신규 자원 클래스가 위 인터페이스만 구현하면 코어 엔진 수정 없이
+    #: 동작」이 원리적으로 깨진다.
+    #:
+    #: **열거형이 아니라 평문 문자열인 이유.** 규칙 어휘(`DispatchRule`)는
+    #: `core.engine` 에 있고 자원은 그것을 import 할 수 없다 (NFR-208-AC1
+    #: 역방향 import 금지 · `tests/contract/test_der_contract.py::
+    #: test_implements_der_without_engine_knowledge` 와 `lint-imports` 가 둘 다
+    #: 잡는다). 그래서 자원은 **값 문자열**(`"pv_self_consumption"` 등)을 적고
+    #: 엔진이 그것을 자기 어휘로 되돌린다.
+    #:
+    #: **추상 메서드로 두지 않는다.** 기본값 빈 문자열은 「선언하지 않았다」이며,
+    #: 선언하지 않은 자원은 엔진의 **기본 갈래**(`"grid_import"`)로 떨어진다 —
+    #: 「인터페이스만 구현하면 동작」이 성립하려면 이 속성을 **모르는 자원도
+    #: 돌아야** 한다. 어휘 밖 문자열(오타)도 같은 기본 갈래다: 예외를 던지면
+    #: 새 자원이 엔진을 고치지 않고는 아예 돌지 않게 된다.
+    #:
+    #: 평문 문자열은 오타가 조용하므로 **선언이 어휘에 실재하는가**는
+    #: `tests/engine/test_rule_based.py::
+    #: test_every_declared_dispatch_rule_exists_in_the_engine_vocabulary` 가
+    #: 레지스트리 전건을 훑어 잰다.
+    DISPATCH_RULE: ClassVar[str] = ""
+
     # ── FR-101-AC1 속성 ─────────────────────────────────────────────
     name: str
     dt: int

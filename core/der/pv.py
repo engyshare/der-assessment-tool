@@ -132,6 +132,12 @@ class PV(DER):
 
     tag = "PV"
 
+    #: FR-101-AC3 — 자원이 **자기 디스패치 규칙을 선언**한다. 값은 엔진 어휘
+    #: `DispatchRule.PV_SELF_CONSUMPTION` 의 값 문자열이다. 열거형을 import
+    #: 하지 않는 이유(NFR-208-AC1 역방향 import 금지)는 `DER.DISPATCH_RULE`
+    #: 독스트링에 있다.
+    DISPATCH_RULE: ClassVar[str] = "pv_self_consumption"
+
     #: FR-105-AC1 — 자원 클래스가 자신이 지원하는 운전 방법 목록을 선언한다
     OPERATING_MODES: ClassVar[tuple[OperatingMode, ...]] = tuple(OperatingMode)
 

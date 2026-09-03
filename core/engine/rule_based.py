@@ -233,14 +233,26 @@ def dispatch_digest(dispatch: SystemDispatch) -> str:
 
 
 def _rule_for(resource: DER) -> DispatchRule:
-    tag = str(getattr(resource, "tag", "")).casefold()
-    if tag == "pv":
-        return DispatchRule.PV_SELF_CONSUMPTION
-    if tag == "ess":
-        return DispatchRule.ESS_CHARGE
-    if tag == "ev_v2g":
-        return DispatchRule.V2G_CHARGE
-    return DispatchRule.GRID_IMPORT
+    """자원이 **선언한** 규칙(`DER.DISPATCH_RULE`)을 엔진 어휘로 되돌린다.
+
+    ⚠⚠ **여기에 자원 태그를 리터럴로 적지 마라** (`FR-101-AC3`). R59 전까지 이
+    함수는 `PV`·`ESS`·`EV_V2G` 셋을 리터럴로 알고 순위를 배정했다 — 그러면
+    일곱째 자원이 고유한 규칙을 필요로 하는 순간 **엔진의 그 목록을 고쳐야**
+    하고 「인터페이스만 구현하면 코어 엔진 수정 없이 동작」이 깨진다. 방향을
+    뒤집었다: **엔진이 자원에게 묻는다.**
+    `tests/engine/test_rule_based.py::
+    test_engine_source_names_no_resource_tag_beyond_the_declared_three` 가
+    엔진 소스에 자원 태그 문면이 **한 건도** 없음을 대조한다.
+
+    선언하지 않은 자원과 어휘 밖 문자열은 **기본 갈래**로 떨어진다. 예외를
+    던지지 않는 이유는 `DER.DISPATCH_RULE` 독스트링에 있다 — 오타 하나로 새
+    자원이 아예 돌지 못하면 조항이 요구하는 「동작」이 사라진다.
+    """
+    declared = str(resource.DISPATCH_RULE)
+    try:
+        return DispatchRule(declared)
+    except ValueError:
+        return DispatchRule.GRID_IMPORT
 
 
 def _needs_price_signal(resource: DER) -> bool:

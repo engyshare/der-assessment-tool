@@ -70,7 +70,7 @@
 |---|---|---|---|---|---|---|
 | `FR-101` | Must-have | 1 | `FR-101-AC1` | 속성: name, tag, dt, carries_electric, carries_heat, carries_cool, consumes_fuel, lifetime,… | 자동 | test_der_contract.py 6건, test_ess.py, test_heatpump.py |
 |  |  | 1 | `FR-101-AC2` | 메서드: capex(), fixed_om(), variable_om(), replacement_schedule(), salvage_value(), dispatc… | 자동 | test_der_contract.py 5건, test_load.py |
-|  |  | 1 | `FR-101-AC3` | 신규 자원 클래스가 위 인터페이스만 구현하면 코어 엔진 수정 없이 동작 (단위 테스트로 실증) | 자동 | test_rule_based.py 2건 |
+|  |  | 1 | `FR-101-AC3` | 신규 자원 클래스가 위 인터페이스만 구현하면 코어 엔진 수정 없이 동작 (단위 테스트로 실증) | 자동 | test_rule_based.py 4건 |
 |  |  | 1 | `FR-101-AC4` | 매체 플래그에 따라 엔진이 전기·열·냉 수지를 자동으로 분리 집계한다 | 자동 | test_der_contract.py 3건, test_heatpump.py 3건, test_pv.py 2건, test_rule_based.py |
 |  |  | 1 | `FR-101-AC5` | (v0.15 신설) capex()·fixed_om()·variable_om() 의 **산식은 | 자동 | test_ess.py 4건, test_ev_v2g.py 3건, test_heatpump.py 4건, test_load.py 3건, test_pv.py 8건, test_thermal_load.py 3건 |
 | `FR-102` | Must-have | 1 | `FR-102-AC1.PV` | PV 태양광 (옥상/벽면 BIPV 구분) — 용량(kW), 이용률(%) 또는 8760 발전 시계열, 방위·경사, 연간 열화율, 인버터 수명 | 자동 | test_pv.py 9건, test_pv_validation.py 2건 |
