@@ -33,9 +33,15 @@ class SelfConsumption(ValueStream):
         new_annual_bill_won: float,
         enabled: bool = True,
         structure: str | None = None,
+        quantity_id: str | None = None,
     ) -> None:
+        # ★ 표찰의 임자는 몫이며 편익 종류가 아니다
+        # (core/casegrid/ess_share.py::ESSShare.quantity_id).
         super().__init__(
-            name="자가소비 전기요금 절감", enabled=enabled, structure=structure
+            name="자가소비 전기요금 절감",
+            enabled=enabled,
+            structure=structure,
+            quantity_id=quantity_id,
         )
         self._baseline = baseline_annual_bill_won
         self._new = new_annual_bill_won

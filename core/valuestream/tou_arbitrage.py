@@ -76,8 +76,11 @@ class TouArbitrage(ValueStream):
         peak_price_won_per_kwh: float,
         offpeak_price_won_per_kwh: float,
         enabled: bool = True,
+        quantity_id: str | None = None,
     ) -> None:
-        super().__init__(name="TOU 차익거래", enabled=enabled)
+        # ★ 표찰의 임자는 몫이며 편익 종류가 아니다
+        # (core/casegrid/ess_share.py::ESSShare.quantity_id).
+        super().__init__(name="TOU 차익거래", enabled=enabled, quantity_id=quantity_id)
         # ⚠ 수량은 **크기**로 받는다 — 방전·충전 둘 다 양수다. 부호로 방향을
         # 나르게 두면 산식의 뺄셈과 부호가 겹쳐 이중 부정이 되고, 그때 금액은
         # 그럴듯한 양수로 남는다.

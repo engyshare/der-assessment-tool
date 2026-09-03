@@ -39,8 +39,11 @@ class PeakShaving(ValueStream):
         monthly_peak_reduction_kw: list[float],
         demand_charge_won_per_kw_month: float,
         enabled: bool = True,
+        quantity_id: str | None = None,
     ) -> None:
-        super().__init__(name="기본요금(피크) 절감", enabled=enabled)
+        # ★ 표찰의 임자는 몫이며 편익 종류가 아니다
+        # (core/casegrid/ess_share.py::ESSShare.quantity_id).
+        super().__init__(name="기본요금(피크) 절감", enabled=enabled, quantity_id=quantity_id)
         if len(monthly_peak_reduction_kw) != self.MONTHS:
             raise ValueError(
                 f"월별 피크 저감량은 {self.MONTHS}개월 치여야 합니다: "

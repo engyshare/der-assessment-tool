@@ -83,8 +83,11 @@ class CapacityPayment(ValueStream):
         registered_capacity_kw: float,
         capacity_price_won_per_kw_month: float,
         enabled: bool = False,
+        quantity_id: str | None = None,
     ) -> None:
-        super().__init__(name="용량정산금", enabled=enabled)
+        # ★ 표찰의 임자는 몫이며 편익 종류가 아니다
+        # (core/casegrid/ess_share.py::ESSShare.quantity_id).
+        super().__init__(name="용량정산금", enabled=enabled, quantity_id=quantity_id)
         if registered_capacity_kw < 0:
             raise ValueError(
                 f"등록 용량은 음수일 수 없습니다: {registered_capacity_kw}"

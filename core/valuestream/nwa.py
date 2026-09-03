@@ -72,8 +72,11 @@ class NWAs(ValueStream):
         *,
         contribution_price_won_per_kwh: float,
         enabled: bool = False,
+        quantity_id: str | None = None,
     ) -> None:
-        super().__init__(name="계통 기여 보상 (비망대안)", enabled=enabled)
+        # ★ 표찰의 임자는 몫이며 편익 종류가 아니다
+        # (core/casegrid/ess_share.py::ESSShare.quantity_id).
+        super().__init__(name="계통 기여 보상 (비망대안)", enabled=enabled, quantity_id=quantity_id)
         if contribution_price_won_per_kwh < 0:
             raise ValueError(
                 "계통 기여 보상 단가는 음수일 수 없습니다: "
