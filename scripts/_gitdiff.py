@@ -1,6 +1,6 @@
-"""NFR-105 게이트 ①② 공용 — 기준 ref 해석과 변경 목록.
+"""NFR-105 게이트 ①②③ 공용 — 기준 ref 해석과 변경·커밋 목록.
 
-**왜 두 게이트가 이것을 공유하는가.** 둘 다 «기준 브랜치와의 차이» 위에서만
+**왜 세 게이트가 이것을 공유하는가.** 셋 다 «기준 브랜치와의 차이» 위에서만
 판정한다. 기준 ref 를 못 찾았을 때의 처리를 각자 쓰면 반드시 갈리고, 갈린 쪽이
 느슨한 쪽이면 그 게이트가 조용히 무력화된다 — 08-08 계약 개정에서 자원 여섯이
 `capex_vat()` 를 각자 지어낸 것과 같은 구조다(§16.1 W-4 단일 소유).
@@ -130,3 +130,56 @@ def base_reader(base: str, root: Path):
             return None
 
     return read
+
+
+@dataclass(frozen=True)
+class Commit:
+    """한 커밋과 그것이 만진 파일. `paths` 는 저장소 상대 POSIX 경로다.
+
+    **순서를 담지 않는다.** 「몇 번째인가」는 목록 안의 자리이지 커밋의 속성이
+    아니다 — 커밋 하나를 떼어 놓고 「이것이 먼저다」를 말할 수 없다.
+    """
+
+    sha: str
+    subject: str
+    paths: tuple[str, ...]
+
+
+def commits_in_range(base: str, root: Path) -> list[Commit]:
+    """`base` 와의 병합 기점 이후 커밋을 **오래된 것부터** 돌려준다.
+
+    `changed_files` 와 같은 기점(`base...HEAD`)을 본다 — 두 목록의 기점이
+    갈리면 「변경된 파일」과 「그 파일을 만진 커밋」이 서로 다른 범위를 가리켜
+    한쪽에만 있는 파일이 조용히 판정에서 빠진다.
+
+    **`--reverse` 로 오래된 것부터 준다.** `git log` 의 기본은 최신순이고,
+    순서를 재는 쪽이 그것을 뒤집는 것을 잊으면 판정이 **정확히 반대**가 된다 —
+    그리고 반대로 뒤집힌 판정은 위반이 0건일 때 통과와 구별되지 않는다.
+
+    **병합 커밋은 세지 않는다**(`--no-merges`). 병합은 남의 변경을 그대로
+    들여오므로 그 안의 파일이 「이 PR 이 만졌다」의 근거가 되지 않는다.
+    """
+    require_ref(base, root)
+
+    merge_base = git(["merge-base", base, "HEAD"], root).strip()
+    out = git(
+        [
+            "log", "--reverse", "--no-merges", "--name-only",
+            "--format=%x00%H%x1f%s", f"{merge_base}..HEAD",
+        ],
+        root,
+    )
+
+    commits: list[Commit] = []
+    for block in out.split("\x00"):
+        if not block.strip():
+            continue
+        header, _, body = block.partition("\n")
+        sha, _, subject = header.partition("\x1f")
+        paths = tuple(
+            line.strip().replace("\\", "/")
+            for line in body.splitlines()
+            if line.strip()
+        )
+        commits.append(Commit(sha=sha.strip(), subject=subject.strip(), paths=paths))
+    return commits

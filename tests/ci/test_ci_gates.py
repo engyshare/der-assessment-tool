@@ -12,10 +12,20 @@ CI 가 부른다는 사실과 그것이 결함을 잡는다는 사실도 다르�
 그래서 여기서는 셋을 각각 검사한다 — ⓐ 판정 논리가 위반을 잡는가 ⓑ 정당한
 변경을 오판하지 않는가 ⓒ **CI 가 실제로 그 게이트를 실행하는가.**
 
-`NFR-105-AC1` 을 자동 매핑으로 다는 이유: 이 조항은 게이트 자신이므로
-`docs/manual-checks.yaml` 에 등재하는 것이 **금지**되어 있다 (NFR-107-AC5 ⓒ).
-수동 예외 경로를 정당화하는 조항이 그 경로로 "검증됨" 처리되면 아무것도 검증되지
-않은 채 초록불이 뜬다.
+`NFR-105-M1`(변경분 커버리지)·`M2`(테스트 동반)를 자동 매핑으로 다는 이유: 이 조항은
+게이트 자신이므로 `docs/manual-checks.yaml` 에 등재하는 것이 **금지**되어 있다
+(NFR-107-AC5 ⓒ). 수동 예외 경로를 정당화하는 조항이 그 경로로 "검증됨" 처리되면
+아무것도 검증되지 않은 채 초록불이 뜬다.
+
+**`NFR-105-AC1` 은 게이트 ③ 시험에만 달린다** (spec v0.28 · R59/WP-4). 그 조항이
+요구하는 것은 **순서**(*「실패 테스트가 먼저 존재해야 한다」*)인데, 게이트 ①②가
+재는 **변경분 커버리지와 테스트 동반**에는 순서가 없다 — 둘 다 한 시점의 diff 만
+본다. 종전에는 24건 전부가 `AC1` 을 달고 있었으나 **순서를 재는 것은 하나도
+없었다**: 조항과 다른 것을 재면서 매핑표가 초록불이던 상태다
+(`docs/decisions-2026-09-04-R59.md` §3). WP-3 이 24건을 `M1`·`M2` 로 재조준했고,
+**WP-4 가 순서를 실제로 재는 게이트 ③(`scripts/check_commit_order.py`)을 세워
+`M3` 와 `AC1` 의 자리를 만들었다.** 그래서 아래 「게이트 ③」 절의 시험만 `AC1` 을
+달며, 그 시험들은 **커밋 순서 이외의 것을 재지 않는다.**
 """
 
 from __future__ import annotations
@@ -94,7 +104,7 @@ def _judge(
 
 # ── ⓐ 위반을 잡는다 ─────────────────────────────────────────────────
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M2")
 def test_implementation_change_without_any_test_change_is_a_violation() -> None:
     violations, accompanied = _judge({
         "core/der/pv.py": "class PV:\n    tag = 'PV'\n",
@@ -103,7 +113,7 @@ def test_implementation_change_without_any_test_change_is_a_violation() -> None:
     assert not accompanied
 
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M2")
 def test_an_unrelated_test_change_does_not_count() -> None:
     """**이것이 이 게이트의 실질이다.**
 
@@ -120,7 +130,7 @@ def test_an_unrelated_test_change_does_not_count() -> None:
     assert not accompanied
 
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M2")
 def test_only_one_of_several_implementation_changes_being_accompanied_fails() -> None:
     """한 건이 동반되었다고 나머지가 면제되지 않는다."""
     violations, accompanied = _judge({
@@ -133,7 +143,7 @@ def test_only_one_of_several_implementation_changes_being_accompanied_fails() ->
     assert [a.module for a in accompanied] == ["core.der.pv"]
 
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M2")
 def test_a_mention_in_a_comment_or_docstring_is_not_a_corresponding_test() -> None:
     """서술은 선언이 아니다 — `ast` 를 쓰는 이유.
 
@@ -154,7 +164,7 @@ def test_a_mention_in_a_comment_or_docstring_is_not_a_corresponding_test() -> No
     )
 
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M2")
 def test_deleting_a_test_does_not_count_as_accompaniment() -> None:
     """테스트를 지워서 게이트를 통과하는 경로를 막는다."""
     violations, _ = _judge(
@@ -167,7 +177,7 @@ def test_deleting_a_test_does_not_count_as_accompaniment() -> None:
     assert [v.module for v in violations] == ["core.der.pv"]
 
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M2")
 def test_importing_core_itself_does_not_cover_everything() -> None:
     """`import core` 한 줄로 저장소 전체가 포섭되면 게이트가 사라진다."""
     violations, _ = _judge({
@@ -180,7 +190,7 @@ def test_importing_core_itself_does_not_cover_everything() -> None:
 
 # ── ⓑ 정당한 변경을 오판하지 않는다 ─────────────────────────────────
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M2")
 def test_direct_import_counts() -> None:
     violations, accompanied = _judge({
         "core/der/pv.py": "class PV:\n    tag = 'PV'\n",
@@ -191,7 +201,7 @@ def test_direct_import_counts() -> None:
     assert accompanied[0].how == "import core.der.pv"
 
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M2")
 def test_naming_convention_counts_even_without_an_import() -> None:
     """규약만 인정하면 계약 변경이 막히고, 규약을 버리면 이 경로가 사라진다.
 
@@ -206,7 +216,7 @@ def test_naming_convention_counts_even_without_an_import() -> None:
     assert "파일명 규약" in accompanied[0].how
 
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M2")
 def test_package_import_covers_its_modules_and_says_so() -> None:
     """레지스트리 순회 테스트(NFR-106)는 `core.der` 만 import한다.
 
@@ -222,7 +232,7 @@ def test_package_import_covers_its_modules_and_says_so() -> None:
     assert "상위 패키지" in accompanied[0].how
 
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M2")
 def test_a_docstring_only_package_marker_needs_no_test() -> None:
     """조항의 주어는 *"모든 **계산 코드**"* 다.
 
@@ -237,7 +247,7 @@ def test_a_docstring_only_package_marker_needs_no_test() -> None:
     assert not accompanied
 
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M2")
 def test_code_in_a_package_marker_is_still_implementation() -> None:
     """반대 방향도 고정한다 — `__init__.py` 라는 이름이 면제 사유가 아니다."""
     violations, _ = _judge({
@@ -246,7 +256,7 @@ def test_code_in_a_package_marker_is_still_implementation() -> None:
     assert [v.module for v in violations] == ["core.der"]
 
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M2")
 def test_deleting_an_implementation_file_needs_no_test() -> None:
     violations, accompanied = _judge(
         {"core/der/pv.py": ""},
@@ -256,7 +266,7 @@ def test_deleting_an_implementation_file_needs_no_test() -> None:
     assert not accompanied
 
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M2")
 def test_changes_outside_core_are_not_the_clause_subject() -> None:
     """조항 문면이 지정한 대상은 `core/` 다.
 
@@ -284,7 +294,7 @@ PV_DOCSTRING_ONLY = '"""고쳐 쓴 설명."""\n\n\nclass PV:\n    # 주석도 �
 PV_CODE_CHANGED = '"""원래 설명."""\n\n\nclass PV:\n    tag = "PV"\n    kw = 3.0\n'
 
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M2")
 def test_a_docstring_only_edit_to_an_implementation_file_is_not_a_violation() -> None:
     """조항의 주어는 「구현 변경」이지 「구현이 있는 파일의 변경」이 아니다.
 
@@ -304,7 +314,7 @@ def test_a_docstring_only_edit_to_an_implementation_file_is_not_a_violation() ->
     assert not accompanied
 
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M2")
 def test_a_real_code_edit_to_the_same_file_is_still_a_violation() -> None:
     """회귀 방지 — 앞 케이스와 **이전 이미지가 같고 이후만 다르다.**
 
@@ -318,7 +328,7 @@ def test_a_real_code_edit_to_the_same_file_is_still_a_violation() -> None:
     assert [v.module for v in violations] == ["core.der.pv"]
 
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M2")
 def test_a_new_implementation_file_has_no_previous_image_and_is_still_judged() -> None:
     """「이전이 없다」와 「이전과 같다」를 같게 다루지 않는다.
 
@@ -335,7 +345,7 @@ def test_a_new_implementation_file_has_no_previous_image_and_is_still_judged() -
 
 # ── ⓒ 검사를 수행하지 못한 것을 통과로 읽지 않는다 ──────────────────
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M2")
 def test_missing_base_ref_exits_2_not_0(tmp_path: Path) -> None:
     """**이 검사가 게이트의 가장 조용한 구멍을 막는다.**
 
@@ -354,7 +364,7 @@ def test_missing_base_ref_exits_2_not_0(tmp_path: Path) -> None:
     )
 
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M2")
 def test_empty_diff_exits_2_not_0(tmp_path: Path) -> None:
     """PR 에서 변경 파일 0건은 일어나지 않는다 — 기준 ref 오류의 증상이다."""
     _init_repo(tmp_path)
@@ -384,7 +394,8 @@ def _run_checker(root: Path, base: str, *extra: str) -> int:
 
 # ── ⓒ CI 가 실제로 게이트를 실행한다 ────────────────────────────────
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M1")
+@pytest.mark.req("NFR-105-M2")
 def test_ci_runs_both_gates_and_does_not_swallow_their_verdict() -> None:
     """워크플로가 게이트 2종을 부르고, 그 판정을 버리지 않는다.
 
@@ -425,7 +436,8 @@ def test_ci_runs_both_gates_and_does_not_swallow_their_verdict() -> None:
     )
 
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M1")
+@pytest.mark.req("NFR-105-M2")
 def test_ci_checkout_has_full_history_where_the_gates_need_it() -> None:
     """게이트 2종은 기준 브랜치와의 **병합 기점**을 본다.
 
@@ -452,7 +464,221 @@ def test_ci_checkout_has_full_history_where_the_gates_need_it() -> None:
         )
 
 
+# ── 게이트 ③ 커밋 순서 (작업 2.17) ──────────────────────────────────
+#
+# **`NFR-105-AC1` 을 인용하는 유일한 자리다.** 그 조항의 문면은 *"구현보다 그
+# 구현을 규정하는 실패 테스트가 **먼저** 존재해야 한다"* 이고, 「먼저」를 재는
+# 검사는 이것 하나다. 위 게이트 ①②는 한 시점의 diff 를 보므로 순서가 없다.
+#
+# **`NFR-105-M3` 는 이 게이트의 존재·판정·배선이 근거다.** 문면은 *"PR 내에서
+# 해당 기능의 테스트 커밋이 구현 커밋보다 선행하는지 확인. 위반 시 경고(차단
+# 아님, 스쿼시 병합 등 예외 존재)"* 이며, 아래 다섯이 그 문면을 조각마다 잰다 —
+# ⓐ 위반을 잡는가 ⓑ 정당한 이력을 오판하지 않는가 ⓒ 경고이지 차단이 아닌가
+# ⓓ 판정 못 한 것을 통과로 읽지 않는가 ⓔ CI 가 실제로 부르는가.
+#
+# 판정 함수를 직접 부른다 — 게이트 ②의 `_judge` 와 같은 이유다. 실제 커밋을
+# 만들지 않아야 판정 논리와 git 연결부가 갈린다. git 연결부는 ⓒⓓ 가 임시
+# 저장소로 따로 본다.
+
+ORDER_CHECKER = REPO_ROOT / "scripts" / "check_commit_order.py"
+
+#: 게이트 ②가 판정한 «구현 ↔ 대응 테스트» 짝 하나. 세 번째 칸은 인정 경로다.
+PAIR = [("core/der/pv.py", "tests/der/test_pv.py", "import core.der.pv")]
+
+
+def _commits(*touched: tuple[str, ...]):
+    """`(만진 파일들, ...)` 을 오래된 것부터의 커밋 목록으로 만든다."""
+    mod = _script("check_commit_order")
+    return [
+        mod.Commit(sha=f"{i:040x}", subject=f"c{i}", paths=paths)
+        for i, paths in enumerate(touched)
+    ]
+
+
+def _order(commits, pairs=None):
+    mod = _script("check_commit_order")
+    return mod.check(commits, PAIR if pairs is None else pairs)
+
+
+def _run_order_checker(root: Path, base: str) -> tuple[int, str]:
+    done = subprocess.run(
+        [sys.executable, str(ORDER_CHECKER), "--base", base, "--root", str(root)],
+        capture_output=True, text=True, encoding="utf-8", check=False,
+    )
+    return done.returncode, (done.stdout or "") + (done.stderr or "")
+
+
+@pytest.mark.req("NFR-105-M3")
 @pytest.mark.req("NFR-105-AC1")
+def test_an_implementation_committed_before_its_test_is_out_of_order() -> None:
+    """구현이 먼저, 테스트가 나중 — `NFR-105-AC1` 이 금지하는 순서다.
+
+    `AC1` 을 여기 다는 근거: 조항이 요구하는 것은 *「실패 테스트가 **먼저**
+    존재해야 한다」* 는 **순서**이고, 이 단언이 그 순서가 뒤집힌 이력을 실제로
+    잡는다. 이 파일의 다른 24건은 한 시점의 diff(커버리지·동반 여부)를 재므로
+    순서를 말할 수 없다 — R59 까지 그 24건이 전부 `AC1` 을 달고 있었다.
+    """
+    violations = _order(_commits(("core/der/pv.py",), ("tests/der/test_pv.py",)))
+    assert [v.impl for v in violations] == ["core/der/pv.py"], (
+        "구현이 대응 테스트보다 먼저 커밋된 것을 잡지 못했습니다 — 순서를 재는 "
+        "검사는 이것 하나이므로, 여기서 놓치면 NFR-105-AC1 을 재는 자리가 "
+        "저장소에 없습니다"
+    )
+
+
+@pytest.mark.req("NFR-105-M3")
+@pytest.mark.req("NFR-105-AC1")
+def test_a_test_committed_before_its_implementation_is_in_order() -> None:
+    """테스트가 먼저 — `NFR-105-AC1` 이 요구하는 순서이며 잡으면 안 된다.
+
+    **양성 쪽을 함께 고정하는 이유:** 순서 판정은 뒤집혀도 위반이 0건일 때
+    통과와 구별되지 않는다. `git log` 의 기본은 최신순이고 `--reverse` 를
+    잊으면 판정이 정확히 반대가 되는데, 음성만 보면 「전부 위반으로 낸다」도
+    합격한다 — 그리고 전부가 경고면 아무도 읽지 않는다.
+    """
+    assert _order(_commits(("tests/der/test_pv.py",), ("core/der/pv.py",))) == []
+
+
+@pytest.mark.req("NFR-105-M3")
+def test_one_commit_holding_both_is_not_out_of_order() -> None:
+    """한 커밋이 구현과 테스트를 함께 담으면 **위반이 아니다.**
+
+    그 커밋 안에서는 순서를 말할 수 없다. 조항 자신이 *「스쿼시 병합 등 예외
+    존재」* 라고 인정하며, **이 저장소의 라운드가 실제로 그렇게 커밋한다** —
+    「같은 자리」를 「나중」으로 읽으면 정상 커밋 전부가 경고가 된다.
+    """
+    together = ("core/der/pv.py", "tests/der/test_pv.py")
+    assert _order(_commits(together, ("README.md",))) == []
+
+
+@pytest.mark.req("NFR-105-M3")
+def test_the_commit_order_gate_warns_without_blocking(tmp_path: Path) -> None:
+    """위반에도 **종료 코드 0** 이다 — 조항이 *「차단 아님」* 이라고 못 박는다.
+
+    차단으로 올리면 조항을 넘고, 조항에 없는 이유로 막는 게이트는 꺼진다
+    (`NFR-206`·`NFR-405` 에서 같은 판단을 두 번 했다). 대신 위반은 로그에
+    남아야 한다 — 종료 코드가 늘 0 이므로 **출력이 유일한 증거**다.
+    """
+    _init_repo(tmp_path)
+    subprocess.run(["git", "branch", "base"], cwd=tmp_path, check=True, capture_output=True)
+    impl = 'class PV:\n    tag = "PV"\n'
+    test = (
+        "import core.der.pv\n\n\n"
+        "def test_x() -> None:\n    assert core.der.pv.PV.tag\n"
+    )
+    for rel, body in (("core/der/pv.py", impl), ("tests/der/test_pv.py", test)):
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", rel], cwd=tmp_path, check=True,
+                       capture_output=True)
+
+    code, out = _run_order_checker(tmp_path, "base")
+    assert code == 0, (
+        f"위반에 종료 코드 {code} 를 냈습니다 — 조항 문면은 «위반 시 경고(차단 "
+        "아님)» 이며, 차단으로 올리는 것은 spec 개정입니다 (§16.5)"
+    )
+    assert "::warning::" in out and "나중에 커밋된 짝 1건" in out, (
+        "위반을 잡고도 말하지 않았습니다 — 이 게이트는 종료 코드가 늘 0 이므로 "
+        "출력이 사라지면 «잡았다» 와 «못 잡았다» 가 구별되지 않습니다"
+    )
+
+
+@pytest.mark.req("NFR-105-M3")
+def test_a_range_with_one_commit_exits_2_not_0(tmp_path: Path) -> None:
+    """커밋이 하나뿐인 범위는 **판정 불가(2)이지 통과(0)가 아니다.**
+
+    견줄 두 자리가 없으면 「순서가 옳다」도 「그르다」도 말할 수 없다. 0 을 내면
+    *「스캔이 돌지 않았다」와 「깨끗하다」* 가 같아진다 (§13.0.1 ④) — 경고만 내는
+    게이트에서 특히 되풀이되기 쉬운 형태다.
+
+    기준 ref 부재도 같은 자리에서 본다: 얕은 클론에서 실제로 일어나며, 그때
+    `git` 은 조용히 빈 결과를 낸다.
+    """
+    _init_repo(tmp_path)
+    subprocess.run(["git", "branch", "base"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "README.md").write_text("y\n", encoding="utf-8")
+    subprocess.run(["git", "commit", "-qam", "only one"], cwd=tmp_path, check=True,
+                   capture_output=True)
+
+    code, out = _run_order_checker(tmp_path, "base")
+    assert code == 2, f"커밋 1건 범위에 종료 코드 {code} 입니다 — 0 이면 미판정이 통과로 읽힙니다"
+    assert "판정할 수 없습니다" in out
+
+    assert _run_order_checker(tmp_path, "origin/does-not-exist")[0] == 2
+
+
+@pytest.mark.req("NFR-105-M3")
+def test_ci_runs_the_commit_order_gate_and_does_not_swallow_its_verdict() -> None:
+    """CI 가 게이트 ③을 **PR 조건으로** 부르고, 판정을 삼키지 않는다.
+
+    `|| true` 와 `continue-on-error` 를 함께 보는 이유: 이 게이트는 스스로 종료
+    코드 0 을 내므로 그런 것이 **필요 없고**, 붙이면 종료 코드 2(판정 불가)까지
+    삼켜 **조용한 초록불**이 된다 — §16.5 `CI || true` 로 이미 겪은 형태다.
+
+    감지 능력 확인(`negtest_commit_order.py`)도 CI 에 상주하는지 본다. 종료
+    코드가 늘 0 인 게이트는 판정이 죽어도 영영 초록불이므로, 그 증거가 CI 밖에
+    있으면 아무도 돌리지 않는다.
+
+    그리고 **「직접 푸시는 미수행」이 로그에 남는지** 본다. 이 저장소는 PR 을
+    열지 않고 main 에 직접 푸시하므로(R53 실측) 이 스텝은 실제로 돌지 않는다 —
+    적어 두지 않으면 「미수행」이 「통과」로 읽힌다.
+    """
+    spec = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+
+    gate_steps = [
+        (name, step)
+        for name, job in spec["jobs"].items()
+        for step in job.get("steps", [])
+        if isinstance(step.get("run"), str) and "check_commit_order.py" in step["run"]
+    ]
+    assert gate_steps, (
+        "게이트 ③(커밋 순서)을 CI 가 부르지 않습니다 — 스크립트가 저장소에 "
+        "있다는 것과 CI 가 그것을 실행한다는 것은 다릅니다 (작업 2.17)"
+    )
+    for name, step in gate_steps:
+        assert step.get("if") == "github.event_name == 'pull_request'", (
+            f"잡 {name!r} 의 게이트 ③ 스텝이 PR 조건이 아닙니다 — 「PR 내에서」가 "
+            "조항 문면이고, push 에는 견줄 기준 브랜치가 없습니다"
+        )
+        assert step.get("continue-on-error") is not True, (
+            f"잡 {name!r} 의 게이트 ③ 스텝이 continue-on-error 입니다 — 이 검사는 "
+            "스스로 종료 코드 0 을 내므로 필요가 없고, 붙이면 종료 코드 2(판정 "
+            "불가)까지 삼켜 조용한 초록불이 됩니다"
+        )
+        assert "|| true" not in step["run"], (
+            f"잡 {name!r} 의 게이트 ③ 스텝이 `|| true` 로 판정을 버립니다 — "
+            "§16.5 가 이미 닫은 구멍입니다"
+        )
+
+    everything = "\n".join(
+        step["run"]
+        for job in spec["jobs"].values()
+        for step in job.get("steps", [])
+        if isinstance(step.get("run"), str)
+    )
+    assert "negtest_commit_order.py" in everything, (
+        "게이트 ③의 감지 능력을 CI 가 확인하지 않습니다 — 이 게이트는 위반에도 "
+        "종료 코드 0 을 내므로 판정이 죽어도 영영 초록불입니다 (§13.0.1 ④)"
+    )
+
+    skips = [
+        step["run"]
+        for job in spec["jobs"].values()
+        for step in job.get("steps", [])
+        if isinstance(step.get("run"), str)
+        and step.get("if") == "github.event_name != 'pull_request'"
+        and "게이트 ③" in step["run"]
+    ]
+    assert skips and any("미수행" in run for run in skips), (
+        "직접 푸시 경로에서 게이트 ③이 「미수행」이라는 사실을 로그에 남기지 "
+        "않습니다 — 로그가 비면 «통과» 와 «수행하지 않음» 이 구별되지 않습니다 "
+        "(§13.0.1 ④). 이 저장소는 PR 을 열지 않으므로 지금 이 스텝만 실제로 돕니다"
+    )
+
+
+@pytest.mark.req("NFR-105-M1")
 def test_ci_validates_coverage_inputs_before_judging_them() -> None:
     """입력 검증이 diff-cover **앞에** 있다.
 
@@ -543,7 +769,7 @@ def test_ci_enforces_the_total_coverage_floor() -> None:
 
 # ── 게이트 ① 입력 검증 자신의 감지 능력 ─────────────────────────────
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M1")
 def test_coverage_inputs_detect_a_path_mismatch() -> None:
     """경로가 어긋난 산출물을 잡는다 — 이것이 게이트 ①의 조용한 구멍이다."""
     mod = _script("check_coverage_inputs")
@@ -551,7 +777,7 @@ def test_coverage_inputs_detect_a_path_mismatch() -> None:
     assert mod.missing(["core/der/pv.py"], measured) == ["core/der/pv.py"]
 
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M1")
 def test_coverage_inputs_accept_matching_and_absolute_paths(tmp_path: Path) -> None:
     """정당한 산출물을 오판하지 않는다 — 오판은 게이트를 꺼지게 만든다.
 
@@ -576,7 +802,7 @@ def test_coverage_inputs_accept_matching_and_absolute_paths(tmp_path: Path) -> N
     assert mod.missing(["core/der/pv.py"], mod.measured_files(xml)) == []
 
 
-@pytest.mark.req("NFR-105-AC1")
+@pytest.mark.req("NFR-105-M1")
 def test_coverage_inputs_exit_2_when_the_artifact_is_absent(tmp_path: Path) -> None:
     """산출물이 없는 것을 통과로 읽지 않는다 (§13.0.1 ④)."""
     _init_repo(tmp_path)

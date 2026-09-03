@@ -11,8 +11,8 @@
 |---|---|
 | 요구사항 | 105 |
 | 그중 Must-have | 79 |
-| 수용기준 총계 | 328 |
-| 자동 검증 매핑 | 297 |
+| 수용기준 총계 | 331 |
+| 자동 검증 매핑 | 300 |
 | 수동 검증 매핑 | 4 |
 | **Must-have 미매핑** | **9** |
 | 우선순위 미지정 요구사항 | 0 |
@@ -344,7 +344,10 @@
 | `NFR-102` | Must-have | 1 | `NFR-102-M1` | 시뮬레이션 종료 시 자동 assertion, 위반 시 실행 실패 | 자동 | test_rule_based.py |
 | `NFR-103` | Must-have | 1 | `NFR-103-M1` | 20년 프로포마 합계와 항목별 합계 일치 검증 | 자동 | test_common_asset.py, test_der_contract.py, test_money_boundary.py 7건, test_smoke_wave0.py, test_ev_v2g.py, test_tou_arbitrage.py 2건 |
 | `NFR-104` | Must-have | 1 | `NFR-104-M1` | CI 회귀 테스트 | 자동 | test_17_7_dod7.py 3건, test_performance_and_golden.py 3건, test_regression_scenarios.py |
-| `NFR-105` | Must-have | 1 | `NFR-105-AC1` | 모든 계산 코드는 테스트 우선(TDD) 으로 작성되어야 한다. 구현보다 그 구현을 규정하는 실패 테스트가 먼저 존재해야 한다 | 자동 | test_ci_gates.py 24건 |
+| `NFR-105` | Must-have | 1 | `NFR-105-M1` | 변경분 커버리지(diff coverage) ≥ 95% — 해당 PR이 추가·수정한 라인 기준. 전체 커버리지(NFR-203, 85%)와 별개로 신규 코드에 더 … | 자동 | test_ci_gates.py 6건 |
+|  |  | 1 | `NFR-105-M2` | 테스트 동반 검사 — core/ 하위 구현 파일이 변경된 PR에 대응 테스트 파일 변경이 없으면 자동 실패 | 자동 | test_ci_gates.py 20건 |
+|  |  | 1 | `NFR-105-M3` | 커밋 순서 검사 — PR 내에서 해당 기능의 테스트 커밋이 구현 커밋보다 선행하는지 확인. 위반 시 경고(차단 아님, 스쿼시 병합 등 예외 존재) | 자동 | test_ci_gates.py 6건 |
+|  |  | 1 | `NFR-105-AC1` | 모든 계산 코드는 테스트 우선(TDD) 으로 작성되어야 한다. 구현보다 그 구현을 규정하는 실패 테스트가 먼저 존재해야 한다 | 자동 | test_ci_gates.py 2건 |
 | `NFR-106` | Must-have | 1 | `NFR-106-M1` | CI가 자원 레지스트리를 순회하여 각 자원에 대해 비용측 5종·편익측 전건 케이스의 존재와 통과를 확인한다. 케이스가 누락된 자원이 1건이라도 있으면 실패 | 자동 | test_17_8_dod8.py 7건, test_phase1_measurements.py |
 | `NFR-107` | Must-have | 1 | `NFR-107-AC1.auto` | 자동 검증 — 매핑 형식은 @pytest.mark.req("FR-104-AC3"). CI는 테스트를 실행하고 통과를 확인한다 | 자동 | test_traceability_gate.py |
 |  |  | 1 | `NFR-107-AC1.manual` | 수동 검증 — 매핑 형식은 @pytest.mark.req(...) + @pytest.mark.manual 로 skip 처리된 명세 스텁, 또는 docs/manu… | 자동 | test_traceability_gate.py |
