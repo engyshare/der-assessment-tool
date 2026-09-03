@@ -87,7 +87,44 @@
 > | `gen_traceability.py` | `rc=1`(정상 · 미매핑 9) 뒤 `docs/traceability.md` 를 **함께 커밋했다** — ⚠ 처음엔 안 해서 CI 가 빨간불이었다(아래 함정) |
 > | 파일 규모 | `e2e_runner.py` 코드 **497 → 482(WP-5) → 496(WP-6) → 477(WP-9)**. ⚠ 여유가 4줄로 돌아왔다가 **WP-9 이 23줄로 냈다** — 한 라운드에 같은 자리를 **두 번** 만났다 |
 >
-> ## ★ 자리 운영 판독 — **`orch-dev` 6절 임계를 실측으로 검증할 재료**
+> ## ★★ CI 전건 판독 — **커밋마다 둘을 다 확인했다** (오케스트레이터 실측)
+>
+> ```
+> 9f42ee6 tests=success  source-rules=success
+> b5d9a05 tests=success  source-rules=success
+> eeb5bf3 tests=success  source-rules=success
+> d1c1a97 tests=success  source-rules=success
+> d3037f8 tests=success  source-rules=success
+> 41f78f1 tests=success  source-rules=FAILURE      ← 추적표가 낡았다
+> 2cfb794 tests=success  source-rules=(안 돌았다)   ← 경로 필터
+> b2f871e tests=success  source-rules=FAILURE      ← 같은 원인
+> 914a392 tests=success  source-rules=success      ← 그 원인을 닫은 커밋
+> dd19cdc · e840dd0 · c4046c4 · 3721dbc · 7b03856 · 2f9e6ec · ec6f178 ·
+> ba637cc · d0cb720            전부 tests=success  source-rules=success
+> 9145910 tests=success  source-rules=(안 돌았다)   ← 경로 필터
+> ```
+>
+> ⚠⚠ **빨간불 둘은 같은 원인이고 라운드 안에서 닫혔다** —
+> `scripts/gen_traceability.py` 를 돌려 `docs/traceability.md` 를 함께 커밋하지
+> 않은 것이며 `914a392` 가 그것을 고쳤다. **그 뒤로 둘이 다 도는 모든 커밋이
+> 초록불이다.**
+>
+> ### ★ 알아 둘 것 — **`source-rules` 는 모든 푸시에 도는 것이 아니다**
+>
+> `.github/workflows/source-rules.yml` 의 `on.push.paths` 는
+> `rslt/spec-*.md` · `rslt/task-*.md` · `docs/source-rules.lock` ·
+> `docs/domain-rules.md` · `docs/evidence-standard.md` ·
+> `docs/manual-checks.yaml` · `docs/traceability.md` · `docs/assumptions.yaml` ·
+> **`status.md`** · `tests/**` · `scripts/**` · 그 워크플로 자신뿐이다.
+>
+> ⇒ **`core/**` 만 고친 푸시**(`2cfb794`)와 **`status-history.md` 만 고친
+> 푸시**(`9145910`)에서는 **아예 돌지 않는다.** ⚠ 그것은 실패가 아니라
+> 미수행이며 **초록불도 아니다** — *「안 돌았다」를 「통과」로 읽지 마라*
+> (§13.0.1 ④ 와 같은 논지다). ⚠ **`status-history.md` 는 그 목록에 없다** —
+> 그 파일을 검사하는 잡이 없으므로 넣지 않았다(`status-round-blocks` 는
+> `status.md` 만 본다).
+>
+> ## ★ 자리 운영 판독 — **`orch-dev` 6절 임계를 실증으로 검증할 재료**
 >
 > | 자리 | 판독 |
 > |---|---|
