@@ -53,12 +53,25 @@ R57/WP-1 이 몫 선언(`core/casegrid/ess_share.py::ESSShare`)에 그 표찰을
 크기가 된다.** 단가는 자원에 없다 — 대장에서 러너가 읽어 넘긴다
 (`core/casegrid/grid_support.py::_nwas` 가 같은 모양이다).
 
-## ⚠ 이 모듈은 배포 경로가 쓰지 않는다
+## ★ 배포 경로가 이 공장을 부른다 — 다만 **두 다리를 거친다** (R57/WP-6)
 
-`core/casegrid/e2e_runner.py` 는 이 모듈을 import 하지 않는다 — 배선은 다음
-자리의 몫이고 **그때가 결론축을 한 번 흔드는 자리**다.
-`tests/casegrid/test_ess_share_benefits.py` 의 ⑥ 이 그것을 소스에서 기계로
-못 박는다(`tests/casegrid/test_ess_share.py` 의 ⑤ 와 같은 꼴이다).
+`core/casegrid/e2e_runner.py` 는 이 모듈을 **직접 import 하지 않는다.** 부르는
+것은 `core/casegrid/ess_build.py::build_fleet_streams` 이고 러너는 그것을
+부른다 — 몫 분기의 몸통을 러너에 둘 수 없었기 때문이다(그 파일이 `NFR-206`
+코드 줄 상한과 `PLR0915` statement 상한에 붙어 있다).
+
+`tests/casegrid/test_ess_share_benefits.py` 가 **그 두 다리를 각각** `ast` 로
+잰다 — 한 다리만 재면 다른 다리가 끊겨도 초록불이다.
+
+⚠ **어느 케이스도 몫을 주지 않는다.** 그래서 배선이 서 있어도 결론축은
+움직이지 않았다 — 몫 비율·역할 배분은 아직 아무도 정하지 않았고 지어내지
+않는다(R56 이 계절 축에서 쓴 방식과 같다). **값이 오면 결론축이 움직이며
+그때가 사용자 판정 자리**다.
+
+> ⚠⚠ **R57/WP-6 앞까지 이 자리에는** *「이 모듈은 배포 경로가 쓰지 않는다 …
+> 배선은 다음 자리의 몫이고 그때가 결론축을 한 번 흔드는 자리다」* 라고 적혀
+> 있었다. **그 자리가 WP-6 이었고, 결론축은 흔들리지 않았다** — 통로만 냈기
+> 때문이다. 문면을 고치지 않으면 다음 사람이 *「아직 안 배선됐다」* 로 읽는다.
 """
 from __future__ import annotations
 
