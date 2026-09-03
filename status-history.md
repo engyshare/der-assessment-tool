@@ -130,12 +130,12 @@
 >
 > | 무엇 | 결과 |
 > |---|---|
-> | `pytest`(3.13) | **1983 passed, 3 skipped, 1 xfailed** · `rc=0` — 라운드 착수 시 1977 이었고 **+6 이 게이트 ③ 시험**이다 |
-> | `pytest`(3.11 · **CI 인터프리터**) | **1983 passed** · `rc=0` |
+> | `pytest`(3.13) | **1984 passed, 3 skipped, 1 xfailed** · `rc=0` — 라운드 착수 시 **1977** 이었다(+6 게이트 ③ · +1 `FR-604-AC4` 자부담) |
+> | `pytest`(3.11 · **CI 인터프리터**) | **1984 passed** · `rc=0`. ⚠⚠ **순차로 돌려야 한다** — 3.13 과 **동시에** 돌렸더니 `test_17_10_dod10`(`core/der/` 에 임시 모듈을 실제로 심는다)의 탐침을 서로 지워 **거짓 빨간불 2건**이 났고, 단독 재실행은 통과였다 |
 > | `tests/golden` | **7 passed** · `rc=0` — **WP 마다** 돌렸다(결론축 불변의 근거) |
 > | `ruff` · `mypy` | `All checks passed!` · `Success: no issues found in 133 source files` |
 > | `lint-imports` | `Contracts: 4 kept, 0 broken.` |
-> | `gen_traceability` | 요구사항 105 / 수용기준 **331** / 자동 **301** / 수동 8 / 스텁 4 · **Must-have 미매핑 9**(Phase 1 **0**) · `rc=1` 이 정상 |
+> | `gen_traceability` | 요구사항 105 / 수용기준 **331** / 자동 **300** / 수동 8 / 스텁 4 · **Must-have 미매핑 10**(Phase 1 **0**) · `rc=1` 이 정상. ⚠ 9 → 10 은 WP-7 이 `FR-204-AC2` 마커를 뗀 몫이며 **늘어난 것이 옳다** |
 > | 조항 검사 | `check_task_mapping` `check_marker_substance` `check_source_rules` `check_partition_assignment` `check_disclosure` `check_assumptions` `check_hardcoded_params` `check_precommit_installed` `check_unread_extension_points` `check_file_size --code-strict` `check_doc_line_citations` `check_docstring_references` `check_status_round_blocks` **전건 `rc=0`** |
 > | 커밋 경계 | `check_test_accompaniment --base origin/main` `rc=0` · `check_coverage_inputs --base origin/main` `rc=0` · ★ `check_commit_order --base origin/main` `rc=0` |
 > | **음성 스위트** | **16종 전건 `rc=0`**(R59 가 `negtest_commit_order.py` 를 더해 15 → 16). 변이 잔재 없음 |
