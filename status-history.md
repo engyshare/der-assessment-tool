@@ -199,6 +199,13 @@
 > | `51c0670` (WP-2) | **success** | **success** |
 > | `2ed1c38` (WP-3) | **success** | **success** |
 > | `1e481a2` (라운드 종료) | **success** | **success** |
+> | `c1b34e9` (종료 2판 · CI 판독) | **success** | **안 돌았다** — `status-history.md` 만 바뀌었다 |
+> | `791fc82` (종료 3판 · 「미해결」 정리) | **success** | **success** |
+>
+> ★★ **`c1b34e9` 가 `on.push.paths` 를 실물로 보여 준다** — `status-history.md` 만
+> 고친 커밋에서는 `source-rules` 가 **아예 안 돈다**. 바로 다음 커밋 `791fc82` 는
+> `status.md` 를 함께 고쳐 **돌았다.** ⚠ **「안 돌았다」를 「통과」로 읽지 마라** —
+> 두 줄이 나란히 서 있는 것이 그 차이를 재는 재료다.
 >
 > ⚠ 이 라운드는 `source-rules` 가 **매 커밋 돌았다** — spec 을 고쳤기 때문이다.
 > R57 이 적은 *「`on.push.paths` 에 `core/**`·`status-history.md` 가 없어 안 돌 수 있다」* 는
