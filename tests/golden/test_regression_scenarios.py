@@ -85,7 +85,8 @@ ASSUMPTIONS_PATH = REPO_ROOT / "docs" / "assumptions.yaml"
 #:
 #: **이름을 맞추려고 어느 한쪽을 고치지 않았다.** yaml 쪽은 2026-08-09 부터
 #: 세 파일에 적혀 있고 CI·DoD 7 검사가 그 이름으로 읽으며, 실행 경로 쪽은
-#: `_metrics_for()` 가 케이스와 변형에 함께 쓰는 이름이다. 어느 쪽을 고쳐도
+#: `core/casegrid/case_metrics.py::metrics_for` 가 케이스와 변형에 함께 쓰는
+#: 이름이다(R57/WP-9 가 러너에서 옮겼다). 어느 쪽을 고쳐도
 #: **이 파일 밖이 함께 움직인다** — 대신 그 대응을 여기 한 곳에 적는다.
 #:
 #: ⚠ `payback_period_years` 는 이제 **`payback_discounted`** 다(모듈 독스트링 ③).

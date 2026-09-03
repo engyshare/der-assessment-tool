@@ -33,7 +33,7 @@ from types import MappingProxyType
 
 import pytest
 
-from core.casegrid import e2e_runner
+from core.casegrid import case_metrics
 from core.casegrid.e2e_runner import run_single_case_e2e
 from core.casegrid.ledger_levels import design_levels
 from core.casegrid.variants import run_order
@@ -193,8 +193,9 @@ def test_the_refusal_happens_before_the_cba_runs(
     위반 케이스의 수치가 한 번은 존재하게 되고, 그것이 로그·캐시·리포트 어디로든
     새어 나갈 수 있다.
 
-    `e2e_runner` 는 `npv` 를 자기 이름공간으로 가져오므로 그 이름을 갈아 끼워
-    **호출 여부**를 센다.
+    `core/casegrid/case_metrics.py::metrics_for` 가 `npv` 를 자기 이름공간으로
+    가져오므로 그 이름을 갈아 끼워 **호출 여부**를 센다(R57/WP-9 가 지표
+    조립을 러너에서 그 모듈로 옮겼다 — 종전에는 러너의 이름공간이었다).
     """
     calls: list[object] = []
 
@@ -202,7 +203,7 @@ def test_the_refusal_happens_before_the_cba_runs(
         calls.append(args)
         return 0.0
 
-    monkeypatch.setattr(e2e_runner, "npv", _recording_npv)
+    monkeypatch.setattr(case_metrics, "npv", _recording_npv)
 
     # 먼저 정상 조합으로 이 계수기가 실제로 센다는 것을 보인다 — 세지 않는
     # 계수기로 「0회」를 단언하면 그 단언은 아무것도 붙들지 않는다

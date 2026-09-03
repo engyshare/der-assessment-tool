@@ -24,9 +24,10 @@ R52/WP-A 판정 아-3). `s.payer` 가 아니라 `s.effective_payer` 를 읽는 �
 R52/WP-A 판정 아-7: *「결론축이 움직이면 안 된다」*. 그래서 `OPERATOR`
 `PerspectiveResult` 는 `payer` 로 새로 거른 편익이 아니라 **이 실행이 이미
 낸 편익 전체·비용 전체·초기투자**를 그대로 담고, `npv_value` 도 호출측
-(`_metrics_for`)과 **같은 재료**(편익 전체·비용 전체·초기투자·할인율)로
-`net_operating_flows()` → `npv()` 를 다시 불러 얻는다 — 재료가 같으므로
-이 결과는 대수적으로 `_metrics_for()` 의 `"npv"` 와 같아야 한다.
+(`core/casegrid/case_metrics.py::metrics_for`)과 **같은 재료**(편익 전체·비용
+전체·초기투자·할인율)로 `net_operating_flows()` → `npv()` 를 다시 불러
+얻는다 — 재료가 같으므로 이 결과는 대수적으로 `metrics_for()` 의 `"npv"` 와
+같아야 한다.
 `compute_perspective_npv()` 를 쓰지 않는 이유는 그 함수가 `cost_rows` 를
 NPV 계산에 넣지 않기 때문이다(관점별 「자부담」모형 — `PerspectiveResult`
 독스트링 참조) — 그대로 쓰면 비용이 두 번 빠지거나(넣지 않아서) 결론축과
@@ -150,7 +151,8 @@ def build_perspective_wiring(
     ``operator_benefit_rows``·``operator_cost_rows`` 는 호출측이 이미 지은
     편익·비용 행 **전부**다 — `OPERATOR` 열이 새로 거르지 않고 결론축 그대로
     쓰는 이유는 위 머리말 참조. `net_operating_flows()` 로 여기서 다시 순현금
-    흐름을 지어 `npv()` 에 넘긴다 — 호출측(`_metrics_for`)과 **같은 함수를
+    흐름을 지어 `npv()` 에 넘긴다 — 호출측
+    (`core/casegrid/case_metrics.py::metrics_for`)과 **같은 함수를
     같은 인자로** 부르므로 대수적으로 같은 값이 나온다.
     """
     operator_result = PerspectiveResult(

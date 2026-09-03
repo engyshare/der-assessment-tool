@@ -15,9 +15,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from decimal import Decimal
 
 from core.casegrid.attribution import attribute_benefits
+
+# ★ **지표 조립도 이 파일 것이었다** — 코드 496/500(여유 4줄)에서 R57/WP-9 가
+# `metrics_for`·`initial_outlay` 를 `case_metrics.py` 로 옮겼다. `ess_build.py`
+# ·`pv_allocation.py`·`grid_support.py` 와 같은 사유다. 밑줄을 뗀 이유는 그
+# 파일 머리말에 있다(모듈 밖에서 부르는 이름이다).
+from core.casegrid.case_metrics import initial_outlay, metrics_for
 
 # ★ **`ESS` 조립은 이 파일 것이었다** — `NFR-206` 코드 줄 상한(500)에 코드
 # 497 로 닿아 ★분할의 러너 배선을 넣을 여유가 3줄뿐이라 제원 상수 여덟과
@@ -91,7 +96,6 @@ from core.casegrid.pv_allocation import (
     _resolve_ess_dispatch_inputs,
     measured_self_consumption_ratio,
 )
-from core.cba.metrics import npv, payback_discounted
 from core.cba.proforma import (
     benefit_row,
     check_analysis_period,
@@ -102,7 +106,6 @@ from core.cba.proforma import (
 from core.contracts.assumptions import AssumptionProvider
 from core.contracts.der import DER, DispatchContext, DispatchResult
 from core.contracts.engine import SystemDispatch
-from core.contracts.schemas import CashFlowRow
 from core.contracts.units import Money, Year
 from core.contracts.valuestream import ValueStream
 from core.der.ess import ESS, ESSChargeSource, ESSOperatingMode
@@ -965,8 +968,8 @@ def run_single_case_e2e(
 
     # 5. 변형별 지표 — **등록된 변형 전부** (FR-607-AC1). 위 독스트링 참조.
     variants = {
-        case_flows.tag: _metrics_for(
-            _initial_outlay(case_flows.rows), all_rows, discount_rate
+        case_flows.tag: metrics_for(
+            initial_outlay(case_flows.rows), all_rows, discount_rate
         )
         for case_flows in build_capex_cashflows_for_all_cases(
             scheme, initial_investment, viewpoint
@@ -998,7 +1001,7 @@ def run_single_case_e2e(
     )
 
     return CaseOutcome(
-        metrics=_metrics_for(initial_investment, all_rows, discount_rate),
+        metrics=metrics_for(initial_investment, all_rows, discount_rate),
         variants=variants,
         # ★ 자원과 운전 결과를 **그대로** 넘긴다 — 리포트가 엔진 규칙과
         # 시간대별 운전을 물을 대상이다(`CaseOutcome` 독스트링). 여기서 요약해
@@ -1217,47 +1220,3 @@ def _resource_lines(
             for ess in ess_fleet
         ),
     )
-
-
-def _metrics_for(
-    initial_investment: Money,
-    operating: list[CashFlowRow],
-    discount_rate: float,
-) -> dict[str, float]:
-    """지표 사전 하나 — **케이스와 변형이 같은 함수를 쓴다.**
-
-    갈라 두면 한쪽에 지표가 추가될 때 다른 쪽이 따라오지 않고, 그 상태에서
-    `build_variant_table()` 은 「변형마다 지표가 다릅니다」로 거부한다 —
-    즉 증상이 **표시 층에서** 나타나 원인을 여기까지 되짚어야 한다.
-
-    ★ **초기지출을 함께 싣는다 (R33).** 지표가 둘뿐일 때 리포트는 *「무지원과
-    입력 지원안의 NPV 가 이만큼 다르다」* 까지만 말할 수 있고 **「얼마를 덜
-    냈기에 그런가」** 를 말할 수 없었다 — 변형별 초기지출이 경계를 넘지
-    않았기 때문이다. `MC-1` 이 재는 것이 정확히 그 「왜」이므로 여기서 싣는다.
-    지표가 아니라 대입값이지만, 변형마다 **다른** 값이고 변형별로 담을 자리는
-    여기뿐이다(`CaseBasis` 는 케이스 하나에 하나다).
-    """
-    return {
-        "npv": float(npv(initial_investment, operating, discount_rate=discount_rate)),
-        "payback_years": payback_discounted(
-            initial_investment, operating, discount_rate=discount_rate
-        ),
-        "initial_outlay_won": float(initial_investment),
-    }
-
-
-def _initial_outlay(rows: Sequence[CashFlowRow]) -> Money:
-    """지원 현금흐름 행을 **`t=0` 초기투자 한 수로** 접는다.
-
-    행의 금액은 유출이므로 음수다(`{1: -자부담}`). `npv()` 의 첫 인자는 *「t=0 에
-    나가는 비용(양수)」* 이라 부호를 뒤집는다.
-
-    ⚠ **행이 비어 있으면 0원이다.** 그것은 「지출이 없는 사업」이 아니라
-    `FR-611-AC4` 의 **「해당 설비를 제외한 케이스」**다 — 지원 예정(미확정)분이
-    무산됐을 때의 병기 케이스이며, 그 경우 설비가 없으므로 CAPEX 행도 없다
-    (`build_baseline_capex_cashflows` 가 그렇게 판정한다).
-    """
-    total = sum(
-        (amount for row in rows for amount in row.amounts.values()), Decimal(0)
-    )
-    return Money(-total)
