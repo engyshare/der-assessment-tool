@@ -115,7 +115,9 @@ R37 이 `FR-402-AC2.C` 를 **Phase 3 으로 명확화**하면서 거짓 인용�
 (`gen_traceability.py` 가 인쇄하는 수 · 2026-08-30 **R44** 실측 — R38~R44 내내 같다.
 R44-12 가 spec 을 **v0.19 → v0.20** 으로 올렸으나 **§13.2.2 `C-5` 의 문면을
 밝혔을 뿐 수용기준을 만들지 않았고**(321 그대로) `docs/traceability.md` 의 diff 가 **0줄**이다).
-**Must-have 미매핑 9건** — 전건 Phase 2·3 이고 **Phase 1 은 0건**이다.
+**Must-have 미매핑 10건** — 전건 Phase 2·3 이고 **Phase 1 은 0건**이다.
+⚠ **R59 가 9 → 10 으로 늘렸다** — `FR-204-AC2`([Phase 2])의 마커를 Phase 1 시험에서 뗐다.
+**늘어난 것이 옳다**(그 조항을 재는 것이 없다는 사실이 드러난 것이다).
 ⚠ 추적표 **요약표의 「수동 검증 매핑 4」와 다른 수다** — 그 표는 매핑 건수를 세고
 스크립트는 조항 수를 센다. 2026-08-20 에 표만 보고 「수동 4」로 적었다가 CI 로그의
 스크립트 출력으로 정정했다.
@@ -150,7 +152,7 @@ R44-12 가 spec 을 **v0.19 → v0.20** 으로 올렸으나 **§13.2.2 `C-5` 의
 > **② 이 라운드가 연 것**
 >
 > - ★★★ **③-2 지목을 전건 판정했다 — 맞다 44 · 어긋났다 5 · 불명 0.** 하나는
->   R59 가 **둘을 닫았고 셋이 남았다**(착수 순서 **35번** · 전부 **시험 신설**이 따라온다).
+>   R59 가 **넷을 닫았고 하나가 남았다**(착수 순서 **35번** — `FR-103-AC2` · **시험 신설**).
 >   ⚠⚠ **`FR-604` 는 마커가 한 칸씩 밀렸고 그중 셋은 자기(틀린) ID 를 적어 그물에
 >   걸리지 않았다** — **지목이 못 보는 형태가 있다.** 전문은
 >   `docs/decisions-2026-09-04-R59.md`(§2·§5) — **오탐 원천 둘**도 그 문서 §4
@@ -299,7 +301,7 @@ R44-12 가 spec 을 **v0.19 → v0.20** 으로 올렸으나 **§13.2.2 `C-5` 의
 | **32** | ★ **게이트 ③(커밋 순서)의 판정 스텝이 직접 푸시 경로에서 돌지 않는다** — R59 가 세운 `scripts/check_commit_order.py` 는 PR 조건 스텝이고, 이 저장소는 라운드를 `git push origin HEAD:main` 으로 닫으므로 **판정이 아예 없다.** 게이트 ①②(변경분 커버리지·테스트 동반)가 이미 같은 상태이며 R53 이 그것을 실측했다. ⚠ **「미수행」을 「통과」로 읽지 않도록 세 곳에 적어 두었다** — 남은 물음은 *「PR 경로를 쓸 것인가」*이고 그것은 **작업 방식의 결정이라 사람 몫**이다(`status-human.md` 소유) | `.github/workflows/tests.yml` · `status-human.md` | R59 |
 | **33** | **`PerspectiveWiring.transfers` 를 리포트가 아직 인쇄하지 않는다** — R58 이 축은 세웠고 인쇄는 미뤘다. 지금 **이전 편익이 0개**라 인쇄할 것이 없기 때문이다. ⚠ **첫 이전 편익이 서는 날 함께 세운다** — 그때까지는 「인쇄하지 않는 것」이 옳다. ★ R58 의 인계 요약에만 있던 항목을 R59 가 여기로 내렸다(요약은 라운드마다 갈리므로 그 자리에 두면 사라진다) | `core/report/` · `status-history.md` R58 블록 | R58 |
 | **34** | **물량 표찰이 아직 배타 판정에 쓰이지 않는다** — `DistributedBenefit.quantity_id` 는 **비어 있고 그것이 옳다**(물량이 셋이다). ⚠ **아무 값이나 채우면 틀린 물량으로 배타 판정이 통과한다.** ★ R58 의 인계 요약에만 있던 항목을 R59 가 여기로 내렸다 | `core/valuestream/` · `status-history.md` R58 블록 | R58 |
-| **35** | ★★★ **③-2 가 찾은 어긋남 넷 중 셋이 남았다**(R59 판정 · 전문은 `docs/decisions-2026-09-04-R59.md` §5). ✅ ⓐ **`FR-604` 마커 밀림은 R59/WP-6 이 닫았다** — 다섯 조항의 마커를 조항 문면에 맞춰 되돌리고 `AC4`(자부담: 잔여 비율 자동 계산)를 재는 시험을 신설했다. ⚠⚠ **그 밀림 중 셋은 자기(틀린) ID 를 문면에 적어 ③-2 그물에 애초에 걸리지 않았다 — 지목이 원리적으로 못 보는 형태이며, 다음 그물이 겨냥할 자리다.** ⓑ **`FR-103-AC2`**(독립적인 `IncentiveScheme` 참조)를 재는 인용이 0건 — 한 시험이 `AC1`·`AC2`·`AC3` 셋을 달았는데 `AC2` 몫이 없다(`AC3` 도 프로포마 행을 단언하지 않으며 자기 ID 를 적어 그물 밖이다) ⓒ **`FR-204-AC2`** — **Phase 2** 조항에 Phase 1 시험이 달렸다. **마커를 떼는 것이 옳으나 그러면 미매핑이 되고, Phase 2 항목의 미매핑이 정상인지가 선행 판정이다** | `tests/incentive/test_incentive.py` · `tests/…` 신설 | R59 |
+| **35** | ★★★ **③-2 가 찾은 어긋남 넷 중 하나가 남았다 — `FR-103-AC2`**(아래 ⓑ)(R59 판정 · 전문은 `docs/decisions-2026-09-04-R59.md` §5). ✅ ⓐ **`FR-604` 마커 밀림은 R59/WP-6 이 닫았다** — 다섯 조항의 마커를 조항 문면에 맞춰 되돌리고 `AC4`(자부담: 잔여 비율 자동 계산)를 재는 시험을 신설했다. ⚠⚠ **그 밀림 중 셋은 자기(틀린) ID 를 문면에 적어 ③-2 그물에 애초에 걸리지 않았다 — 지목이 원리적으로 못 보는 형태이며, 다음 그물이 겨냥할 자리다.** ⓑ **`FR-103-AC2`**(독립적인 `IncentiveScheme` 참조)를 재는 인용이 0건 — 한 시험이 `AC1`·`AC2`·`AC3` 셋을 달았는데 `AC2` 몫이 없다(`AC3` 도 프로포마 행을 단언하지 않으며 자기 ID 를 적어 그물 밖이다) ✅ ⓒ **`FR-204-AC2` 는 R59/WP-7 이 닫았다** — **Phase 2** 조항에 Phase 1 시험이 마커를 달고 있었다. **마커를 뗐고 미매핑이 9 → 10 이 됐다.** ★ **늘어난 것이 옳다**: 그 조항은 Phase 2 이고 구현이 없으며, DoD 9 시험은 **Phase 1** 미매핑만 0 을 요구한다(종전 9건도 전부 Phase 2/3 이다). ⚠⚠ **미매핑을 0 으로 만들려고 다른 것을 재는 시험에 마커를 얹지 않는다** — 그것이 이 라운드가 내내 고친 결함이다 | ⓑ: `tests/model/…` 신설 | R59 |
 
 ### 착수 전에 — 절차는 이 파일의 다른 절이 갖는다
 
@@ -331,7 +333,7 @@ R44-12 가 spec 을 **v0.19 → v0.20** 으로 올렸으나 **§13.2.2 `C-5` 의
 | `rslt/spec-분산특구-경제성평가.md` | **v0.28** (수용기준 **331**). ⚠ **R59 에 조항 셋이 늘었다** — `NFR-105` 의 Measurement 가 번호 목록이라 조항 ID 가 아니었고, 그것을 `- **M1**`~`- **M3**` 로 세웠다(문면은 그대로). 종전 이 칸은 **v0.20 · 321** 에서 멈춰 있었다 — **다섯 판 뒤처졌다** | `grep -m1 '^version:' rslt/spec-*.md` · `python scripts/gen_traceability.py` |
 |  | ⚠ **이 칸은 한때 두 판 뒤처져 있었다**(R37 의 v0.17 · R41 의 v0.18). 「길이가 낡음을 만든다」의 그 형태이며, 그것을 재는 검사를 R43-J 가 세웠다 — `scripts/check_status_round_blocks.py` | |
 | `rslt/task-분산특구-경제성평가.md` | **v2.11** (상위 17 · 하위 **159** — R59 가 `2.17`(커밋 순서 게이트)을 신설했다) | 같음 |
-| `docs/traceability.md` | 자동 생성 — 요구사항 **105** / 수용기준 **331** / 자동 **301** / 수동 8 / 스텁 4 · **Must-have 미매핑 9**(Phase 1 은 **0**). ⚠ R59 도중 한때 11(Phase 1 이 2)이었고 **게이트 ③을 구현해 되돌렸다** | `python scripts/gen_traceability.py` (rc=1 이 정상) |
+| `docs/traceability.md` | 자동 생성 — 요구사항 **105** / 수용기준 **331** / 자동 **300** / 수동 8 / 스텁 4 · **Must-have 미매핑 10**(Phase 1 은 **0**). ⚠ R59 도중 한때 11(Phase 1 이 2)이었고 **게이트 ③을 구현해 되돌렸다.** 9 → 10 은 `FR-204-AC2` 마커를 뗀 몫이다 | `python scripts/gen_traceability.py` (rc=1 이 정상) |
 | `docs/assumptions.yaml` | `Q-1`~**`Q-18`** + 확정. 항목 **29건**(신뢰도 `가정` 26 · `확정` 3). R43 이 둘을 더했다 — `capex.pv.inverter_share`(`Q-18` · WP-F) · `tariff.hv_single_contract.demand_charge`(`Q-6` · WP-H). ⚠ 리포트 붙임 1 이 「전제 **27건**」이라 인쇄하는 것과 다른 수다 — 그 표는 **설계 변수 둘**(`pv_capacity_kw`·`ess_capacity_kwh`)을 따로 싣는다 | `python scripts/check_assumptions.py` |
 | `docs/manual-checks.yaml` | `MC-1`~`MC-8` **전건 미수행** · `MC-1` 은 **일정만 잠정 기입**(2026-09-11) | 결정 문서 R32 §5 |
 | `docs/exclusion-rules.yaml` | 배타 규칙 **7건** (R32 가 집합 PPA 둘 추가) | 계약 테스트가 건수를 못 박는다 |
@@ -361,7 +363,7 @@ PYTHONUTF8=1 ~/miniconda3/Scripts/lint-imports.exe              # 4 kept 0 broke
 #   `'cp949' codec can't decode byte 0xe2` 로 rc=1 이 나고, 그것은 계약 위반이
 #   아니라 **자기 배너를 못 읽은 것**이다 — 위 ★ 문단이 pytest 에만 해당하는
 #   줄로 읽혀 이 줄만 맨몸으로 남아 있었다
-PYTHONUTF8=1 $PY scripts/gen_traceability.py    # rc=1 이 정상(미매핑 9). ★ 부수효과로 파일을 다시 만든다
+PYTHONUTF8=1 $PY scripts/gen_traceability.py    # rc=1 이 정상(미매핑 10). ★ 부수효과로 파일을 다시 만든다
 git diff --stat docs/traceability.md            # ← 커밋 전 이것이 반영돼야 CI 가 초록불이다
 PYTHONUTF8=1 $PY scripts/check_task_mapping.py  # rc=0 이어야 한다 — CI 차단이다
 for g in check_marker_substance check_hardcoded_params check_source_rules          check_partition_assignment check_disclosure check_assumptions          check_precommit_installed check_unread_extension_points          check_docstring_references check_status_round_blocks; do PYTHONUTF8=1 $PY scripts/$g.py; done
@@ -490,7 +492,7 @@ R42 가 여기서 한 건(`core/model/parameters.py`)을 잡혀 커밋을 하나
 ### ⚠⚠⚠ **spec 에 조항 ID 를 세우면 미매핑이 늘고 DoD 9 시험이 빨간불이 된다** (R59 실측)
 
 `tests/acceptance2/test_17_9_dod9.py::test_dod9_phase_1_musthave_unmapped_zero` 가
-**Phase 1 Must-have 미매핑 0건**을 단언한다. 종전 미매핑 9건은 **전부 Phase 2/3**
+**Phase 1 Must-have 미매핑 0건**을 단언한다. 종전 미매핑 9건(지금 10건)은 **전부 Phase 2/3**
 이어서 통과하고 있었다 — 그래서 이 단언이 있다는 것을 아무도 몰랐다.
 
 R59 가 `NFR-105` 의 Measurement 셋에 조항 ID 를 주자 그중 **구현이 없는 하나(`M3`)와

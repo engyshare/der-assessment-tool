@@ -12,9 +12,9 @@
 | 요구사항 | 105 |
 | 그중 Must-have | 79 |
 | 수용기준 총계 | 331 |
-| 자동 검증 매핑 | 300 |
+| 자동 검증 매핑 | 299 |
 | 수동 검증 매핑 | 4 |
-| **Must-have 미매핑** | **9** |
+| **Must-have 미매핑** | **10** |
 | 우선순위 미지정 요구사항 | 0 |
 | **Phase 미지정 요구사항** | **9** |
 | **차단 미수행 (판정불가)** | **1** |
@@ -56,7 +56,7 @@
 > `criterion_id` 누락이라면 지정하십시오. 요구사항 단위로 걸면 자동화 가능한
 > 수용기준까지 "수동으로 검증됨"으로 표시되어 커버리지가 과대 계상됩니다.
 
-> **미매핑 9건.** NFR-107은 미매핑 0건을 요구합니다.
+> **미매핑 10건.** NFR-107은 미매핑 0건을 요구합니다.
 >
 > 현재 저장소에 테스트가 없으므로 전건 미매핑인 것이 정상입니다. 이 표는
 > **Wave 0 시점의 작업 목록**으로 읽으십시오 — 각 행이 곧 작성해야 할 테스트
@@ -113,7 +113,7 @@
 |  |  | - | `FR-203-AC2` | 가구 단위 경제성과 단지 통합 경제성을 모두 산출한다 | **미매핑** | — |
 |  |  | - | `FR-203-AC3` | 통합 시 발생하는 상계·공유 효과를 "통합 편익" 항목으로 분리 정량화한다 | **미매핑** | — |
 | `FR-204` | Must-have | 1 | `FR-204-AC1` | Phase 1: 에너지자립가구 모델 — PV + 히트펌프 + EV/V2G + ESS, 10~20가구, 기존주택형/모듈러주택형 2 변형 | 자동 | test_phase1_dod.py, test_templates.py |
-|  |  | 2 | `FR-204-AC2` | 마을단위 분산특구 6개 모델, 아파트 마이크로그리드 모델 | 자동 | test_templates.py |
+|  |  | 2 | `FR-204-AC2` | 마을단위 분산특구 6개 모델, 아파트 마이크로그리드 모델 | **미매핑** | — |
 |  |  | 1 | `FR-204-AC3` | 템플릿 로드 시 모든 파라미터에 기본값과 출처가 채워진다 | 자동 | test_phase1_dod.py, test_templates.py |
 | `FR-205` | Must-have | 1 | `FR-205-AC1.HouseholdDirect` | 개별 세대 직접계약 — 가구가 구매자와 직접 계약한다. 정산 대상은 계통 역송 전력(잉여) 이고 판매 주체는 가구다(v0.16 결정 — 아래 주석). 계약단가는… | 자동 | test_payer_structure_contract.py 3건, test_settlement.py 2건, test_settlement_household_contract.py 6건 |
 |  |  | 1 | `FR-205-AC1.ManagerEntity` | 단일계약+관리주체 경유 — 관리주체 명의의 단일계약. 편익은 기존 요금 − 신규 요금(FR-401-AC2.SelfConsumption)이며 두 요금은 요금엔진이… | 자동 | test_e2e_settlement_wiring.py 2건, test_payer_structure_contract.py 3건, test_settlement.py 2건, test_settlement_manager_structure.py 8건 |

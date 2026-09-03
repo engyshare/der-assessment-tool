@@ -45,9 +45,23 @@ class _MockAssumptions(AssumptionProvider):
         return None
 
 
-@pytest.mark.req("FR-204-AC1", "FR-204-AC2", "FR-204-AC3")
+@pytest.mark.req("FR-204-AC1", "FR-204-AC3")
 def test_energy_independent_house_template():
-    """FR-204-AC1, AC2, AC3: 에너지자립가구 2변형 템플릿 검증."""
+    """FR-204-AC1, AC3: 에너지자립가구 2변형 템플릿 검증.
+
+    ⚠⚠ **`FR-204-AC2` 마커를 뗐다 (R59/WP-7).** 그 조항은
+    *「마을단위 분산특구 6개 모델, 아파트 마이크로그리드 모델 **[Phase 2]**」*
+    이고, 이 시험은 **에너지자립가구 2변형**(= `AC1` 문면)과 파라미터 출처
+    (`AC3`)만 잰다 — **`AC2` 를 재는 단언이 한 줄도 없다.**
+
+    ★ **떼면 `AC2` 가 미매핑이 되는데 그것이 옳다.** `AC2` 는 Phase 2 이고
+    구현이 없다. `tests/acceptance2/test_17_9_dod9.py` 는 **Phase 1** Must-have
+    미매핑만 0 을 요구하므로 이 항목은 그 게이트에 걸리지 않는다 — 종전
+    미매핑 9건도 전부 Phase 2/3 이다.
+    ⚠ **미매핑을 0 으로 만들려고 다른 것을 재는 시험에 마커를 얹지 않는다** —
+    R59 가 내내 고친 결함이 그 형태다(판정 전문은
+    `docs/decisions-2026-09-04-R59.md` §5).
+    """
     provider = _MockAssumptions()
 
     # 기존주택형
