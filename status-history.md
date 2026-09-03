@@ -52,6 +52,10 @@
 > | WP-5 교정 | `b2f871e` | `tests/casegrid/test_ess_build.py` — `NFR-105` 동반 위반 2건을 한 파일로 닫았다(두 모듈을 함께 import) | cl1(직접) |
 > | CI 정정 | `914a392` | `gen_traceability.py` 를 돌려 인용 여섯 줄을 맞췄다 — `41f78f1` 의 `source-rules` 가 빨간불이었다 | cl1(직접) |
 > | **WP-6** ★분할 본체 | `dd19cdc` | `run_single_case_e2e(ess_shares=…)` 통로 + `build_case_ess_fleet`·`build_fleet_streams`. 몫 전건이 디스패치·수명·취득비·고정 O&M·자원 표·잉여판매 차감에 실린다 · **교체비·잔존가치만은 물리 배터리 한 대** · 몫이 있으면 단일 경로의 `PeakShaving`·`NWAs`·`CP` 를 짓지 않는다 · 래칫 둘을 **뒤집었다** | cl5 |
+> | 라운드 종료 | `e840dd0` | `status-history.md` R57 전문 블록 + `status.md` R57 요약. ★ **★분할·★N 두 판정 칸을 함께 닫았다**(WP-3 함정의 처방) | cl1(직접) |
+> | **WP-7** 번호 5 | `c4046c4` | `Load`·`ThermalLoad` 의 `salvage_value` 가 **교체비와 같은 가격 기준**(명목)을 쓰게 했다 — 마지막 취득 연도 `n − ((n−1) % life)` 의 계수를 태운다. 그 해가 `replacement_schedule()` 이 장부하는 해와 **같다**(오케스트레이터가 두 함수를 나란히 열어 대조했다). 부채 목록 `KNOWN_SALVAGE_IGNORES_REPLACEMENT_RATE` 를 **비웠다** | cl5 |
+> | **WP-8** 번호 25 의 하나 | (아래) | `FR-602-AC2` — **붙임 1 안에 「기준 전제 대비 변경 항목」 표**를 세웠다. `AssumptionSet.overridden_items()` 는 호출자가 **저장소 전체에 0곳**이었다. ★ **닫은 것은 시험이 아니라 문면이다**(`FR-404-AC1` 을 R48 이 닫은 방식과 같다) · ★ **비어 있는 것이 정상이고 그것을 인쇄한다**(`없음 — 기준 전제를 그대로 적용`) | cl5 |
+> | WP-8 교정 | (아래) | 구획 부채 대장 **둘**에서 `("FR-602-AC2", "core.report")` 를 지웠다 — 그 시험이 *「닫힌 것을 남겨 두면 다음 사람이 **없는 일**을 한다」* 고 스스로 적는다. **여섯 중 둘이 닫혀 넷이 남았다** | cl1(직접) |
 >
 > ## ★★ 이 라운드가 판정으로 정한 것 — **사용자에게 묻지 않고 정했다**
 >
@@ -69,7 +73,9 @@
 >
 > | 무엇 | 결과 |
 > |---|---|
-> | 전건 `pytest -q` | **1963 tests · failures 0 · errors 0 · skipped 4** · `rc=0`(`--junitxml` 로 셌다). R56 종료 1927 collected → **검사 순증 36**(WP-1 다섯 + WP-2 둘 + WP-4 여덟 + WP-5 교정 셋 + WP-6 다섯 + 나머지) |
+> | 전건 `pytest -q` | **1969 tests · failures 0 · errors 0 · skipped 4** · `rc=0`(`--junitxml` 로 셌다). R56 종료 1927 collected → **검사 순증 42**(WP-1 다섯 + WP-2 둘 + WP-4 여덟 + WP-5 교정 셋 + WP-6 다섯 + WP-7 넷 + WP-8 둘 + 나머지) |
+> | ★ **음성 검사 스위트 15종** | `for f in scripts/negtest_*.py; do …; done` — **15/15 `rc=0`**. 게이트가 실물 소스 변이를 실제로 잡는다는 판정이며 **이 라운드가 닫기 전에 돌렸다**. 끝난 뒤 남는 빈 디렉터리 둘(`scripts/_tmp_negtrace`·`_tmp_neg_marker`)을 `rmdir` 하고 `git status` 가 빈 것을 확인했다 |
+> | ★ **게이트 ①(변경분 커버리지 ≥95%)** | **98%** — `diff-cover coverage.xml --compare-branch=41f78f1~1 --fail-under=95`. 변경 **90줄** 중 안 밟힌 **1줄**(`core/casegrid/ess_build.py:260`)이고 `e2e_runner.py`·`ess_share_benefits.py` 는 **100%**. ⚠ `coverage.xml` 이 낡으면 `check_coverage_inputs` 가 *「산출물에 없다」* 를 내므로 새 `core/` 파일을 만든 WP 뒤에는 `pytest --cov=core --cov-branch --cov-report=xml` 을 다시 돌렸다(이 라운드에 두 번) |
 > | `tests/golden` | **7건 통과 · `rc=0`** — WP-4·WP-5·WP-6 마다 따로 돌렸다 |
 > | `ruff` · `mypy` · `lint-imports` | `rc=0` · `no issues in 132 files` · **4 kept 0 broken** |
 > | 정적 게이트 11종 | `check_file_size --code-strict` · `check_docstring_references` · `check_hardcoded_params` · `check_marker_substance` · `check_unread_extension_points` · `check_source_rules` · `check_disclosure` · `check_assumptions` · `check_partition_assignment` · `check_status_round_blocks` · `check_task_mapping` — **전건 `rc=0`** |
@@ -94,6 +100,21 @@
 >   **「구조」가 다 섰다** — 남은 것은 **몫 비율·역할 배분이라는 값**이며 사람 몫이다
 > - **★N**(줄 수 상한)의 러너 쪽 — WP-5 가 자리를 냈다. ⚠ WP-6 이 그 자리를 거의
 >   다 썼으므로 **항목이 사라진 것은 아니다**
+> - ★ **번호 5 — `Load`·`ThermalLoad` 의 잔존가치 비대칭**(WP-7). 두 자원이
+>   교체비는 **명목**으로 장부하면서 잔존가치는 **실질**로 계상했다 — 명목으로
+>   사고 실질로 되파는 셈이며 그 과소는 **한 방향으로만** 결론을 나쁘게 만들어
+>   *「보수적이라 안전하다」* 로 읽힌다(`HeatPump` 가 R43 에 같은 자리를 지났다).
+>   ★ **지금 고칠 수 있었던 이유는 값이 0 이라 골든이 증인으로 설 수 있었기
+>   때문**이다 — 러너의 `Load` 는 비용 인자를 하나도 받지 않고 `ThermalLoad` 는
+>   러너가 만들지 않는다. `status.md` 번호 5 행의 *「러너에 들어오는 날 터진다」*
+>   를 **터지기 전에** 닫았다. 부채 목록 하나를 **비웠다**(이름을 더한 것의 반대)
+> - ★ **번호 25 의 하나 — `FR-602-AC2`**(WP-8). *「리포트에 «기준 전제 대비 변경
+>   항목» 목록이 자동 생성된다」* 는 조항이 요구한 표시가 없었고, 그것을 내놓는
+>   `AssumptionSet.overridden_items()` 는 **호출자가 저장소 전체에 0곳**이었다.
+>   더구나 `scripts/check_clause_partition.py` 가 `("FR-602-AC2", "core.report")`
+>   를 **기대**해 두었으니 저장소가 스스로 *「이 조항은 리포트가 담당한다」* 고
+>   선언하고 그 구획을 비워 둔 상태였다. **닫은 것은 시험이 아니라 문면이다** —
+>   `FR-404-AC1` 을 R48/WP-D2 가 닫은 방식과 같다. **여섯 중 둘이 닫혀 넷이 남았다**
 > - `NFR-105`·CI 추적표 두 자리의 **부채가 아니라 실수** — 같은 라운드 안에서 닫았다
 >
 > ## ⚠ 새로 밟은 함정 — **전문은 `status.md` 「함정」 절이 갖는다**
