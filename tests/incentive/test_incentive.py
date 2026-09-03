@@ -41,9 +41,14 @@ def _scheme(**kwargs: Any) -> IncentiveScheme:
     return IncentiveScheme(**defaults)
 
 
-@pytest.mark.req("FR-604-AC1", "FR-604-AC6")
+@pytest.mark.req("FR-604-AC1", "FR-604-AC2")
 def test_incentive_scheme_subsidy_forms() -> None:
-    """FR-604-AC1, AC6: 보조금 정률/정액/상한 형태 검증"""
+    """FR-604-AC1, FR-604-AC2: 보조 — 보조율(%)/정액(원)/상한 형태 검증.
+
+    ⚠ 조항 ID 를 **약식(`AC2`)이 아니라 전체**로 적는다 — ③-2 그물은 문면에
+    적힌 조항 ID 를 세므로, 약식으로 적으면 `FR-604-AC2` 는 「자기를 안 적고
+    이웃(`FR-604-AC1`)만 적는 인용」으로 잡힌다(오탐 ②).
+    """
     scheme_rate = _scheme(subsidy_rate=0.4, subsidy_limit=Decimal("400"))
     assert scheme_rate.subsidy_rate == 0.4
     assert scheme_rate.subsidy_limit == Decimal("400")
@@ -52,9 +57,9 @@ def test_incentive_scheme_subsidy_forms() -> None:
     assert scheme_fixed.subsidy_fixed == Decimal("600")
 
 
-@pytest.mark.req("FR-604-AC2")
+@pytest.mark.req("FR-604-AC3")
 def test_incentive_scheme_loan_conditions() -> None:
-    """FR-604-AC2: 융자 조건 검증"""
+    """FR-604-AC3: 융자 — 융자율·연이자율·거치기간·상환기간·상환방식 검증"""
     scheme = _scheme(
         loan_rate=0.3,
         loan_interest=0.03,
@@ -69,16 +74,76 @@ def test_incentive_scheme_loan_conditions() -> None:
     assert scheme.loan_repayment_type == "원리금균등"
 
 
-@pytest.mark.req("FR-604-AC3")
+@pytest.mark.req("FR-604-AC4")
+def test_incentive_scheme_equity_share_is_automatic_residual() -> None:
+    """FR-604-AC4: 자부담 — 잔여 비율 자동 계산.
+
+    조항 문면은 *「자부담: 잔여 비율 자동 계산」* 이다. 형제 조항이 재는 것과
+    겹치지 않는 몫이 무엇인지부터 못박는다 — AC7 은 **합이 총사업비와 같은가**,
+    AC8 은 **보조 확정액 산식**, AC9 는 **음수 불가**를 잰다. AC4 가 요구하는
+    것은 그 셋 중 어느 것도 아닌 **「자부담은 사람이 주는 값이 아니라 남는
+    몫으로 저절로 나온다」** 이다. 그래서 셋을 잰다.
+
+    ① **자부담은 입력이 아니다** — `IncentiveScheme` 에 자부담을 선언할 필드가
+       없다. 있으면 「자동 계산」이 아니라 사람이 적어 넣는 값이 된다.
+
+    ② **잔여 「비율」이다 — 규모에 불변이다.**
+       손계산: 잔여 비율 = 1 − 보조율 − 융자율 = 1 − 0.30 − 0.40 = **0.30**
+               1,000,000 × 0.30 = 300,000 원
+               2,500,000 × 0.30 = 750,000 원
+       총사업비가 2.5배가 되어도 **같은 비율**이 나오는 것이 「비율」의 실물이다.
+
+    ③ **「자동」의 실물 — 선언한 비율이 아니라 확정액을 따라간다.**
+       보조 상한이 걸리면 잔여 비율은 선언한 보조율로 계산되지 않는다.
+       손계산: 보조 확정액 = min(1,000,000 × 0.50, 400,000) = **400,000**
+               융자 확정액 = 1,000,000 × 0.40 = 400,000
+               자부담     = 1,000,000 − 400,000 − 400,000 = **200,000**
+               잔여 비율  = 200,000 / 1,000,000 = **0.20**
+       선언한 비율로 셈하면 1 − 0.50 − 0.40 = 0.10 (100,000원)이 되어 **틀린다.**
+       spec 이 *「검증은 비율이 아니라 금액 기준으로 수행한다 … 정액 보조·보조
+       상한이 있으면 비율 합계가 100%가 되지 않기 때문이다 (DV-1)」* 로 적은
+       그 갈래이며, 이 갈래를 눌러야 자부담이 **확정액에서 자동으로** 나오는
+       것이 보인다.
+
+    부르는 구현: `IncentiveScheme.calculate_financing()`
+    (`core/incentive/schemas.py` — `equity = capex − subsidy − loan`)
+    """
+    # ① 자부담은 선언할 수 있는 필드가 아니다 — 남는 몫으로만 나온다
+    declarable = set(IncentiveScheme.model_fields)
+    assert not [f for f in declarable if "equity" in f or "self_burden" in f], (
+        f"자부담이 선언 가능한 필드로 있으면 「자동 계산」이 아니다: {sorted(declarable)}"
+    )
+
+    # ② 잔여 비율 = 1 − 0.30 − 0.40 = 0.30 — 총사업비 규모가 달라져도 같다
+    scheme = _scheme(subsidy_rate=0.3, loan_rate=0.4)
+    small = scheme.calculate_financing(1_000_000)
+    large = scheme.calculate_financing(2_500_000)
+    assert small["equity"] == Money(300_000)
+    assert large["equity"] == Money(750_000)
+    assert small["equity"] / Decimal(1_000_000) == Decimal("0.30")
+    assert large["equity"] / Decimal(2_500_000) == Decimal("0.30")
+
+    # ③ 상한이 걸리면 잔여는 선언한 보조율(0.50)이 아니라 확정액(400,000)을 따른다
+    capped = _scheme(subsidy_rate=0.5, subsidy_limit=Decimal("400000"), loan_rate=0.4)
+    res = capped.calculate_financing(1_000_000)
+    assert res["subsidy"] == Money(400_000)
+    assert res["equity"] == Money(200_000), (
+        "선언한 비율(1 - 0.50 - 0.40 = 0.10 -> 100,000원)이 아니라 "
+        "확정액에서 자동으로 나온 잔여(200,000원)여야 한다"
+    )
+    assert res["equity"] / Decimal(1_000_000) == Decimal("0.20")
+
+
+@pytest.mark.req("FR-604-AC5")
 def test_incentive_scheme_tax_conditions() -> None:
-    """FR-604-AC3: 세제 혜택 조건 검증"""
+    """FR-604-AC5: 세제 — 세액공제율 검증"""
     scheme = _scheme(tax_credit_rate=0.1)
     assert scheme.tax_credit_rate == 0.1
 
 
-@pytest.mark.req("FR-604-AC4", "FR-604-AC5")
+@pytest.mark.req("FR-604-AC6")
 def test_incentive_scheme_encapsulation_and_sponsor() -> None:
-    """FR-604-AC4, AC5: 캡슐화 및 지원 주체 추적"""
+    """FR-604-AC6: 지원 주체 — 국비/지방비/민간 추적"""
     scheme = _scheme(sponsor="지방비")
     assert scheme.sponsor == "지방비"
 
