@@ -31,6 +31,15 @@ R43-F 의 첫 형태가 그 상한을 501줄로 넘겨 `check_file_size --code-s
 붙든다), 상수를 옮기면 그 문면이 거짓이 된다. 문면을 고치면 리포트 매니페스트
 해시가 움직인다 — 이 이동은 **행동을 한 줄도 바꾸지 않는 것**이 조건이었다.
 
+⚠⚠ **ESS 쪽 여덟은 R57/WP-5 가 `core/casegrid/ess_build.py` 로 옮겼다** —
+`e2e_runner.py` 가 코드 497/500 이라 ★분할의 러너 배선을 넣을 자리가 없었다.
+**위 문면은 여전히 참이다**: `_resource_lines()` 가 2.1 표에 실제로 인쇄하는
+다섯(`ESS_RTE_PCT`·`ESS_SOC_MIN_PCT`·`ESS_SOC_MAX_PCT`·`ESS_EOL_SOH_PCT`·
+`ESS_CYCLES_PER_YEAR`)을 `e2e_runner.py` 가 그 모듈에서 import 해 자기
+이름공간에 두므로(재수출 규약, `check_docstring_references.py` R43·WP-F3),
+리포트 문면도 매니페스트 해시도 움직이지 않았다. `PV_CAPACITY_FACTOR` 는
+그대로 `e2e_runner.py` 것이다.
+
 ⚠ **러너는 이 함수들을 `_annualise`·`_cost_lines`·`_benefit_lines`·
 `_benefit_line`·`net_operating_flows` 라는 이름으로 계속 부른다** — 밖에서
 `from core.casegrid.e2e_runner import ...` 로 그 경로를 쓰는 곳이 있기 때문이다

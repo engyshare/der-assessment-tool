@@ -16,9 +16,22 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from decimal import Decimal
-from typing import cast
 
 from core.casegrid.attribution import attribute_benefits
+
+# ★ **`ESS` 조립은 이 파일 것이었다** — `NFR-206` 코드 줄 상한(500)에 코드
+# 497 로 닿아 ★분할의 러너 배선을 넣을 여유가 3줄뿐이라 제원 상수 여덟과
+# `ESS(...)` 호출 전문을 `ess_build.py` 로 옮겼다(R57/WP-5). `pv_allocation.py`
+# ·`grid_support.py` 와 같은 사유다. **아래 다섯은 재수출이 아니라 이 파일의
+# `_resource_lines()` 가 2.1 표에 실제로 인쇄하는 이름들이다.**
+from core.casegrid.ess_build import (
+    ESS_CYCLES_PER_YEAR,
+    ESS_EOL_SOH_PCT,
+    ESS_RTE_PCT,
+    ESS_SOC_MAX_PCT,
+    ESS_SOC_MIN_PCT,
+    build_case_ess,
+)
 from core.casegrid.grid_support import _resolve_nwas_cp, peak_shaving_enabled
 from core.casegrid.incentive_cases import (
     Viewpoint,
@@ -200,20 +213,15 @@ PV_SELF_CONSUMPTION_RATIO = 0.0
 #: (`tests/casegrid/test_rec_wiring.py::
 #: test_rec_weight_moves_to_the_ledger_when_the_price_does` 래칫).
 
-#: ESS **정격출력**(kW). 용량과 달리 설계 변수로 올리지 않았다 — 이 값이
-#: `reducible_peak_kw = min(power_kw, 가용량/방전창)` 의 **상한**이라, 고정해
-#: 두어야 용량 스윕이 *「용량을 키우면 어디서 출력에 막히는가」* 를 드러낸다.
-ESS_POWER_KW = 5.0
-ESS_RTE_PCT = 90.0
-ESS_SOC_MIN_PCT = 10.0
-ESS_SOC_MAX_PCT = 90.0
-ESS_CYCLE_LIFE = 6_000
-ESS_CALENDAR_LIFE = 20
-ESS_EOL_SOH_PCT = 80.0
-ESS_CYCLES_PER_YEAR = 365.0
-#: ⚠ **고정 O&M 은 여기 없다** — `ESS_FIXED_OM_WON_PER_YEAR` 모듈 상수를
-#: R51/WP-2 가 지웠다. 대장 `opex.ess.fixed_om` 에서 `level_map` 으로 온다
-#: (사용자 판정 §2) — `opex.pv.fixed_om` 과 같은 이유다.
+#: ⚠⚠ **ESS 제원 상수 여덟은 여기 없다** — `ESS_POWER_KW`·`ESS_RTE_PCT`·
+#: `ESS_SOC_MIN_PCT`·`ESS_SOC_MAX_PCT`·`ESS_CYCLE_LIFE`·`ESS_CALENDAR_LIFE`·
+#: `ESS_EOL_SOH_PCT`·`ESS_CYCLES_PER_YEAR` 를 `core/casegrid/ess_build.py` 로
+#: R57/WP-5 가 `ESS(...)` 조립 전문과 함께 옮겼다(위 import). 사유는 그 모듈
+#: 머리말에 있다 — 이 파일이 코드 **497/500(여유 3)** 이라 ★분할의 러너
+#: 배선을 넣을 자리가 없었다. **값도 주석도 한 글자 바뀌지 않았다.**
+#: ⚠ **여덟을 다 다시 내보내지 않는다**(4절 ④) — `_resource_lines()` 가 2.1
+#: 표에 인쇄하는 다섯만 import 한다. `ESS_POWER_KW`·`ESS_CYCLE_LIFE`·
+#: `ESS_CALENDAR_LIFE` 는 조립 함수 안에서만 쓰이므로 이 이름공간에 없다.
 
 #: ⚠ **ESS 운전 방법·충전원·PV 배분 우선순위 기본값 셋은 여기 없다** —
 #: `core/casegrid/pv_allocation.py::ESS_OPERATING_MODE_DEFAULT`·
@@ -653,46 +661,18 @@ def run_single_case_e2e(
         pv_allocation_priority=pv_allocation_priority, household=household,
     )
 
-    ess = ESS(
-        name="e2e-ess",
+    # ★ **제원 상수 여덟과 `ESS(...)` 조립 전문은 `ess_build.py` 에 있다**
+    # (R57/WP-5). 여기서 넘기는 것은 **이미 해석된 값들**(위
+    # `_resolve_ess_dispatch_inputs` 가 골랐다)과 **대장에서 온 값들**뿐이며,
+    # 그 해석은 함께 가지 않았다 — 가면 「자리 옮김」이 아니게 된다.
+    # ⚠ `cast(ESSOperatingMode, ...)` 와 `pv_surplus_profile_kwh` 의 조건식은
+    # 사유 주석째로 그 모듈이 들고 있다.
+    ess = build_case_ess(
         capacity_kwh=ess_capacity_kwh,
-        power_kw=ESS_POWER_KW,
-        rte_pct=ESS_RTE_PCT,
-        soc_min_pct=ESS_SOC_MIN_PCT,
-        soc_max_pct=ESS_SOC_MAX_PCT,
-        cycle_life=ESS_CYCLE_LIFE,
-        calendar_life=ESS_CALENDAR_LIFE,
-        eol_soh_pct=ESS_EOL_SOH_PCT,
-        cycles_per_year=ESS_CYCLES_PER_YEAR,
-        # `ESS.__init__` 의 `operating_mode` 타입은 `ESSOperatingMode` 뿐이다
-        # (문자열도 실제로 받는다 — `DER._check_operating_mode` 가 검증한다).
-        # 이 `cast` 는 그 사실의 타입 단정이지 런타임 변환이 아니다.
-        operating_mode=cast(ESSOperatingMode, resolved_ess_operating_mode),
+        operating_mode=resolved_ess_operating_mode,
         charge_source=resolved_ess_charge_source,
-        # PV_SURPLUS 가 아닌 충전원에 시계열을 주면 `ESS` 가 거부한다(판정
-        # A-3) — 그래서 충전원이 PV_SURPLUS 일 때만 건넨다. **문자열도 비교
-        # 가능하다** — `ESSChargeSource` 는 `StrEnum` 이라 값이 같은 평문
-        # 문자열과도 `==` 가 성립한다. 잘못된 값이면 이 비교는 그냥 거짓이
-        # 되고, 실제 거부는 `ESS` 생성자(`_coerce_charge_source`)가 한다 —
-        # 여기서 미리 변환을 시도하면 그 에러 메시지를 이 자리가 가로챈다.
-        pv_surplus_profile_kwh=(
-            ess_pv_surplus_profile_kwh
-            if resolved_ess_charge_source == ESSChargeSource.PV_SURPLUS
-            else None
-        ),
-        capex_unit_won_per_kwh=ess_capex,
-        fixed_om_won_per_year=ess_fixed_om,
-        # ★★ **명목 기준을 ESS 에도 물린다 (R39-E · R38 판정 ②나).** 이 인자가
-        # 없는 동안 `ess.escalation_factor()` 는 1.0 이었고, 그래서 18년차
-        # 배터리 교체비가 **오늘의 원**으로 적혔다 — 대장이 `price_basis:
-        # "명목"` 을 선언한 사업에서 그 지출만 실질이 된다.
-        #
-        # ★ **교체 단가가 이제 대장에서 온다** (`capex.ess.replacement` ·
-        # 사용자 판정 §7 · R52/WP-6). 종전에는 이 인자를 넘기지 않아 `ess.py`
-        # 가 취득 단가(`capex.ess.new`)를 그대로 교체 단가로 썼다 — 값은
-        # **여전히 같다**(조사가 크기 근거를 못 찾았다, WP-5 §7) 지만 통로가
-        # 이제 따로 있다 — 「배터리만/시스템 전체」(`Q-2`)가 값 하나만 바꾸는
-        # 물음이라면 이 자리를 고치면 된다.
+        pv_surplus_profile_kwh=ess_pv_surplus_profile_kwh,
+        capex_unit_won_per_kwh=ess_capex, fixed_om_won_per_year=ess_fixed_om,
         replacement_unit_won_per_kwh=ess_replacement_price,
         escalation_rate=PRICE_ESCALATION_RATE,
         replacement_escalation_rate=replacement_escalation_rate,

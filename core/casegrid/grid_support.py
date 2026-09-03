@@ -37,7 +37,8 @@ def _cp(
     """★★ `CapacityPayment` 인스턴스 — `_nwas()` 와 같은 이유로 뗀다.
 
     ⚠ **등록 용량은 호출부가 `ess.power_kw` 를 넘긴다** — 설계 변수가 아니라
-    이 사업 모델의 ESS 정격출력이다(`e2e_runner.py::ESS_POWER_KW` 옆 주석).
+    이 사업 모델의 ESS 정격출력이다(`ess_build.py::ESS_POWER_KW` 옆 주석 —
+    R57/WP-5 가 `e2e_runner.py` 에서 그리로 옮겼다).
     """
     return CapacityPayment(
         registered_capacity_kw=registered_capacity_kw,
