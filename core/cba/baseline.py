@@ -8,11 +8,108 @@
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import StrEnum
+from types import MappingProxyType
 
 from core.cba.proforma import aggregate
 from core.contracts.schemas import CashFlowRow
 from core.contracts.units import ZERO, Money
+from core.contracts.validation import ValidationError
+
+
+class BaselineArrangement(StrEnum):
+    """기준선(Without) 갈래 셋 (FR-705-AC2)."""
+
+    NONE = "자가용 없음"  # Without: 한전 전력 전량
+    MAINTAIN = "자가용 유지"  # Without: 한전 전력 + 자가용 자가소비
+    POOL = "자가용 집합자원화"  # Without: 자가용 유지(=가 또는 현행)
+
+
+class SelfConsumptionTreatment(StrEnum):
+    """자가소비 처리 방식 (FR-705-AC2)."""
+
+    NONE = "없음"  # 자가용이 없어 자가소비가 애초에 없다
+    CANCEL_OUT = "소거"  # Without·With 양쪽에 똑같이 있어 차액에서 사라진다
+    FORFEIT = "포기(음의 항)"  # With 에서 사라지므로 비용으로 계상해야 한다
+
+
+@dataclass(frozen=True)
+class BaselineBranch:
+    """갈래별 기준선 및 자가소비 처리 선언."""
+
+    without_description: str
+    with_description: str
+    viability_condition: str
+    self_consumption_treatment: SelfConsumptionTreatment
+    clause: str
+
+
+#: 갈래별 선언표.
+#: if structure == ... 로 짜지 않는다. 선언표로 두면 여덟 번째 구조가 생겨도
+#: 이 계약과 엔진은 바뀌지 않는다.
+BASELINE_DECLARATIONS: Mapping[BaselineArrangement, BaselineBranch] = MappingProxyType(
+    {
+        BaselineArrangement.NONE: BaselineBranch(
+            without_description="한전 전력 전량",
+            with_description="분산e사업자 공급",
+            viability_condition="",
+            self_consumption_treatment=SelfConsumptionTreatment.NONE,
+            clause="예비타당성조사 수행 총괄지침 제45조② · 판정 정본 §1 첫째",
+        ),
+        BaselineArrangement.MAINTAIN: BaselineBranch(
+            without_description="한전 전력 + 자가용 자가소비",
+            with_description="분산e 공급 + 자가용 자가소비",
+            viability_condition="분산e 요금 < 한전 요금",
+            self_consumption_treatment=SelfConsumptionTreatment.CANCEL_OUT,
+            clause="예비타당성조사 수행 총괄지침 제45조② · 판정 정본 §1 둘째",
+        ),
+        BaselineArrangement.POOL: BaselineBranch(
+            without_description="자가용 유지",
+            with_description="분산e 로부터 공급 + 집합자원화 대가",
+            viability_condition="전기사용자에게 자가용 유지보다 유리",
+            self_consumption_treatment=SelfConsumptionTreatment.FORFEIT,
+            clause="예비타당성조사 수행 총괄지침 제45조② · 판정 정본 §1 셋째",
+        ),
+    }
+)
+
+
+def get_baseline_branch(arrangement: BaselineArrangement) -> BaselineBranch:
+    """갈래 선언을 찾고, **아직 세울 수 없는 갈래를 거부한다** (FR-705-AC2 · DV-15).
+
+    ## ★★ 「나」를 거부하는 것이 옳다 — **「평가할 수 없다」와 「0 이다」는 다른 말이다**
+
+    판정 정본 `docs/decisions-2026-09-03-R57.md` **§2** 가 *「계측이 갈리지 않으면
+    「나」는 **평가할 수 없다**」* 고 적는다. 상계처리로는 전기사용자의 전력사용량이
+    구분되지 않아 **책임공급비율의 분모가 서지 않는다.** 그리고 **§4④**(총괄지침
+    제45조③ 대칭성)에 따라 「집합자원화 대가」를 편익으로 세우려면 「포기한 자가소비」를
+    비용으로 세야 하는데 **그 자리가 저장소에 없다.**
+
+    두 자리 중 하나라도 없으면 **거부한다.** 0 으로 채우면 *「없는 제도 위에 편익을
+    쌓는」* 것과 같은 형태가 되고, 이 저장소는 `TouArbitrage` 단가에서 이미 같은
+    판단을 했다(단가가 없어 0 으로 안 채웠다).
+    """
+    branch = BASELINE_DECLARATIONS[arrangement]
+    if branch.self_consumption_treatment is SelfConsumptionTreatment.FORFEIT:
+        raise ValidationError(
+            field="baseline.arrangement",
+            reason=(
+                "포기 항이 서지 않았다: 1. 계측 전제가 안 섰다(상계처리로는 "
+                "전기사용자의 전력사용량이 구분되지 않아 책임공급비율의 분모가 서지 않는다. "
+                "발전량·전기사용량을 구분해 계측·정산해야 한다). "
+                "2. 대칭 항이 없다(집합자원화 대가를 편익으로 세우려면 포기한 자가소비를 "
+                "비용으로 세야 하는데 그 자리가 저장소에 없다)."
+            ),
+            action=(
+                "「나」 갈래는 지금 평가할 수 없습니다. 0 으로 채우지 마십시오 — "
+                "구분 계측(발전량·전기사용량)을 선언하고 「포기한 자가소비」 비용 항을 "
+                "세운 뒤에 이 갈래를 고르십시오"
+            ),
+            rule="DV-15",
+        )
+    return branch
 
 
 @dataclass(frozen=True)

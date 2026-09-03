@@ -83,6 +83,11 @@ THROWN_BY_REAL_CODE: dict[str, str] = {
              "test_structure_absent_falls_back_and_is_refused_when_unspecified",
     "DV-14": "tests/contract/test_dv_rule_enforcement.py::"
              "test_dv14_is_thrown_by_the_real_constructor",
+    # ↓ R58 — `core/cba/baseline.py::get_baseline_branch` 가 「자가용 집합자원화」
+    # 갈래를 실제로 던져 거부한다. 그 갈래는 **구분 계측 선언**(판정 정본 §2)과
+    # **포기분 비용 항**(§4④ 대칭성)이 함께 서야 평가할 수 있는데 둘 다 없다 —
+    # **「평가할 수 없다」를 0 으로 채우지 않기 위한 규칙이다.**
+    "DV-15": "tests/cba/test_baseline.py::test_pool_branch_is_rejected",
     # ↓ R22 — `core/der/ess.py` 생성자가 실제로 던진다. **R21 이 「대장에는
     # 있는데 던지는 코드가 한 줄도 없다」고 짚었던 바로 그 둘**이다.
     "DV-2": "tests/der/test_ess.py::"
