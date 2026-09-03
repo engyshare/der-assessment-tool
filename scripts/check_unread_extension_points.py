@@ -113,7 +113,16 @@ KNOWN_UNREAD: frozenset[str] = frozenset({
     "unmet_electric",
     "unmet_fuel",
     "unmet_heat",
-    "value_streams",
+    # ⚠ `value_streams` 는 **R57/WP-4 에 목록에서 빠졌다** — `core/casegrid/
+    # ess_share_benefits.py` 가 몫 자원의 `value_streams()` 를 불러 그 몫의
+    # 편익 태그를 얻는다(표를 베끼지 않으려고 정본을 호출한다). 이 검사가
+    # 「읽히기 시작했다」로 rc=1 을 냈고 그것이 옳은 판정이라 지웠다.
+    #
+    # ⚠⚠ **읽는 자리가 아직 실행 경로는 아니다.** 그 모듈을 `e2e_runner.py`
+    # 가 import 하지 않으므로(결론축을 흔들지 않으려고 일부러 미뤘다) 지금
+    # 「읽는 배포 코드」는 **배선을 기다리는 코드**다. 이 검사의 정의(`core`·
+    # `app`·`infra`·`web` 의 속성 접근)로는 읽힌 것이 맞고, 러너 배선이
+    # 서면 그때 실행 경로에서도 읽힌다.
     "variable_om",
     "year_fraction",
 })
