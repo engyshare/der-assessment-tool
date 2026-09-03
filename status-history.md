@@ -77,7 +77,7 @@
 > |---|---|
 > | 전건 `pytest -q` | **1972 tests · failures 0 · errors 0 · skipped 4** · `rc=0`(`--junitxml` 로 셌다). R56 종료 1927 collected → **검사 순증 45**(WP-1 다섯 + WP-2 둘 + WP-4 여덟 + WP-5 교정 셋 + WP-6 다섯 + WP-7 넷 + WP-8 둘 + WP-9 셋 + 나머지) |
 > | ★ **음성 검사 스위트 15종** | `for f in scripts/negtest_*.py; do …; done` — **15/15 `rc=0`**. 게이트가 실물 소스 변이를 실제로 잡는다는 판정이며 **이 라운드가 닫기 전에 돌렸다**. 끝난 뒤 남는 빈 디렉터리 둘(`scripts/_tmp_negtrace`·`_tmp_neg_marker`)을 `rmdir` 하고 `git status` 가 빈 것을 확인했다 |
-> | ★ **CI 판본(파이썬 3.11) 전건** | `~/miniconda3/envs/r31py311/python.exe -m pytest -q` — **1969 tests · failures 0 · errors 0 · skipped 4 · `rc=0`**. **3.13 과 한 건도 다르지 않다.** CI 는 3.11 이므로 이것이 판본 차이를 재는 유일한 로컬 판정이고, 이 라운드가 닫기 전에 돌렸다 |
+> | ★ **CI 판본(파이썬 3.11) 전건** | `~/miniconda3/envs/r31py311/python.exe -m pytest -q` — **1972 tests · failures 0 · errors 0 · skipped 4 · `rc=0`**. **3.13 과 한 건도 다르지 않다.** CI 는 3.11 이므로 이것이 판본 차이를 재는 유일한 로컬 판정이고, 이 라운드가 닫기 전에 돌렸다. ⚠ **WP-9 뒤에 다시 돌렸다** — 종전에 적힌 1969 는 WP-9 앞의 수였고, 그 수를 그대로 두면 *「세지 않은 수를 옮겨 적으면 그것이 다음 라운드의 계획으로 따라 들어간다」* 를 이 블록이 저지른다 |
 > | ★ **게이트 ①(변경분 커버리지 ≥95%)** | **98%** — `diff-cover coverage.xml --compare-branch=41f78f1~1 --fail-under=95`. 변경 **90줄** 중 안 밟힌 **1줄**(`core/casegrid/ess_build.py:260`)이고 `e2e_runner.py`·`ess_share_benefits.py` 는 **100%**. ⚠ `coverage.xml` 이 낡으면 `check_coverage_inputs` 가 *「산출물에 없다」* 를 내므로 새 `core/` 파일을 만든 WP 뒤에는 `pytest --cov=core --cov-branch --cov-report=xml` 을 다시 돌렸다(이 라운드에 두 번) |
 > | `tests/golden` | **7건 통과 · `rc=0`** — WP-4·WP-5·WP-6 마다 따로 돌렸다 |
 > | `ruff` · `mypy` · `lint-imports` | `rc=0` · `no issues in 132 files` · **4 kept 0 broken** |
