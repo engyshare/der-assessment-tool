@@ -12,14 +12,26 @@ WP-2 가 구상 편익 다섯에 **표찰 받는 자리**를 냈다. 그런데 �
     ③ 다섯 태그 전건이 다뤄지고, 모르는 태그는 거부한다          조용한 0개 없음
     ④ `SELF_CONSUMPTION` 몫은 거부되고 사유가 메시지에 있다      ★ 명시된 가정
     ⑤ 수량이 몫 크기에 비례한다                                  ★★ 선언이 아니라 수
-    ⑥ 배포 경로가 이 모듈을 import 하지 않는다                   ★★★ 결론축 불변
+    ⑥ 배포 경로가 이 공장에 **닿아 있다** — 다리 둘을 다 잰다    ★★★ 배선 (WP-6)
 
 **①의 대조군이 요점이다.** 통과만 재면 「무엇이든 통과시키는」 구현도 초록불이
 된다. 같은 편익 둘을 `quantity_id=None` 으로 세우면 **거부돼야** 하고, 그
 앞뒤가 붙어야 *「표찰이 통과를 만들었다」* 가 성립한다.
 
-**⑥이 ①만큼 중요하다.** 이 WP 는 자리를 세울 뿐 배선하지 않는다 — 배선은
-결론축을 흔드는 자리이며 다음 차례다.
+**⑥은 R57/WP-6 에 뒤집혔다.** 종전에는 *「배포 경로가 이 모듈을 모른다」* 였고
+그때 그것이 **결론축 불변의 증인**이었다 — WP-6 이 러너에 배선하면서 그 전제가
+끝났고, 래칫은 할 일을 하고 울었다. **「결론축이 안 움직였다」의 임자는 이제
+골든 3건**(`tests/golden/test_regression_scenarios.py`)이다. ⑥ 이 지금 붙드는
+것은 그 반대다 — **배선이 조용히 끊기는 것**.
+
+⚠⚠ **⑥ 의 경로는 한 칸 길다 — 사실대로 잰다.** 러너가 부르는 것은
+`core/casegrid/ess_build.py::build_fleet_streams` 이고, 이 공장을 import 하는
+것은 **그 파일**이다. 러너의 직접 import 를 단언하면 거짓이 되므로 **다리
+둘을 다 잰다**(러너 → `ess_build` → 이 공장). 한 다리만 재면 다른 다리가
+끊겨도 초록불이며, 그것이 배선 검사의 존재 이유다
+(`tests/casegrid/test_e2e_exclusion_wiring.py` 머리말의 *「함수 층만 검사하면
+배선이 되돌아가도 전건 초록불이기 때문이다 … 이 파일이 붙드는 것은 함수가
+아니라 배선이다」*).
 
 ## 공통 §4 의 네 물음
 
@@ -27,8 +39,9 @@ WP-2 가 구상 편익 다섯에 **표찰 받는 자리**를 냈다. 그런데 �
    의 유형 `E` 행(`NWAs` × `PeakShaving`)이며 여기서 유형·근거를 다시 적지
    않는다. 다섯 태그의 오라클은 `ESS.value_streams()` 이고, 이 파일은 그 표를
    **베끼지 않고 자원에서 되읽어** 만든다(③).
-② **이 설명이 이 검사에 걸리는가** — ⑥ 만 소스 문면을 본다. 그것도 이 파일이
-   아니라 `core/casegrid/e2e_runner.py` 를 본다.
+② **이 설명이 이 검사에 걸리는가** — ⑥ 만 소스를 연다. 그것도 **문면이 아니라
+   `ast` 로 뽑은 import 문**이고, 보는 대상은 이 파일이 아니라
+   `core/casegrid/e2e_runner.py` 와 `core/casegrid/ess_build.py` 다.
 ③ **이름보다 넓게 주장하는가** — 아니다. 몫 **하나**가 편익 **하나**가 되는
    자리만 재고, 그 편익들이 리포트·CBA 에 어떻게 들어가는지는 재지 않는다
    (아직 아무도 배선하지 않았다).
@@ -39,6 +52,7 @@ WP-2 가 구상 편익 다섯에 **표찰 받는 자리**를 냈다. 그런데 �
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
@@ -346,27 +360,78 @@ def test_the_benefit_of_a_half_share_is_half(capsys: pytest.CaptureFixture[str])
         print(f"\n[⑤ 실측] 몫 전부 {whole_value} · 절반 몫 {half_values[0]}")
 
 
-# ── ⑥ 배포 경로는 이 모듈을 쓰지 않는다 (★★★ 결론축 불변) ───────────────
+# ── ⑥ 배포 경로가 이 공장에 닿아 있다 (★★★ 배선 · R57/WP-6) ─────────────
+
+def _imported_names(path: Path) -> dict[str, set[str]]:
+    """`ast` 로 **실제 import 문**을 뽑는다 — 「모듈 → 그 모듈에서 가져온 이름」.
+
+    ★★ **문자열을 세지 않는다.** `"ess_share_benefits" in path.read_text()` 로
+    재면 *「그 공장을 예로 들면」* 이라 적은 **주석 한 줄이 배선으로 세어져**
+    게이트가 조용히 초록불이 된다. `scripts/check_unread_extension_points.py`
+    머리말의 *「★ 문자열을 세지 않는다 — 반대 방향의 실패」* 가 같은 근거를
+    적었다 — *「위반이 통과로 보고되는 조용한 실패라 더 나빴다」*. 그래서
+    거기와 같이 `ast` 로 문법이 보증하는 것만 본다.
+
+    ⚠ `tests/casegrid/test_ess_share.py` 에도 같은 도우미가 있다. **한쪽을
+    다른 쪽에서 import 하지 않는다** — 시험 파일이 서로를 부르면 한 파일만
+    돌렸을 때 무엇이 함께 실렸는지가 흐려진다.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    found: dict[str, set[str]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module is not None:
+            found.setdefault(node.module, set()).update(a.name for a in node.names)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                found.setdefault(alias.name, set())
+    return found
+
 
 @pytest.mark.req("NFR-206-M1")
-def test_the_deployed_runner_does_not_import_this_module() -> None:
-    """★★★ **결론축이 움직이지 않았다** — 러너가 이 모듈을 모른다.
+def test_the_deployed_path_reaches_this_factory_through_both_legs() -> None:
+    """★★★ **배포 경로가 이 공장에 닿아 있다 — 다리 둘을 다 잰다** (R57/WP-6).
 
-    `tests/casegrid/test_ess_share.py` 의 ⑤ 와 **같은 꼴**이다. 자리를 세우는
-    것과 그것을 쓰는 것은 다르며, 어느 케이스도 아직 몫 편익을 쓰지 않으므로
-    배포 경로의 수는 종전과 **같아야** 한다. 그 사실은 「수가 같더라」가 아니라
-    **의존이 없다**로 재는 것이 강하다 — 수를 다시 뽑아 대조하면 그 검사는
-    골든이 갱신되는 날 함께 조용해진다.
+    종전 이 자리는 *「러너가 이 모듈을 **모른다**」* 였고 그것이 결론축 불변의
+    증인이었다. WP-6 이 배선하면서 그 전제가 끝났다 — 지우는 대신 **반대를
+    붙들게 뒤집었다.** 「결론축이 안 움직였다」는 이제 골든 3건
+    (`tests/golden/test_regression_scenarios.py`)이 잰다.
 
-    ⚠ 두 파일이 **실재하는지**를 먼저 본다. 경로가 틀리면 「없는 파일에서
-    문자열을 못 찾았다」가 통과로 읽힌다 — 이 저장소가 반복해 경계해 온
-    「검사하지 않으면서 초록불」의 그 형태다(§13.0.1 ④).
+    ⚠⚠ **러너는 이 모듈을 직접 import 하지 않는다.** 러너가 부르는 것은
+    `core/casegrid/ess_build.py::build_fleet_streams` 이고 이 공장을 부르는
+    것은 그 파일이다. 직접 import 를 단언하면 **거짓**이 되므로 다리를 둘로
+    나눠 잰다:
+
+        ① 러너 → `core.casegrid.ess_build` 에서 `build_fleet_streams`
+        ② `ess_build` → `core.casegrid.ess_share_benefits`
+
+    **한 다리만 재면 다른 다리가 끊겨도 초록불이다** — 그것이 이 검사가
+    존재하는 이유다.
+
+    ⚠ 세 파일이 **실재하는지**를 먼저 본다. 경로가 틀리면 「없는 파일에서
+    import 를 못 찾았다」가 「import 가 없다」와 같은 모양이 된다(§13.0.1 ④).
     """
     runner = REPO_ROOT / "core" / "casegrid" / "e2e_runner.py"
+    build = REPO_ROOT / "core" / "casegrid" / "ess_build.py"
     module = REPO_ROOT / "core" / "casegrid" / "ess_share_benefits.py"
-    assert runner.is_file(), f"러너를 찾지 못했다: {runner}"
-    assert module.is_file(), f"검사 대상 모듈을 찾지 못했다: {module}"
+    for path in (runner, build, module):
+        assert path.is_file(), f"검사 대상 파일을 찾지 못했다: {path}"
 
-    assert "ess_share_benefits" not in runner.read_text(encoding="utf-8"), (
-        "배포 경로가 몫 편익 공장을 참조한다 — 결론축이 움직였는지 다시 재야 한다"
+    # ① 러너가 몫 분기의 몸통을 부른다
+    from_runner = _imported_names(runner)
+    assert "build_fleet_streams" in from_runner.get("core.casegrid.ess_build", set()), (
+        "러너가 `core.casegrid.ess_build` 에서 `build_fleet_streams` 를 받지 "
+        "않는다 — 첫째 다리가 끊겼다. 러너가 그 모듈에서 받는 이름: "
+        f"{sorted(from_runner.get('core.casegrid.ess_build', set()))}"
+    )
+
+    # ② 그 몸통이 이 공장을 부른다
+    from_build = _imported_names(build)
+    assert "core.casegrid.ess_share_benefits" in from_build, (
+        "`ess_build.py` 가 몫 편익 공장을 import 하지 않는다 — 둘째 다리가 "
+        f"끊겼다. 그 파일이 import 하는 모듈: {sorted(from_build)}"
+    )
+    assert "build_share_benefits" in from_build["core.casegrid.ess_share_benefits"], (
+        "`ess_build.py` 가 공장 모듈을 import 하면서 `build_share_benefits` 를 "
+        "받지 않는다 — 몫 하나를 편익 하나로 만드는 함수가 그것이다. 받은 "
+        f"이름: {sorted(from_build['core.casegrid.ess_share_benefits'])}"
     )

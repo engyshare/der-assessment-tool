@@ -13,22 +13,27 @@
     ② 단위당·비율 제원은 몫마다 **원래 값 그대로**다      ← 몫으로 나누면 틀린다
     ③ 거부 넷이 각각 `ValidationError` 를 낸다            ← ★ 우회로가 없다
     ④ 물량 표찰이 다르면 배타 판정이 통과하고 같으면 막힌다 ← ★★ 선행 ①과 이어진다
-    ⑤ 배포 경로는 이 모듈을 import 하지 않는다            ← ★★★ 결론축 불변
+    ⑤ 배포 경로가 이 모듈에 **닿아 있다**                 ← ★★★ 배선 (R57/WP-6)
 
 **③ 의 넷째가 이 파일의 핵심이다.** 두 몫이 **같은 `quantity_id`** 를 달 수
 있으면 배타 규칙이 몫을 구별하지 못한다 — R56 이 세운 물리량 축
 (`tests/valuestream/test_exclusion_quantity_axis.py`)에 그대로 우회로가 난다.
 
-**⑤ 는 「자리를 세웠지만 아직 아무도 쓰지 않는다」를 기계로 못 박는다.** 어느
-케이스도 몫을 쓰지 않으므로 배포 경로의 수는 종전과 **같아야** 한다.
+**⑤ 는 R57/WP-6 에 뒤집혔다 — 이제 「배선돼 있다」를 못 박는다.** 종전에는
+*「배포 경로가 이 모듈을 모른다」* 였고, 그때 그것이 **결론축 불변의 증인**
+이었다. WP-6 이 러너에 `ess_shares` 인자를 내면서 그 전제가 끝났고, 래칫은
+할 일을 하고 울었다. **「결론축이 안 움직였다」의 임자는 이제 골든 3건**
+(`tests/golden/test_regression_scenarios.py` — 세 시나리오 `npv_won` 정확
+일치)이다. 여기서 붙드는 것은 그 반대다 — **배선이 조용히 끊기는 것**.
 
 ## 공통 §4 의 네 물음
 
 ① **정본이 어디서 오는가** — 제원 합계의 오라클은 **입력한 물리 제원**
    (`_PHYSICAL`)이다. 배타 판정의 오라클은 `docs/exclusion-rules.yaml` 의
    유형 `E` 행(`NWAs` × `SelfConsumption`)이며 여기서 유형·근거를 다시 적지 않는다.
-② **이 설명이 이 검사에 걸리는가** — ⑤ 만 소스 문면을 본다. 그것도 이 파일이
-   아니라 `core/casegrid/e2e_runner.py` 를 본다.
+② **이 설명이 이 검사에 걸리는가** — ⑤ 만 소스를 연다. 그것도 **문면이 아니라
+   `ast` 로 뽑은 import 문**이고, 보는 대상은 이 파일이 아니라
+   `core/casegrid/e2e_runner.py` 다.
 ③ **이름보다 넓게 주장하는가** — 아니다. 이 파일은 **몫을 세우는 함수**만
    재고, 몫마다 **어느 편익이 서는지**는 재지 않는다(아직 아무도 정하지 않았다).
 ④ **수와 그 조건의 짝** — 금액 오라클을 적지 않는다. 재는 것은 **합계 보존**과
@@ -37,6 +42,7 @@
 
 from __future__ import annotations
 
+import ast
 import math
 from collections.abc import Sequence
 from pathlib import Path
@@ -293,26 +299,61 @@ def test_shares_with_different_quantities_pass_and_the_same_quantity_is_refused(
         assert_no_exclusions(same)
 
 
-# ── ⑤ 배포 경로는 쓰지 않는다 (★★★ 결론축 불변) ─────────────────────────
+# ── ⑤ 배포 경로가 이 모듈에 닿아 있다 (★★★ 배선 · R57/WP-6) ─────────────
+
+def _imported_names(path: Path) -> dict[str, set[str]]:
+    """`ast` 로 **실제 import 문**을 뽑는다 — 「모듈 → 그 모듈에서 가져온 이름」.
+
+    ★★ **문자열을 세지 않는다.** `"ess_share" in path.read_text()` 로 재면
+    *「`ess_share` 를 예로 들면」* 이라 적은 **주석 한 줄이 배선으로 세어져**
+    게이트가 조용히 초록불이 된다. `scripts/check_unread_extension_points.py`
+    머리말의 *「★ 문자열을 세지 않는다 — 반대 방향의 실패」* 가 같은 근거를
+    적었다 — *「이 저장소의 6.7·2.6 이 정확히 그 형태였고, 위반이 통과로
+    보고되는 조용한 실패라 더 나빴다」*. 그래서 거기와 같이 `ast` 로 문법이
+    보증하는 것만 본다(독스트링·주석·문자열 리터럴은 애초에 후보가 아니다).
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    found: dict[str, set[str]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module is not None:
+            found.setdefault(node.module, set()).update(a.name for a in node.names)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                found.setdefault(alias.name, set())
+    return found
+
 
 @pytest.mark.req("NFR-206-M1")
-def test_the_deployed_runner_does_not_import_this_module() -> None:
-    """★★★ **결론축이 움직이지 않았다** — 러너가 이 모듈을 모른다.
+def test_the_deployed_runner_is_wired_to_this_module() -> None:
+    """★★★ **배포 경로가 이 모듈에 닿아 있다** (R57/WP-6 이 뒤집었다).
 
-    자리를 세우는 것과 그것을 쓰는 것은 다르다. 어느 케이스도 아직 몫을 쓰지
-    않으므로 배포 경로의 수는 종전과 **같아야** 하고, 그 사실은 「수가 같더라」가
-    아니라 **의존이 없다**로 재는 것이 강하다 — 수를 다시 뽑아 대조하면 그
-    검사는 골든이 갱신되는 날 함께 조용해진다.
+    종전 이 자리는 *「러너가 이 모듈을 **모른다**」* 였고 그것이 **결론축
+    불변의 증인**이었다. WP-6 이 `run_single_case_e2e(ess_shares=…)` 를 내면서
+    그 전제가 끝났다 — 래칫은 할 일을 하고 울었고, 지우는 대신 **반대를 붙들게
+    뒤집었다.**
+
+    ⚠ **「결론축이 안 움직였다」의 임자는 이제 여기가 아니다.** 골든 3건
+    (`tests/golden/test_regression_scenarios.py` — 세 시나리오 `npv_won`
+    정확 일치)이 그것을 잰다. 여기서 재는 것은 **배선이 조용히 끊기지
+    않는가**이며, 끊기면 러너가 몫 인자를 받고도 아무것도 가르지 않는 상태가
+    아무 예외 없이 성립한다.
 
     ⚠ 두 파일이 **실재하는지**를 먼저 본다. 경로가 틀리면 「없는 파일에서
-    문자열을 못 찾았다」가 통과로 읽힌다 — 이 저장소가 반복해 경계해 온
-    「검사하지 않으면서 초록불」의 그 형태다(§13.0.1 ④).
+    import 를 못 찾았다」가 「import 가 없다」와 같은 모양이 된다 — 이 저장소가
+    반복해 경계해 온 「검사하지 않으면서 초록불」의 그 형태다(§13.0.1 ④).
     """
     runner = REPO_ROOT / "core" / "casegrid" / "e2e_runner.py"
     module = REPO_ROOT / "core" / "casegrid" / "ess_share.py"
     assert runner.is_file(), f"러너를 찾지 못했다: {runner}"
     assert module.is_file(), f"검사 대상 모듈을 찾지 못했다: {module}"
 
-    assert "ess_share" not in runner.read_text(encoding="utf-8"), (
-        "배포 경로가 몫 모듈을 참조한다 — 결론축이 움직였는지 다시 재야 한다"
+    imported = _imported_names(runner)
+    assert "core.casegrid.ess_share" in imported, (
+        "배포 경로가 몫 모듈을 import 하지 않는다 — 러너의 `ess_shares` 통로가 "
+        f"끊겼다. 러너가 import 하는 모듈: {sorted(imported)}"
+    )
+    assert "ESSShare" in imported["core.casegrid.ess_share"], (
+        "러너가 몫 모듈을 import 하면서 `ESSShare` 를 받지 않는다 — 그 이름이 "
+        f"`ess_shares` 인자의 타입이다. 받은 이름: "
+        f"{sorted(imported['core.casegrid.ess_share'])}"
     )

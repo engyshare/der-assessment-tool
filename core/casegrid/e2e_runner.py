@@ -24,15 +24,30 @@ from core.casegrid.attribution import attribute_benefits
 # `ESS(...)` 호출 전문을 `ess_build.py` 로 옮겼다(R57/WP-5). `pv_allocation.py`
 # ·`grid_support.py` 와 같은 사유다. **아래 다섯은 재수출이 아니라 이 파일의
 # `_resource_lines()` 가 2.1 표에 실제로 인쇄하는 이름들이다.**
+#
+# ★★ **몫 분기의 몸통도 그 파일에 있다**(R57/WP-6) — `build_case_ess_fleet`
+# 과 `build_fleet_streams` 다. 이 파일은 **코드 여유 18줄 · `PLR0915`
+# statement 여유 0** 이라 분기를 여기 둘 수 없다. 그 두 함수가 종전에 이
+# 파일이 직접 부르던 `grid_support.py::_resolve_nwas_cp`·`peak_shaving_
+# enabled` 를 대신 부르므로 그 import 는 여기서 사라졌다.
 from core.casegrid.ess_build import (
     ESS_CYCLES_PER_YEAR,
     ESS_EOL_SOH_PCT,
     ESS_RTE_PCT,
     ESS_SOC_MAX_PCT,
     ESS_SOC_MIN_PCT,
-    build_case_ess,
+    build_case_ess_fleet,
+    build_fleet_streams,
 )
-from core.casegrid.grid_support import _resolve_nwas_cp, peak_shaving_enabled
+
+# ★★★ **몫 선언을 받는 자리**(R57/WP-6). 이 import 가 서는 순간
+# `tests/casegrid/test_ess_share.py` 의 ⑤ 와 `tests/casegrid/
+# test_ess_share_benefits.py` 의 ⑥ — *「배포 경로가 이 모듈을 모른다」* 래칫
+# 둘 — 이 **빨간불이 된다.** 그 둘은 배선하는 날 울리라고 세운 것이며
+# (그 독스트링이 *「배선은 다음 자리의 몫」* 이라 적었다) 이 자리가 그날이다.
+# ⚠ **이름을 다른 모듈로 우회해 문자열 검사를 피하지 않는다** — 피하면 그
+# 래칫이 거짓을 참으로 인쇄한다.
+from core.casegrid.ess_share import ESSShare
 from core.casegrid.incentive_cases import (
     Viewpoint,
     build_capex_cashflows_for_all_cases,
@@ -96,7 +111,7 @@ from core.der.pv import PV, OperatingMode, PVAllocationPriority
 from core.engine.rule_based import RuleBasedEngine
 from core.incentive.schemas import IncentiveScheme
 from core.regulation.tariff import TariffEngine
-from core.valuestream import REC, DistributedSubItems, PeakShaving, SurplusSale
+from core.valuestream import REC, DistributedSubItems, SurplusSale
 from core.valuestream.exclusion_table import assert_no_exclusions
 from core.valuestream.settlement import SettlementInputs, assemble
 
@@ -373,6 +388,7 @@ def run_single_case_e2e(
     ess_operating_mode: ESSOperatingMode | str | None = None,
     ess_charge_source: ESSChargeSource | str | None = None,
     pv_allocation_priority: PVAllocationPriority | str | None = None,
+    ess_shares: Sequence[ESSShare] | None = None,
 ) -> CaseOutcome:
     """Execute the full DER → Engine → Benefit → CBA pipeline for one case.
 
@@ -492,6 +508,25 @@ def run_single_case_e2e(
     인자는 무시된다.** 기기 소비량은 가구 부하에 **더하는 증분**이지 그
     자체로 부하를 만드는 값이 아니다 — 기저 없이 증분만 있으면 「무엇에
     비례해 늘었는가」에 답할 수 없다.
+
+    ★★★ **`ess_shares` — 배터리 한 대를 몫으로 갈라 몫마다 다른 역할을 준다**
+    (R57/WP-6 · ★분할). `None` 이 *「몫으로 가르지 않는다」* 이고 **그것이
+    기본**이다 — 그때 지금까지와 같은 `ESS` 하나가 서고 같은 편익이 조립된다.
+    빈 시퀀스를 「가르지 않는다」로 읽지 마라: `core/casegrid/ess_share.py::
+    split_ess` 가 *「몫이 하나도 없습니다」* 로 거부하며 **그 거부가 옳다**(빈
+    목록을 넘긴 것은 실수다).
+
+    몫을 주면 ① 몫마다 `ESS` 가 서서 **전건이 디스패치·수명·비용에 실리고**
+    ② 몫마다 그 역할의 편익이 서며 ③ **단일 경로의 `PeakShaving`·`NWAs`·`CP`
+    는 짓지 않는다**(같은 편익이 두 번 서면 `FR-402-AC1` 이 정의한 중복이고,
+    배타 판정은 같은 태그 쌍을 규칙표에서 찾지 못해 막지도 못한다). 분기의
+    몸통은 `core/casegrid/ess_build.py::build_case_ess_fleet`·
+    `build_fleet_streams` 가 갖는다.
+
+    ⚠⚠ **어느 케이스도 몫을 주지 않는다** — 몫 비율과 역할 배분은 아직 아무도
+    정하지 않았고 여기서 지어내지 않는다. 통로만 냈다(R56 이 계절 축에서 쓴
+    방식과 같다: *「구조는 섰고 값은 비어 있다」*). 값이 오면 결론축이
+    움직이며 **그때가 사용자 판정 자리**다.
     """
     pv_capex = _resolve(
         case_values.get("pv_unit_cost", "base"), "pv_unit_cost", level_map
@@ -667,7 +702,15 @@ def run_single_case_e2e(
     # 그 해석은 함께 가지 않았다 — 가면 「자리 옮김」이 아니게 된다.
     # ⚠ `cast(ESSOperatingMode, ...)` 와 `pv_surplus_profile_kwh` 의 조건식은
     # 사유 주석째로 그 모듈이 들고 있다.
-    ess = build_case_ess(
+    #
+    # ★★★ **몫 분기도 그 모듈이 진다**(R57/WP-6 · ★분할). 돌려받는 셋은
+    # ① 디스패치·수명·자원 표에 실을 **자원 전건** ② 몫 계획 전건(몫이 없으면
+    # 빈 튜플) ③ **가르기 전의 물리 배터리**다. ③이 따로 오는 이유는 교체비·
+    # 잔존가치가 **물리 배터리 한 대의 사건**이고 그 행을 짓는
+    # `core/casegrid/lifecycle.py::lifecycle_rows` 가 자원 하나만 받기
+    # 때문이다 — 몫이 없으면 ①의 유일한 원소가 ③과 같은 객체다.
+    ess_fleet, ess_plans, ess_whole = build_case_ess_fleet(
+        shares=ess_shares,
         capacity_kwh=ess_capacity_kwh,
         operating_mode=resolved_ess_operating_mode,
         charge_source=resolved_ess_charge_source,
@@ -682,14 +725,20 @@ def run_single_case_e2e(
     # 여기가 규칙을 평가할 수 있는 가장 이른 자리다 — 디스패치·편익·CBA 어느
     # 것도 돌기 전에 거부한다. 늦게 두면 상한을 넘긴 케이스의 중간 산출물이
     # 한 번은 만들어지고, 그것이 로그·캐시로 새어 나간다(`DV-10` 과 같은 이유).
+    # ⚠ **몫 전건의 수명을 넣는다** — 하나만 넣으면 나머지 몫이 상한 판정에서
+    # 사라진다(지금은 몫마다 수명이 같지만, 같다는 사실을 여기가 아니라
+    # `split_ess` 가 정한다).
     check_analysis_period(
         analysis_years=horizon_years,
-        asset_lifetimes_years=[pv.lifetime, ess.lifetime],
+        asset_lifetimes_years=[pv.lifetime, *(e.lifetime for e in ess_fleet)],
     )
 
     # 2. Dispatch
+    # ⚠ **몫 전건을 싣는다** — 하나만 실으면 나머지 몫이 방전하지 않는다.
     engine = RuleBasedEngine()
-    resources: list[DER] = [pv, ess] if household is None else [pv, ess, household]
+    resources: list[DER] = (
+        [pv, *ess_fleet] if household is None else [pv, *ess_fleet, household]
+    )
     dispatch = engine.run(resources, ctx)
 
     # 3. Benefits (one day, annualised)
@@ -698,6 +747,27 @@ def run_single_case_e2e(
         heat=[0.0] * ctx.steps,
         cool=[0.0] * ctx.steps,
         fuel=[0.0] * ctx.steps,
+    )
+    # ★★★ **ESS 가 만드는 편익 — 몫이 있으면 몫 편익이 대체한다** (R57/WP-6).
+    #
+    # 종전 이 자리는 `_resolve_nwas_cp(ess, …)` 둘과 아래쪽의 `PeakShaving`
+    # 하나로 흩어져 있었다. 몫 분기를 그 셋 자리마다 적으면 이 함수의
+    # `PLR0915`(statement 상한 50 · 실측 여유 0)를 넘기므로 **한 호출로 묶어**
+    # `core/casegrid/ess_build.py::build_fleet_streams` 가 판정한다 —
+    # 종전 두 statement(첨두 저감 출력 · `PeakShaving`)를 이 하나가 대신하므로
+    # statement 는 오히려 하나 줄었다.
+    #
+    # ⚠ **디스패치 뒤에 부른다** — 몫의 첨두 저감이 `_site_load_kw(...)` 를
+    # 요구하고 그것은 디스패치 결과에서 나온다. 그래서 자원(위)과 편익(여기)이
+    # 같은 호출에 들어갈 수 없다.
+    # ⚠ **`peak` 는 여전히 연간화 목록의 마지막에 선다** —
+    # `tests/casegrid/test_nwas_cp_wiring.py` 의 ③ 이 그 자리를 붙든다.
+    ess_streams, peak = build_fleet_streams(
+        ess_fleet, ess_plans,
+        nwas_price_won_per_kwh=nwas_price_won_per_kwh,
+        cp_price_won_per_kw_month=cp_price_won_per_kw_month,
+        demand_charge_won_per_kw_month=demand_charge,
+        site_load_kw=_site_load_kw(household, dispatch, ctx),
     )
     # ★ **계약구조가 주어지면 그것이 잉여 화폐화 편익을 고른다 (FR-205-AC1).**
     #
@@ -724,15 +794,18 @@ def run_single_case_e2e(
             inputs=_with_model_generation(settlement_inputs, pv),
             tariff_engine=tariff_engine,
         )
-        # ★★ **`NWAs`·`CP` 는 `_resolve_nwas_cp()` 가 짓는다** (판정 §3, `docs/
-        # decisions-2026-09-01-R51.md`) — 도우미로 뺀 이유는 `_rec` 와 같지만
-        # 여기서는 **별도 statement 를 만들지 않는다**(`PLR0915` 여유가 0 이라
-        # 새 대입 자체가 빨간불이다). `*` 로 풀어 기존 대입 표현식 안에 넣는다
-        # — `core/casegrid/grid_support.py::_resolve_nwas_cp` 독스트링 참조.
+        # ★★ **`NWAs`·`CP` 는 `core/casegrid/grid_support.py::_resolve_nwas_cp`
+        # 가 짓는다** (판정 §3, `docs/decisions-2026-09-01-R51.md`) — 도우미로 뺀
+        # 이유는 `_rec` 와 같지만 여기서는 **별도 statement 를 만들지 않는다**
+        # (`PLR0915` 여유가 0 이라 새 대입 자체가 빨간불이다). `*` 로 풀어 기존
+        # 대입 표현식 안에 넣는다.
+        # ★ R57/WP-6 뒤에는 그 호출을 `build_fleet_streams` 가 대신 하고 이
+        # 자리는 그 결과(`ess_streams`)를 푼다 — **몫이 있으면 그 둘 대신 몫
+        # 편익이 여기 실린다**(같은 편익을 두 번 세우지 않는다).
         settlement_streams: tuple[ValueStream, ...] = (
             *plan.streams,
             _rec(rec_price_won_per_unit, rec_weight_pv),
-            *_resolve_nwas_cp(ess, nwas_price_won_per_kwh, cp_price_won_per_kw_month),
+            *ess_streams,
         )
         # ★ **구조가 만드는 비용을 비용으로 나른다 (R32).** 조립기가 편익에서
         # 빼 주는 것이 아니라 여기서 프로포마 행이 된다 — 근거는
@@ -753,32 +826,30 @@ def run_single_case_e2e(
         # ⚠ 이 판단을 여기 한 자리에만 둔다(판정②) — 새 statement 를 만들지
         # 않고 호출 인자 표현식에 싣는 것은 이 함수의 `PLR0915` 여유가 없기
         # 때문이다(위 `demand_charge` 주석과 같은 이유).
+        #
+        # ⚠ **몫 전건을 더한다**(R57/WP-6) — 계통 충전 몫이 둘이면 둘 다 빼야
+        # 한다. 하나만 보면 나머지 몫의 방전분이 태양광 잉여로 팔린다.
         settlement_streams = (
             SurplusSale(
                 sale_price_won_per_kwh=surplus_sale_price,
-                non_pv_ess_discharge_kwh=(
-                    ess.annual_discharge_kwh(year=1) / DAYS_PER_YEAR
-                    if ess.charge_source is ESSChargeSource.GRID
-                    else 0.0
+                non_pv_ess_discharge_kwh=sum(
+                    (
+                        e.annual_discharge_kwh(year=1) / DAYS_PER_YEAR
+                        for e in ess_fleet
+                        if e.charge_source is ESSChargeSource.GRID
+                    ),
+                    0.0,
                 ),
             ),
             _rec(rec_price_won_per_unit, rec_weight_pv),
-            *_resolve_nwas_cp(ess, nwas_price_won_per_kwh, cp_price_won_per_kw_month),
+            *ess_streams,
         )
         settlement_costs = ()
 
-    peak_reduction_kw = ess.reducible_peak_kw(
-        year=1, site_load_kw=_site_load_kw(household, dispatch, ctx)
-    )
-    # ★ **방식 「나」(배전망 사업자 지시)에서는 `PeakShaving` 을 애초에 만들지
-    # 않는다** (사용자 판정 §1, `docs/decisions-2026-09-02-R54.md`). 「한 번에
-    # 하나」는 둘이 있으면 막는다는 뜻이 아니라 한 가지만 한다는 뜻이다.
-    # 술어는 `grid_support.py::peak_shaving_enabled` — `HYBRID` 는 켠 채 둔다.
-    peak = PeakShaving(
-        monthly_peak_reduction_kw=[peak_reduction_kw] * MONTHS_PER_YEAR,
-        demand_charge_won_per_kw_month=demand_charge,
-        enabled=peak_shaving_enabled(ess),
-    )
+    # ⚠ **첨두 절감(`peak`)은 위 `build_fleet_streams` 가 이미 지었다**(R57/
+    # WP-6). 방식 「나」(배전망 사업자 지시)에서 애초에 만들지 않는다는 판정
+    # (사용자 판정 §1, `docs/decisions-2026-09-02-R54.md` · 술어는
+    # `core/casegrid/grid_support.py::peak_shaving_enabled`)도 그 함수가 진다.
 
     # ★ **CBA 에 닿기 전에 거부한다.** 계산한 뒤에 막으면 「예외는 나지만 이미
     # 다 돌린 뒤」가 되고, 무엇보다 **위반 조합의 NPV 가 한 번은 만들어진다.**
@@ -817,9 +888,17 @@ def run_single_case_e2e(
     annual_grid_import_kwh = daily_grid_import_kwh * DAYS_PER_YEAR
     annual_purchase_won = int(annual_grid_import_kwh * grid_purchase_price)
 
-    initial_investment = Money(pv.capex(year=1) + ess.capex(year=1))
+    # ⚠ **취득비는 몫 전건의 합이다**(R57/WP-6) — 하나만 더하면 나머지 몫의
+    # 취득비가 사라져 결론축이 **좋아지는 쪽으로** 틀린다.
+    initial_investment = Money(
+        pv.capex(year=1) + sum((e.capex(year=1) for e in ess_fleet), Money(0))
+    )
+    # ⚠ **교체비·잔존가치만은 물리 배터리 한 대의 것이다** — 한 대를 몫으로
+    # 가른 것이지 여러 대를 산 것이 아니므로 18년차 재취득도 한 번이다.
+    # `core/casegrid/lifecycle.py::lifecycle_rows` 가 자원 하나만 받는 것도
+    # 그 때문이며, 몫이 없으면 `ess_whole` 은 `ess_fleet[0]` 과 같은 객체다.
     lifecycle_rows, one_off_flows = _lifecycle_rows(
-        pv=pv, ess=ess, horizon_years=horizon_years
+        pv=pv, ess=ess_whole, horizon_years=horizon_years
     )
     benefit_rows = [
         benefit_row(
@@ -843,7 +922,12 @@ def run_single_case_e2e(
             "ESSFixedOM",
             start_year=1,
             end_year=horizon_years,
-            annual_amount_won=int(ess.fixed_om(year=1)),
+            # ⚠ **몫 전건의 합이다**(R57/WP-6). 몫마다 `to_won()` 이 따로
+            # 반올림하므로 물리 배터리 한 대의 값과 **최대 「몫 수 − 1」원**
+            # 어긋날 수 있다 — 그 한계는 `.orch/R57/result_1.md` 6-2 가 실측과
+            # 함께 적었고, 여기서 미리 반올림해 맞추면 `NFR-103`(반올림은
+            # `to_won()` 한 곳)을 이 자리가 깬다.
+            annual_amount_won=int(sum((e.fixed_om(year=1) for e in ess_fleet), Money(0))),
             # ★ **행이 자기 물가를 직접 굴린다** — 위 자원 생성자의
             # `escalation_rate` 를 넣어도 이 행은 따라오지 않는다
             # (`proforma.py:85-89` 의 `current *= (1+i)` 루프이며
@@ -906,7 +990,7 @@ def run_single_case_e2e(
         dispatch=grid_export_result,
     )
     resource_lines = _resource_lines(
-        pv, pv_capex, ess, ess_capex, benefit_lines,
+        pv, pv_capex, ess_fleet, ess_capex, benefit_lines,
         self_consumption_ratio=measured_self_consumption_ratio(
             pv, ctx, ess_pv_surplus_profile_kwh
         ),
@@ -920,7 +1004,9 @@ def run_single_case_e2e(
         # 시간대별 운전을 물을 대상이다(`CaseOutcome` 독스트링). 여기서 요약해
         # 넘기면 무엇을 요약할지가 러너의 판단이 되고, 리포트가 다른 것을
         # 물을 때마다 이 파일이 함께 바뀐다.
-        resources=(pv, ess),
+        # ⚠ **몫 전건을 넘긴다**(R57/WP-6) — 하나만 넘기면 리포트·비교 표가
+        # 나머지 몫을 「없는 자원」으로 읽는다.
+        resources=(pv, *ess_fleet),
         dispatch=dispatch,
         # 엔진 인스턴스가 실제로 쓴 순서다 — 기본 상수를 다시 읽지 않는다
         # (`CaseOutcome.rule_order` 독스트링).
@@ -978,7 +1064,11 @@ def run_single_case_e2e(
             one_off_flows=one_off_flows,
             costs=_cost_lines(
                 pv_fixed_om=int(pv.fixed_om(year=1)),
-                ess_fixed_om=int(ess.fixed_om(year=1)),
+                # ⚠ 위 `ESSFixedOM` 행과 **같은 합**이어야 한다 — 갈리면 표와
+                # 프로포마가 서로 다른 수를 인쇄한다.
+                ess_fixed_om=int(
+                    sum((e.fixed_om(year=1) for e in ess_fleet), Money(0))
+                ),
                 daily_grid_import_kwh=daily_grid_import_kwh,
                 grid_purchase_price=grid_purchase_price,
                 annual_purchase_won=annual_purchase_won,
@@ -1045,7 +1135,7 @@ def _with_model_generation(
 def _resource_lines(
     pv: PV,
     pv_capex: float,
-    ess: ESS,
+    ess_fleet: Sequence[ESS],
     ess_capex: float,
     benefits: Sequence[BenefitLine],
     *,
@@ -1053,6 +1143,11 @@ def _resource_lines(
     pv_allocation_priority: PVAllocationPriority,
 ) -> tuple[ResourceLine, ...]:
     """평가 대상 자원 제원 — 리포트 0절의 재료 (`ResourceLine` 독스트링).
+
+    ★ **저장장치는 몫 전건이 온다** (R57/WP-6). 몫으로 가르지 않은 실행에서는
+    원소가 하나이므로 종전과 같은 표 두 줄이 난다. 몫이 있으면 몫마다 한 줄이
+    서고 각 줄의 용량·정격출력·취득비·고정 O&M 이 **그 몫의 것**이다 — 하나만
+    인쇄하면 나머지 몫의 취득비·고정 O&M 이 표에서 사라진다.
 
     ★ **정책 가정 경고도 여기서 실린다** (`FR-404-AC1` · R48 §7). 훅은 `DER`
     계약에 있으므로 자원 종류를 묻지 않는다 — 새 자원이 경고를 내기 시작해도
@@ -1101,22 +1196,25 @@ def _resource_lines(
             produces=produced_by("PV"),
             policy_warnings=tuple(pv.policy_warnings()),
         ),
-        ResourceLine(
-            name=ess.name,
-            kind="에너지저장장치 (신품)",
-            capacity=(
-                f"{ess.capacity_kwh:g} kWh / {ess.power_kw:g} kW · "
-                f"왕복효율 {ESS_RTE_PCT:g}% · SOC {ESS_SOC_MIN_PCT:g}~"
-                f"{ESS_SOC_MAX_PCT:g}% · 수명종료 SOH {ESS_EOL_SOH_PCT:g}% · "
-                f"연 {ESS_CYCLES_PER_YEAR:g}사이클"
-            ),
-            operating_mode=str(ess.operating_mode),
-            lifetime_years=int(ess.lifetime),
-            unit_capex=f"{ess_capex:,.0f}원/kWh",
-            capex_won=int(ess.capex(year=1)),
-            fixed_om_won_per_year=int(ess.fixed_om(year=1)),
-            produces=produced_by("ESS"),
-            policy_warnings=tuple(ess.policy_warnings()),
+        *(
+            ResourceLine(
+                name=ess.name,
+                kind="에너지저장장치 (신품)",
+                capacity=(
+                    f"{ess.capacity_kwh:g} kWh / {ess.power_kw:g} kW · "
+                    f"왕복효율 {ESS_RTE_PCT:g}% · SOC {ESS_SOC_MIN_PCT:g}~"
+                    f"{ESS_SOC_MAX_PCT:g}% · 수명종료 SOH {ESS_EOL_SOH_PCT:g}% · "
+                    f"연 {ESS_CYCLES_PER_YEAR:g}사이클"
+                ),
+                operating_mode=str(ess.operating_mode),
+                lifetime_years=int(ess.lifetime),
+                unit_capex=f"{ess_capex:,.0f}원/kWh",
+                capex_won=int(ess.capex(year=1)),
+                fixed_om_won_per_year=int(ess.fixed_om(year=1)),
+                produces=produced_by("ESS"),
+                policy_warnings=tuple(ess.policy_warnings()),
+            )
+            for ess in ess_fleet
         ),
     )
 
