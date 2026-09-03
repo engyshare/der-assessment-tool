@@ -198,6 +198,7 @@
 > | `f93233a` (WP-1) | **success** | **success** |
 > | `51c0670` (WP-2) | **success** | **success** |
 > | `2ed1c38` (WP-3) | **success** | **success** |
+> | `1e481a2` (라운드 종료) | **success** | **success** |
 >
 > ⚠ 이 라운드는 `source-rules` 가 **매 커밋 돌았다** — spec 을 고쳤기 때문이다.
 > R57 이 적은 *「`on.push.paths` 에 `core/**`·`status-history.md` 가 없어 안 돌 수 있다」* 는
@@ -241,7 +242,7 @@
 > | WP-1 이전 소거 축 | `f93233a` |
 > | WP-2 분산편익 물량 표찰 | `51c0670` |
 > | WP-3 기준선 갈래 셋 + 「나」 거부 | `2ed1c38` |
-> | 라운드 종료 | (아래에서 채운다) |
+> | 라운드 종료 — `status-history.md` R58 전문 블록 + `status.md` R58 인계 요약 | `1e481a2` |
 >
 > ⚠ **수를 박지 말고 세라** — `git log origin/main..HEAD --oneline | wc -l`.
 >
