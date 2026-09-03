@@ -246,3 +246,39 @@ def test_structure_vocabulary_has_exactly_one_owner() -> None:
         "한쪽만 고쳐지고, 그 상태에서 편익의 지불 주체가 조용히 기본값으로 "
         "떨어집니다"
     )
+
+
+@pytest.mark.contract
+@pytest.mark.req("FR-704-AC8")
+def test_transfer_counterparty_ratchet() -> None:
+    """R58 판정 ④ 래칫 — 이전 편익이 아직 0개다.
+
+    이전 편익이 처음 생겼다. 이 시험을 지우지 말고 뒤집되, ① 관점별 표에 부호 반대
+    두 줄이 실제로 서는지 ② 사회 관점에서 소거되는지 ③ `PerspectiveWiring.transfers` 에
+    담기는지를 검사로 먼저 세워라.
+    """
+    import core.valuestream.report  # noqa: F401
+    from core.contracts.valuestream import ValueStream
+
+    # ⚠ `__subclasses__()` 는 **직계**만 준다 — 중간 추상 클래스를 낀 편익을 놓치므로
+    # 재귀로 훑는다. 그리고 **`core.` 밖에서 선언된 것은 세지 않는다**: 다른 시험이
+    # 만든 스텁도 `ValueStream` 의 자식이라 같은 세션에서 함께 잡히는데, 그것이
+    # 잡히느냐 마느냐가 **수집 순서와 GC 시점에 달려 있어** 이 래칫이 조용히
+    # 깜빡인다(실측: `tests/cba/test_transfer.py::_StubTransfer`).
+    def _descendants(cls: type) -> list[type]:
+        out: list[type] = []
+        for sub in cls.__subclasses__():
+            out.append(sub)
+            out.extend(_descendants(sub))
+        return out
+
+    count = sum(
+        1 for c in _descendants(ValueStream)
+        if c.__module__.startswith("core.")
+        and getattr(c, "transfer_counterparty", None) is not None
+    )
+    assert count == 0, (
+        "이전 편익이 처음 생겼다. 이 시험을 지우지 말고 뒤집되, ① 관점별 표에 부호 반대 "
+        "두 줄이 실제로 서는지 ② 사회 관점에서 소거되는지 ③ PerspectiveWiring.transfers 에 "
+        "담기는지를 검사로 먼저 세워라"
+    )

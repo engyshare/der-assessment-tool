@@ -182,3 +182,36 @@ def test_society_npv_lower_when_subsidy_excluded() -> None:
         "보조금을 사회 관점 편익에서 빼면 NPV 가 낮아진다 — 이전지출을 빼야 "
         "«진짜» 사회 부가가치가 드러난다 (FR-704-AC5)"
     )
+
+
+@pytest.mark.req("FR-704-AC8")
+def test_society_excludes_transfers_rationale() -> None:
+    """사회 관점에서 이전(transfer)은 소거된다 (R58 판정 ②).
+
+    `society_excludes_transfers()` 가 `PerspectiveInclusions` 로
+    누구→누구 이전이라 소거했다는 사유를 남긴다.
+    """
+    from core.cba.perspective import society_excludes_transfers
+    from core.contracts.der import DispatchResult
+    from core.contracts.valuestream import Payer, ValueStream
+
+    class _StubTransfer(ValueStream):
+        tag = "요금차액이전"
+        payer = Payer.RESIDENT
+        transfer_counterparty = Payer.OPERATOR
+        scales_with_dispatch_window = False
+        quantity_id = "test_q"
+
+        def annual_value(self, dispatch: DispatchResult, *, year: int) -> Money:
+            return Money(100)
+
+        def formula(self, dispatch: DispatchResult, *, year: int) -> str:
+            return ""
+
+    stream = _StubTransfer(name="stub")
+
+    inclusions = society_excludes_transfers([(stream, 100)])
+
+    assert "요금차액이전" in inclusions.excluded_tags
+    assert "사업자→참여 주민 이전이라 소거했다" in inclusions.exclusion_rationale["요금차액이전"]
+    assert "총괄지침 제45조⑤" in inclusions.exclusion_rationale["요금차액이전"]

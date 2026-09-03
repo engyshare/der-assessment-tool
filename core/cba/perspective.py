@@ -23,6 +23,7 @@ from core.cba.metrics import npv
 from core.cba.proforma import aggregate
 from core.contracts.schemas import CashFlowRow
 from core.contracts.units import ZERO, Money
+from core.contracts.valuestream import ValueStream
 
 
 class Perspective(StrEnum):
@@ -84,6 +85,42 @@ def society_excludes_subsidy(
             "(FR-704-AC5, 원칙 2-3). 편익으로 넣으면 사회 NPV 가 부풀고 필요 "
             "지원액이 과소 산정된다",
         },
+    )
+
+
+def society_excludes_transfers(
+    streams: list[tuple[ValueStream, int]],
+) -> PerspectiveInclusions:
+    """사회 관점에서 이전(transfer)을 소거 (R58 신설).
+
+    한쪽의 편익이 다른 쪽의 같은 크기 손실인 흐름은 사회 전체에 순가치를 더하지
+    않으므로 사회 관점 편익에서 뺀다.
+    근거: 예비타당성조사 수행 총괄지침 제45조⑤ (「세금 등은 한 곳에서 다른 곳으로
+    이전하는 지출로 순수한 경제적 비용으로 간주할 수 없기 때문에 가능한 범위까지는
+    배제하고 분석하여야 하며」).
+
+    `society_excludes_subsidy()`(FR-704-AC5 전용)와 관계: 보조금(정부→사업자 이전)은
+    이 일반 소거 규칙의 한 사례다.
+    """
+    excluded_tags = []
+    exclusion_rationale = {}
+
+    for stream, _annual_won in streams:
+        if stream.transfer_counterparty is not None:
+            excluded_tags.append(stream.tag)
+            from_payer = stream.transfer_counterparty.value
+            to_payer = stream.effective_payer.value
+            exclusion_rationale[stream.tag] = (
+                f"{from_payer}→{to_payer} 이전이라 소거했다 "
+                "(총괄지침 제45조⑤ 「세금 등은 한 곳에서 다른 곳으로 이전하는 지출로 "
+                "순수한 경제적 비용으로 간주할 수 없기 때문에 가능한 범위까지는 "
+                "배제하고 분석하여야 하며」)"
+            )
+
+    return PerspectiveInclusions(
+        included_tags=(),
+        excluded_tags=tuple(excluded_tags),
+        exclusion_rationale=exclusion_rationale,
     )
 
 

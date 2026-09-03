@@ -256,3 +256,15 @@ def test_distributed_benefit_structurally_cannot_touch_the_conclusion_axis() -> 
         f"사회 편익만 올렸는데 사업자 npv 가 {int(zero.metrics['npv']):,} → "
         f"{int(large.metrics['npv']):,} 로 움직였다 — 사회 편익이 결론축에 샜다"
     )
+
+
+@pytest.mark.req("FR-704-AC8")
+def test_transfers_empty_leaves_wiring_untouched(report) -> None:
+    """R58 판정 ③ — transfers 가 비어 있으면 종전과 완전히 같게 동작한다.
+
+    지금 이전 편익이 0개이므로 실제로 그렇다. 이것이 결론축을 안 움직인다는 증거다.
+    """
+    assert report.perspectives.transfers == ()
+
+    op = next(r for r in report.perspectives.results if r.perspective is Perspective.OPERATOR)
+    assert int(op.npv_value) == int(report.metrics[CONCLUSION_METRIC])

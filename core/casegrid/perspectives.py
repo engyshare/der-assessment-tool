@@ -65,6 +65,7 @@ from core.cba.perspective import (
     assert_subsidy_excluded_from_society,
     compute_perspective_npv,
     society_excludes_subsidy,
+    society_excludes_transfers,
 )
 from core.cba.proforma import benefit_row
 from core.contracts.der import DispatchResult
@@ -97,6 +98,22 @@ class OutsideWalletBenefit:
 
 
 @dataclass(frozen=True)
+class TransferFlow:
+    """이전(transfer) 흐름 한 줄 — 양쪽 관점에 부호 반대로 서기 위한 자료.
+
+    왜 이 자리가 필요한가 (R58 판정 ③): 내는 쪽이 `OPERATOR` 인 이전이 오면
+    `OPERATOR` 열에 `-` 행을 세우고 싶어지는데, 그 열은 결론축 그대로여야 한다
+    (결론축 재계산 금지). 그래서 결론축을 건드리지 않으면서 「관점별 표에서
+    소거하지 않고 부호를 반대로 적는다」를 리포트 쪽에서 이룰 수 있게 그 자료를 세운다.
+    """
+
+    tag: str
+    from_payer: Payer
+    to_payer: Payer
+    annual_won: int
+
+
+@dataclass(frozen=True)
 class PerspectiveWiring:
     """한 실행의 관점 넷 결과 + 관점 밖 편익 — `CaseOutcome.perspectives`."""
 
@@ -105,6 +122,7 @@ class PerspectiveWiring:
     #: 다시 정렬한다).
     results: tuple[PerspectiveResult, ...]
     outside: tuple[OutsideWalletBenefit, ...]
+    transfers: tuple[TransferFlow, ...] = ()
 
 
 def build_society_annualised(
@@ -174,8 +192,42 @@ def build_perspective_wiring(
         Perspective.SOCIETY: [],
     }
     outside: list[OutsideWalletBenefit] = []
+    transfers: list[TransferFlow] = []
+
     for stream, annual_won in (*annualised, *society_annualised):
         payer = stream.effective_payer
+
+        # R58 이전(transfer) 처리
+        if stream.transfer_counterparty is not None:
+            transfers.append(
+                TransferFlow(
+                    tag=stream.tag,
+                    from_payer=stream.transfer_counterparty,
+                    to_payer=payer,
+                    annual_won=annual_won,
+                )
+            )
+            # 사회 관점에는 세우지 않는다 (by_perspective[SOCIETY] 에 넣지 않음).
+            # 받는 관점(payer)이 RESIDENT/GOVERNMENT 면 + 행
+            perspective = _PAYER_TO_PERSPECTIVE.get(payer)
+            if perspective in (Perspective.RESIDENT, Perspective.GOVERNMENT):
+                by_perspective[perspective].append(
+                    benefit_row(
+                        stream.tag,
+                        {year: annual_won for year in range(1, horizon_years + 1)},
+                    )
+                )
+            # 내는 관점(transfer_counterparty)이 RESIDENT/GOVERNMENT 면 -annual_won 행
+            counter_perspective = _PAYER_TO_PERSPECTIVE.get(stream.transfer_counterparty)
+            if counter_perspective in (Perspective.RESIDENT, Perspective.GOVERNMENT):
+                by_perspective[counter_perspective].append(
+                    benefit_row(
+                        stream.tag,
+                        {year: -annual_won for year in range(1, horizon_years + 1)},
+                    )
+                )
+            continue
+
         if payer in OUTSIDE_PERSPECTIVE_PAYERS:
             if annual_won != 0:
                 outside.append(
@@ -200,9 +252,30 @@ def build_perspective_wiring(
     government_result = compute_perspective_npv(
         Perspective.GOVERNMENT, by_perspective[Perspective.GOVERNMENT], [], ZERO, discount_rate
     )
+
+    # 사회 관점 소거 사유 합치기 (보조금 + 일반 이전)
+    transfer_streams = [
+        (stream, won) for stream, won in (*annualised, *society_annualised)
+        if stream.transfer_counterparty is not None
+    ]
+    transfer_inclusions = society_excludes_transfers(transfer_streams)
+
     society_benefits = by_perspective[Perspective.SOCIETY]
     subsidy_row = next((r for r in society_benefits if "보조" in (r.tag or "")), None)
-    society_inclusions = society_excludes_subsidy(subsidy_row) if subsidy_row else None
+    subsidy_inclusions = society_excludes_subsidy(subsidy_row) if subsidy_row else None
+
+    excluded_tags = list(transfer_inclusions.excluded_tags)
+    exclusion_rationale = dict(transfer_inclusions.exclusion_rationale)
+    if subsidy_inclusions:
+        excluded_tags.extend(subsidy_inclusions.excluded_tags)
+        exclusion_rationale.update(subsidy_inclusions.exclusion_rationale)
+
+    society_inclusions = PerspectiveInclusions(
+        included_tags=(),
+        excluded_tags=tuple(excluded_tags),
+        exclusion_rationale=exclusion_rationale,
+    )
+
     society_result = compute_perspective_npv(
         Perspective.SOCIETY,
         society_benefits,
@@ -217,4 +290,5 @@ def build_perspective_wiring(
     return PerspectiveWiring(
         results=(society_result, resident_result, operator_result, government_result),
         outside=tuple(outside),
+        transfers=tuple(transfers),
     )
