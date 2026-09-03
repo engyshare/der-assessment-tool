@@ -45,6 +45,17 @@
 >
 > · `FR-1001-AC5` — MC-1 (미수행)
 
+> **대상이 없는 검증 항목 1건 — 매달린 참조입니다.**
+>
+> · 테스트 마커 NFR-303 — 해당 수용기준이 spec에 없음 (test_ess_share.py)
+>
+> 이 항목들은 **아무것도 검증하지 않습니다.** 수용기준이 삭제되었거나 ID가
+> 밀렸는데 참조를 갱신하지 않은 상태이며, 요구사항 쪽에서는 그냥 `미매핑`으로만
+> 보이므로 원인이 드러나지 않습니다.
+>
+> `criterion_id` 누락이라면 지정하십시오. 요구사항 단위로 걸면 자동화 가능한
+> 수용기준까지 "수동으로 검증됨"으로 표시되어 커버리지가 과대 계상됩니다.
+
 > **미매핑 9건.** NFR-107은 미매핑 0건을 요구합니다.
 >
 > 현재 저장소에 테스트가 없으므로 전건 미매핑인 것이 정상입니다. 이 표는
@@ -63,7 +74,7 @@
 |  |  | 1 | `FR-101-AC4` | 매체 플래그에 따라 엔진이 전기·열·냉 수지를 자동으로 분리 집계한다 | 자동 | test_der_contract.py 3건, test_heatpump.py 3건, test_pv.py 2건, test_rule_based.py |
 |  |  | 1 | `FR-101-AC5` | (v0.15 신설) capex()·fixed_om()·variable_om() 의 **산식은 | 자동 | test_ess.py 4건, test_ev_v2g.py 3건, test_heatpump.py 4건, test_load.py 3건, test_pv.py 8건, test_thermal_load.py 3건 |
 | `FR-102` | Must-have | 1 | `FR-102-AC1.PV` | PV 태양광 (옥상/벽면 BIPV 구분) — 용량(kW), 이용률(%) 또는 8760 발전 시계열, 방위·경사, 연간 열화율, 인버터 수명 | 자동 | test_pv.py 9건, test_pv_validation.py 2건 |
-|  |  | 1 | `FR-102-AC1.ESS` | ESS 배터리 (신품/사용후배터리) — 정격용량(kWh), 정격출력(kW), RTE(%), SOC 상하한, 사이클수명, 달력수명, EOL 잔존율 | 자동 | test_ess.py 9건 |
+|  |  | 1 | `FR-102-AC1.ESS` | ESS 배터리 (신품/사용후배터리) — 정격용량(kWh), 정격출력(kW), RTE(%), SOC 상하한, 사이클수명, 달력수명, EOL 잔존율 | 자동 | test_ess_share.py 2건, test_ess.py 9건 |
 |  |  | 1 | `FR-102-AC1.EV_V2G` | EV_V2G 전기차 + 양방향 충전기 — 대수, 배터리(kWh), 최대 충방전(kW), 접속가능시간대, 참여율, 열화 보상단가 | 자동 | test_ev_v2g.py 18건 |
 |  |  | 1 | `FR-102-AC1.HeatPump` | HeatPump 히트펌프 (난방/급탕) — 정격 열출력(kW), COP 곡선(외기온 함수), 열부하 대응 방식 | 자동 | test_heatpump.py 11건 |
 |  |  | 1 | `FR-102-AC1.Load` | Load 전기부하 (가구/공용부/상업) — 8760 부하 시계열 또는 월사용량+표준 프로파일, 연간 증가율 | 자동 | test_load.py 15건 |
@@ -143,7 +154,7 @@
 |  |  | 3 | `FR-401-AC2.DistributedBenefit` | DistributedBenefit 분산편익 크레딧 — 송배전 회피 + 손실 감소 + 계통서비스 + 온실가스 + 회복력 (기본 0, FR-404) | 자동 | test_formulas.py |
 |  |  | 3 | `FR-401-AC2.CarbonCredit` | CarbonCredit 배출권 수익 — 감축량(tCO2) × KAU 단가 | **미매핑** | — |
 | `FR-402` | Must-have | 1 | `FR-402-AC1` | 동시 발생 효과는 중복이 아니다 — 지불 주체가 다르거나 물리량이 다르면 정상 계상한다. 중복은 같은 화폐 흐름을 두 번 세는 것으로 한정한다. 시스템은 자가소… | 자동 | test_phase1_dod.py, test_exclusion_rules_contract.py, test_ess.py, test_exclusion.py, test_exclusion_quantity_axis.py 3건, test_exclusion_reject_wp28b.py, test_tou_arbitrage.py |
-|  |  | 1 | `FR-402-AC2.A` | 동일 물리량 이중 판매 — 같은 1 kWh를 자가소비 절감과 잉여판매로 동시 계상하거나 같은 시각 ESS 방전을 피크저감과 DR로 동시 계상하는 조합은 선언적 … | 자동 | test_phase1_dod.py, test_e2e_exclusion_wiring.py 3건, test_exclusion_rules_contract.py, test_pv.py, test_pv_validation.py, test_aggregated_ppa.py, test_exclusion.py 2건, test_exclusion_quantity_axis.py 3건, test_exclusion_reject_wp28b.py, test_settlement.py, test_tou_arbitrage.py |
+|  |  | 1 | `FR-402-AC2.A` | 동일 물리량 이중 판매 — 같은 1 kWh를 자가소비 절감과 잉여판매로 동시 계상하거나 같은 시각 ESS 방전을 피크저감과 DR로 동시 계상하는 조합은 선언적 … | 자동 | test_phase1_dod.py, test_e2e_exclusion_wiring.py 3건, test_ess_share.py, test_exclusion_rules_contract.py, test_pv.py, test_pv_validation.py, test_aggregated_ppa.py, test_exclusion.py 2건, test_exclusion_quantity_axis.py 3건, test_exclusion_reject_wp28b.py, test_settlement.py, test_tou_arbitrage.py |
 |  |  | 1 | `FR-402-AC2.B` | 인과 하류 편익이 상류에 이미 포함 — 배전망 회피 편익 ↔ 전기요금 절감처럼 망 비용이 이미 망이용요금으로 회수된 경우, 하류 편익은 요금에 미반영된 증분만 … | 자동 | test_exclusion.py |
 |  |  | 3 | `FR-402-AC2.C` | 동일 효과의 이중 화폐화 — 같은 tCO2에 배출권 수익(사업자 현금)과 사회적 탄소비용(사회 편익)을 동시 계상하지 않는다. 관점당 하나의 화폐화 방법만 허용… | **미매핑** | — |
 |  |  | 1 | `FR-402-AC2.D` | 제도적 배타 — 상계거래 참여 시 REC 발급 제한, DR 정산금과 요금 인센티브 중복 수취 금지 등은 규제 프로파일에 종속된 배타 규칙으로 관리하고 제도 개정… | 자동 | test_exclusion.py, test_exclusion_reject_wp28b.py |
@@ -344,7 +355,7 @@
 | `NFR-203` | Should-have | 1 | `NFR-203-M1` | pytest-cov CI 게이트 | 자동 | test_ci_gates.py |
 | `NFR-204` | Should-have | 1 | `NFR-204-M1` | mypy strict 통과 | 자동 | test_ci_gates.py |
 | `NFR-205` | Must-have | 1 | `NFR-205-M1` | 코드 리뷰 + lint 규칙. 근거: DER-VET Params.py의 클래스 변수 전역 상태는 동시 실행·테스트 격리를 불가능하게 만든다 (부록 C.5) | 자동 | test_ledger_levels.py, test_ci_gates.py 2건, test_ess.py |
-| `NFR-206` | Should-have | 1 | `NFR-206-M1` | lint 경고. 근거: DER-VET Params.py 1,830줄의 유지보수 실패 사례 | 자동 | test_17_12_scale.py 2건, test_phase1_measurements.py 2건, test_load.py, test_thermal_load.py |
+| `NFR-206` | Should-have | 1 | `NFR-206-M1` | lint 경고. 근거: DER-VET Params.py 1,830줄의 유지보수 실패 사례 | 자동 | test_17_12_scale.py 2건, test_ess_share.py, test_phase1_measurements.py 2건, test_load.py, test_thermal_load.py |
 | `NFR-207` | Must-have | 1 | `NFR-207-AC1` | 등록은 패키지 디렉터리 스캔 또는 데코레이터 자동 수집으로 수행한다. 신규 자원 추가 시 core/der/__init__.py, REGISTRY = [...] … | 자동 | test_router_collection.py, test_chart_contract.py, test_registry.py 6건 |
 |  |  | 1 | `NFR-207-AC2` | 등록 충돌(동일 tag 중복)은 기동 시점에 명확한 오류로 검출된다 | 자동 | test_registry.py |
 |  |  | 1 | `NFR-207-AC3` | (v0.15 신설) tag 미선언도 기동 시점 오류다 — 건너뛰면 그 자원이 | 자동 | test_registry.py |
