@@ -472,12 +472,30 @@ class Load(DER):
         나이를 `(year−1) % life` 로 세는 이유: 교체가 있었다면 잔존가치는
         **새로 설치된 개체**의 것이다. 최초 취득 시점만 보면 교체분의 잔존가치가
         통째로 사라진다.
+
+        ★ **그 개체를 산 해의 교체 물가 계수를 태운다** (R57/WP-7). 종전에는
+        계수 없이 실질 단가로 되팔았는데 `replacement_schedule()` 은 그 개체를
+        **명목**으로 장부한다 — 「명목으로 산 것을 실질로 되판다」가 되고, 그
+        과소 계상은 **한 방향으로만** 결론을 나쁘게 만들어 「보수적이라
+        안전하다」로 읽힌다. `ESS`·`PV` 가 `_acquisitions()` 에서 이미 같은
+        셈을 한다 — 새 규약이 아니라 그 셈의 뜻을 따르는 것이다.
+
+        마지막 취득 연도 `n − ((n−1) % life)` 는 `replacement_schedule()` 이
+        장부하는 해(`life+1` · `2·life+1` · …)와 **같은 해**다. 두 곳이 같은
+        해의 계수를 써야 「같은 가격 기준」이 되며, 어긋나면 비대칭이 다른
+        모양으로 옮겨 갈 뿐이다.
+
+        ⚠ **최초 취득가에는 걸리지 않는다.** 그 값이 1 이면 계수가
+        `(1+i)^(1−1) = 1.0` 이다 — 대장 `capex.replacement_real_trend` 의
+        `applicable_scope` 가 요구하는 바(*「재취득 단가에만 걸린다」*)와 같다.
         """
         n = int(Year(year))
         total = 0.0
         for _label, life, cost in self._components():
             remaining = life - ((n - 1) % life) - 1
-            total += cost * remaining / life
+            acquired_year = n - ((n - 1) % life)
+            factor = self.replacement_escalation_factor(year=acquired_year)
+            total += cost * factor * remaining / life
         return to_won(total)
 
     # ── 내부 ────────────────────────────────────────────────────────

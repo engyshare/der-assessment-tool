@@ -398,6 +398,70 @@ def test_salvage_counts_subcomponents_on_their_own_clock() -> None:
     assert load.salvage_value(year=20) == expected
 
 
+@pytest.mark.req("FR-104-AC5")
+def test_first_acquisition_salvage_carries_no_replacement_escalation() -> None:
+    """★ **최초 취득가에는 교체 물가 계수가 걸리지 않는다** (R57/WP-7).
+
+    대장 `capex.replacement_real_trend` 의 `applicable_scope` 가 적용범위를 스스로
+    좁혀 두었다 — *「분석기간 안에 교체가 일어나는 설비의 **재취득 단가**에만
+    걸린다」*. 계수를 최초 취득가에까지 태우는 구현은 1년차 잔존가치를 부풀리고,
+    그것은 결론을 **좋아지는 방향으로만** 밀어 「보수적이라 안전하다」로도 걸러지지
+    않는다.
+
+    재는 법: 교체 계수만 크게 다른 두 자원이 **첫 교체 전 구간에서는 같은 값**
+    이어야 한다. 아직 잴 취득분이 최초 하나뿐이기 때문이다.
+    """
+    flat = make_load(lifetime=10, capacity_kw=1.0, unit_cost_won_per_kw=1_000_000.0)
+    steep = make_load(
+        lifetime=10,
+        capacity_kw=1.0,
+        unit_cost_won_per_kw=1_000_000.0,
+        replacement_escalation_rate=0.20,
+    )
+    assert steep.replacement_escalation_factor(year=1) == 1.0
+
+    # 0 이 아닌 값을 견주는지 먼저 못 박는다 — 둘 다 0이면 아무것도 재지 않는다
+    assert int(flat.salvage_value(year=1)) > 0
+    for year in (1, 2, 5, 9):
+        assert flat.salvage_value(year=year) == steep.salvage_value(year=year), (
+            f"{year}년차 잔존가치가 교체 계수를 따라 움직입니다 — 첫 교체 전이라 "
+            "최초 취득분뿐인 구간이며, 대장이 그 자리를 적용범위에서 뺐습니다"
+        )
+
+
+@pytest.mark.req("FR-104-AC5")
+def test_salvage_after_replacement_uses_the_replacement_escalation() -> None:
+    """★★ **교체한 개체는 그 교체비와 같은 가격 기준으로 되판다** (R57/WP-7).
+
+    `replacement_schedule()` 은 11년차 재취득을 **명목**(계수를 태운 값)으로
+    장부한다. 잔존가치가 실질이면 같은 설비를 **명목으로 사고 실질로 되파는**
+    셈이고, 그 과소 계상은 **한 방향으로만** 결론을 나쁘게 만들어 「보수적이라
+    안전하다」로 읽힌다.
+
+    ⚠ **계수를 손으로 적지 않는다** — `replacement_escalation_factor()` 에서
+    얻어 대조한다. 손으로 적으면 그 수가 이 시험의 두 번째 정본이 된다.
+    """
+    acquisition = 1_000_000.0
+    load = make_load(
+        lifetime=10,
+        capacity_kw=1.0,
+        unit_cost_won_per_kw=acquisition,
+        replacement_escalation_rate=0.06,
+    )
+    # 재취득이 실제로 일어난 해. `replacement_schedule()` 이 장부하는 해와 같다
+    factor = load.replacement_escalation_factor(year=11)
+
+    assert load.replacement_schedule(horizon=13)[11] == to_won(acquisition * factor)
+
+    # 13년차 잔존수명은 `10 − ((13−1) % 10) − 1 = 7`년이다
+    assert load.salvage_value(year=13) == to_won(acquisition * factor * 7 / 10)
+
+    # 계수를 끄면 그만큼 작아진다 — 위 단언이 곱셈을 두 번 한 결과가 아니다
+    flat = make_load(lifetime=10, capacity_kw=1.0, unit_cost_won_per_kw=acquisition)
+    assert flat.salvage_value(year=13) == to_won(acquisition * 7 / 10)
+    assert int(flat.salvage_value(year=13)) < int(load.salvage_value(year=13))
+
+
 # ── NFR-206 파일 규모 ────────────────────────────────────────────────
 
 @pytest.mark.req("NFR-206-M1")

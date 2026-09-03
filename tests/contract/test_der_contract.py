@@ -85,17 +85,26 @@ KNOWN_REPLACEMENT_RATE_IGNORED: frozenset[str] = frozenset({"ReferencePV"})
 #: 어긋남은 **한 방향으로만**(잔존가치 과소 → 「보수적이라 안전하다」) 결론을 흔든다.
 #: `HeatPump` 가 실제로 그랬다 — R43 이 교체비를 명목으로 바꾼 바로 그 라운드에.
 #:
-#: **`Load`·`ThermalLoad` 는 이 검사를 세우면서 드러났다** (실측은
-#: `.orch/R43/result_D2.md` 의 자원 7종 표). 조용히 올린 것이 아니라 **크기를 재어
-#: 올렸고**, 고치는 것은 이 WP 의 범위 밖이라 부채로 남긴다 — 둘 다 부속설비를
+#: **`Load`·`ThermalLoad` 는 이 검사를 세우면서 드러났고 R57/WP-7 이 뺐다.**
+#: 실측은 `.orch/R43/result_D2.md` 의 자원 7종 표에 있었다. 둘 다 부속설비를
 #: `(year-1) % life` 로 굴리는 **복합자산**이라 `_acquisitions()` 같은 한 출처가
-#: 없고, 세우면 그 자원의 수가 움직인다.
+#: 없는데, 그 나눗셈이 이미 「마지막 취득 연도 = `n − ((n−1) % life)`」를 말하고
+#: 있어 **그 해의 계수**를 태우는 것으로 족했다 — 그 해는 `replacement_schedule()`
+#: 이 장부하는 해와 같으므로 두 수가 같은 가격 기준에 선다.
+#:
+#: ★ **지금 고칠 수 있었던 이유는 값이 0 이기 때문이다** — 러너의 `Load` 는 비용
+#: 인자가 전부 0/미지정이고 `ThermalLoad` 는 러너가 만들지 않는다. 결론축이
+#: 움직이지 않으므로 골든이 증인으로 설 수 있었다(`.orch/R57/result_7.md`).
 #:
 #: `ReferencePV` 는 여기 없다 — 교체비도 잔존가치도 **둘 다 실질**이라 어긋나 있지
 #: 않다(위 래칫이 그 자원을 이미 들고 있다). 확인 못 한 것을 부채로 세지 않는다.
 #:
-#: **줄면 빨간불**이다 — 목록과 그 자원의 기준값을 함께 옮기라고 알린다.
-KNOWN_SALVAGE_IGNORES_REPLACEMENT_RATE: frozenset[str] = frozenset({"Load", "ThermalLoad"})
+#: **비었다고 검사가 놀지 않는다.** 아래 시험은 목록을 보기 전에 자원을 실제로
+#: 재고(`listed == ignores`) 양쪽을 다 판정하므로, 빈 목록에서는 그 단언이
+#: *「판정 대상 전건이 명목 기준을 쓴다」* 를 재는 검사가 된다 — **줄여도
+#: 빨간불이고**(고치지 않은 채 이름만 빼면) 안 고친 자원이 새로 들어와도
+#: 빨간불이다. 이름을 더해 통과시키는 것은 이 래칫의 정상 방향이 아니다.
+KNOWN_SALVAGE_IGNORES_REPLACEMENT_RATE: frozenset[str] = frozenset()
 
 
 class DERContractTests:
