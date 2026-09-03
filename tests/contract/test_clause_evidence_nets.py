@@ -78,7 +78,13 @@ PARTITION_WORDS: dict[str, str] = {
 #:   않는다」. 인용 15건 전부가 편익 **산식**을 재고 엔진을 만지지 않는다.
 #:   `FR-101-AC3` 과 **같은 형태**이며 R38 이 그것을 닫은 방식(엔진을 실제로
 #:   돌리는 검사)이 여기에도 필요하다
-#: - **`core.report` 5건** — 조항이 「…를 리포트에 표시/명시/표기한다」라고
+#: ✔ **`FR-602-AC2` 는 R57/WP-8 이 닫았다** — `FR-404-AC1` 과 **같은 방식**이며
+#: 시험을 더해서가 아니라 **리포트 문면을 세워서**다. 붙임 1 안에 「기준 전제 대비
+#: 변경 항목」 표가 서고(`core/report/appendix_sections.py`) `CaseReport` 가
+#: `AssumptionSet.overridden_items()` 를 읽어 나른다 — 호출자 0곳이었던 그
+#: 메서드에 **읽는 자리**가 생겼다. ⚠ 이 검사가 *「닫힌 것을 남겨 두면 다음
+#: 사람이 없는 일을 한다」* 고 적으므로 위 목록에서 그 짝을 지웠다.
+#: - **`core.report` 4건** — 조항이 「…를 리포트에 표시/명시/표기한다」라고
 #:   적는데 인용이 전부 산출 쪽(`tests/asset`·`tests/der`·`tests/assumption`·
 #:   `tests/cba`)에 있고 리포트 계층을 만지지 않는다. 조항의 **앞 절반**
 #:   (계산)은 검증되고 **뒤 절반**(표시)은 비어 있는 상태다.
@@ -94,7 +100,6 @@ PARTITION_WORDS: dict[str, str] = {
 KNOWN_PARTITION_DEBT: frozenset[tuple[str, str]] = frozenset({
     ("FR-401-AC1", "core.engine"),
     ("FR-106-AC5", "core.report"),
-    ("FR-602-AC2", "core.report"),
     ("FR-603-AC2", "core.report"),
     ("FR-705-AC1", "core.report"),
     ("FR-905-AC8", "core.report"),

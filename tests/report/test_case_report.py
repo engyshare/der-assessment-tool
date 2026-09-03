@@ -32,12 +32,14 @@ from pathlib import Path
 import pytest
 import yaml
 
+from core.assumption.provider import AssumptionSet
 from core.casegrid.e2e_runner import run_single_case_e2e
 from core.casegrid.ledger_levels import build_level_map, ledger_unit_scales
 from core.report.case_report import (
     CONCLUSION_METRIC,
     HEADLINE_METRIC,
     PLAN_VARIANT,
+    _overrides,
     _scheme_for,
     build_case_report,
 )
@@ -465,3 +467,36 @@ def test_displayed_values_are_in_the_units_the_report_prints() -> None:
         assert entry.low == pytest.approx(float(sensitivity["low"]))
         assert entry.high == pytest.approx(float(sensitivity["high"]))
     assert checked, "대장에서 오는 인자가 하나도 없다"
+
+
+@pytest.mark.req("FR-602-AC2", "FR-602-AC3")
+def test_the_change_list_carries_the_value_it_replaced_and_the_reason() -> None:
+    """★ **「기준 전제 대비 변경 항목」이 바뀌기 전 값과 사유를 함께 진다.**
+
+    변경값만 실으면 검토자는 *「무엇을 바꿨는가」* 에 답을 얻지 못한다 — 바뀐
+    값 하나는 붙임 1 의 주제별 표에도 이미 있고(`_appendix` 독스트링), 「변경」
+    은 **두 값이 나란히 설 때**에야 성립한다.
+
+    ⚠ 리포트가 `items()` 와 `get()` 을 맞대 보지 **않는다**는 것도 함께 본다 —
+    대장의 `overridden_items()` 가 지은 짝을 그대로 옮기는지다. 변이로
+    확인했다: `base_value` 를 변경값으로 채우면 이 검사만 빨개진다.
+    """
+    provider = AssumptionSet.load_from_yaml(str(_ASSUMPTIONS))
+    key = "analysis.period_years"
+    base = provider.items()[key].value
+    changed = provider.override(
+        {key: base + 5}, reasons={key: "심의 요청 — 분석기간 연장"}
+    )
+
+    rows = _overrides(changed)
+
+    assert [row.key for row in rows] == [key], f"변경 항목 목록이 어긋난다 — {rows}"
+    assert rows[0].base_value == base, "바뀌기 전 값이 기준값 칸에 없다"
+    assert rows[0].override_value == base + 5, "변경값이 실행이 쓴 값과 다르다"
+    assert rows[0].reason == "심의 요청 — 분석기간 연장", (
+        "사유가 떨어졌다 — FR-602-AC3 이 같은 절에서 사유를 요구한다"
+    )
+    # ★ 배포 경로는 오버라이드를 걸지 않는다 — **비어 있는 것이 정상**이며,
+    # 그 사실을 붙임이 인쇄하는지는 `test_narrative.py` 의 같은 조항 검사가
+    # 본다. 여기서는 「비었다」가 참인지만 고정한다.
+    assert _report().overrides == (), "배포 경로에 없던 오버라이드가 생겼다"

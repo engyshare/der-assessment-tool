@@ -83,6 +83,34 @@ _CONFIDENCE_ORDER: tuple[str, ...] = ("확정", "추정", "가정")
 #: 신뢰도 `가정` 의 표기. 대장이 쓰는 낱말이며 여기서 짓지 않는다.
 ASSUMED_CONFIDENCE = _CONFIDENCE_ORDER[-1]
 
+#: 오버라이드가 **한 건도 없는** 실행에서 변경 항목 표에 서는 행의 첫 칸
+#: (`FR-602-AC2`).
+#:
+#: ## ★ 왜 표를 지우지 않고 이 행을 세우는가
+#:
+#: 「변경 없음」과 「그 표가 아예 없다」는 검토자에게 **다른 것**이다. 앞쪽을
+#: 보면 *「기준 전제 그대로 돌렸다」* 를 알고, 뒤쪽을 보면 아무것도 알 수
+#: 없다 — 이 저장소가 `UNREAD_BY_PIPELINE`·`NO_VALUE` 에 반복해 적은 형태이며
+#: 본문 6.2 「결론 전환 조건」 표도 전환 인자가 0건일 때 같은 이유로 「없음」
+#: 행을 세운다(`core/report/narrative.py` 의 `NONE_IN_RANGE`).
+NO_OVERRIDE = "없음 — 기준 전제를 그대로 적용"
+
+#: 변경 항목 표의 이름.
+#:
+#: ## ⚠⚠ **`###` 머리로 두지 않는다** — 붙임 1 안의 `###` 는 「주제 머리」다
+#:
+#: 이 붙임 안의 `### ` 줄을 **두 시험이 주제 머리로 못 박아 두었다**:
+#: `tests/report/test_overview_sections.py` 의
+#: `test_confidence_survives_the_topic_grouping` 은 모든 `### ` 에
+#: 「신뢰도:」 내역을 요구하고, `test_every_ledger_row_lands_in_a_topic` 은
+#: 모든 `### ` 의 `— N건` 을 더해 **전건 수와 같기를** 요구한다. 그러므로
+#: 표 이름을 `###` 로 달면 주제가 하나 늘어난 것으로 세어진다.
+#:
+#: 그래서 이름을 **굵은 글씨 한 줄**로 둔다 — 계산 검증 보고서
+#: (`core/report/verification.py` 7단계의 「**편익 행**」·「**운영비 행**」)가
+#: 한 절 안의 표 여럿에 이미 쓰는 꼴이다.
+OVERRIDE_TABLE = "기준 전제 대비 변경 항목"
+
 
 def topic_of(key: str) -> str:
     """대장 키의 주제. **선언에 없으면 `미분류`** — 위 `TOPIC_PREFIXES` 참조."""
@@ -192,6 +220,60 @@ def _confidence_tally(rows: list[AssumptionRow]) -> str:
     return " · ".join([*parts, *extra]) or "0"
 
 
+def _ledger_value(value: float | int | str) -> str:
+    """변경 항목 표의 값 칸 — **지수 표기를 내지 않는다**(`_num` 독스트링).
+
+    `1.6e+06` 은 검토자가 읽는 수가 아니고, 그 표기가 리포트에 닿는 것을
+    `tests/report/test_narrative.py` 가 문서 전체에서 막는다.
+    """
+    return _num(value) if isinstance(value, (int, float)) else str(value)
+
+
+def _override_table(report: CaseReport) -> list[str]:
+    """붙임 1 의 둘째 표 — **기준 전제 대비 변경 항목** (`FR-602-AC2`).
+
+    ## 왜 붙임 1 안인가 — **새 붙임 번호를 만들지 않는다**
+
+    붙임 1 이 *「전제 대장 전건」* 이고 변경 항목은 같은 주제다. 그리고 붙임 2
+    가 이미 `판단용`/`감사·추적용` 으로 **한 붙임 안에 표 둘**을 두고 있으므로
+    선례도 있다. 번호를 늘리면 그 번호를 가리키던 다른 자리(색인·상호 참조)를
+    함께 고쳐야 하고, 고치지 않으면 그것들이 **조용히 거짓**이 된다.
+
+    ⚠ 다만 표 이름을 붙임 2 처럼 `###` 머리로 달지는 **못한다** — 붙임 1 안의
+    `###` 는 「주제 머리」로 이미 못 박혀 있다(`OVERRIDE_TABLE` 주석).
+
+    ## ★ 비어 있는 것이 정상이고, 그것을 인쇄한다
+
+    `build_case_report()` 는 대장을 그대로 싣고 오버라이드를 걸지 않는다 —
+    그래서 `MC-1` 배포 경로에서 이 표는 **비어 있다.** 그때 표를 지우지 않고
+    `NO_OVERRIDE` 행을 세우는 이유는 그 상수 주석에 있다.
+
+    ⚠ **셋을 다 싣는다** — 기준값 · 변경값 · 사유. 사유는 `FR-602-AC3` 이
+    권장 필드로 두므로 비어 있을 수 있고, 그 빈 자리는 `NO_VALUE` 로 **드러
+    낸다**(빈칸으로 두면 사유를 안 적은 것과 표가 칸을 잃은 것이 같아진다).
+    """
+    lines = [
+        f"**{OVERRIDE_TABLE} — {len(report.overrides)}건**",
+        "",
+        "- 변경 — 대장의 기준값을 이 실행이 덮어쓴 항목 (`FR-602-AC2`) · "
+        "사유는 `FR-602-AC3`",
+        "- 위 주제별 표의 값은 **변경이 반영된 값**이다 — 바뀌기 전 값은 이 표의 "
+        "`기준값` 칸에 있다",
+        "",
+        "| 대장 키 | 기준값 | 변경값 | 사유 |",
+        "|---|---|---|---|",
+    ]
+    if not report.overrides:
+        lines.append(f"| {NO_OVERRIDE} | {NO_VALUE} | {NO_VALUE} | {NO_VALUE} |")
+    lines += [
+        f"| `{row.key}` | {_ledger_value(row.base_value)} | "
+        f"{_ledger_value(row.override_value)} | {row.reason or NO_VALUE} |"
+        for row in report.overrides
+    ]
+    lines.append("")
+    return lines
+
+
 def appendix_section(report: CaseReport) -> list[str]:
     """붙임 1 — 전 가정 목록. **주제별로 묶고 신뢰도를 열로** (`FR-1002-AC6`).
 
@@ -207,6 +289,10 @@ def appendix_section(report: CaseReport) -> list[str]:
 
     ⚠ 주제는 **대장 키의 접두어**에서 온다 — 여기서 새 분류를 만들지 않는다
     (`TOPIC_PREFIXES`).
+
+    ⚠ **이 붙임은 표가 둘이다** — 주제별 전건과 **변경 항목**
+    (`_override_table` · `FR-602-AC2`). 붙임 2 가 표를 둘로 가른 것과 같은
+    갈래이며, 이름만 `###` 머리가 아니다(`OVERRIDE_TABLE` 주석).
     """
     by_topic: dict[str, list[AssumptionRow]] = {}
     for row in report.assumptions:
@@ -240,6 +326,10 @@ def appendix_section(report: CaseReport) -> list[str]:
         "(확인 대상)",
         "",
     ]
+    # ★ 같은 붙임의 둘째 표다 (`_override_table` 독스트링 — 새 붙임 번호를
+    # 만들지 않는 이유). 위 표가 「무엇을 썼는가」이고 이 표가 「무엇을
+    # 바꿨는가」이므로 순서가 뒤집히면 안 된다.
+    lines += _override_table(report)
     return lines
 
 

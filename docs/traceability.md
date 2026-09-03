@@ -212,8 +212,8 @@
 |  |  | 1 | `FR-601-AC8` | 버전·diff: 이름·버전으로 저장되고 두 버전 간 diff 뷰를 제공한다 | 자동 | test_set.py |
 |  |  | 1 | `FR-601-AC9` | 공유: 하나의 AssumptionSet을 여러 사업모델이 공유 참조한다 (FR-202의 전제 동일성 보장 근거) | 자동 | test_set.py |
 | `FR-602` | Must-have | 1 | `FR-602-AC1` | 시나리오 수준에서 특정 항목만 덮어쓸 수 있다 | 자동 | test_set.py |
-|  |  | 1 | `FR-602-AC2` | 리포트에 "기준 전제 대비 변경 항목" 목록이 자동 생성된다 | 자동 | test_set.py |
-|  |  | 1 | `FR-602-AC3` | 오버라이드 시 사유 입력을 권장 필드로 제공한다 | 자동 | test_set.py |
+|  |  | 1 | `FR-602-AC2` | 리포트에 "기준 전제 대비 변경 항목" 목록이 자동 생성된다 | 자동 | test_set.py, test_case_report.py, test_narrative.py |
+|  |  | 1 | `FR-602-AC3` | 오버라이드 시 사유 입력을 권장 필드로 제공한다 | 자동 | test_set.py, test_case_report.py, test_narrative.py |
 | `FR-603` | Must-have | 1 | `FR-603-AC1` | 항목 필드 (v0.5 정정): (자원유형, 규격, 단가·단위, 기준일·기준연도·버전, 적용 범위·조건, 산출 방법·표본, 출처(문서명·위치·전체URL), 최종확… | 자동 | test_catalog.py |
 |  |  | 1 | `FR-603-AC2` | 카탈로그 값과 사용자 변경값이 리포트에서 시각적으로 구분된다 | 자동 | test_catalog.py |
 |  |  | 1 | `FR-603-AC3` | 기준연도가 분석연도와 다르면 물가 조정 후 사용하며 조정 내역을 표시한다 | 자동 | test_catalog.py 2건 |

@@ -196,6 +196,27 @@ class AssumptionRow:
 
 
 @dataclass(frozen=True)
+class OverrideRow:
+    """기준 전제 대비 **변경 항목** 한 줄 (`FR-602-AC2`).
+
+    `AssumptionSet.overridden_items()` 가 내주는 `{base, override, reason}`
+    을 붙임까지 **문자열 키의 `dict` 로 나르지 않는다** — `AssumptionRow` 가
+    자료형인 이유와 같다. 키를 잘못 적으면 예외 대신 **빈 칸**이 인쇄되고,
+    빈 칸은 「바뀌지 않았다」와 산출물에서 구별되지 않는다.
+    """
+
+    key: str
+    #: 대장에 적힌 값 — **바뀌기 전**이다. 이것이 없으면 「변경」이 성립하지
+    #: 않는다(그 메서드 독스트링).
+    base_value: float | int | str
+    #: 시나리오가 덮어쓴 값. 이 실행의 계산이 쓴 값이다.
+    override_value: float | int | str
+    #: 오버라이드 사유 (`FR-602-AC3`). 조항이 **권장** 필드로 두므로 없을 수
+    #: 있고, 없는 것과 빈 문자열을 가르려고 `None` 을 그대로 나른다.
+    reason: str | None
+
+
+@dataclass(frozen=True)
 class CaseReport:
     """검토자에게 건네는 산출물 하나."""
 
@@ -224,6 +245,13 @@ class CaseReport:
     coupled_sweeps: tuple[CoupledSweep, ...]
     formulas: tuple[Formula, ...]
     assumptions: tuple[AssumptionRow, ...]
+    #: 기준 전제 대비 변경 항목 (`FR-602-AC2`) — 붙임 1 이 표로 낸다.
+    #:
+    #: ⚠ **비어 있는 것이 이 배포 경로의 정상이다.** `build_case_report()` 는
+    #: 대장을 그대로 싣고 오버라이드를 걸지 않는다. 그래서 붙임은 「없다」를
+    #: **인쇄해야** 한다 — 절을 지우면 검토자가 「기준 전제 그대로 돌렸다」와
+    #: 「그 표시를 싣지 못했다」를 가릴 수 없다.
+    overrides: tuple[OverrideRow, ...]
     manifest_hash: str
     #: 자원별 「운전 방법 × 디스패치 규칙 × 순위」 (`FR-105-AC4` · 의견 2).
     dispatch_notes: tuple[DispatchNote, ...]
@@ -577,10 +605,10 @@ def _appendix(provider: AssumptionSet) -> tuple[AssumptionRow, ...]:
     항목이 붙임 1 에서 사라진다** — 그 순간 `FR-1002-AC6` 위반이다. 여기서
     바뀌는 것은 **행의 값**뿐이고 행의 집합이 아니다.
 
-    ⚠ **「덮어썼다」는 표시는 이 자리가 만들지 않는다.** 기준값과 나란히
-    보일지, 어느 조항이 그 표시를 소유하는지는 아직 사람 판정이 남은
-    자리다(`status-human.md`). 이 함수가 지는 것은 **실린 값이 실행이 쓴
-    값인가**까지다 — 재료는 `provider.overridden_items()` 에 이미 있다.
+    ⚠ **「덮어썼다」는 표시는 이 자리가 만들지 않는다.** 이 함수가 지는 것은
+    **실린 값이 실행이 쓴 값인가**까지이고, 기준값과 나란히 놓는 표는
+    `_overrides()` 가 짓는다(`FR-602-AC2`) — 한 행이 두 값을 함께 지면 이
+    목록의 「전건」이 무엇을 세는 것인지가 흐려진다.
     """
     rows: list[AssumptionRow] = []
     for item in sorted(provider.items().values(), key=lambda i: i.key):
@@ -600,6 +628,37 @@ def _appendix(provider: AssumptionSet) -> tuple[AssumptionRow, ...]:
             )
         )
     return tuple(rows)
+
+
+def _overrides(provider: AssumptionSet) -> tuple[OverrideRow, ...]:
+    """기준 전제 대비 변경 항목 — **대장이 가른 것을 옮긴다** (`FR-602-AC2`).
+
+    ## ⚠ 기준값과 변경값을 **여기서 맞대 보지 않는다**
+
+    `items()` 와 `get()` 을 각각 조회해 나란히 놓으면 「변경」의 정의가
+    리포트와 대장 두 곳에 생기고, `overridden_items()` 독스트링이 적은
+    *「이 메서드가 대장의 원래 값을 함께 붙여 리포트가 그대로 표에 얹을 수
+    있게 한다」* 가 거짓이 된다. 그 메서드가 이미 짝을 짓는다 —
+    **여기서는 자료형만 입힌다.**
+
+    ⚠ **사유를 버리지 않는다** (`FR-602-AC3`). 같은 절이 사유를 요구하고 그
+    메서드가 사유를 함께 내놓으므로, 여기서 떨어뜨리면 리포트가 대장에 다시
+    물어야 하고 그 통로가 또 하나 생긴다.
+
+    ⚠ **키 순으로 세운다.** `overridden_items()` 는 오버라이드를 **넣은
+    순서**로 내주는데(`dict` 삽입 순서), 그 순서는 시나리오 파일의 편집
+    순서라 산출물이 실행마다 달라진다 — 붙임 1 의 주제별 표가 키 순인 것과
+    같은 이유다.
+    """
+    return tuple(
+        OverrideRow(
+            key=key,
+            base_value=changed["base"],
+            override_value=changed["override"],
+            reason=changed["reason"],
+        )
+        for key, changed in sorted(provider.overridden_items().items())
+    )
 
 
 def build_case_report(
@@ -779,6 +838,10 @@ def build_case_report(
             ),
         ),
         assumptions=_appendix(provider),
+        # ★ 이 경로는 오버라이드를 걸지 않으므로 **빈 짝**이 정상이다. 그래도
+        # 실어 보내는 이유는 붙임이 「없다」를 인쇄해야 하기 때문이다 —
+        # 위 `CaseReport.overrides` 주석 참조.
+        overrides=_overrides(provider),
         manifest_hash=manifest.hash,
         # ★ 엔진 규칙과 운전 결과를 **실행이 내놓은 것에서** 읽는다 (의견 2·3).
         # 여기서 자원을 다시 세우거나 순서를 다시 적으면 사본이 되고, 러너가

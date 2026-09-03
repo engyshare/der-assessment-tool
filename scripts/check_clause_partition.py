@@ -42,20 +42,24 @@ R38 이 스스로 적었다 — *「조항이 구획을 은유로 적을 때 오
     부채       조항이 리포트 표시를 요구하는데 그 조항의 인용 중 `core.report`
                를 만지는 것이 하나도 없다. **실물 결손이다.**
 
-★ **남은 부채 5건은 「시험이 없다」가 아니라 「리포트가 그 표시를 내지 않는다」
+★ **남은 부채 4건은 「시험이 없다」가 아니라 「리포트가 그 표시를 내지 않는다」
 다.** WP-15 가 여섯을 하나씩 실물 대조했다 — `AllocationResult`(FR-106-AC5) ·
-`AssumptionSet.overridden_items()`(FR-602-AC2) ·
 `TechCatalogItem`/`EscalationDetail`(FR-603-AC2) ·
 `BaselineComparison.baseline_total()`(FR-705-AC1) ·
 `TimeSeriesDataset.source_metadata()`(FR-905-AC8) 가 전부 *「리포트가 표시하도록」*
 독스트링에 적혀 있으면서 **`core/report/` 에 호출자가 0곳**이다. 그러므로 이
-다섯은 시험을 더해서 닫을 수 없고, 닫으려면 리포트 문면이 먼저 생겨야 한다
+넷은 시험을 더해서 닫을 수 없고, 닫으려면 리포트 문면이 먼저 생겨야 한다
 (`.orch/R44/result_15.md` 「판정 요구」).
 
 ✔ **`FR-404-AC1` 은 그 방식으로 닫혔다** (R48/WP-D2). 리포트가 정책 가정 경고
 절을 실제로 인쇄하고(`core/report/policy_warnings.py`), 자원의 문면은
 `DER.policy_warnings()` → `ResourceLine.policy_warnings` 를 타고 실려 온다 —
 **닫은 것은 시험이 아니라 문면이다.**
+
+✔ **`FR-602-AC2` 도 같은 방식으로 닫혔다** (R57/WP-8). 붙임 1 안에 「기준 전제
+대비 변경 항목」 표가 서고 `CaseReport` 가 `AssumptionSet.overridden_items()` 를
+읽어 나른다 — **호출자 0곳이었던 그 메서드에 읽는 자리가 생겼다.** 그래서
+여섯 중 둘이 닫혔고 **넷이 남았다.**
 
 실측과 대장이 어긋나면 — 늘어도, 줄었는데 대장을 안 고쳐도 — **종료 코드 1**
 이다. 그래야 새로 생긴 결손이 조용히 섞이지 않는다.
@@ -117,10 +121,10 @@ KNOWN_GAPS: dict[tuple[str, str], str] = {
         "tests/asset/test_common_asset.py 이고 core.report 를 만지지 않는다. "
         "안분 계산은 재고 **리포트 표기는 아무도 재지 않는다**"
     ),
-    ("FR-602-AC2", "core.report"): (
-        "부채 — 「리포트에 «기준 전제 대비 변경 항목» 목록이 자동 생성된다」인데 "
-        "인용 1건(tests/assumption/test_set.py)은 전제 집합만 잰다"
-    ),
+    # ✔ `("FR-602-AC2", "core.report")` 는 **R57/WP-8 이 닫아 여기서 지웠다.**
+    # 종전 사유는 *「인용 1건(tests/assumption/test_set.py)이 전제 집합만 잰다」*
+    # 였고, 닫힌 방법은 아래 ★ 문단이 말한 그대로다 — 시험을 더해서가 아니라
+    # **리포트 문면이 생겨서**다(붙임 1 안의 「기준 전제 대비 변경 항목」 표).
     ("FR-603-AC2", "core.report"): (
         "부채 — 「카탈로그 값과 사용자 변경값이 리포트에서 시각적으로 구분된다」"
         "인데 인용 1건(tests/assumption/test_catalog.py)은 카탈로그만 잰다"

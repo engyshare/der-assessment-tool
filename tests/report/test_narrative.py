@@ -13,14 +13,23 @@ from __future__ import annotations
 
 import copy
 import re
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 import yaml  # type: ignore[import-untyped]
 
 from core.report._format import _recovery
-from core.report.appendix_sections import UNREAD_BY_PIPELINE
-from core.report.case_report import CONCLUSION_METRIC, build_case_report
+from core.report.appendix_sections import (
+    NO_OVERRIDE,
+    OVERRIDE_TABLE,
+    UNREAD_BY_PIPELINE,
+)
+from core.report.case_report import (
+    CONCLUSION_METRIC,
+    OverrideRow,
+    build_case_report,
+)
 from core.report.method_sections import (
     PERSPECTIVE,
     PERSPECTIVE_QUALIFIER,
@@ -1086,3 +1095,69 @@ def test_the_perspective_wording_has_exactly_one_owner() -> None:
             f"한정구가 3.3 의 「{head}」에서 오지 않는다 — 따로 지은 문장이면 "
             "3.3 을 고쳐도 요약·6.1 은 옛 관점을 계속 인쇄한다"
         )
+
+
+@pytest.mark.req("FR-602-AC2", "FR-602-AC3")
+def test_appendix_one_prints_the_change_table_even_when_nothing_changed() -> None:
+    """★★ **「기준 전제 대비 변경 항목」 표가 붙임 1 안에 있고, 비어도 인쇄된다.**
+
+    `FR-602-AC2` 는 *「리포트에 「기준 전제 대비 변경 항목」 목록이 자동
+    생성된다」* 다. 배포 경로(`build_case_report`)는 오버라이드를 걸지 않으므로
+    **0건이 정상**이고, 그때 표를 지우면 검토자는 *「기준 전제 그대로 돌렸다」*
+    와 *「그 표시를 싣지 못했다」* 를 가릴 수 없다 — 6.2 전환 조건 표가 같은
+    이유로 「없음」 행을 세운다(`test_the_flip_condition_table_is_never_left_empty`).
+
+    ⚠ **새 붙임 번호를 만들지 않는다** — 그래서 이 표가 **붙임 1 과 붙임 2
+    사이**에 있는지를 자리로 본다. 새 번호를 만들면 그 번호를 가리키던 다른
+    자리가 조용히 거짓이 된다.
+
+    ⚠ 표 이름을 문면으로 베끼지 않고 `OVERRIDE_TABLE` 을 가져와 본다 — 그
+    상수가 이름을 `###` 머리로 달지 못하는 이유(붙임 1 안의 `###` 는 주제
+    머리다)를 함께 진다.
+
+    ⚠ 실제 변경이 실릴 때 **셋이 다 나오는가**(기준값·변경값·사유)는 리포트를
+    다시 돌리지 않고 `replace()` 로 짝을 갈아 끼워 본다 — 결론 축을 건드리지
+    않으려고 배포 경로에 오버라이드를 만들지 않는다.
+    """
+    report = build_case_report(
+        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    text = render_markdown(report)
+    appendix = text[
+        text.index("## 붙임 1. 전제 대장 전건") : text.index("## 붙임 2.")
+    ]
+
+    assert OVERRIDE_TABLE in appendix, (
+        "변경 항목 표가 붙임 1 안에 없다 — FR-602-AC2 가 요구하는 목록이다"
+    )
+    assert report.overrides == (), "배포 경로에 오버라이드가 생겼다 — 아래 전제가 깨진다"
+    assert NO_OVERRIDE in appendix, (
+        f"변경이 0건인데 그 사실을 적은 행이 없다 — 「{NO_OVERRIDE}」"
+    )
+
+    changed = replace(
+        report,
+        overrides=(
+            OverrideRow(
+                key="analysis.period_years",
+                base_value=20,
+                override_value=25,
+                reason="심의 요청 — 분석기간 연장",
+            ),
+        ),
+    )
+    changed_text = render_markdown(changed)
+    table = changed_text[
+        changed_text.index(OVERRIDE_TABLE) : changed_text.index("## 붙임 2.")
+    ]
+    row = [
+        line for line in table.splitlines()
+        if line.startswith("| `analysis.period_years`")
+    ]
+    assert len(row) == 1, f"변경 항목 행이 하나가 아니다 — {row}"
+    assert "25" in row[0], "변경값이 표에 없다"
+    assert "20" in row[0], "바뀌기 전 값이 표에 없다 — 「변경」이 성립하지 않는다"
+    assert "심의 요청 — 분석기간 연장" in row[0], (
+        "사유가 표에 없다 (FR-602-AC3)"
+    )
+    assert NO_OVERRIDE not in table, "변경이 1건인데 「없음」 행이 남아 있다"
