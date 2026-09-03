@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import MappingProxyType
 
 from core.contracts.der import DispatchResult
 from core.contracts.units import ZERO, Money, to_won
@@ -37,12 +38,37 @@ class DistributedSubItems:
     resilience_won: float = 0.0
 
 
+#: `DistributedSubItems` 의 필드 이름 → 물량 표찰(`quantity_id`) 매핑.
+#:
+#: ⚠ **온실가스가 앞 둘(송배전 회피, 손실 감소)과 같은 표찰을 갖는 것이 핵심이다.**
+#: 물량은 같고 단가만 다르다. 표찰을 따로 주면 「물량이 다르다」는 거짓 주장이 되고,
+#: 그것이 곧 `FR-402-AC1` 의 배타 판정을 잘못 통과시키는 길이다.
+SUB_ITEM_QUANTITY_IDS: MappingProxyType[str, str] = MappingProxyType({
+    "transmission_avoidance_won": "특구 안에서 소비된 kWh",
+    "loss_reduction_won": "특구 안에서 소비된 kWh",
+    "ghg_reduction_won": "특구 안에서 소비된 kWh",
+    "grid_service_won": "계통에 제공한 양",
+    "resilience_won": "미공급전력량 × 정전비용",  # noqa: RUF001
+})
+
+
 class DistributedBenefit(ValueStream):
     """분산편익 크레딧 — 기본 0, 분리 표시.
 
     `enabled=True` 여도 하위 항목이 전부 0이면 연간 편익은 0이다. 활성화 자체는
     «정책 가정 편익 — 현행 제도 미반영» 경고를 리포트 상단에 띄우기 위함이다
     (FR-404-AC1).
+
+    ## ★ `quantity_id` 는 **비어 있고, 그것이 옳다** (R58 · FR-404-AC4)
+
+    `ValueStream.quantity_id` 는 **스트림 하나에 하나**인데 이 스트림은 **물량이
+    셋**이다(`SUB_ITEM_QUANTITY_IDS`). 그래서 이 생성자는 `quantity_id` 를 받지
+    않고 부모의 기본값 `None` 으로 남긴다 — **「말하지 않았다」이지 「없다」가
+    아니다.** 배타 판정은 양쪽이 **둘 다 선언하고 서로 다를 때만** 통과시키므로
+    (`core/valuestream/exclusion_table.py`), `None` 인 채로는 이 스트림이 물량
+    축으로 배타를 통과하지 못한다. **아무 값이나 채우면 틀린 물량으로 통과한다.**
+
+    하위 항목이 각자 스트림으로 갈라지는 날 그 항목이 자기 `quantity_id` 를 갖는다.
     """
 
     tag = "DistributedBenefit"
@@ -83,13 +109,13 @@ class DistributedBenefit(ValueStream):
         """
         items = self._items
         return " + ".join(
-            f"{label} {value:,.0f}원"
-            for label, value in (
-                ("송배전 회피", items.transmission_avoidance_won),
-                ("손실 감소", items.loss_reduction_won),
-                ("계통서비스", items.grid_service_won),
-                ("온실가스", items.ghg_reduction_won),
-                ("회복력", items.resilience_won),
+            f"{label} {value:,.0f}원 ({SUB_ITEM_QUANTITY_IDS[key]})"
+            for label, key, value in (
+                ("송배전 회피", "transmission_avoidance_won", items.transmission_avoidance_won),
+                ("손실 감소", "loss_reduction_won", items.loss_reduction_won),
+                ("계통서비스", "grid_service_won", items.grid_service_won),
+                ("온실가스", "ghg_reduction_won", items.ghg_reduction_won),
+                ("회복력", "resilience_won", items.resilience_won),
             )
         )
 

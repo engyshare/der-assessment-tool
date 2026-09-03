@@ -162,9 +162,22 @@ def test_distributed_sub_items_each_land_in_their_own_slot() -> None:
     )
     formula = stream.formula(_dispatch_zeros(), year=1)
 
-    assert "송배전 회피 11원" in formula
-    assert "손실 감소 22원" in formula
-    assert "계통서비스 33원" in formula
-    assert "온실가스 44원" in formula
-    assert "회복력 55원" in formula
+    assert "송배전 회피 11원 (특구 안에서 소비된 kWh)" in formula
+    assert "손실 감소 22원 (특구 안에서 소비된 kWh)" in formula
+    assert "계통서비스 33원 (계통에 제공한 양)" in formula
+    assert "온실가스 44원 (특구 안에서 소비된 kWh)" in formula
+    assert "회복력 55원 (미공급전력량 × 정전비용)" in formula  # noqa: RUF001
     assert stream.annual_value(_dispatch_zeros(), year=1) == to_won(11 + 22 + 33 + 44 + 55)
+
+
+@pytest.mark.req("FR-404-AC4")
+def test_sub_item_quantity_ids_keys_match() -> None:
+    import dataclasses
+
+    from core.valuestream.distributed_benefit import SUB_ITEM_QUANTITY_IDS, DistributedSubItems
+    fields = {f.name for f in dataclasses.fields(DistributedSubItems)}
+    keys = set(SUB_ITEM_QUANTITY_IDS.keys())
+    assert fields == keys, (
+        "하위 항목을 늘렸으면 그 항목이 무엇에 비례하는지 SUB_ITEM_QUANTITY_IDS 에 선언하라. "
+        "「사용량 × 단가」 한 줄로 묶으면 계통서비스·리질리언스가 틀린 물량에 비례한다(판정 정본 §3)"  # noqa: E501, RUF001
+    )
