@@ -75,6 +75,7 @@
 > |---|---|
 > | 전건 `pytest -q` | **1969 tests · failures 0 · errors 0 · skipped 4** · `rc=0`(`--junitxml` 로 셌다). R56 종료 1927 collected → **검사 순증 42**(WP-1 다섯 + WP-2 둘 + WP-4 여덟 + WP-5 교정 셋 + WP-6 다섯 + WP-7 넷 + WP-8 둘 + 나머지) |
 > | ★ **음성 검사 스위트 15종** | `for f in scripts/negtest_*.py; do …; done` — **15/15 `rc=0`**. 게이트가 실물 소스 변이를 실제로 잡는다는 판정이며 **이 라운드가 닫기 전에 돌렸다**. 끝난 뒤 남는 빈 디렉터리 둘(`scripts/_tmp_negtrace`·`_tmp_neg_marker`)을 `rmdir` 하고 `git status` 가 빈 것을 확인했다 |
+> | ★ **CI 판본(파이썬 3.11) 전건** | `~/miniconda3/envs/r31py311/python.exe -m pytest -q` — **1969 tests · failures 0 · errors 0 · skipped 4 · `rc=0`**. **3.13 과 한 건도 다르지 않다.** CI 는 3.11 이므로 이것이 판본 차이를 재는 유일한 로컬 판정이고, 이 라운드가 닫기 전에 돌렸다 |
 > | ★ **게이트 ①(변경분 커버리지 ≥95%)** | **98%** — `diff-cover coverage.xml --compare-branch=41f78f1~1 --fail-under=95`. 변경 **90줄** 중 안 밟힌 **1줄**(`core/casegrid/ess_build.py:260`)이고 `e2e_runner.py`·`ess_share_benefits.py` 는 **100%**. ⚠ `coverage.xml` 이 낡으면 `check_coverage_inputs` 가 *「산출물에 없다」* 를 내므로 새 `core/` 파일을 만든 WP 뒤에는 `pytest --cov=core --cov-branch --cov-report=xml` 을 다시 돌렸다(이 라운드에 두 번) |
 > | `tests/golden` | **7건 통과 · `rc=0`** — WP-4·WP-5·WP-6 마다 따로 돌렸다 |
 > | `ruff` · `mypy` · `lint-imports` | `rc=0` · `no issues in 132 files` · **4 kept 0 broken** |
@@ -136,6 +137,38 @@
 >   `--junitxml=/tmp/x.xml` 을 쓴 뒤 파싱이 `FileNotFoundError` 로 죽는다.
 >   중간 산출은 세션 스크래치패드에 쓴다
 >
+> ## ★★ 라운드를 여기서 멈춘 이유 — **「다음에 집을 것」이 비어서가 아니다**
+
+> 남은 시간이 있었고 목록도 비어 있지 않았는데 **새 WP 를 시작하지 않았다.**
+> 사유는 실물로 확인한 것이며, 다음 사람이 같은 판단을 다시 하지 않게 적는다.
+>
+> ### ① 번호 25 의 **남은 넷은 WP-8 과 같은 방식으로 닫히지 않는다**
+>
+> WP-8 이 `FR-602-AC2` 를 닫을 수 있었던 이유는 **그 자료형이 이미 리포트에
+> 닿아 있었기** 때문이다 — `build_case_report()` 가 `AssumptionSet` 을 받으므로
+> `overridden_items()` 를 **읽는 자리만** 만들면 됐다. 남은 넷은 그렇지 않다
+> (오케스트레이터 실측 · `grep`):
+>
+> - `BaselineComparison`(`FR-705-AC1`) — `core/cba/__init__.py` 의 **재수출
+>   말고는 배포 경로에 없다.** 러너가 그것을 **만들지 않는다**
+> - `TimeSeriesDataset.source_metadata()`(`FR-905-AC8`) — 그 이름을 쓰는 것이
+>   `core/assumption/**` **안에만** 있다. 리포트에 닿는 통로가 없다
+>
+> ⇒ **그 넷은 「읽는 자리를 만드는」 일이 아니라 「그 값을 먼저 실행 경로에
+> 세우는」 일이다.** 그것이 `status.md` 「미해결」의 **범위** 행이 이 넷을
+> *「사람 판정(`status-human.md` 소유)」* 으로 둔 이유와 같다.
+>
+> ### ② 코드로 집을 수 있는 나머지는 **자리 내기가 다시 선행**이다
+>
+> `core/casegrid/e2e_runner.py` 가 다시 **코드 496/500(여유 4)** 이다. 번호 14
+> (자원 구성을 케이스 축으로)처럼 러너를 만지는 것은 **줄 수를 먼저 내야**
+> 하고, 두 시간 남은 시점에 그 사슬(자리 내기 → 배선)을 시작하면 **반쯤
+> 넘기게 된다.** `.orch/` 는 `.gitignore` 안이라 미완은 사라진다(orch-dev 4절).
+>
+> ⇒ **그래서 남은 시간을 「게이트 절이 요구하는데 이 라운드가 아직 안 돌린
+> 것」에 썼다** — 음성 스위트 15종과 파이썬 3.11 전건이 그것이다. 둘 다
+> 초록불이고 위 실측 표가 그 수를 갖는다.
+
 > ## 이 라운드가 **연** 것 — 정본은 `status.md`
 >
 > ★분할의 **값**(몫 비율·역할 배분) · 거부한 두 갈래(`SelfConsumption` 귀속 ·
