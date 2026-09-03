@@ -197,6 +197,42 @@ class ValueStream(ABC):
     #: 이 인스턴스가 놓인 계약·거래 구조. `None` 이면 구조 무관으로 본다
     structure: str | None
 
+    #: ★★ **이 편익이 화폐화하는 물리량의 표찰** — 배타 판정의 물리량 축 (R56).
+    #:
+    #: `FR-402-AC1` 은 *「지불 주체가 다르거나 **물리량이 다르면 정상 계상한다**」*
+    #: 를 명시로 요구하고 `FR-402-AC2.A` 는 금지 범위를 *「**같은** 1 kWh」·
+    #: 「**같은 시각** ESS 방전」* 으로 좁힌다. 그런데 배타 판정은
+    #: `type(s).tag` 의 **집합**으로만 이뤄져서 «같은 물리량인가» 를 물을 수단이
+    #: 원리적으로 없었고, 그래서 **물리량이 다른 조합까지 거부**했다 — 거부
+    #: 메시지 자신이 *「물리량이 실제로 다른지 확인하고 …」* 라고 처방하면서
+    #: 「다르다」를 표현할 자리를 계약이 내주지 않은 상태였다.
+    #:
+    #: `None` 은 **「말하지 않았다」이지 「없다」가 아니다.** 판정은 **둘 다
+    #: 선언하고 서로 다를 때만** 통과시킨다 — 한쪽만 선언한 것을 통과시키면
+    #: 한 편익에 표찰을 다는 것만으로 배타 규칙 전체를 무력화할 수 있다
+    #: (`core/valuestream/exclusion_table.py::collect_exclusions`).
+    #:
+    #: ⚠ **`ClassVar` 로 두지 않는다.** 같은 편익 클래스의 두 인스턴스가 서로
+    #: 다른 물량을 질 수 있는 것이 이 축의 요점이다 — 한 대의 ESS 를 용량 몫으로
+    #: 갈라 몫마다 다른 역할을 주는 구성(사용자 판정 `docs/decisions-2026-09-02-
+    #: R52.md` §3 뒷 문장)이 정확히 그 형태다. 바로 위 `payer` 가 `ClassVar`
+    #: 하나였다가 *「계약구조에 따름」* 을 표현할 방법이 없어 `payer_by_structure`
+    #: 를 얻은 경위와 같다.
+    #:
+    #: ## ⚠⚠ **`scales_with_dispatch_window` 와 규약이 정반대인 이유**
+    #:
+    #: 바로 위 그 필드는 **기본값을 일부러 두지 않았다.** 빠뜨렸을 때 가는 쪽이
+    #: 「조용히 틀린 수」이기 때문이다 — 여섯이 `False` 라고 그것을 기본으로
+    #: 두면 창을 읽는 편익을 새로 만들 때 연간화가 빠진 채 365분의 1로 계상되고
+    #: 아무 예외도 나지 않는다(R34 실측: 집합 PPA 502,605원/년 →
+    #: 183,450,825원).
+    #:
+    #: **이 필드는 방향이 반대다.** 빠뜨렸을 때 가는 쪽이 **거부**이므로 실수는
+    #: *「막혀서 알게 된다」* 이지 *「조용히 틀린 수가 나온다」* 가 아니다. 그래서
+    #: 기본값을 두는 것이 옳다. **두 필드를 같은 규약으로 맞추지 마라** — 어느
+    #: 쪽으로 맞추든 하나는 틀린다.
+    quantity_id: str | None
+
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """선언표의 키가 spec 의 구조 이름인지 **기동 시점에** 본다.
 
@@ -246,10 +282,12 @@ class ValueStream(ABC):
         name: str,
         enabled: bool = True,
         structure: str | None = None,
+        quantity_id: str | None = None,
     ) -> None:
         self.name = name
         self.enabled = enabled
         self.structure = structure
+        self.quantity_id = quantity_id
         if enabled and self.effective_payer is Payer.UNSPECIFIED:
             raise ValidationError(
                 field=f"valuestream.{type(self).tag}.payer",
