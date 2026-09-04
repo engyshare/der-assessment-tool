@@ -123,12 +123,58 @@ def test_other_two_branches_are_declared_and_not_rejected() -> None:
     )
 
 
+#: 갈래를 **읽어야 하는 실행 경로 두 자리** — 아래 뒤집힌 래칫이 이름으로 붙든다.
+#:
+#: ⚠ **「0곳이 아니다」만으로는 부족하다.** 어딘가 한 곳이 읽으면 참이 되는데,
+#: 이 축이 뜻하는 것은 *「평가를 돌릴 때 갈래를 고를 수 있다」* 이므로 **고르는
+#: 자리**(시나리오 yaml 을 읽는 조립기)와 **계산하는 자리**(러너 진입점)가 둘 다
+#: 읽어야 한다. 한쪽만 남으면 「고를 수는 있는데 계산이 안 본다」 또는 「계산은
+#: 보는데 고를 통로가 없다」가 되고, 둘 다 이 저장소가 반복해 만난 형태다.
+#:
+#: ⚠ 파일을 옮기면 이 목록도 함께 고쳐야 한다 — **일부러 그렇게 두었다.** 배선이
+#: 사라지는 것과 자리가 바뀌는 것은 다른 사건이고, 후자는 사람이 한 번 보는 것이
+#: 맞다(`scripts/check_docstring_references.py` 가 같은 판단을 한다).
+_MUST_READ_THE_ARRANGEMENT: tuple[str, ...] = (
+    "core/casegrid/e2e_runner.py",
+    "core/report/case_report.py",
+)
+
+
 @pytest.mark.req("FR-705-AC2")
 def test_baseline_arrangement_ratchet() -> None:
-    """기준선 갈래가 처음 지정됐다. 이 시험을 지우지 말고 뒤집되,
-    ① 그 갈래의 Without 이 실제로 계산에 쓰이는지 ② 「나」면 계측 전제와 포기 항이
-    함께 섰는지를 검사로 먼저 세워라. ⚠ 갈래를 정하는 순간 요금 거래가 새로 서서
-    결론축이 움직인다.
+    """★★★ **뒤집힌 래칫** — 갈래를 읽는 배포 코드가 **다시 0곳이 되지 않는다**.
+
+    ## 이 시험은 뒤집혔다 (R60/WP-2 · 2026-09-04)
+
+    종전 문면은 `usages == 0` 이었고 스스로 뒤집는 조건을 적어 두었다:
+
+        「기준선 갈래가 처음 지정됐다. 이 시험을 지우지 말고 뒤집되,
+         ① 그 갈래의 Without 이 실제로 계산에 쓰이는지
+         ② 「나」면 계측 전제와 포기 항이 함께 섰는지를 **검사로 먼저 세워라**」
+
+    **그 둘을 먼저 세우고 뒤집었다.** ①·② 를 재는 검사는
+    `tests/report/test_baseline_arrangement_wiring.py` 넷이며 **구현보다 앞선
+    커밋**에 들어갔다(`NFR-105-M3` 가 재는 순서):
+
+        T1  필드가 없으면 ⓑ(`MAINTAIN`)로 돈다 — 부재 ≡ 명시한 ⓑ (원 단위 일치)
+        T2  ① ⓐ 를 고르면 자가소비가 0 이 되어 `npv` 가 ⓑ 와 **다르다**
+            실측 ⓑ −11,537,129원 · ⓐ −10,743,661원 (차 +793,468원)
+        T3  ② ⓒ 는 실행 경로가 `DV-15` 로 **거부**한다 — 계측 전제도 포기 항도
+            서지 않았으므로 **고를 수 없는 것이 옳다**(0 으로 채우지 않았다)
+        T4  리포트(붙임 1 셋째 표)가 고른 갈래의 선언 다섯을 인쇄한다
+
+    ⚠ **종전 문면의 경고(*「갈래를 정하는 순간 요금 거래가 새로 서서 결론축이
+    움직인다」*)는 아직 실현되지 않았다.** 기본값이 ⓑ 이고 ⓑ 의 자가소비 처리가
+    현행 러너 동작(소거)과 같으므로 **골든 3건은 한 원도 움직이지 않았다.**
+    요금 거래(사업자 판매수익·사용자 요금)를 모형에 세우는 것은 이 WP 가 하지
+    않았고, 그날 결론축이 움직인다 — 그 경고는 살아 있다.
+
+    ## 무엇을 재는가
+
+    `core/` 안에서 `BaselineArrangement` 를 **이름으로 만지는** 자리를 `ast` 로
+    센다(선언 파일 자신은 뺀다 — 종전과 같은 규칙이다). 문자열이 아니라 `ast` 인
+    이유도 종전과 같다: 주석·독스트링의 언급이 소비자로 세어지면 래칫이 조용히
+    초록불이 된다.
     """
     import ast
     from pathlib import Path
@@ -136,21 +182,30 @@ def test_baseline_arrangement_ratchet() -> None:
     project_root = Path(__file__).resolve().parent.parent.parent
     core_dir = project_root / "core"
 
-    usages = 0
+    readers: dict[str, int] = {}
     for path in core_dir.rglob("*.py"):
         if path.name == "baseline.py" and path.parent.name == "cba":
             continue
-        code = path.read_text(encoding="utf-8")
-        tree = ast.parse(code, filename=str(path))
-        for node in ast.walk(tree):
-            if (isinstance(node, ast.Name) and node.id == "BaselineArrangement") or (
-                isinstance(node, ast.Attribute) and node.attr == "BaselineArrangement"
-            ):
-                usages += 1
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        hits = sum(
+            1
+            for node in ast.walk(tree)
+            if (isinstance(node, ast.Name) and node.id == "BaselineArrangement")
+            or (isinstance(node, ast.Attribute) and node.attr == "BaselineArrangement")
+        )
+        if hits:
+            readers[path.relative_to(project_root).as_posix()] = hits
 
-    assert usages == 0, (
-        "기준선 갈래가 처음 지정됐다. 이 시험을 지우지 말고 뒤집되, "
-        "① 그 갈래의 Without 이 실제로 계산에 쓰이는지 ② 「나」면 계측 전제와 포기 항이 "
-        "함께 섰는지를 검사로 먼저 세워라. ⚠ 갈래를 정하는 순간 요금 거래가 새로 서서 "
-        "결론축이 움직인다."
+    assert readers, (
+        "갈래를 읽는 배포 코드가 다시 0곳이 됐다 — 선언만 남고 실행 경로가 "
+        "그것을 보지 않는 상태다(이 저장소가 다섯 번 밟은 형태 · "
+        "scripts/check_unread_extension_points.py 머리말). 배선을 지웠다면 "
+        "tests/report/test_baseline_arrangement_wiring.py 넷도 함께 빨간불일 "
+        "것이다 — 그쪽을 먼저 보라"
+    )
+    missing = [name for name in _MUST_READ_THE_ARRANGEMENT if name not in readers]
+    assert not missing, (
+        f"실행 경로가 갈래를 읽지 않는다: {missing} — 읽는 곳은 "
+        f"{sorted(readers)} 다. 「고르는 자리」와 「계산하는 자리」가 둘 다 "
+        "읽어야 이 축이 성립한다(위 _MUST_READ_THE_ARRANGEMENT 주석)"
     )
