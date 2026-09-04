@@ -63,7 +63,7 @@ from core.casegrid.ledger_levels import (
     ledger_unit_scales,
 )
 from core.casegrid.profiles import DailyShapes
-from core.cba.baseline import BaselineArrangement
+from core.cba.baseline import BaselineArrangement, PoolMeteringDeclaration
 from core.contracts.assumptions import AssumptionValue
 from core.incentive.schemas import IncentiveScheme
 from core.report.sensitivity import rank_influences
@@ -227,8 +227,15 @@ class _Sweeper:
         rec_weight_pv: float,
         distributed_sub_items: DistributedSubItems | None,
         baseline_arrangement: BaselineArrangement,
+        pool_metering: PoolMeteringDeclaration | None = None,
     ) -> None:
         self._baseline_arrangement = baseline_arrangement
+        # ★ ⓒ 의 계측 선언 (R60/WP-3). **기본값을 두는 것이 안전한 자리다** —
+        # 잊으면 ⓒ 의 스윕이 `DV-15` 로 **거부**되므로 어긋남이 조용히
+        # 지나가지 않는다. 위 갈래는 그렇지 않아서(기본값이 조용히 다른
+        # 기준선을 세운다) 필수 인자로 두었다 — 두 인자의 처리가 다른 것이
+        # 그 차이다.
+        self._pool_metering = pool_metering
         self._level_map = level_map
         self._horizon_years = horizon_years
         self._scheme = scheme
@@ -294,6 +301,11 @@ class _Sweeper:
             # 자가소비를 가르므로 갈래가 다르면 스윕의 절대값이 실제로
             # 어긋난다. **기본값을 여기 적지 않는다** — 호출부가 넘긴다.
             baseline_arrangement=self._baseline_arrangement,
+            # ★ **본 실행과 같은 계측 선언으로 돈다** (R60/WP-3). 안 넘기면
+            # ⓒ 를 고른 실행에서 5.1·용량 검토가 `DV-15` 로 거부되어 본문
+            # 4절만 서고 나머지가 서지 않는다 — 위 넷과 같은 자리이며, 이
+            # 인자는 어긋나도 **조용하지 않다**(거부가 난다).
+            pool_metering=self._pool_metering,
         )
         result = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
         self._memo[key] = result

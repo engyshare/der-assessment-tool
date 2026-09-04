@@ -92,12 +92,14 @@ from core.casegrid.profiles import DailyShapes
 from core.casegrid.pv_allocation import (
     ESS_CHARGE_SOURCE_DEFAULT,  # noqa: F401
     ESS_OPERATING_MODE_DEFAULT,  # noqa: F401
+    FORFEITED_SELF_CONSUMPTION_TAG,
     PV_ALLOCATION_PRIORITY_DEFAULT,  # noqa: F401
     _dispatch_inputs_under_baseline,
+    _forfeited_self_consumption_rows,
     _resolve_ess_dispatch_inputs,  # noqa: F401
     measured_self_consumption_ratio,
 )
-from core.cba.baseline import BaselineArrangement
+from core.cba.baseline import BaselineArrangement, PoolMeteringDeclaration
 from core.cba.proforma import (
     benefit_row,
     check_analysis_period,
@@ -131,6 +133,7 @@ from core.valuestream.settlement import SettlementInputs, assemble
 #: 줄이면 그 호출이 조용히 끊긴다.
 __all__ = (
     "DAYS_PER_YEAR",
+    "FORFEITED_SELF_CONSUMPTION_TAG",
     "HOURS_PER_YEAR",
     "PV_CAPACITY_FACTOR",
     "net_operating_flows",
@@ -395,6 +398,7 @@ def run_single_case_e2e(
     pv_allocation_priority: PVAllocationPriority | str | None = None,
     ess_shares: Sequence[ESSShare] | None = None,
     baseline_arrangement: BaselineArrangement | str | None = None,
+    pool_metering: PoolMeteringDeclaration | None = None,
 ) -> CaseOutcome:
     """Execute the full DER → Engine → Benefit → CBA pipeline for one case.
 
@@ -552,13 +556,31 @@ def run_single_case_e2e(
     ⓑ(`CANCEL_OUT`)는 자가소비가 Without·With 양쪽에 똑같이 있어 차액에서
     소거되므로 **종전 동작 그대로**이며, 그래서 골든 셋이 움직이지 않는다.
 
-    ⚠⚠ **ⓒ(`FORFEIT` · 자가용 집합자원화)는 `get_baseline_branch` 가 `DV-15`
-    로 거부한다 — 그 거부를 여기서 풀거나 0 으로 채우지 않는다.** 포기 항
-    (대칭 항)과 구분 계측 선언이 저장소에 없고, 없는 전제를 0 으로 메우면
-    *「없는 제도 위에 편익을 쌓는」* 형태가 된다(그 함수 독스트링이 근거를
-    갖는다). 거부는 **저장장치 조립·디스패치·편익·CBA 어느 것도 돌기 전에**
-    난다 — `DV-5`(`check_analysis_period`)가 *「자원이 서자마자」* 재는 것보다
-    이른 자리다.
+    ★★★ **`pool_metering` — ⓒ(`FORFEIT` · 자가용 집합자원화)의 성립 전제 선언**
+    (R60/WP-3). ⓒ 는 R58 이래 `get_baseline_branch` 가 `DV-15` 로 **무조건**
+    거부해 왔고 그 사유가 둘이었다: ① 계측 전제가 안 섰다 ② 대칭 항이 없다.
+
+    ②는 **자리를 만들면 닫히는 것**이었고 이 라운드가 만들었다 — 아래
+    `operating_cost_rows` 의 `_forfeited_self_consumption_rows` 이며 ⓒ 를 고른
+    실행에서 **「포기한 자가소비」 비용 행**이 선다(총괄지침 제45조③ 대칭성).
+
+    ①은 다르다 — 소유·운영권 인계와 구분 계측은 자료가 아니라 **사업 설계**이고
+    저장소가 채울 수 없다. 그래서 **입력으로 요구한다**: `pool_metering` 이 그
+    통로이며 `None`(= 적지 않았다)이면 **지금까지와 똑같이 `DV-15` 로 거부**되고,
+    둘 중 하나만 참이어도 거부되며 **거부 문면이 어느 쪽이 빠졌는지 말한다**
+    (사용자 판정 `docs/decisions-2026-09-04-R59b.md` §1 4항 — *「가정하지 말고
+    물어라」*).
+
+    ⚠⚠ **그 거부를 풀거나 0 으로 채우지 않았다.** 「평가할 수 없다」와 「0
+    이다」는 다른 말이고, 0 으로 메우면 *「없는 제도 위에 편익을 쌓는」* 형태가
+    된다. 거부는 **저장장치 조립·디스패치·편익·CBA 어느 것도 돌기 전에** 난다 —
+    `DV-5`(`check_analysis_period`)가 *「자원이 서자마자」* 재는 것보다 이른
+    자리다.
+
+    ⚠ **ⓒ 는 지금 「포기는 세고 대가는 0인 사업」이다** — 집합자원화 대가의
+    단가가 대장에서 `track: default0`(값 0)이기 때문이다
+    (`docs/assumptions.yaml::benefit.pool_compensation_price`). 그 사실은
+    리포트가 미반영 항목으로 드러낸다(`core/report/unreflected.py`).
     """
     pv_capex = _resolve(
         case_values.get("pv_unit_cost", "base"), "pv_unit_cost", level_map
@@ -731,6 +753,9 @@ def run_single_case_e2e(
         ess_operating_mode, ess_charge_source, case_values, pv, ctx,
         pv_allocation_priority=pv_allocation_priority, household=household,
         baseline_arrangement=baseline_arrangement,
+        # ★ ⓒ 의 계측 선언을 그대로 넘긴다 — 판정은 `get_baseline_branch` 한
+        # 곳이고 이 자리는 나르기만 한다(R60/WP-3).
+        pool_metering=pool_metering,
     )
 
     # ★ **제원 상수 여덟과 `ESS(...)` 조립 전문은 `ess_build.py` 에 있다**
@@ -988,6 +1013,20 @@ def run_single_case_e2e(
                 annual_amount_won=int(cost.annual_amount_won),
             )
             for cost in settlement_costs
+        ),
+        # ★★★ **포기한 자가소비 — ⓒ「자가용 집합자원화」의 대칭 항** (R60/WP-3 ·
+        # 총괄지침 제45조③). ⓐ·ⓑ 에서는 빈 목록이라 **골든 셋이 움직이지
+        # 않는다**(ⓑ 의 자가소비는 Without·With 양쪽에 있어 차액에서 소거된다).
+        # 판정 근거와 물량·단가의 출처는 `_forfeited_self_consumption_rows`
+        # 독스트링이 갖는다.
+        *_forfeited_self_consumption_rows(
+            baseline_arrangement,
+            pool_metering,
+            pv=pv,
+            ctx=ctx,
+            surplus_profile_kwh=ess_pv_surplus_profile_kwh,
+            price_won_per_kwh=grid_purchase_price,
+            horizon_years=horizon_years,
         ),
     ]
     # ★★★ **교체비·잔존가치 (R39-E).** 판정 근거는 `_lifecycle_rows`

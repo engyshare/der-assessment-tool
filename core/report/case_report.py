@@ -77,10 +77,12 @@ from core.casegrid.perspectives import PerspectiveWiring
 from core.casegrid.profiles import load_daily_shapes
 from core.casegrid.variants import run_order
 from core.cba.baseline import (
+    POOL_METERING_FIELD,
     BaselineArrangement,
     BaselineBranch,
     get_baseline_branch,
     resolve_baseline_arrangement,
+    resolve_pool_metering,
 )
 from core.contracts.assumptions import AssumptionProvider, AssumptionValue
 from core.contracts.validation import ValidationError
@@ -709,10 +711,20 @@ def build_case_report(
     baseline_arrangement = resolve_baseline_arrangement(
         scenario.get("baseline_arrangement")
     )
-    # ★ ⓒ(자가용 집합자원화)면 여기서 `DV-15` 로 거부된다 — 리포트를 조립하기
-    # 전이다. 러너도 같은 거부를 지나므로(그 진입점을 직접 부르는 경로가 있다)
-    # 두 자리가 함께 막는다.
-    baseline_branch = get_baseline_branch(baseline_arrangement)
+    # ★★★ **ⓒ 의 계측 선언도 시나리오에서 읽는다** (R60/WP-3 · 사용자 판정
+    # `docs/decisions-2026-09-04-R59b.md` §1 4항 — *「ⓒ 경로는 「계측이 갈렸다」를
+    # **입력으로 요구해야 한다**(가정하지 말고 물어라)」*). 소유·운영권 인계와
+    # 구분 계측은 자료가 아니라 **사업 설계**이므로 저장소가 채울 수 없다.
+    # ⚠ **필드가 없으면 `None`(= 적지 않았다)이고 그때 ⓒ 는 거부된다.** 여기서
+    # 빈 선언으로 바꿔 내지 않는다 — 결과는 같지만 「적지 않았다」와 「둘 다
+    # 아니라고 적었다」는 다른 진술이다.
+    pool_metering = resolve_pool_metering(scenario.get(POOL_METERING_FIELD))
+    # ★ ⓒ(자가용 집합자원화)를 **선언 없이** 고르면 여기서 `DV-15` 로 거부된다 —
+    # 리포트를 조립하기 전이다. 러너도 같은 거부를 지나므로(그 진입점을 직접
+    # 부르는 경로가 있다) 두 자리가 함께 막는다.
+    baseline_branch = get_baseline_branch(
+        baseline_arrangement, pool_metering=pool_metering
+    )
 
     # ★ **일사 곡선을 기본 경로에 배선한다 (R37 · 당시 `todo.md` 4번 — 그 파일은
     # R45 에 `status.md` 「다음에 집을 것」 절로 합쳐졌다).**
@@ -771,6 +783,8 @@ def build_case_report(
         rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
         distributed_sub_items=distributed_sub_items,
         baseline_arrangement=baseline_arrangement,
+        # ★ ⓒ 의 계측 선언 — 이것이 없으면 ⓒ 는 러너에서도 거부된다(R60/WP-3).
+        pool_metering=pool_metering,
     )
     sweeper = _Sweeper(
         level_map=level_map, horizon_years=horizon_years, scheme=scheme,
@@ -782,6 +796,11 @@ def build_case_report(
         # REC·분산편익이 이미 같은 함정을 적어 두었고, 이 축은 자가소비를
         # 가르므로 갈래가 다르면 스윕의 절대값이 실제로 어긋난다.
         baseline_arrangement=baseline_arrangement,
+        # ★ **선언도 함께 넘긴다** (R60/WP-3). 안 넘기면 ⓒ 를 고른 실행에서
+        # 5.1·용량 검토의 스윕이 `DV-15` 로 거부되어 본문 4절만 서고 나머지가
+        # 서지 않는다 — 위 갈래와 달리 이 어긋남은 **조용하지 않다**(거부가
+        # 난다). 그래서 `_Sweeper` 쪽에 기본값을 두었다.
+        pool_metering=pool_metering,
     )
     # ★ 부기 칸 만들기(`_provenance`)를 주입한다 — 그 함수는 이 파일에 남아
     # 있고(R54/WP-2 는 영향도 스윕 한 덩어리만 뗐다), `case_influences` 가

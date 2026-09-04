@@ -45,6 +45,7 @@ from core.casegrid.models import (
     CaseBasis,
 )
 from core.casegrid.profiles import PROFILE_PATH, Season, load_daily_shapes
+from core.cba.baseline import BaselineArrangement
 from core.report.case_report import CaseReport
 from core.report.dispatch_notes import DispatchHour
 
@@ -66,6 +67,19 @@ LABEL_VARIABLE_OM = "변동 O&M"
 
 #: 자가소비 편익의 태그 (`core/valuestream/self_consumption.py`).
 _SELF_CONSUMPTION_TAG = "SelfConsumption"
+
+#: ⓒ「자가용 집합자원화」의 **집합자원화 대가** 미반영 항목 이름.
+#: 검사·리포트가 같은 문자열을 봐야 「그 항목이 섰는가」가 대조된다.
+POOL_COMPENSATION_LABEL = "집합자원화 대가"
+
+#: 그 대가의 **단가**가 대장에 선 자리. `track: default0`(값 0)이며 *「제도가
+#: 없으면 편익은 작은 게 아니라 0」* 이 그 갈래의 정의다
+#: (`docs/assumptions.yaml` 머리말).
+#:
+#: ⚠ **좌표를 항목 문면에 싣는 이유** — 「0원」만 적으면 검토자가 *「대가가
+#: 실제로 0」* 과 *「단가가 확인되지 않아 0」* 을 가릴 수 없다. 둘은 결론이
+#: 같고 뜻이 정반대다.
+POOL_COMPENSATION_LEDGER_KEY = "benefit.pool_compensation_price"
 
 #: 계통 전력 구매 **비용 항목**의 태그 (`core/casegrid/e2e_runner.py`).
 #: 문자열 하나를 두 파일이 나누어 갖는다 — 러너가 태그를 바꾸면 이 판정이
@@ -413,6 +427,68 @@ def _self_consumption_item(
                 "`SelfConsumption` 편익 스트림 배선 "
                 "(`core/valuestream/self_consumption.py` → `e2e_runner`) · "
                 "배타 규칙 유형 A — 잉여판매와 동시 계상 불가"
+            ),
+            measured=True,
+        )
+    ]
+
+
+def _pool_compensation_item(report: CaseReport) -> list[UnreflectedItem]:
+    """**집합자원화 대가** — ⓒ 를 고른 실행에서만 서는 미반영 항목 (R60/WP-3).
+
+    ## ★★★ 왜 이 항목이 필요한가
+
+    ⓒ「자가용 집합자원화」의 프로포마에는 **포기한 자가소비**가 비용으로 서고
+    (총괄지침 제45조③ 대칭성 · `core/cba/proforma.py::
+    forfeited_self_consumption_row`) 그 짝인 **집합자원화 대가**는 **0** 이다 —
+    제도·정산단가 근거가 확인되지 않아 대장에서 `track: default0` 이기 때문이다.
+
+    ⇒ 지금의 ⓒ 는 **포기는 세고 대가는 0인 사업**이며, **그 사실이 산출물에서
+    사라지면 다음 사람이 이것을 「대가가 0원인 사업」으로 읽는다.** 결론은 같고
+    뜻이 정반대다. 이 파일의 머리말이 정한 절충안이 정확히 그 자리다 — 본문
+    3.4 는 항목명과 방향만, 붙임 8 이 크기·사유·해소 조건을.
+
+    ## ⚠ ⓑ·ⓐ 에는 서지 않는다 — **「미반영」과 「해당 없음」은 다르다**
+
+    ⓐ·ⓑ 는 집합자원화를 하지 않으므로 대가가 미반영인 것이 아니라 애초에
+    해당이 없다. 늘 실으면 미반영 건수가 갈래와 무관해지고 요약 1절의 방향별
+    내역이 그만큼 틀린다(`unreflected_direction_tally`).
+
+    ## ⚠ 단가를 문면에 **박지 않는다**
+
+    이 파일 머리말이 *「목록을 문장으로 박아 두지 않는다」* 를 적는다. 그래서
+    단가를 **붙임 1 이 싣는 그 값**(`report.assumptions` — 실행이 실제로 쓴
+    값이다)에서 읽는다. 대장 항목이 사라지면 「대장 항목 없음」이 인쇄되고,
+    그것이 조용한 0 보다 낫다.
+
+    ⚠ **방향은 「개선」이다** — 대가는 편익이고 지금 계상되지 않았으므로
+    반영하면 결론이 좋아진다. 다만 **크기는 미정량**이다(단가가 없으므로).
+    """
+    if report.baseline_arrangement is not BaselineArrangement.POOL:
+        return []
+    priced = [
+        row for row in report.assumptions if row.key == POOL_COMPENSATION_LEDGER_KEY
+    ]
+    unit_price = (
+        " · ".join(f"{row.value}{_unit(row.value_unit)}" for row in priced)
+        or "대장 항목 없음"
+    )
+    return [
+        UnreflectedItem(
+            label=POOL_COMPENSATION_LABEL,
+            direction=DIRECTION_FAVORABLE,
+            magnitude=(
+                f"0원 · 대장 단가 {unit_price} "
+                f"(`{POOL_COMPENSATION_LEDGER_KEY}` · `track: default0`)"
+            ),
+            reason=(
+                "제도·정산단가 미확인 · 프로포마에 대가 편익 행 없음 · "
+                "포기분(대칭 항)만 비용으로 계상됨"
+            ),
+            resolves_when=(
+                f"대장 `{POOL_COMPENSATION_LEDGER_KEY}` 의 `track` 을 `assume` "
+                "으로 올리고 곱할 물량(집합자원 반입 kWh)의 정의를 판정으로 받아 "
+                "편익 행을 세운다"
             ),
             measured=True,
         )
@@ -792,6 +868,12 @@ def build_unreflected(report: CaseReport) -> tuple[UnreflectedItem, ...]:
         *_replacement_items(basis),
         *_unread_items(report),
         *_self_consumption_item(basis, measured),
+        # ★ **같은 갈래다** — 자가소비를 기준선 갈래가 어떻게 다루는가. ⓒ 에서는
+        # 포기분이 비용으로 서고 그 짝인 「집합자원화 대가」가 0 이라 여기 선다
+        # (R60/WP-3). ⓐ·ⓑ 에서는 빈 목록이므로 **골든의 본문 줄 수는 움직이지
+        # 않는다** — 붙여 두어 검토자가 자가소비의 갈래별 처리를 한 자리에서
+        # 읽게 한다.
+        *_pool_compensation_item(report),
         *_purchase_item(basis, report.dispatch_hours),
         # 바로 위와 **같은 갈래**다 — 프로포마 비용 행이 비었는가. 붙여 두어
         # 검토자가 「빠진 비용 행」을 한 자리에서 읽게 한다.

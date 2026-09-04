@@ -199,6 +199,85 @@ def energy_purchase_row(
     )
 
 
+def forfeited_self_consumption_row(
+    tag: str,
+    start_year: int,
+    end_year: int,
+    annual_amount_won: int,
+) -> CashFlowRow:
+    """**포기한 자가소비** — 비용 행 (`FR-705-AC2` · 총괄지침 **제45조③**).
+
+    ## ★★★ 왜 이 행이 필요한가 — **대칭성**
+
+    기준선 갈래 ⓒ「자가용 집합자원화」에서 전기사용자는 자가용 설비를 분산e
+    사업자의 집합자원에 넘긴다. 그러면 **그 설비로 하던 자가소비가 사라진다** —
+    같은 전력을 사야 하므로 회피하고 있던 요금이 되살아난다.
+
+    판정 정본 `docs/decisions-2026-09-03-R57.md` §1 셋째가 그 갈래의 편익을
+    *「요금 차액 + 집합자원화 대가 **−** 잃은 자가소비」* 로 적고, §4④ 가 그
+    규범 근거를 든다 — 총괄지침 제45조③ *「편익을 발생시키기 위해 소요되는
+    모든 비용을 포함하여 분석하고, 비용이 반영되었다면 그로 인해 발생하는
+    모든 편익을 반영하여 비용과 편익의 논리적 인과성을 확보하여야 한다」*.
+
+    ⚠⚠ **이 자리가 없어서 ⓒ 가 거부돼 왔다** — `core/cba/baseline.py::
+    get_baseline_branch` 의 거부 사유 둘 중 둘째(*「대칭 항이 없다」*)가
+    가리킨 것이 여기다. 이 함수가 그 사유를 닫는다.
+
+    ## ★★ 부호 — **새 규약을 만들지 않았다**
+
+    `CashFlowRow` 는 부호 규약을 갖지 않는다: **비용도 양수, 편익도 양수**이고
+    가르는 것은 어느 계정에 실리는가다(`capex_row` 독스트링). 이 저장소의 비용
+    행 셋(`fixed_om_row`·`fee_row`·`energy_purchase_row`)이 전부 양수를 받고
+    음수를 거부하며, 부호를 뒤집는 자리는 순현금흐름을 만드는 경계 **하나**다
+    (`core/casegrid/operating_lines.py::net_operating_flows` · `salvage_row`
+    독스트링의 「뒤집는 자리 하나」). 여기서도 그 규약을 그대로 따른다 —
+    **양수를 받고, 뒤집지 않는다.**
+
+    ⚠ **편익에서 빼는 방식을 쓰지 않는다.** `fee_row` 독스트링이 그 함정을
+    적었다: 편익 차감으로 넣으면 **비용 계정에 한 줄도 남지 않아** 정부·사회
+    관점에서 그 지출이 없는 사업이 되고, `bcr()` 의 분모도 그만큼 작아져
+    같은 사업이 유리해진다.
+
+    ## ⚠ 왜 `fixed_om_row` 도 `fee_row` 도 아닌가 — 라벨이 뜻을 나른다
+
+    프로포마는 사람이 행을 보고 더해 보는 문서다(`won_sum` 독스트링). 「고정
+    O&M」이면 설비 유지비로, 「정산 수수료」면 거래 비용으로 읽히는데 이것은
+    **사업 구조 때문에 잃는 편익**이다 — 설비를 유지했다면 있었을 자가소비이며,
+    운전이 아니라 **갈래**가 바뀌면 사라진다.
+
+    ⚠ **에스컬레이션을 두지 않았다.** 이 금액은 자가소비량 × 전력 구매단가이고
+    그 단가가 오르면 이 비용도 오르는데, 같은 인상률은 요금 차액 편익도
+    올린다 — 그쪽이 아직 배선되지 않았으므로(`energy_purchase_row` 독스트링의
+    같은 절) 비용만 올리면 **편익은 그대로 둔 채 비용만 커져** 집합자원화에
+    불리하게 틀린다. NSPM 대칭성이며, 요금 인상률은 비용·편익 **양쪽에
+    동시에** 배선한다.
+    """
+    if start_year < 1:
+        raise ValidationError(
+            field="proforma.forfeited_start_year",
+            reason=f"분석 연도는 1부터 셉니다: {start_year}",
+            action="start_year 를 1 이상으로 지정하십시오",
+        )
+    if annual_amount_won < 0:
+        raise ValidationError(
+            field="proforma.forfeited_self_consumption_won",
+            reason=f"포기한 자가소비가 음수입니다: {annual_amount_won}",
+            action=(
+                "포기분은 비용이므로 양수로 지정하십시오. 음수면 「자가소비를 "
+                "포기해서 돈을 받는 사업」이 되어 집합자원화가 그만큼 유리해지고, "
+                "부호를 뒤집는 것은 순현금흐름 경계 한 곳이 합니다"
+            ),
+        )
+    return CashFlowRow(
+        label=f"{tag} 포기한 자가소비",
+        tag=tag,
+        amounts={
+            year: Decimal(annual_amount_won)
+            for year in range(start_year, end_year + 1)
+        },
+    )
+
+
 def replacement_row(
     tag: str,
     replacement_years: list[int],

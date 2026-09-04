@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Final
@@ -134,39 +134,210 @@ def resolve_baseline_arrangement(
         ) from None
 
 
-def get_baseline_branch(arrangement: BaselineArrangement) -> BaselineBranch:
-    """갈래 선언을 찾고, **아직 세울 수 없는 갈래를 거부한다** (FR-705-AC2 · DV-15).
+#: ⓒ「자가용 집합자원화」의 성립 전제 **둘**. 판정 정본
+#: `docs/decisions-2026-09-03-R57.md` **§2** 가 그 둘을 적는다 — *「분산에너지
+#: 사업자가 자가용 태양광 설비의 **소유 또는 운영권**을 전기사용자로부터
+#: 인계받고, **발전량, 전기사용량**을 명확하게 구분할 수 있는 형태로 계측,
+#: 정산되야함」*.
+#:
+#: ⚠ **문면을 상수로 두는 이유** — 거부 메시지와 검사가 **같은 문자열**을 봐야
+#: *「어느 쪽이 빠졌는가」* 를 기계가 대조할 수 있다. 양쪽에 베끼면 문면을
+#: 다듬는 날 검사가 따라오지 않아도 아무 일이 없다
+#: (`tests/cba/test_pool_metering_declaration.py` 가 이 이름들을 읽는다).
+POOL_PREREQUISITE_TRANSFER: Final = "자가용 설비의 소유 또는 운영권 인계"
+POOL_PREREQUISITE_METERING: Final = "발전량·전기사용량의 구분 계측·정산"
 
-    ## ★★ 「나」를 거부하는 것이 옳다 — **「평가할 수 없다」와 「0 이다」는 다른 말이다**
+#: 선언이 들어오는 **시나리오 yaml 필드 이름**. 통로는 이 하나다 — 환경변수·
+#: CLI 플래그를 따로 세우지 않는다(통로가 둘이면 어느 것이 이겼는지 산출물에서
+#: 알 수 없다 · R60/WP-2 가 갈래 선택에서 내린 것과 같은 판단).
+POOL_METERING_FIELD: Final = "pool_metering"
 
-    판정 정본 `docs/decisions-2026-09-03-R57.md` **§2** 가 *「계측이 갈리지 않으면
-    「나」는 **평가할 수 없다**」* 고 적는다. 상계처리로는 전기사용자의 전력사용량이
-    구분되지 않아 **책임공급비율의 분모가 서지 않는다.** 그리고 **§4④**(총괄지침
-    제45조③ 대칭성)에 따라 「집합자원화 대가」를 편익으로 세우려면 「포기한 자가소비」를
-    비용으로 세야 하는데 **그 자리가 저장소에 없다.**
 
-    두 자리 중 하나라도 없으면 **거부한다.** 0 으로 채우면 *「없는 제도 위에 편익을
-    쌓는」* 것과 같은 형태가 되고, 이 저장소는 `TouArbitrage` 단가에서 이미 같은
-    판단을 했다(단가가 없어 0 으로 안 채웠다).
+@dataclass(frozen=True)
+class PoolMeteringDeclaration:
+    """ⓒ 의 계측 전제 **선언** — 둘을 함께 받는다 (`FR-705-AC2` · `DV-15`).
+
+    ## ★★★ 기본값이 「갈리지 않았다」인 것이 이 자료형의 본체다
+
+    사용자 판정 `docs/decisions-2026-09-04-R59b.md` §1 4항이 *「ⓒ 경로는
+    「계측이 갈렸다」를 **입력으로 요구해야 한다**(가정하지 말고 물어라)」* 로
+    못 박는다. 소유·운영권이 누구에게 있고 계량이 어떻게 갈리는지는 **자료가
+    아니라 사업 설계**이며(같은 §1 의 ⚠ 마지막 항) 저장소가 채울 수 없다.
+
+    ⚠⚠ **기본값을 `True` 로 두면** 선언을 만들기만 하고 필드를 안 적은 호출이
+    ⓒ 를 열어 버린다 — 그때 나오는 수는 **없는 전제를 있다고 가정한 수**이고
+    그 실수는 아무 예외도 내지 않는다. 그래서 안전한 쪽이 **거부**다.
+
+    ⚠ **둘을 한 자료형에 담는 이유** — 둘은 함께 서야 성립하는 한 조건이고
+    (하나만 참이면 ⓒ 는 여전히 거부된다), 인자 둘로 나르면 호출부마다 하나를
+    빠뜨릴 자리가 생긴다. 「무엇이 빠졌는가」를 아는 것도 이 자료형이다
+    (`missing()`).
+    """
+
+    #: ① 분산e사업자가 자가용 설비의 **소유 또는 운영권**을 인계받았다.
+    ownership_or_operation_transferred: bool = False
+    #: ② **발전량과 전기사용량**을 명확히 구분할 수 있는 형태로 계측·정산한다.
+    metering_separated: bool = False
+
+    def missing(self) -> tuple[str, ...]:
+        """아직 서지 않은 전제의 이름 — **빈 튜플이면 둘 다 섰다.**
+
+        ⚠ 거부 문면이 이것을 그대로 인용한다. 「둘 다 있어야 한다」를 되풀이하는
+        문면은 **이미 확보한 전제를 다시 확보하라고 말하는** 셈이고, 그때 사업
+        설계자에게 남는 선택은 「전부 다시 확인」또는 「그냥 참으로 두기」다.
+        """
+        return tuple(
+            name
+            for declared, name in (
+                (
+                    self.ownership_or_operation_transferred,
+                    POOL_PREREQUISITE_TRANSFER,
+                ),
+                (self.metering_separated, POOL_PREREQUISITE_METERING),
+            )
+            if not declared
+        )
+
+
+#: 선언에 적을 수 있는 필드 — **자료형에서 읽는다.** 손으로 적으면 필드를
+#: 늘리는 날 목록이 따라오지 않아 새 필드가 「모르는 이름」으로 거부된다.
+_POOL_METERING_FIELDS: Final = tuple(f.name for f in fields(PoolMeteringDeclaration))
+
+#: 선언 오류의 `field` 키. 관례는 `<도메인>.<필드>` 다(`ValidationError` 독스트링의
+#: 「`field` 경로 관례」) — 자유 문자열이 섞이면 표시 층이 키로 찾을 수 없다.
+_POOL_METERING_ERROR_FIELD: Final = f"baseline.{POOL_METERING_FIELD}"
+
+#: 선언 문면이 틀렸을 때의 **조치** — 적을 수 있는 필드와 예시를 함께 낸다
+#: (NFR-303: 어떤 필드가 / 왜 / **어떻게 고쳐야 하는지**).
+_POOL_METERING_ACTION: Final = (
+    "적을 수 있는 필드는 "
+    + " · ".join(f"`{name}`" for name in _POOL_METERING_FIELDS)
+    + " 둘이고 값은 참·거짓입니다. 예 — "
+    + POOL_METERING_FIELD
+    + ": {"
+    + ", ".join(f"{name}: true" for name in _POOL_METERING_FIELDS)
+    + "}. 필드를 아예 적지 않으면 「갈리지 않았다」이며 "
+    + f"「{BaselineArrangement.POOL.value}」 갈래는 거부됩니다"
+)
+
+
+def resolve_pool_metering(value: object) -> PoolMeteringDeclaration | None:
+    """시나리오 yaml 의 `pool_metering` → 선언. **적지 않았으면 `None`** 이다.
+
+    ⚠ **`None` 을 빈 선언으로 바꿔 내지 않는다.** 「적지 않았다」와 「둘 다
+    아니라고 적었다」는 다른 진술이고, 둘을 합치면 *선언을 요구했다는 사실*이
+    산출물에서 사라진다(둘 다 거부되므로 결과는 같지만 뜻이 다르다).
+
+    ⚠⚠ **모르는 필드·참거짓이 아닌 값을 조용히 무시하지 않는다.** 오타
+    (`metering`)가 *「선언이 없어서 거부됐다」* 로 통과하면 사업 설계자는
+    **적었는데 왜 거부되나**를 알 수 없고, 그 상태에서 남는 선택은 필드
+    이름을 하나씩 바꿔 보는 것이다 — `resolve_baseline_arrangement` 가 갈래
+    문면에서 이미 같은 판단을 했다.
+
+    ⚠ `rule` 을 비운다 — 선언 **문면 오타**는 §7.3 대장 밖의 일반 입력
+    검증이다. 대장의 `DV-15` 는 *「자리가 다 서지 않은 갈래를 고를 수 없다」*
+    (`get_baseline_branch` 가 던진다)로 다른 규칙이며, 없는 ID 를 달면
+    추적표가 그 규칙을 검증된 것으로 센다.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise ValidationError(
+            field=_POOL_METERING_ERROR_FIELD,
+            reason=(
+                f"「{POOL_METERING_FIELD}」 는 필드 둘을 가진 매핑이어야 하는데 "
+                f"{value!r} 가 왔습니다"
+            ),
+            action=_POOL_METERING_ACTION,
+        )
+    unknown = tuple(str(key) for key in value if key not in _POOL_METERING_FIELDS)
+    if unknown:
+        raise ValidationError(
+            field=_POOL_METERING_ERROR_FIELD,
+            reason=(
+                f"「{POOL_METERING_FIELD}」 에 모르는 필드가 있습니다: {unknown}"
+            ),
+            action=_POOL_METERING_ACTION,
+        )
+    not_boolean = tuple(
+        f"{key}={item!r}" for key, item in value.items() if not isinstance(item, bool)
+    )
+    if not_boolean:
+        raise ValidationError(
+            field=_POOL_METERING_ERROR_FIELD,
+            reason=(
+                f"「{POOL_METERING_FIELD}」 의 값은 참·거짓이어야 합니다: "
+                f"{not_boolean}"
+            ),
+            action=_POOL_METERING_ACTION,
+        )
+    return PoolMeteringDeclaration(**{str(k): bool(v) for k, v in value.items()})
+
+
+def get_baseline_branch(
+    arrangement: BaselineArrangement,
+    *,
+    pool_metering: PoolMeteringDeclaration | None = None,
+) -> BaselineBranch:
+    """갈래 선언을 찾고, **전제가 서지 않은 갈래를 거부한다** (FR-705-AC2 · DV-15).
+
+    ## ★★ 「나」의 거부 사유는 **둘이었고 성격이 달랐다**
+
+    R58~R60/WP-2 동안 이 함수는 ⓒ 를 무조건 거부하며 사유 둘을 한 덩어리로
+    적었다:
+
+        ① 계측 전제가 안 섰다 — 상계처리로는 전기사용자의 전력사용량이
+           구분되지 않아 **책임공급비율의 분모가 서지 않는다**
+           (판정 정본 `docs/decisions-2026-09-03-R57.md` **§2**)
+        ② 대칭 항이 없다 — 「집합자원화 대가」를 편익으로 세우려면 「포기한
+           자가소비」를 비용으로 세야 하는데 **그 자리가 저장소에 없다**
+           (같은 문서 **§4④** · 총괄지침 **제45조③**)
+
+    ★★★ **②는 R60/WP-3 이 닫았다** — `core/cba/proforma.py::
+    forfeited_self_consumption_row` 이 그 자리이고, 실행 경로가 ⓒ 에서 그 행을
+    싣는다(`core/casegrid/e2e_runner.py::_forfeited_self_consumption_rows`).
+    그러므로 ②를 거부 사유로 계속 적으면 **거짓**이다.
+
+    ★★★ **①은 닫을 수 없다.** 소유·운영권 인계와 구분 계측은 자료가 아니라
+    **사업 설계**이며(사용자 판정 `docs/decisions-2026-09-04-R59b.md` §1 의
+    ⚠ 마지막 항) 저장소가 채울 수 없다. 그래서 ①만 남아 **입력으로 요구된다** —
+    `pool_metering` 이 그 통로이고 **적지 않으면 지금까지와 똑같이 거부한다.**
+
+    ⚠⚠ **`DV-15` 를 없애지 않았다 — 조건부로 만들었다.** 거부를 경고로 내리지도
+    않았다: *「평가할 수 없다」와 「0 이다」는 다른 말*이고, 0 으로 채우면
+    *「없는 제도 위에 편익을 쌓는」* 형태가 된다(이 저장소는 `TouArbitrage`
+    단가에서 이미 같은 판단을 했다 — 단가가 없어 0 으로 안 채웠다).
+
+    ⚠ **거부 문면이 어느 쪽이 빠졌는지 말한다** (`PoolMeteringDeclaration.
+    missing()`). 둘을 한 덩어리로 적으면 사업 설계자가 무엇을 더 확보해야
+    하는지 알 수 없고, 그때 남는 선택은 「그냥 참으로 두기」다.
     """
     branch = BASELINE_DECLARATIONS[arrangement]
     if branch.self_consumption_treatment is SelfConsumptionTreatment.FORFEIT:
-        raise ValidationError(
-            field="baseline.arrangement",
-            reason=(
-                "포기 항이 서지 않았다: 1. 계측 전제가 안 섰다(상계처리로는 "
-                "전기사용자의 전력사용량이 구분되지 않아 책임공급비율의 분모가 서지 않는다. "
-                "발전량·전기사용량을 구분해 계측·정산해야 한다). "
-                "2. 대칭 항이 없다(집합자원화 대가를 편익으로 세우려면 포기한 자가소비를 "
-                "비용으로 세야 하는데 그 자리가 저장소에 없다)."
-            ),
-            action=(
-                "「나」 갈래는 지금 평가할 수 없습니다. 0 으로 채우지 마십시오 — "
-                "구분 계측(발전량·전기사용량)을 선언하고 「포기한 자가소비」 비용 항을 "
-                "세운 뒤에 이 갈래를 고르십시오"
-            ),
-            rule="DV-15",
+        missing = (
+            (POOL_PREREQUISITE_TRANSFER, POOL_PREREQUISITE_METERING)
+            if pool_metering is None
+            else pool_metering.missing()
         )
+        if missing:
+            raise ValidationError(
+                field="baseline.arrangement",
+                reason=(
+                    f"「{arrangement.value}」의 계측 전제가 안 섰다 — 아직 서지 "
+                    f"않은 전제 {len(missing)}건: "
+                    + " · ".join(f"「{name}」" for name in missing)
+                    + ". 상계처리로는 전기사용자의 전력사용량이 구분되지 않아 "
+                    "책임공급비율의 분모가 서지 않는다"
+                ),
+                action=(
+                    f"시나리오의 「{POOL_METERING_FIELD}」 에 그 전제를 선언한 "
+                    "뒤에 이 갈래를 고르십시오 — 가정하지 마십시오. "
+                    + _POOL_METERING_ACTION
+                    + ". 0 으로 채우지 마십시오 — 「평가할 수 없다」와 "
+                    "「0 이다」는 다른 말입니다"
+                ),
+                rule="DV-15",
+            )
     return branch
 
 
