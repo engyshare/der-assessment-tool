@@ -47,7 +47,7 @@ from pathlib import Path
 
 import pytest
 
-from core.casegrid.e2e_runner import run_single_case_e2e
+from core.casegrid.e2e_runner import DAYS_PER_YEAR, run_single_case_e2e
 from core.casegrid.ledger_levels import build_level_map
 from core.casegrid.profiles import load_daily_shapes
 from core.report.case_report import (
@@ -70,6 +70,21 @@ def _report():
     )
 
 
+def _representative_day() -> tuple[float, ...]:
+    """배포 실행이 **실제로 넘겨받는 하루** (R60/WP-4-fix).
+
+    ⚠ `DailyShape.weights` 를 쓰지 않는다 — 자산이 계절 넷을 선언한 뒤로 「그
+    형상」은 하나가 아니고, 그 속성은 계절이 여럿이면 거부한다. 러너가 넘기는
+    것은 `spread_over_representative_day()` 로 편 시계열이고 자원은 그 앞 하루를
+    잘라 쓰므로, **이 검사가 자산에 대고 재야 하는 하루는 몫 가중 평균 대표일**
+    이다(`core/casegrid/e2e_runner.py` 의 두 호출부).
+
+    총량은 1.0 을 준다 — 여기서 묻는 것은 **어느 스텝이 0 인가**이고 총량은
+    그 물음에 들어오지 않는다.
+    """
+    return load_daily_shapes().generation.representative_day(1.0, days=DAYS_PER_YEAR)
+
+
 def test_the_shape_asset_actually_has_hours_without_sun() -> None:
     """★★ **자산이 「해가 없는 시간」을 갖고 있는가** — ①의 근거를 먼저 세운다.
 
@@ -82,7 +97,7 @@ def test_the_shape_asset_actually_has_hours_without_sun() -> None:
     것은 *「0 인 스텝이 있고, 곡선이 평탄하지 않다」* — 태양광의 성질이며
     자산이 그것을 그리고 있는가를 묻는다.
     """
-    weights = load_daily_shapes().generation.weights
+    weights = _representative_day()
     dark = [i for i, w in enumerate(weights) if w == 0.0]
     assert dark, (
         f"발전 형상 {len(weights)}스텝에 0 인 스텝이 하나도 없다 — "
@@ -100,7 +115,7 @@ def test_the_default_report_run_has_no_generation_at_night() -> None:
     """
     hours = _report().dispatch_hours
     assert hours, "붙임 7 운전이 비어 있다"
-    dark = [i for i, w in enumerate(load_daily_shapes().generation.weights) if w == 0.0]
+    dark = [i for i, w in enumerate(_representative_day()) if w == 0.0]
     for step in dark:
         assert hours[step].per_resource[_PV] == 0.0, (
             f"{step}시에 태양광이 {hours[step].per_resource[_PV]}kWh 발전한다 — "

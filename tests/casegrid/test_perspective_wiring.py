@@ -61,12 +61,17 @@ def test_operator_perspective_keeps_the_conclusion_axis(report) -> None:
     다시 계산하지 않는가」를 재는 것이지 축 자체의 값을 고정하는 자리가
     아니므로, 위 첫 단언(`report.metrics[CONCLUSION_METRIC]` 과 같은가)이
     실질이고 아래는 그 값을 실측으로 못박아 둔다.
+
+    ⚠ **R60/WP-4-fix 가 다시 갱신했다** — 자산의 계절 절을 가정으로 채우며
+    결론축이 −11,537,129 → **−11,552,270원**(−15,141원)으로 옮겼다. 연간
+    총량은 그대로이고 몫 가중 평균 대표일의 **모양**만 바뀐 몫이다
+    (`core/casegrid/profiles.py::DailyShape.representative_day`).
     """
     operator = next(
         r for r in report.perspectives.results if r.perspective is Perspective.OPERATOR
     )
     assert int(operator.npv_value) == int(report.metrics[CONCLUSION_METRIC])
-    assert int(operator.npv_value) == -11_537_129
+    assert int(operator.npv_value) == -11_552_270
 
 
 @pytest.mark.req("FR-402-AC7")
@@ -124,12 +129,22 @@ def test_npv_row_prints_no_number_for_perspectives_without_cost_basis(report) ->
     ⚠ **리터럴을 R52/WP-6 이 갱신했다** — `benefit.rec_price` 가 결론축을
     −12,591,162 → **−11,537,129원**으로 옮겼다(위
     `test_operator_perspective_keeps_the_conclusion_axis` 참조).
+    R60/WP-4-fix 가 그것을 다시 **−11,552,270원**으로 옮겼다(같은 자리 참조).
+
+    ⚠⚠ **「0 이 인쇄되지 않는가」를 칸으로 잰다** (R60/WP-4-fix). 종전에는 줄
+    전체에서 글자 `0` 을 찾았고, 그것이 통과한 것은 **그때의 결론축 숫자에
+    마침 `0` 이 없었기 때문**이다 — 수가 −11,552,270원으로 바뀌자 자기 자릿수에
+    걸려 빨간불이 됐다. 이 검사가 붙드는 것은 *「비용 배분이 없는 관점 칸이
+    「0원」으로 인쇄되지 않는가」* 이므로 **칸을 갈라 그 칸이 「0원」인지**를
+    본다. 그렇게 하면 결론축 숫자가 무엇이든 이 검사의 뜻이 변하지 않는다.
     """
     text = render_markdown(report)
     npv_line = next(line for line in text.splitlines() if line.startswith("| NPV |"))
     assert npv_line.count("미산출") == 3, npv_line
-    assert "-11,537,129원" in npv_line, npv_line
-    assert "0" not in npv_line.replace("미산출", ""), npv_line
+    assert "-11,552,270원" in npv_line, npv_line
+    cells = [cell.strip() for cell in npv_line.strip().strip("|").split("|")]
+    assert "0원" not in cells, npv_line
+    assert "0" not in cells, npv_line
 
 
 def test_cost_total_row_prints_not_allocated_for_perspectives_without_cost_basis(
@@ -139,7 +154,7 @@ def test_cost_total_row_prints_not_allocated_for_perspectives_without_cost_basis
     text = render_markdown(report)
     cost_line = next(line for line in text.splitlines() if line.startswith("| 비용 합계 |"))
     assert cost_line.count("미배분") == 3, cost_line
-    assert "17,967,077원" in cost_line, cost_line
+    assert "17,746,097원" in cost_line, cost_line
 
 
 def test_benefit_total_row_always_prints_a_real_number(report) -> None:
@@ -148,12 +163,17 @@ def test_benefit_total_row_always_prints_a_real_number(report) -> None:
     ⚠ **사업자 리터럴을 R52/WP-6 이 갱신했다** — REC 편익(0 → 70원/kWh)이
     사업자 편익 합계에 더해져 4,038,000 → **5,658,600원**이 됐다. 참여
     주민은 REC 를 포함하지 않아 그대로다.
+
+    ⚠ **R60/WP-4-fix 가 둘 다 갱신했다** — 계절 형상이 평균 대표일의 모양을
+    바꿔 낮 시간대 발전과 가구 부하가 겹치는 몫이 늘었다. 자가소비가 커진 만큼
+    참여 주민이 1,497,600 → **1,559,940원**으로 오르고, 계통으로 나가는 잉여가
+    줄어 사업자가 5,658,600 → **5,414,340원**으로 내렸다. 연간 총량은 그대로다.
     """
     text = render_markdown(report)
     benefit_line = next(line for line in text.splitlines() if line.startswith("| 편익 합계 |"))
     assert "미산출" not in benefit_line and "미배분" not in benefit_line
-    assert "1,497,600원" in benefit_line  # 참여 주민
-    assert "5,658,600원" in benefit_line  # 사업자
+    assert "1,559,940원" in benefit_line  # 참여 주민
+    assert "5,414,340원" in benefit_line  # 사업자
 
 
 def test_header_row_pairs_repository_and_user_vocabulary(report) -> None:
