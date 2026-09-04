@@ -209,3 +209,47 @@ def test_baseline_arrangement_ratchet() -> None:
         f"{sorted(readers)} 다. 「고르는 자리」와 「계산하는 자리」가 둘 다 "
         "읽어야 이 축이 성립한다(위 _MUST_READ_THE_ARRANGEMENT 주석)"
     )
+
+
+@pytest.mark.req("NFR-303-M1")
+def test_unknown_arrangement_text_is_rejected_with_the_three_options() -> None:
+    """모르는 갈래 문면은 **거부**하고, 메시지가 필드·사유·조치 셋을 든다 (NFR-303).
+
+    ⚠⚠ **조용히 기본값으로 떨어뜨리지 않는 것이 이 검사의 본체다.** 오타가
+    *「ⓑ 로 돌았다」* 로 통과하면 그 평가는 **적은 것과 다른 기준선** 위에 서고,
+    산출물의 어디에도 그 어긋남이 드러나지 않는다
+    (`resolve_baseline_arrangement` 독스트링).
+
+    ⚠ **`rule` 은 비어 있어야 한다.** 갈래 문면 오타는 §7.3 대장 밖의 일반 입력
+    검증이며, 대장의 `DV-15` 는 *「자리가 다 서지 않은 갈래를 고를 수 없다」*
+    (`get_baseline_branch` 가 던진다)로 다른 규칙이다 — 없는 ID 를 달면 추적표가
+    그 규칙을 검증된 것으로 센다.
+    """
+    from core.cba.baseline import (
+        DEFAULT_BASELINE_ARRANGEMENT,
+        BaselineArrangement,
+        resolve_baseline_arrangement,
+    )
+    from core.contracts.validation import ValidationError
+
+    with pytest.raises(ValidationError) as excinfo:
+        resolve_baseline_arrangement("자가용 유지함")
+
+    error = excinfo.value
+    assert error.field == "baseline.arrangement"
+    assert "자가용 유지함" in error.reason, (
+        "사유가 「무엇이 왔는가」를 되돌려주지 않는다 — 여러 시나리오를 한꺼번에 "
+        "돌리는 자리에서 어느 값이 틀렸는지 알 수 없다(NFR-303)"
+    )
+    assert error.rule is None, (
+        "갈래 문면 오타에 규칙 ID 가 달렸다 — 대장 밖의 일반 입력 검증이므로 "
+        "비워야 한다(없는 ID 를 달면 추적표가 그 규칙을 검증된 것으로 센다)"
+    )
+    for member in BaselineArrangement:
+        assert member.value in error.action, (
+            f"조치가 고를 수 있는 문면 「{member.value}」를 알려 주지 않는다 — "
+            "셋을 다 적어야 사람이 오타를 고칠 수 있다(NFR-303)"
+        )
+    assert DEFAULT_BASELINE_ARRANGEMENT.value in error.action, (
+        "조치가 「필드를 비우면 어느 갈래로 도는가」를 말하지 않는다"
+    )
