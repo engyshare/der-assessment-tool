@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
+from typing import Final
 
 from core.cba.proforma import aggregate
 from core.contracts.schemas import CashFlowRow
@@ -74,6 +75,63 @@ BASELINE_DECLARATIONS: Mapping[BaselineArrangement, BaselineBranch] = MappingPro
         ),
     }
 )
+
+
+#: 갈래를 **적지 않은 평가**가 도는 갈래 — ⓑ「자가용 유지」(`MAINTAIN`).
+#:
+#: ★★ **근거는 사용자 판정이다** (`docs/decisions-2026-09-04-R59b.md` §1 —
+#: *「자가태양광과 히트펌프가 있는 가구를 대상으로 프로그램이 기획되었음.
+#: 따라서 ⓑ에 가까움」*). 대상 가구가 자가용 설비를 **이미 갖고 있으므로**
+#: 기준선(Without)의 기본 자리가 *「자가용을 유지한 상태」* 다.
+#:
+#: ⚠⚠ **여기가 이 값을 정하는 유일한 자리다.** 러너와 리포트가 각자 리터럴을
+#: 두면 한쪽만 고쳐지고, 그때 「필드를 안 적은 실행」이 층마다 다른 갈래로
+#: 돌면서 **아무 예외도 나지 않는다.** 두 층은 아래 `resolve_baseline_arrangement`
+#: 를 지나며 그 함수만 이 상수를 읽는다.
+#:
+#: ⚠ **기본값을 두는 것 자체가 판정이다** — 판정 정본이 그렇게 적는다
+#: (*「기본값을 두면 그 기본값으로 결론축이 움직인다」*). 이 값이 고른 갈래의
+#: 자가소비 처리(`CANCEL_OUT` — 양쪽에 있어 소거)가 **현행 러너 동작과 같으므로**
+#: 이 배선은 결론축을 움직이지 않는다. 다른 갈래를 기본으로 두는 날에는 움직인다.
+DEFAULT_BASELINE_ARRANGEMENT: Final = BaselineArrangement.MAINTAIN
+
+
+def resolve_baseline_arrangement(
+    value: BaselineArrangement | str | None,
+) -> BaselineArrangement:
+    """적힌 문면 → 갈래. **적히지 않았으면** `DEFAULT_BASELINE_ARRANGEMENT`.
+
+    시나리오 yaml 의 `baseline_arrangement` 필드가 이 함수의 입력이며, 값은
+    `BaselineArrangement` 의 **문면 그대로**다(`자가용 없음` · `자가용 유지` ·
+    `자가용 집합자원화`).
+
+    ⚠⚠ **모르는 문면을 조용히 기본값으로 떨어뜨리지 않는다.** 오타가
+    *「ⓑ 로 돌았다」* 로 통과하면 그 평가는 **적은 것과 다른 기준선** 위에
+    서고, 산출물의 어디에도 그 어긋남이 드러나지 않는다 — 이 저장소가
+    반복해 잡아 온 형태다.
+
+    ⚠ `rule` 을 비운다 — 갈래 문면 오타는 §7.3 대장 밖의 일반 입력 검증이다.
+    대장에 있는 `DV-15` 는 *「자리가 다 서지 않은 갈래를 고를 수 없다」* 이며
+    (`get_baseline_branch` 가 던진다) 이것과 다른 규칙이다. 없는 ID 를 달면
+    추적표가 그 규칙을 검증된 것으로 센다(`ValidationError` 독스트링).
+    """
+    if value is None:
+        return DEFAULT_BASELINE_ARRANGEMENT
+    if isinstance(value, BaselineArrangement):
+        return value
+    try:
+        return BaselineArrangement(value)
+    except ValueError:
+        raise ValidationError(
+            field="baseline.arrangement",
+            reason=f"기준선 갈래로 모르는 문면이 왔습니다: {value!r}",
+            action=(
+                "다음 중 하나를 적으십시오 — "
+                + " · ".join(f"「{e.value}」" for e in BaselineArrangement)
+                + f". 필드를 비우면 「{DEFAULT_BASELINE_ARRANGEMENT.value}」로 "
+                "돕니다"
+            ),
+        ) from None
 
 
 def get_baseline_branch(arrangement: BaselineArrangement) -> BaselineBranch:

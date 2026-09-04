@@ -93,9 +93,11 @@ from core.casegrid.pv_allocation import (
     ESS_CHARGE_SOURCE_DEFAULT,  # noqa: F401
     ESS_OPERATING_MODE_DEFAULT,  # noqa: F401
     PV_ALLOCATION_PRIORITY_DEFAULT,  # noqa: F401
-    _resolve_ess_dispatch_inputs,
+    _dispatch_inputs_under_baseline,
+    _resolve_ess_dispatch_inputs,  # noqa: F401
     measured_self_consumption_ratio,
 )
+from core.cba.baseline import BaselineArrangement
 from core.cba.proforma import (
     benefit_row,
     check_analysis_period,
@@ -392,6 +394,7 @@ def run_single_case_e2e(
     ess_charge_source: ESSChargeSource | str | None = None,
     pv_allocation_priority: PVAllocationPriority | str | None = None,
     ess_shares: Sequence[ESSShare] | None = None,
+    baseline_arrangement: BaselineArrangement | str | None = None,
 ) -> CaseOutcome:
     """Execute the full DER → Engine → Benefit → CBA pipeline for one case.
 
@@ -530,6 +533,32 @@ def run_single_case_e2e(
     정하지 않았고 여기서 지어내지 않는다. 통로만 냈다(R56 이 계절 축에서 쓴
     방식과 같다: *「구조는 섰고 값은 비어 있다」*). 값이 오면 결론축이
     움직이며 **그때가 사용자 판정 자리**다.
+
+    ★★★ **`baseline_arrangement` — 기준선(Without)이 셋으로 갈린다**
+    (`FR-705-AC2` · `DV-15` · 사용자 판정 `docs/decisions-2026-09-04-R59b.md`
+    §1). R58 이 갈래 셋을 `core/cba/baseline.py` 에 **선언**했으나 이 진입점이
+    그것을 **한 번도 읽지 않았다** — 읽는 배포 코드가 그 파일 자기 자신뿐이었고,
+    그래서 산출된 `npv` 는 「갈래 미지정」의 수였다.
+
+    `None` 은 *「적지 않았다」* 이고 그때 `DEFAULT_BASELINE_ARRANGEMENT`
+    (ⓑ「자가용 유지」)로 돈다 — **기본값은 그 상수 한 곳에서만 정한다**
+    (`resolve_baseline_arrangement` 독스트링). 빈 문자열이나 모르는 문면은
+    거부되며 조용히 기본값으로 떨어지지 않는다.
+
+    ⚠ **갈래가 계산을 가르는 자리는 자가소비 하나다** — 갈래가
+    `SelfConsumptionTreatment.NONE`(ⓐ 자가용 없음)이면 전기사용자에게 자가용
+    설비가 없으므로 낮 전기가 **가구로 먼저 가는 몫이 0** 이다. 그 반영은
+    아래 `_resolve_ess_dispatch_inputs` 호출 직후 한 자리에서 한다.
+    ⓑ(`CANCEL_OUT`)는 자가소비가 Without·With 양쪽에 똑같이 있어 차액에서
+    소거되므로 **종전 동작 그대로**이며, 그래서 골든 셋이 움직이지 않는다.
+
+    ⚠⚠ **ⓒ(`FORFEIT` · 자가용 집합자원화)는 `get_baseline_branch` 가 `DV-15`
+    로 거부한다 — 그 거부를 여기서 풀거나 0 으로 채우지 않는다.** 포기 항
+    (대칭 항)과 구분 계측 선언이 저장소에 없고, 없는 전제를 0 으로 메우면
+    *「없는 제도 위에 편익을 쌓는」* 형태가 된다(그 함수 독스트링이 근거를
+    갖는다). 거부는 **저장장치 조립·디스패치·편익·CBA 어느 것도 돌기 전에**
+    난다 — `DV-5`(`check_analysis_period`)가 *「자원이 서자마자」* 재는 것보다
+    이른 자리다.
     """
     pv_capex = _resolve(
         case_values.get("pv_unit_cost", "base"), "pv_unit_cost", level_map
@@ -694,9 +723,14 @@ def run_single_case_e2e(
         resolved_ess_charge_source,
         ess_pv_surplus_profile_kwh,
         resolved_pv_allocation_priority,
-    ) = _resolve_ess_dispatch_inputs(
+    # ★★★ **기준선 갈래가 이 자리를 지난다** (`FR-705-AC2` · 위 독스트링).
+    # 감싸는 함수가 `core/casegrid/pv_allocation.py` 에 있는 이유는 그 모듈
+    # 머리말의 R60/WP-2 절이 갖는다(이 함수의 `PLR0915` 문장 상한이 꽉 차
+    # 있었고, 이 파일의 `NFR-206` 코드 줄 상한도 닿아 있었다).
+    ) = _dispatch_inputs_under_baseline(
         ess_operating_mode, ess_charge_source, case_values, pv, ctx,
         pv_allocation_priority=pv_allocation_priority, household=household,
+        baseline_arrangement=baseline_arrangement,
     )
 
     # ★ **제원 상수 여덟과 `ESS(...)` 조립 전문은 `ess_build.py` 에 있다**

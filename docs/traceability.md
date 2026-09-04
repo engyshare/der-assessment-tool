@@ -269,7 +269,7 @@
 |  |  | 1 | `FR-704-AC7` | 관점 전환 시 어떤 항목이 왜 포함/제외되었는지를 리포트에 표시한다 (관점 섞기가 가장 흔한 중복 오류 — 도메인 원칙 2-3) | 자동 | test_transfer.py, test_perspective_report.py |
 |  |  | 1 | `FR-704-AC8` | 사회 관점 산출 시 이전(transfer) 은 소거한다 — 한쪽의 편익이 다른 쪽의 같은 크기 손실인 흐름은 사회 전체에 순가치를 더하지 않는다. 관점별 표에서… | 자동 | test_perspective_wiring.py, test_transfer.py, test_payer_structure_contract.py |
 | `FR-705` | Must-have | 1 | `FR-705-AC1` | "설비 미설치 시 전기·열 비용"을 기준선으로 계산하고 모든 편익을 증분으로 산출. 기준선 자체 비용도 리포트에 표시 | 자동 | test_baseline.py, test_heatpump.py |
-|  |  | 1 | `FR-705-AC2` | 기준선(Without)은 전기사용자의 자가용 설비 처리에 따라 셋으로 갈린다 — ① 자가용 없음(한전 전력 전량) ② 자가용 유지 + 분산에너지 공급(한전 전력… | 자동 | test_baseline.py 3건 |
+|  |  | 1 | `FR-705-AC2` | 기준선(Without)은 전기사용자의 자가용 설비 처리에 따라 셋으로 갈린다 — ① 자가용 없음(한전 전력 전량) ② 자가용 유지 + 분산에너지 공급(한전 전력… | 자동 | test_pv_allocation.py 3건, test_baseline.py 3건, test_baseline_arrangement_wiring.py 4건 |
 | `FR-801` | Must-have | 1 | `FR-801-AC1` | 임의 파라미터를 "탐색 변수"로 지정하고 값 목록(예: [저, 중, 고] 또는 [100, 150, 200])을 부여 | 자동 | test_casegrid.py, test_variant_production_wiring.py |
 |  |  | 1 | `FR-801-AC2` | 탐색 변수로 지정 가능한 대상에는 스칼라 파라미터뿐 아니라 자원 운전 방법(FR-105), 규제 프로파일(FR-504), 시계열 데이터셋(FR-905) 도 포함… | 자동 | test_casegrid.py |
 |  |  | 1 | `FR-801-AC3` | 시스템이 전조합(Cartesian product)을 생성하고 일괄 실행한다 | 자동 | test_casegrid.py |

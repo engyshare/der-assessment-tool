@@ -63,6 +63,7 @@ from core.casegrid.ledger_levels import (
     ledger_unit_scales,
 )
 from core.casegrid.profiles import DailyShapes
+from core.cba.baseline import BaselineArrangement
 from core.contracts.assumptions import AssumptionValue
 from core.incentive.schemas import IncentiveScheme
 from core.report.sensitivity import rank_influences
@@ -206,6 +207,13 @@ class _Sweeper:
     기준에서는 매끈하므로 아무 검사도 걸리지 않는다. 인자를 필수로 두지 않고
     기본값 `None` 을 남기는 것이 아니라 **호출부가 넘기게** 하고, 그 배선을
     검사가 붙든다(`tests/report/test_irradiance_wired.py`).
+
+    ★★ **기준선 갈래도 같은 이유로 받는다 (R60/WP-2 · `FR-705-AC2`).**
+    갈래가 자가소비를 가르므로(ⓐ 는 0) 스윕이 갈래 없이 돌면 본문 4절과
+    5·6절이 **서로 다른 기준선** 위에 서고, 두 절 모두 자기 기준에서는
+    매끈하다 — 위 형상과 **완전히 같은 함정**이다. 그래서 기본값을 두지 않고
+    **필수 인자**로 받는다: 기본값을 두면 호출부가 잊어도 아무 예외가 나지
+    않는다.
     """
 
     def __init__(
@@ -218,7 +226,9 @@ class _Sweeper:
         rec_price_won_per_unit: float,
         rec_weight_pv: float,
         distributed_sub_items: DistributedSubItems | None,
+        baseline_arrangement: BaselineArrangement,
     ) -> None:
+        self._baseline_arrangement = baseline_arrangement
         self._level_map = level_map
         self._horizon_years = horizon_years
         self._scheme = scheme
@@ -277,6 +287,13 @@ class _Sweeper:
             # 이 자리가 비어 있으면 **본문과 5.1 이 서로 다른 사업을 그린다**
             # — 위 둘이 적어 둔 것과 같은 함정이다.
             distributed_sub_items=self._distributed_sub_items,
+            # ★ **본 실행과 같은 기준선 갈래로 돈다** (`FR-705-AC2` · R60/WP-2).
+            # 안 넘기면 러너가 `DEFAULT_BASELINE_ARRANGEMENT` 로 떨어지고,
+            # 그러면 본문 4절과 5.1 이 **서로 다른 기준선** 위에 선다 — 위
+            # 셋(부하·REC·분산편익)이 적어 둔 것과 같은 함정이며, 이 축은
+            # 자가소비를 가르므로 갈래가 다르면 스윕의 절대값이 실제로
+            # 어긋난다. **기본값을 여기 적지 않는다** — 호출부가 넘긴다.
+            baseline_arrangement=self._baseline_arrangement,
         )
         result = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
         self._memo[key] = result

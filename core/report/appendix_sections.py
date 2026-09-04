@@ -111,6 +111,26 @@ NO_OVERRIDE = "없음 — 기준 전제를 그대로 적용"
 #: 한 절 안의 표 여럿에 이미 쓰는 꼴이다.
 OVERRIDE_TABLE = "기준 전제 대비 변경 항목"
 
+#: 붙임 1 의 **셋째 표** 이름 — 이 평가가 고른 기준선 갈래 (`FR-705-AC2`).
+#:
+#: ⚠ `###` 머리가 아닌 이유는 위 `OVERRIDE_TABLE` 과 **똑같다** — 붙임 1 안의
+#: `###` 는 「주제 머리」로 못 박혀 있다.
+BASELINE_TABLE = "기준선 갈래 선언"
+
+#: 갈래 선언 중 **비어 있는 칸**에 서는 문면 (`FR-705-AC2`).
+#:
+#: ## ★ 왜 `NO_VALUE`(`—`) 를 쓰지 않는가
+#:
+#: 대시는 *「값이 없다·아직 안 적었다」* 로 읽힌다. 그런데 ⓐ「자가용 없음」의
+#: 성립 조건은 **비어 있는 것이 정상**이다 — 견줄 상대 요금이 없으므로 걸릴
+#: 조건이 애초에 없다. 그 둘을 같은 글자로 적으면 검토자가 *「조건이 없는
+#: 갈래」* 와 *「조건을 못 적었다」* 를 가릴 수 없다.
+#:
+#: 그래서 **사람이 읽는 낱말**로 적는다 — 본문 6.2 의 `NONE_IN_RANGE`·붙임 1 의
+#: `NO_OVERRIDE` 가 같은 판단이며(「없음」을 인쇄하고 표를 지우지 않는다), 이
+#: 저장소가 R57/WP-8 에서 그 형태를 이미 세웠다.
+NO_DECLARATION = "없음 (이 갈래에는 걸리는 조건이 없다)"
+
 
 def topic_of(key: str) -> str:
     """대장 키의 주제. **선언에 없으면 `미분류`** — 위 `TOPIC_PREFIXES` 참조."""
@@ -274,6 +294,63 @@ def _override_table(report: CaseReport) -> list[str]:
     return lines
 
 
+def _baseline_branch_table(report: CaseReport) -> list[str]:
+    """붙임 1 의 셋째 표 — **이 평가가 고른 기준선 갈래** (`FR-705-AC2`).
+
+    ## 왜 이 표가 필요한가 — **증분은 기준선을 말하지 않으면 검증되지 않는다**
+
+    `FR-705-AC1` 이 *「기준선 자체 비용도 리포트에 명시적으로 표시」* 를
+    요구하고, 사용자 판정(`docs/decisions-2026-09-03-R57.md` §1)이 **기준선이
+    셋으로 갈린다**고 정했다. 갈래가 갈리면 *「무엇 대비 증분인가」* 가 갈래마다
+    다르므로 **어느 갈래로 돌았는지가 먼저 드러나야** 한다 — 안 드러나면
+    검토자는 같은 `npv` 를 세 가지로 읽을 수 있다.
+
+    ⚠ **갈래 이름만 적지 않는다.** 「자가용 없음」이라는 낱말만으로는 Without 이
+    한전 전력 전량인지, 자가소비가 어떻게 처리됐는지 알 수 없다. 선언표
+    (`core/cba/baseline.py::BASELINE_DECLARATIONS`)의 **다섯 칸을 그대로**
+    싣는다 — 여기서 문면을 새로 지으면 선언표의 사본이 되고, 선언이 바뀔 때 이
+    표가 조용히 옛 문면을 계속 인쇄한다.
+
+    ## ⚠⚠ 왜 본문이 아니라 **붙임**인가
+
+    본문은 양식이 정한 부피(4~5쪽)에 **이미 차 있다** — 실측 218줄 / 상한 219
+    (`tests/report/test_overview_sections.py::
+    test_body_stays_within_the_form_length_budget`). 여섯 줄을 본문에 넣으면
+    그 상한을 넘고, **상한을 올려 초록불을 만드는 것은 이미 다섯 번 밀린
+    자리다**(그 검사 독스트링이 200 → 202 → 204 → 213 → 217 → 219 의 경위를
+    전부 진다). 양식이 정한 것은 *「본문은 짧게, 근거는 붙임으로」* 이므로 이
+    선언은 붙임에 선다 — `_override_table` 이 같은 갈래의 선례다.
+
+    ⚠ 붙임 1 안에 두는 이유도 그 표와 같다: 붙임 1 이 *「전제 대장 전건」*
+    이고 기준선 갈래는 **이 평가의 전제**다. 붙임 번호를 새로 만들면 그 번호를
+    가리키던 자리(양식·색인·상호 참조)가 함께 움직여야 한다.
+
+    ## ★ 빈 칸도 인쇄한다
+
+    ⓐ「자가용 없음」의 성립 조건은 `""` 이고 **그것이 옳다.** 그때 칸을 비우지
+    않고 `NO_DECLARATION` 을 세우는 이유는 그 상수 주석에 있다.
+    """
+    branch = report.baseline_branch
+    return [
+        f"**{BASELINE_TABLE}**",
+        "",
+        "- 갈래 — 전기사용자의 **자가용 설비 처리**에 따라 기준선(Without)이 "
+        "셋으로 갈린다 (`FR-705-AC2`)",
+        "- 이 표가 말하는 것은 **무엇 대비 증분인가**다 — 본문 4절의 편익은 "
+        "아래 Without 대비 차액이다",
+        "",
+        "| 항목 | 값 |",
+        "|---|---|",
+        f"| 기준선 갈래 | {report.baseline_arrangement.value} |",
+        f"| 기준선(Without) | {branch.without_description} |",
+        f"| 변경 후(With) | {branch.with_description} |",
+        f"| 갈래 성립 조건 | {branch.viability_condition or NO_DECLARATION} |",
+        f"| 자가소비 처리 | {branch.self_consumption_treatment.value} |",
+        f"| 갈래 근거 조항 | {branch.clause} |",
+        "",
+    ]
+
+
 def appendix_section(report: CaseReport) -> list[str]:
     """붙임 1 — 전 가정 목록. **주제별로 묶고 신뢰도를 열로** (`FR-1002-AC6`).
 
@@ -290,9 +367,10 @@ def appendix_section(report: CaseReport) -> list[str]:
     ⚠ 주제는 **대장 키의 접두어**에서 온다 — 여기서 새 분류를 만들지 않는다
     (`TOPIC_PREFIXES`).
 
-    ⚠ **이 붙임은 표가 둘이다** — 주제별 전건과 **변경 항목**
-    (`_override_table` · `FR-602-AC2`). 붙임 2 가 표를 둘로 가른 것과 같은
-    갈래이며, 이름만 `###` 머리가 아니다(`OVERRIDE_TABLE` 주석).
+    ⚠ **이 붙임은 표가 셋이다** — 주제별 전건 · **변경 항목**
+    (`_override_table` · `FR-602-AC2`) · **기준선 갈래 선언**
+    (`_baseline_branch_table` · `FR-705-AC2` · R60/WP-2). 붙임 2 가 표를 둘로
+    가른 것과 같은 갈래이며, 이름만 `###` 머리가 아니다(`OVERRIDE_TABLE` 주석).
     """
     by_topic: dict[str, list[AssumptionRow]] = {}
     for row in report.assumptions:
@@ -330,6 +408,10 @@ def appendix_section(report: CaseReport) -> list[str]:
     # 만들지 않는 이유). 위 표가 「무엇을 썼는가」이고 이 표가 「무엇을
     # 바꿨는가」이므로 순서가 뒤집히면 안 된다.
     lines += _override_table(report)
+    # ★ 셋째 표다 — **이 평가의 기준선 갈래** (`FR-705-AC2` · R60/WP-2).
+    # 순서가 맨 뒤인 이유: 위 둘이 「무엇을 썼는가 · 무엇을 바꿨는가」이고
+    # 이것은 「**무엇 대비** 재었는가」다 — 값을 다 보인 뒤 견준 상대를 밝힌다.
+    lines += _baseline_branch_table(report)
     return lines
 
 
