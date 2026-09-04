@@ -185,7 +185,7 @@ _REFUSALS: tuple[tuple[str, tuple[ESSShare, ...], str, str], ...] = (
 )
 
 
-@pytest.mark.req("NFR-303")
+@pytest.mark.req("NFR-303-M1")
 @pytest.mark.parametrize(
     ("label", "shares", "field", "reason_fragment"),
     _REFUSALS,
@@ -204,9 +204,15 @@ def test_each_broken_declaration_is_refused_with_its_own_cause(
     몫을 가르는 목적 자체가 **다른 물량을 다른 몫에 싣는 것**이므로, 표찰이
     같은 몫 둘은 애초에 몫 둘이 아니다.
 
-    조치 문면이 비어 있지 않은지도 함께 본다 — `NFR-303` 은 **필드·사유·조치**
+    조치 문면이 비어 있지 않은지도 함께 본다 — `NFR-303-M1` 이 **필드·사유·조치**
     셋을 요구하고, 셋째가 없으면 「무엇이 틀렸는지는 알지만 어떻게 고치는지는
     모르는」 메시지가 된다.
+
+    ⚠ **마커를 `NFR-303` → `NFR-303-M1` 로 고쳤다 (R59).** 종전에는 **요구사항
+    ID 를 맨몸으로** 인용했는데, `scripts/gen_traceability.py` 는 **수용기준**을
+    훑어 매핑을 세므로 그 인용은 **어느 조항도 「검증됨」으로 만들지 못했다** —
+    표의 「자동 검증 매핑」과 stdout 의 「자동 N건」이 줄곧 1 어긋난 것이 그
+    자국이다. 이 시험이 재는 것은 그대로다.
     """
     with pytest.raises(ValidationError) as caught:
         split_ess(_PHYSICAL, shares)

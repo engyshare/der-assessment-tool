@@ -169,9 +169,13 @@ def test_two_shares_with_their_own_labels_stand_together() -> None:
 
 # ── ② 태그가 하나가 아니면 거부한다 ──────────────────────────────────────
 
-@pytest.mark.req("NFR-303")
+@pytest.mark.req("NFR-303-M1")
 def test_a_share_whose_role_is_not_exactly_one_benefit_is_refused() -> None:
     """**0개도 2개 이상도 거부한다** — 몫은 역할이 하나다.
+
+    거부 문면의 **필드·사유·조치** 셋을 함께 단언하므로 `NFR-303-M1` 을 인용한다.
+    ⚠ **마커를 `NFR-303` → `NFR-303-M1` 로 고쳤다 (R59)** — 종전에는 요구사항
+    ID 를 맨몸으로 인용해 **어느 수용기준도 매핑하지 못했다.**
 
     ⚠ **혼합 모드 몫은 `split_ess` 로는 만들 수 없다** — 실물에서 확인했다.
     그 함수는 `mode_weights` 를 넘기지 않으므로(`_SHARE_OWNED_FIELDS`),
