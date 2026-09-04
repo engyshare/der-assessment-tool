@@ -35,6 +35,7 @@ from types import SimpleNamespace
 import pytest
 
 from core.casegrid.profiles import load_daily_shapes
+from core.cba.baseline import BaselineArrangement
 from core.report import case_influences, case_report
 from core.report.case_report import CONCLUSION_METRIC, PLAN_VARIANT
 from core.valuestream import DistributedSubItems
@@ -198,10 +199,20 @@ def test_the_sweeper_hands_the_distributed_credit_to_the_runner(
         rec_price_won_per_unit=70.0,
         rec_weight_pv=0.5,
         distributed_sub_items=wired,
+        # ★ **기본값이 아닌 갈래를 일부러 준다** (R60/WP-2 · `FR-705-AC2`).
+        # `DEFAULT_BASELINE_ARRANGEMENT`(ⓑ)를 주면 러너가 인자를 아예
+        # 흘려버려도 같은 갈래로 돌아 아래 단언이 아무것도 붙들지 못한다 —
+        # 위 `distributed_sub_items` 에 「헷갈릴 여지 없는 수」를 담은 것과
+        # 같은 이유다.
+        baseline_arrangement=BaselineArrangement.NONE,
     )
     sweeper.conclusion_at_many({"household_load_annual_kwh": 5.0})
 
     assert recorded, "스파이가 호출을 녹음하지 못했다 — 이 검사가 아무것도 보지 못했다"
+    assert recorded["baseline_arrangement"] is BaselineArrangement.NONE, (
+        "생성자가 받은 기준선 갈래가 러너에 닿지 않았다 — 스윕이 본 실행과 "
+        "다른 기준선 위에 선다(`FR-705-AC2`)"
+    )
     assert recorded["distributed_sub_items"] is wired, (
         f"생성자는 {wired!r} 를 받았는데 러너에는 "
         f"{recorded.get('distributed_sub_items')!r} 이 닿았다 — "

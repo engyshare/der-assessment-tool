@@ -76,6 +76,12 @@ from core.casegrid.models import CaseBasis, CashflowSplit
 from core.casegrid.perspectives import PerspectiveWiring
 from core.casegrid.profiles import load_daily_shapes
 from core.casegrid.variants import run_order
+from core.cba.baseline import (
+    BaselineArrangement,
+    BaselineBranch,
+    get_baseline_branch,
+    resolve_baseline_arrangement,
+)
 from core.contracts.assumptions import AssumptionProvider, AssumptionValue
 from core.contracts.validation import ValidationError
 from core.engine.rule_based import DispatchRule
@@ -229,6 +235,18 @@ class CaseReport:
     assumption_set_name: str
     assumption_set_version: str
     price_basis: str
+    #: 이 평가가 고른 **기준선 갈래** (`FR-705-AC2`). 시나리오 yaml 의
+    #: `baseline_arrangement` 필드에서 오며, 필드가 없으면
+    #: `DEFAULT_BASELINE_ARRANGEMENT`(ⓑ「자가용 유지」)다.
+    baseline_arrangement: BaselineArrangement
+    #: 그 갈래의 **선언 다섯** — Without · With · 성립 조건 · 자가소비 처리 ·
+    #: 근거 조항. 붙임 1 의 셋째 표가 이것을 인쇄한다.
+    #:
+    #: ⚠ **갈래 이름만 나르지 않는다.** 이름만 실으면 검토자가 그 이름이 뜻하는
+    #: 기준선을 저장소 밖에서 찾아야 하고, 그러면 *「어느 기준선 대비 증분인가」*
+    #: 가 리포트에서 답되지 않는다 — `FR-705-AC1` 이 기준선 표시를 요구하는
+    #: 이유와 같은 자리다. 선언표(`BASELINE_DECLARATIONS`)를 그대로 나른다.
+    baseline_branch: BaselineBranch
     #: 결론 — **지원을 반영한** 변형의 지표 (`PLAN_VARIANT` 참조).
     metrics: Mapping[str, float]
     #: 무지원 기준선. `FR-607-AC1` 이 「모든 실행에 자동 포함」을 요구하며,
@@ -677,6 +695,24 @@ def build_case_report(
     horizon_years = provider.analysis_years()
     subsidy_rate = float(scenario["subsidy_rate"])
     scheme = _scheme_for(subsidy_rate)
+    # ★★★ **기준선 갈래를 시나리오에서 읽는다** (`FR-705-AC2` · 사용자 판정
+    # `docs/decisions-2026-09-04-R59b.md` §1 — *「ⓐ, ⓑ, ⓒ 선택할 수 있게
+    # 설계되야 함」*). **통로는 이 필드 하나다** — 케이스 그리드 변수축·환경
+    # 변수·CLI 플래그를 따로 세우지 않는다(통로가 둘이면 어느 것이 이겼는지
+    # 산출물에서 알 수 없다).
+    # ⚠ **기본값을 여기 적지 않는다** — 없으면 `resolve_baseline_arrangement`
+    # 가 `DEFAULT_BASELINE_ARRANGEMENT` 로 답한다. 여기 리터럴을 두면 러너와
+    # 이 조립기가 각자 기본값을 갖고, 한쪽만 고쳐지는 날 같은 시나리오가 층마다
+    # 다른 갈래로 돌면서 **아무 예외도 나지 않는다.**
+    # ⚠ **골든 픽스처에는 이 필드가 없다** — 기본값이 ⓑ 이고 ⓑ 의 자가소비
+    # 처리가 현행 동작(소거)과 같으므로 골든 셋의 수는 움직이지 않는다.
+    baseline_arrangement = resolve_baseline_arrangement(
+        scenario.get("baseline_arrangement")
+    )
+    # ★ ⓒ(자가용 집합자원화)면 여기서 `DV-15` 로 거부된다 — 리포트를 조립하기
+    # 전이다. 러너도 같은 거부를 지나므로(그 진입점을 직접 부르는 경로가 있다)
+    # 두 자리가 함께 막는다.
+    baseline_branch = get_baseline_branch(baseline_arrangement)
 
     # ★ **일사 곡선을 기본 경로에 배선한다 (R37 · 당시 `todo.md` 4번 — 그 파일은
     # R45 에 `status.md` 「다음에 집을 것」 절로 합쳐졌다).**
@@ -734,11 +770,18 @@ def build_case_report(
         annual_load_kwh=level_map["household_load_annual_kwh"]["base"],
         rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
         distributed_sub_items=distributed_sub_items,
+        baseline_arrangement=baseline_arrangement,
     )
     sweeper = _Sweeper(
         level_map=level_map, horizon_years=horizon_years, scheme=scheme,
         daily_shapes=shapes, rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
         distributed_sub_items=distributed_sub_items,
+        # ★ **본 실행과 같은 기준선 갈래로 스윕한다** (`FR-705-AC2`). 안 넘기면
+        # 본문 4절은 고른 갈래로, 5·6절(민감도·용량 검토)은 **기본 갈래**로
+        # 계산되어 두 절이 서로 다른 사업을 그린다 — 위 `annual_load_kwh`·
+        # REC·분산편익이 이미 같은 함정을 적어 두었고, 이 축은 자가소비를
+        # 가르므로 갈래가 다르면 스윕의 절대값이 실제로 어긋난다.
+        baseline_arrangement=baseline_arrangement,
     )
     # ★ 부기 칸 만들기(`_provenance`)를 주입한다 — 그 함수는 이 파일에 남아
     # 있고(R54/WP-2 는 영향도 스윕 한 덩어리만 뗐다), `case_influences` 가
@@ -816,6 +859,8 @@ def build_case_report(
         assumption_set_name=provider.set_name,
         assumption_set_version=provider.set_version,
         price_basis=provider.price_basis.value,
+        baseline_arrangement=baseline_arrangement,
+        baseline_branch=baseline_branch,
         metrics=outcome.variants[PLAN_VARIANT],
         baseline_metrics=outcome.variants[BASELINE_VARIANT],
         variant_labels=tuple(

@@ -20,14 +20,29 @@ ESS_CHARGE_SOURCE_DEFAULT` 를 이름으로 가리키기 때문이다 — `e2e_r
 `e2e_runner.py` 에 남기면 이 모듈이 그 상수를 읽으려고 `e2e_runner.py` 를
 import 해야 하고, `e2e_runner.py` 는 이 모듈의 함수를 쓰려고 다시 이 모듈을
 import 한다 — **순환 import**가 되어 `lint-imports` 의 계층 계약이 깨진다.
-이 모듈은 `core.der`·`core.contracts` 아래 계층만 보고 `e2e_runner.py` 를
-전혀 모른다.
+이 모듈은 `core.der`·`core.cba`·`core.contracts` 아래 계층만 보고
+`e2e_runner.py` 를 전혀 모른다.
+
+★ **R60/WP-2 가 `_dispatch_inputs_under_baseline` 을 여기 세웠다** — 기준선
+갈래(`FR-705-AC2`)가 계산을 가르는 지점이 **PV 잉여 시계열 하나**이고 그
+시계열을 만드는 것이 이 모듈이기 때문이다. 러너에 두지 않은 이유는 이 모듈이
+갈라져 나온 이유와 **똑같다**: `e2e_runner.py` 가 `NFR-206` 코드 줄 상한(500)
+에 다시 닿아 있었고(실측 487/500 · 감싸는 함수를 그쪽에 두면 504줄), 그
+함수의 `PLR0915` 문장 상한도 이미 꽉 차 있었다(50/50 — 문장 하나만 늘려도
+빨간불이다). 그래서 **감싸는 형태**로 두어 러너의 문장 수를 한 줄도 늘리지
+않는다(`core.cba` 를 처음 보게 된 것이 그 대가이며, 계층은 아래 방향이다).
 """
 from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import cast
 
+from core.cba.baseline import (
+    BaselineArrangement,
+    SelfConsumptionTreatment,
+    get_baseline_branch,
+    resolve_baseline_arrangement,
+)
 from core.cba.metrics import self_consumption_rate
 from core.contracts.der import DispatchContext
 from core.der.ess import ESSChargeSource, ESSOperatingMode
@@ -244,3 +259,69 @@ def measured_self_consumption_ratio(
     generation_kwh = sum(pv.dispatch(ctx).electric)
     self_consumed_kwh = generation_kwh - sum(surplus_profile_kwh)
     return self_consumption_rate(self_consumed_kwh, generation_kwh)
+
+
+def _dispatch_inputs_under_baseline(
+    ess_operating_mode: ESSOperatingMode | str | None,
+    ess_charge_source: ESSChargeSource | str | None,
+    case_values: dict[str, object],
+    pv: PV,
+    ctx: DispatchContext,
+    *,
+    pv_allocation_priority: PVAllocationPriority | str | None,
+    household: Load | None,
+    baseline_arrangement: BaselineArrangement | str | None,
+) -> tuple[ESSOperatingMode | str, ESSChargeSource | str, list[float], PVAllocationPriority]:
+    """운전 입력 넷을 고르고 **기준선 갈래에 맞춘다** (`FR-705-AC2` · `DV-15`).
+
+    R58 이 갈래 셋을 `core/cba/baseline.py` 에 **선언**했으나 실행 경로가 그것을
+    **한 번도 읽지 않았다** — 읽는 배포 코드가 그 파일 자기 자신뿐이었고, 그래서
+    산출된 `npv` 는 「갈래 미지정」의 수였다(사용자 판정 정본
+    `docs/decisions-2026-09-04-R59b.md` §1). 이 함수가 그 자리를 잇는다.
+
+    ## 왜 배분 순서 해석을 **감싸는** 자리에서 하는가
+
+    갈래가 계산을 가르는 지점은 **자가소비 하나**이고, 이 파이프라인에서 실제
+    자가소비를 만드는 것은 위 `_resolve_ess_dispatch_inputs` 가 내놓는 **PV 잉여
+    시계열**이다(`HOUSEHOLD_FIRST` 가 스텝마다 가구 부하를 먼저 뺀 나머지).
+    그러므로 갈래의 반영은 그 시계열이 나온 **직후 한 자리**여야 한다 —
+    뒤쪽(편익·CBA)에서 손대면 잉여를 이미 본 저장장치 충전 계획과 갈리고,
+    앞쪽에서 손대면 배분 순서 축의 계산을 다시 지어야 한다.
+
+    ## ⓐ「자가용 없음」(`SelfConsumptionTreatment.NONE`) — 자가소비가 **0** 이다
+
+    전기사용자에게 자가용 설비가 없으므로 낮 전기 중 **가구가 먼저 가져가는
+    몫이 없다.** 그래서 PV 출력 전량이 잉여다 — 가구가 쓰는 전력은 자가소비가
+    아니라 **분산e사업자로부터의 구매**이며 그 화폐화는 요금 엔진의 몫이다.
+
+    ⚠⚠ **`PV_SELF_CONSUMPTION_RATIO` 를 0 으로 두어서는 이 갈래가 서지
+    않는다** — 그 상수는 **이미 0** 이고 `BATTERY_FIRST` 갈래만 그것을 읽는다.
+    배포 기본값인 `HOUSEHOLD_FIRST` 는 그 상수를 보지 않고 **그 스텝의 실제
+    가구 부하**로 잉여를 만든다(위 독스트링의 두 갈래 절). 그러므로 비율을
+    만지는 것은 아무것도 바꾸지 못하며, **잉여 시계열 자체**를 갈래에 맞춰야
+    한다.
+
+    ⚠ **배분 순서 축을 덮어쓰지 않는다.** 넷째 반환값을 그대로 흘려보내
+    리포트가 *이 실행이 고른* 배분 순서를 계속 인쇄한다 — 두 축은 뿌리가
+    다르다(하나는 **사업 구조**, 하나는 **낮 전기의 배분 규칙**). 여기서
+    `BATTERY_FIRST` 로 갈아 끼우면 잉여는 우연히 같아지지만 리포트가 고르지
+    않은 배분 순서를 인쇄하게 된다.
+
+    ## ⓑ 는 손댈 것이 없고 ⓒ 는 여기 닿지 않는다
+
+    ⓑ(`CANCEL_OUT` · 자가용 유지)는 자가소비가 Without·With **양쪽에 똑같이**
+    있어 차액에서 소거되므로 종전 동작 그대로다 — 그래서 골든 셋이 움직이지
+    않는다. ⓒ(`FORFEIT` · 자가용 집합자원화)는 `get_baseline_branch` 가
+    `DV-15` 로 **거부**하므로 아래 첫 줄에서 예외가 나고 그 뒤로 가지 않는다.
+    ⚠ 그 거부를 풀거나 0 으로 채우지 마라 — 포기 항(대칭 항)과 구분 계측
+    선언이 저장소에 없고, 없는 전제를 0 으로 메우면 *「없는 제도 위에 편익을
+    쌓는」* 형태가 된다(그 함수 독스트링이 근거를 갖는다).
+    """
+    branch = get_baseline_branch(resolve_baseline_arrangement(baseline_arrangement))
+    mode, source, surplus_profile_kwh, priority = _resolve_ess_dispatch_inputs(
+        ess_operating_mode, ess_charge_source, case_values, pv, ctx,
+        pv_allocation_priority=pv_allocation_priority, household=household,
+    )
+    if branch.self_consumption_treatment is SelfConsumptionTreatment.NONE:
+        surplus_profile_kwh = list(pv.dispatch(ctx).electric)
+    return mode, source, surplus_profile_kwh, priority
