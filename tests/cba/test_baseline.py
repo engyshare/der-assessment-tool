@@ -78,21 +78,44 @@ def test_incremental_baseline_is_realistic_alternative() -> None:
 
 @pytest.mark.req("FR-705-AC2")
 def test_pool_branch_is_rejected() -> None:
-    """「나」(자가용 집합자원화) 갈래를 고르면 거부한다 (FR-705-AC2 · DV-15).
+    """「나」(자가용 집합자원화) 갈래를 **선언 없이** 고르면 거부한다 (FR-705-AC2 · DV-15).
 
     ⚠ **거부가 옳다.** 판정 정본 §2 는 *「계측이 갈리지 않으면 「나」는 **평가할 수
-    없다**」* 고 적는다 — **「평가할 수 없다」와 「0 이다」는 다른 말이다.** 거부
-    메시지가 두 사유(구분 계측 · 대칭 항)를 **둘 다** 들고 있어야 한다.
+    없다**」* 고 적는다 — **「평가할 수 없다」와 「0 이다」는 다른 말이다.**
+
+    ## ★★ 사유 둘 중 **둘째는 R60/WP-3 이 닫았다** — 그래서 문면이 바뀌었다
+
+    종전 문면은 사유 둘을 한 덩어리로 적었다:
+
+        ① 계측 전제가 안 섰다   ② 대칭 항이 없다
+
+    ②(*「집합자원화 대가를 편익으로 세우려면 포기한 자가소비를 비용으로 세야
+    하는데 그 자리가 저장소에 없다」*)는 **자리를 만들면 닫히는 것**이었고
+    R60/WP-3 이 만들었다 — `core/cba/proforma.py::
+    forfeited_self_consumption_row` 이며, 실행 경로에 실리는 것은
+    `tests/report/test_pool_branch_calculated.py` 가 잰다. **그러므로 지금
+    ②를 거부 사유로 계속 적으면 거짓이다.**
+
+    ①은 다르다 — 소유·운영권 인계와 구분 계측은 **사업 설계**이고 저장소가
+    채울 수 없다. 그래서 ①만 남아 **입력으로 요구된다**(사용자 판정
+    `docs/decisions-2026-09-04-R59b.md` §1 4항). 이 검사가 붙드는 것은
+    *「선언이 없으면 지금과 똑같이 거부한다」* 하나이며, 문면이 **어느 쪽이
+    빠졌는지 말하는가**는 `tests/cba/test_pool_metering_declaration.py`
+    T1~T3 이 잰다.
     """
-    from core.cba.baseline import BaselineArrangement, get_baseline_branch
+    from core.cba.baseline import (
+        POOL_PREREQUISITE_METERING,
+        BaselineArrangement,
+        get_baseline_branch,
+    )
     from core.contracts.validation import ValidationError
 
     with pytest.raises(ValidationError, match="계측 전제가 안 섰다") as excinfo:
         get_baseline_branch(BaselineArrangement.POOL)
     assert excinfo.value.rule == "DV-15"
-    assert "대칭 항이 없다" in excinfo.value.reason, (
-        "거부 사유가 계측 전제 하나만 들고 있다 — 대칭성(판정 정본 §4④ · 총괄지침 "
-        "제45조③)이 빠지면 「집합자원화 대가만 세우고 포기분은 안 센다」가 통과한다"
+    assert POOL_PREREQUISITE_METERING in excinfo.value.reason, (
+        "거부 사유가 구분 계측 전제를 들지 않는다 — 그것이 빠지면 상계처리로도 "
+        "책임공급비율이 계산된다는 뜻이 되고, 판정 정본 §2 가 부정한 자리다"
     )
     assert "0 으로 채우지 마십시오" in excinfo.value.action
 

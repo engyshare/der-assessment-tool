@@ -35,16 +35,20 @@ import 한다 — **순환 import**가 되어 `lint-imports` 의 계층 계약�
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import cast
+from typing import Final, cast
 
+from core.casegrid.operating_lines import DAYS_PER_YEAR
 from core.cba.baseline import (
     BaselineArrangement,
+    PoolMeteringDeclaration,
     SelfConsumptionTreatment,
     get_baseline_branch,
     resolve_baseline_arrangement,
 )
 from core.cba.metrics import self_consumption_rate
+from core.cba.proforma import forfeited_self_consumption_row
 from core.contracts.der import DispatchContext
+from core.contracts.schemas import CashFlowRow
 from core.der.ess import ESSChargeSource, ESSOperatingMode
 from core.der.load import Load
 from core.der.pv import PV, PVAllocationPriority, resolve_pv_allocation_priority
@@ -271,6 +275,7 @@ def _dispatch_inputs_under_baseline(
     pv_allocation_priority: PVAllocationPriority | str | None,
     household: Load | None,
     baseline_arrangement: BaselineArrangement | str | None,
+    pool_metering: PoolMeteringDeclaration | None = None,
 ) -> tuple[ESSOperatingMode | str, ESSChargeSource | str, list[float], PVAllocationPriority]:
     """운전 입력 넷을 고르고 **기준선 갈래에 맞춘다** (`FR-705-AC2` · `DV-15`).
 
@@ -307,17 +312,39 @@ def _dispatch_inputs_under_baseline(
     `BATTERY_FIRST` 로 갈아 끼우면 잉여는 우연히 같아지지만 리포트가 고르지
     않은 배분 순서를 인쇄하게 된다.
 
-    ## ⓑ 는 손댈 것이 없고 ⓒ 는 여기 닿지 않는다
+    ## ⓑ 와 ⓒ 는 이 자리에서 **같은 잉여**를 쓴다 — 갈리는 곳이 다르다
 
     ⓑ(`CANCEL_OUT` · 자가용 유지)는 자가소비가 Without·With **양쪽에 똑같이**
     있어 차액에서 소거되므로 종전 동작 그대로다 — 그래서 골든 셋이 움직이지
-    않는다. ⓒ(`FORFEIT` · 자가용 집합자원화)는 `get_baseline_branch` 가
-    `DV-15` 로 **거부**하므로 아래 첫 줄에서 예외가 나고 그 뒤로 가지 않는다.
-    ⚠ 그 거부를 풀거나 0 으로 채우지 마라 — 포기 항(대칭 항)과 구분 계측
-    선언이 저장소에 없고, 없는 전제를 0 으로 메우면 *「없는 제도 위에 편익을
-    쌓는」* 형태가 된다(그 함수 독스트링이 근거를 갖는다).
+    않는다.
+
+    ★★ **ⓒ(`FORFEIT` · 자가용 집합자원화)도 이 자리에서는 손댈 것이 없다.**
+    선언표가 ⓒ 의 Without 을 **「자가용 유지」**로 적기 때문이다
+    (`BASELINE_DECLARATIONS[POOL].without_description`) — 포기 항이 재는 것은
+    *그 Without 에서 실제로 있었던 자가소비*이므로, 잉여 시계열이 ⓑ 와 같아야
+    그 물량이 성립한다. 갈래가 계산을 가르는 자리는 **프로포마의 비용 행**이며
+    (`core/cba/proforma.py::forfeited_self_consumption_row` ·
+    `core/casegrid/e2e_runner.py::_forfeited_self_consumption_rows`) 여기가
+    아니다.
+
+    ⚠ **그래서 잉여를 ⓐ 처럼 전량으로 바꾸지 않았다.** 바꾸면 포기분이 **두 번**
+    반영된다 — 한 번은 계통 수전이 늘어 전력 구매 비용으로, 한 번은 포기 항으로.
+    아무 예외도 나지 않고 결론만 두 배로 나빠진다(`salvage_row` 독스트링의
+    「두 곳에서 뒤집으면」과 같은 형태의 함정이다).
+
+    ## ⚠ `pool_metering` — 선언을 **나르기만** 한다
+
+    ⓒ 의 성립 전제(소유·운영권 인계 · 구분 계측)는 명시적 입력이고 그 판정은
+    `get_baseline_branch` 가 한다. 이 함수는 그것을 **그대로 넘긴다** — 여기서
+    다시 해석하면 판정이 두 곳에 생긴다. **기본값 `None`(= 선언하지 않았다)이
+    안전한 이유**: 호출부가 잊으면 ⓒ 가 **거부**되므로 어긋남이 조용히 지나가지
+    않는다(갈래 자체는 기본값이 조용히 다른 기준선을 세우므로 필수 인자로 두었다
+    — 두 인자의 처리가 다른 것이 그 차이다).
     """
-    branch = get_baseline_branch(resolve_baseline_arrangement(baseline_arrangement))
+    branch = get_baseline_branch(
+        resolve_baseline_arrangement(baseline_arrangement),
+        pool_metering=pool_metering,
+    )
     mode, source, surplus_profile_kwh, priority = _resolve_ess_dispatch_inputs(
         ess_operating_mode, ess_charge_source, case_values, pv, ctx,
         pv_allocation_priority=pv_allocation_priority, household=household,
@@ -325,3 +352,102 @@ def _dispatch_inputs_under_baseline(
     if branch.self_consumption_treatment is SelfConsumptionTreatment.NONE:
         surplus_profile_kwh = list(pv.dispatch(ctx).electric)
     return mode, source, surplus_profile_kwh, priority
+
+
+#: 「포기한 자가소비」 비용 행의 태그. 프로포마·붙임·검증 보고서가 이 태그로
+#: 행을 찾으므로 문면을 양쪽에 적지 않는다.
+#:
+#: ⚠ **`e2e_runner.py` 가 재수출한다** — 밖은 그 경로로 읽는다(그 파일의
+#: `__all__` 이 이유를 적는다: mypy strict 가 암묵 재수출을 거부한다).
+FORFEITED_SELF_CONSUMPTION_TAG: Final = "ForfeitedSelfConsumption"
+
+
+def _forfeited_self_consumption_rows(
+    baseline_arrangement: BaselineArrangement | str | None,
+    pool_metering: PoolMeteringDeclaration | None,
+    *,
+    pv: PV,
+    ctx: DispatchContext,
+    surplus_profile_kwh: Sequence[float],
+    price_won_per_kwh: float,
+    horizon_years: int,
+) -> list[CashFlowRow]:
+    """ⓒ「자가용 집합자원화」의 **포기한 자가소비** 비용 행 — 다른 갈래에서는 빈 목록.
+
+    ## ★★★ 대칭 항이 여기서 실행 경로에 오른다
+
+    판정 정본 `docs/decisions-2026-09-03-R57.md` §1 셋째가 ⓒ 의 편익을
+    *「요금 차액 + 집합자원화 대가 **−** 잃은 자가소비」* 로 적고 §4④ 가 그
+    근거(총괄지침 **제45조③** 대칭성)를 든다. 행을 만드는 것은
+    `core/cba/proforma.py::forfeited_self_consumption_row` 이고, **어느 실행에서
+    그 행이 서는가**를 정하는 것이 이 함수다.
+
+    ## ★★ 왜 이 모듈에 있는가 — **잉여를 만든 자리가 포기분도 안다**
+
+    포기액의 물량은 **PV 잉여 시계열에서 나온다**(아래). 그 시계열을 만드는
+    것이 이 모듈이므로, 물량을 여기서 세면 배분 규칙이 바뀌는 날 두 곳이
+    어긋날 자리가 없다.
+
+    ⚠ 그리고 `e2e_runner.py` 에 둘 수 없었다 — `NFR-206` 코드 줄 상한(500)을
+    **넘었다**(실측 529줄 · 「코드 스프롤」로 게이트가 빨간불). R51/WP-5 가 이
+    모듈을 갈라낸 이유·R60/WP-2 가 `_dispatch_inputs_under_baseline` 을 여기
+    세운 이유와 **같다**(이 파일 머리말).
+
+    ## ★★ 물량 — **그 Without 에서 실제로 있었던 자가소비**다
+
+    포기하는 것은 *자가용을 유지했다면 있었을* 자가소비이고, ⓒ 의 Without 이
+    바로 「자가용 유지」다(`BASELINE_DECLARATIONS[POOL].without_description`).
+    그래서 물량을 **이 실행의 운전에서 잰다**:
+
+        대표일 자가소비 = PV 발전 − PV 잉여
+
+    `HOUSEHOLD_FIRST` 가 스텝마다 가구 부하를 먼저 뺀 나머지가 잉여이므로 그
+    차가 스텝별 `min(발전, 부하)` 의 합과 같다 —
+    `core/report/unreflected.py::_measured_quantities` 가 같은 규약으로 따로
+    세고, `tests/report/test_pool_branch_calculated.py` 가 둘을 맞대 본다.
+
+    ⚠⚠ **비율 상수(`PV_SELF_CONSUMPTION_RATIO`)를 읽지 않는다.** 그 상수는
+    이미 0 이고 배포 기본값 `HOUSEHOLD_FIRST` 는 그것을 보지 않는다(위
+    `_resolve_ess_dispatch_inputs` 독스트링의 두 갈래 절) — 읽으면 포기액이
+    **언제나 0원**이 되고, 「행이 있는데 0원」은 프로포마에서 「포기가
+    없었다」와 구별되지 않는다.
+
+    ## ★★ 단가 — **회피하고 있던 전력 구매단가**다
+
+    자가소비를 잃으면 같은 전력을 사야 한다. 그래서 단가는 이 실행이 계통
+    수전에 쓰는 그 단가(`grid_purchase_price` · 대장
+    `tariff.hv_single_contract.energy_only`)이고 **새 대장 항목을 열지
+    않았다** — 열면 같은 요금이 두 항목이 되고 한쪽만 고쳐진다.
+
+    ⚠ **집합자원화 「대가」는 여기서 세지 않는다.** 그 단가는 제도 근거가
+    확인되지 않아 대장에서 `track: default0`(값 0)이며
+    (`docs/assumptions.yaml::benefit.pool_compensation_price`) *「제도가 없으면
+    편익은 작은 게 아니라 0」* 이 그 갈래의 정의다. 그러므로 지금의 ⓒ 는
+    **포기는 세고 대가는 0인 사업**이고, 그 사실을 산출물이 말한다
+    (`core/report/unreflected.py` 의 미반영 항목) — 말하지 않으면 다음 사람이
+    **「대가가 0원인 사업」**으로 읽는다.
+
+    ## ⚠ 거부가 여기서도 난다
+
+    `get_baseline_branch` 를 이 함수가 다시 부른다. 위
+    `_dispatch_inputs_under_baseline` 이 이미 같은 판정을 지나지만, **이 자리가
+    없으면** 그 함수를 건너뛰는 진입점이 생기는 날 ⓒ 가 포기 항 없이 계산된다 —
+    값싼 중복이고, 판정은 한 곳(`get_baseline_branch`)에만 있다.
+    """
+    branch = get_baseline_branch(
+        resolve_baseline_arrangement(baseline_arrangement),
+        pool_metering=pool_metering,
+    )
+    if branch.self_consumption_treatment is not SelfConsumptionTreatment.FORFEIT:
+        return []
+    daily_self_consumed_kwh = sum(pv.dispatch(ctx).electric) - sum(surplus_profile_kwh)
+    return [
+        forfeited_self_consumption_row(
+            FORFEITED_SELF_CONSUMPTION_TAG,
+            start_year=1,
+            end_year=horizon_years,
+            annual_amount_won=int(
+                daily_self_consumed_kwh * DAYS_PER_YEAR * price_won_per_kwh
+            ),
+        )
+    ]
