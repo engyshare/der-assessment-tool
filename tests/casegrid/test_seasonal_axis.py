@@ -1,23 +1,26 @@
-"""계절 축이 **실제로 계절 차이를 담는가** · **기본 경로가 안 움직였는가** (R56).
+"""계절 축이 **실제로 계절 차이를 담는가** · **결론축이 대장 총량 위에 서는가**.
 
 사용자 판정 §4 는 *「계절별로 프로파일, 부하, 발전특성 등을 고려할 수 있도록
-설계되야 함」* 이다. R56/WP-1 은 그 **축만** 세웠다 — 배포 자산은 아직 계절을
-선언하지 않는다.
+설계되야 함」* 이다. R56/WP-1 은 그 **축만** 세웠고, 사용자 판정 §3
+(*「일단 필요한 사항을 가정하여 설정하고」*)에 따라 **R60/WP-4 가 배포 자산의
+`seasons:` 를 가정으로 채웠다.**
 
 그래서 이 파일은 둘을 함께 붙든다.
 
-    ① 기본 경로   계절을 선언하지 않은 배포 자산의 출력이 축이 서기 전과
-                 **원소 하나까지** 같다 (결론축 회귀 방어)
+    ① 배포 경로   배포 자산이 러너에 넘기는 시계열이 손계산과 같고 **연간
+                 총량이 보존된다** (결론축 회귀 방어) · 계절 값이 슬며시
+                 바뀌거나 실측으로 승격되면 여기가 먼저 말한다
     ②③ 계절 경로  계절을 선언한 자산이 연간 총량을 보존하고, **몫(`share`)이
                  실제로 계절 차이를 만든다**
     ④ 거부       말이 안 되는 자산·호출이 조용히 통과하지 않는다
 
 ⚠ ①만 있으면 *「아무것도 안 바뀌었다」* 만 붙들게 되고, **축이 비어 있어도
-초록불**이다. ③ 이 이 WP 의 존재 증명이다.
+초록불**이다. ③ 이 계절 축의 존재 증명이다.
 
 ⚠⚠ **이 파일이 세우는 계절 일수·몫은 전부 시험용 가정값이며 사업 전망이
 아니다. 이 수를 리포트·검토서에 인용하지 마라.** 배포 자산
-(`fixtures/profiles/representative-day.yaml`)에는 계절이 하나도 없다.
+(`fixtures/profiles/representative-day.yaml`)의 계절 값도 **가정**이며 실측이
+아니고, 이 파일의 시험용 수와는 **다른 수**다 — 섞지 마라.
 """
 from __future__ import annotations
 
@@ -98,48 +101,88 @@ def _seasonal_asset(tmp_path: Path, seasons: list[dict[str, Any]]) -> Path:
 # ── ① 기본 경로 — 결론축 회귀 방어 ────────────────────────────────────────
 
 
-def test_the_deployed_asset_spreads_exactly_as_before_the_axis_existed() -> None:
-    """★★ 계절을 선언하지 않은 **배포 자산**의 출력이 종전과 원소 하나까지 같다.
+def test_the_deployed_asset_feeds_the_runner_a_total_preserving_year() -> None:
+    """★★ 배포 자산이 **러너에 넘기는 연간 시계열**을 손계산과 대조한다.
 
-    손계산을 이 시험 안에서 직접 세운다 — 구현(`spread()`)을 다시 불러 비교하면
-    동어반복이고, 이 저장소가 R35 에 실제로 밟은 형태다.
+    ## ⚠ 이 시험이 무엇에서 무엇으로 옮겨 갔나 (R60/WP-4-fix)
 
-    ⚠ 이 시험이 빨간불이면 **결론축(순현재가치)이 움직였다는 뜻**이다. 붙임 8 의
-    발전 형상이 이 경로 위에 서 있다.
+    종전 문면은 *「계절을 선언하지 않은 배포 자산의 출력이 종전과 원소 하나까지
+    같다」* 였고, `spread()` 의 출력을 `총량/365 × 가중치` 로 손계산해 대조했다.
+    사용자 판정 §3 에 따라 자산의 `seasons:` 가 **가정으로 채워지면서** 그
+    전제(계절 하나)가 거짓이 됐다.
+
+    **그러나 이 시험이 지키던 것은 잃지 않았다.** 그것은 두 가지였다 —
+    ⓐ 배포 자산이 러너에 넘기는 시계열이 **손계산과 같은가**,
+    ⓑ 그 시계열의 **연간 총량이 보존되는가**(빨간불이면 결론축이 움직였다).
+    재는 대상만 `spread()` 에서 러너가 실제로 부르는
+    `spread_over_representative_day()` 로 옮겼고, 손계산은 여전히 **이 시험
+    안에서 직접** 세운다 — 구현을 다시 불러 비교하면 동어반복이고, 이 저장소가
+    R35 에 실제로 밟은 형태다.
+
+    ⚠ ⓑ 는 계절이 채워진 지금 **더 강한 단언**이다. 계절을 이어 붙인
+    `spread()` 를 그대로 넘기면 앞 하루가 「첫 계절의 하루」가 되어 연간화
+    총량이 대장과 어긋나는데(R60/WP-4 실측), 아래 마지막 단언이 그것을 잡는다.
     """
     generation = load_daily_shapes().generation
     total = 4_000.0
-    spread = generation.spread(total, days=DAYS)
+    series = generation.spread_over_representative_day(total, days=DAYS)
 
-    per_day = total / DAYS
-    by_hand = [per_day * weight for _day in range(DAYS) for weight in generation.weights]
+    # 손계산 — 몫 가중 평균 하루를 여기서 직접 세운다.
+    by_hand_day = [
+        math.fsum(
+            total * season.share * weights[step]
+            for season, weights in generation.by_season
+        )
+        / DAYS
+        for step in range(generation.steps)
+    ]
+    by_hand = [value for _day in range(DAYS) for value in by_hand_day]
 
-    assert len(generation.weights) == 24, (
-        f"배포 자산이 {len(generation.weights)}스텝이다 — 아래 길이 단언은 "
+    assert generation.steps == 24, (
+        f"배포 자산이 {generation.steps}스텝이다 — 아래 길이 단언은 "
         "24스텝 대표일을 전제한다"
     )
-    assert len(spread) == 8_760, (
-        f"연간 스텝 수가 {len(spread)} 이다 — 24스텝을 365일 되풀이한 길이여야 한다"
+    assert len(series) == 8_760, (
+        f"연간 스텝 수가 {len(series)} 이다 — 24스텝을 365일 되풀이한 길이여야 한다"
     )
-    assert spread == pytest.approx(by_hand)
+    assert series == pytest.approx(by_hand)
+    assert math.fsum(series) == pytest.approx(total), (
+        "연간 총량이 보존되지 않는다 — 형상은 배분이지 값이 아니다"
+    )
+    # ★★ **러너가 잡는 것은 앞 하루뿐이고 그것을 365배 한다.** 그 곱이 총량이
+    # 아니면 리포트가 대장과 다른 총량 위에서 결론을 낸다.
+    assert math.fsum(series[:24]) * DAYS == pytest.approx(total), (
+        "앞 하루를 365배 한 값이 연간 총량과 다르다 — 배포 실행의 연간화가 "
+        "대장값과 어긋난다"
+    )
 
 
-def test_the_deployed_asset_declares_exactly_one_year_round_season() -> None:
-    """★ 배포 자산이 계절을 **선언하지 않은 채로** 있다 (R56/WP-1 은 축만 세웠다).
+def test_the_deployed_asset_declares_four_seasons_and_calls_them_assumed() -> None:
+    """★ 배포 자산이 계절 넷을 **가정으로** 선언하고 있다 (R60/WP-4).
 
-    계절 값이 자산에 슬며시 들어오면 위 ① 이 빨간불이 되기 전에 이 시험이 먼저
-    *「값이 들어왔다」* 를 말한다 — 둘은 다른 사건이다.
+    ## ⚠ 이 시험도 뒤집혔다 — 지키던 것은 같다
+
+    종전 문면은 *「배포 자산이 계절을 선언하지 않은 채로 있다」* 였고, 그것이
+    지키던 것은 *「계절 값이 슬며시 들어오면 결론축 시험보다 **먼저** 그 사실을
+    말한다」* 였다. 사용자 판정 §3 이 값을 채우게 했으므로 **감시 방향만
+    뒤집는다** — 이제는 *「채워진 값이 슬며시 바뀌거나 실측으로 승격되면 먼저
+    말한다」* 다. 위 시험이 빨간불이 되기 전에 여기가 먼저 말한다는 성질은 그대로다.
+
+    ⚠⚠ **신뢰도를 함께 붙든다.** 이 값들은 **가정**이며 실측이 아니다 —
+    `confidence` 가 조용히 `확정` 으로 바뀌면 리포트가 *「가정값으로 채웠다」*
+    를 말하지 않게 되고(`core/report/unreflected.py::_season_reason` 이 이 칸을
+    읽는다), 다음 사람이 가정값을 실측으로 읽는다.
     """
     shapes = load_daily_shapes()
     for shape in (shapes.load, shapes.generation):
-        assert len(shape.by_season) == 1, (
+        assert len(shape.by_season) == 4, (
             f"{shape.key} 가 계절 {len(shape.by_season)}개를 선언했다 — "
-            "R56/WP-1 은 자산의 `seasons:` 를 비운 채로 두었다"
+            "R60/WP-4 는 봄·여름·가을·겨울 넷을 가정으로 채웠다"
         )
-        season = shape.seasons[0]
-        assert season.days is None and season.share == 1.0, (
-            f"{shape.key} 의 기본 계절이 {season} 이다 — 일수는 읽는 쪽이 주고 "
-            "몫은 1.0 이어야 종전과 같은 수가 나온다"
+        assert shape.confidence == "가정", (
+            f"{shape.key} 의 신뢰도가 {shape.confidence!r} 다 — 계절 값은 "
+            "가정이며 실측이 아니다. 회신이 와서 승격한 것이라면 이 시험과 "
+            "자산의 `derivation_method`·`replace_when` 을 함께 고칠 것"
         )
 
 

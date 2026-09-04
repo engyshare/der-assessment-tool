@@ -297,7 +297,14 @@ def _household_load_if_total_given(
         )
     return Load(
         name="e2e-load",
-        hourly_kwh=daily_shapes.load.spread(
+        # ★★ **`spread()` 가 아니라 대표일을 되풀이한 시계열이다** (R60/WP-4-fix).
+        # 이 러너는 24스텝 하루를 돌려 365배로 연간화하고, 자원은 받은 시계열의
+        # 앞 하루만 잘라 쓴다(`core/der/load.py` 의 `[: ctx.steps]`). 그래서
+        # 계절을 차례로 이어 붙인 `spread()` 를 넘기면 앞 하루가 **첫 계절의
+        # 하루**가 되어 연간화 총량이 대장값과 어긋난다 — 실측으로 −315kWh/년.
+        # `representative_day()` 는 **몫 가중 평균 하루**를 내므로 그 하루를
+        # 365배 한 것이 총량이다. 계절이 하나면 종전과 원소 하나까지 같다.
+        hourly_kwh=daily_shapes.load.spread_over_representative_day(
             annual_load_kwh + extra_appliance_load_kwh, days=DAYS_PER_YEAR
         ),
         # ★ **지금 어떤 수도 움직이지 않는다** — 이 `Load` 에는 비용 인자가 하나도
@@ -696,8 +703,14 @@ def run_single_case_e2e(
     # 도는 범용 진입점이고, 형상 없는 실행은 정당한 상태다(그때 이용률 하나로
     # 균등 배분한다는 것을 이 자리가 말한다). 결론을 내는 배포 경로가 하나뿐
     # 이므로 배선은 거기서 붙드는 것이 맞다.
+    #
+    # ★★ **부하와 같은 이유로 `spread()` 가 아니다** (R60/WP-4-fix · 위 `_household`
+    # 의 주석이 정본). 계절이 선 자산에서 `spread()` 를 넘기면 앞 하루가 첫
+    # 계절의 하루가 되어 연간화 발전량이 `용량 × 이용률 × 8760` 과 어긋난다 —
+    # 실측으로 +281kWh/년이 없던 데서 생겼다. 길이는 그대로 연간 스텝 수다
+    # (`PV._resolve_generation` 의 `DV-4` 가 그 길이를 본다).
     generation_profile = (
-        daily_shapes.generation.spread(
+        daily_shapes.generation.spread_over_representative_day(
             pv_capacity_kw * PV_CAPACITY_FACTOR * HOURS_PER_YEAR,
             days=DAYS_PER_YEAR,
         )

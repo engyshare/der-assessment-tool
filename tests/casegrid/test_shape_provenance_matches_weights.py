@@ -28,6 +28,7 @@ from core.casegrid.profiles import (
     GENERATION_SHAPE_KEY,
     LOAD_SHAPE_KEY,
     PROFILE_PATH,
+    DailyShape,
     load_daily_shapes,
 )
 
@@ -35,6 +36,32 @@ from core.casegrid.profiles import (
 _SPAN = re.compile(r"0 이 아닌 구간은 \*\*인덱스 (\d+)~(\d+)\*\*")
 #: 부기가 「최대 위치」를 적는 꼴.
 _PEAK = re.compile(r"최대는 인덱스 (\d+)")
+#: 부기가 **계절마다** 구간을 적는 꼴 (R60/WP-4). 계절 이름과 두 수를 꺼낸다.
+_SEASON_SPAN = re.compile(r"(봄|여름|가을|겨울) 인덱스 (\d+)~(\d+)")
+
+#: 부기의 구간·최대 주장이 겨누는 계절. 자산이 *「기준은 봄·가을 계절 형상」*
+#: 이라고 적으므로 그 계절에서 사실을 꺼낸다. 계절을 안 쓰는 자산이면
+#: `YEAR_ROUND` 한 계절뿐이라 아래 `_weights_of()` 가 그것을 돌려준다.
+_BASELINE_SEASON = "봄"
+
+
+def _weights_of(shape: DailyShape, name: str) -> tuple[float, ...]:
+    """계절 하나의 가중치. **계절이 하나면 그것을 돌려준다.**
+
+    ⚠ `DailyShape.weights` 를 쓰지 않는다 — 계절이 여럿이면 거부하는 것이
+    그 속성의 설계이고(조용히 첫 계절을 돌려주면 *「봄만 보고 형상을 읽었다」*
+    가 성립한다), 이 검사는 **어느 계절을 보는지 말하고 있으므로** 거부에
+    걸릴 이유가 없다.
+    """
+    if len(shape.by_season) == 1:
+        return shape.by_season[0][1]
+    for season, weights in shape.by_season:
+        if season.name == name:
+            return weights
+    raise AssertionError(
+        f"{shape.key} 에 계절 {name!r} 이 없다 — 부기가 그 이름으로 구간을 "
+        f"적고 있는데 자산의 계절은 {[s.name for s in shape.seasons]} 다"
+    )
 
 
 def test_the_generation_provenance_names_the_real_nonzero_span() -> None:
@@ -46,12 +73,13 @@ def test_the_generation_provenance_names_the_real_nonzero_span() -> None:
         "구간을 적지 않으면 부기와 배열을 맞춰 볼 방법이 없다"
     )
     claimed = (int(span.group(1)), int(span.group(2)))
-    nonzero = [i for i, w in enumerate(shape.weights) if w != 0.0]
+    weights = _weights_of(shape, _BASELINE_SEASON)
+    nonzero = [i for i, w in enumerate(weights) if w != 0.0]
     assert nonzero, "발전 형상이 전 스텝 0 이다"
     actual = (nonzero[0], nonzero[-1])
     assert claimed == actual, (
-        f"부기는 인덱스 {claimed[0]}~{claimed[1]} 이라 적었는데 가중치가 0 이 "
-        f"아닌 구간은 {actual[0]}~{actual[1]} 이다 — 부기가 낡았다. "
+        f"부기는 인덱스 {claimed[0]}~{claimed[1]} 이라 적었는데 「{_BASELINE_SEASON}」 "
+        f"가중치가 0 이 아닌 구간은 {actual[0]}~{actual[1]} 이다 — 부기가 낡았다. "
         "가중치가 정본이므로 부기를 고칠 것"
     )
     # 구간이 **끊기지 않는가**. 중간에 0 이 섞이면 「구간」이라는 말이 거짓이다.
@@ -70,7 +98,8 @@ def test_the_generation_provenance_names_the_real_peak() -> None:
     peak = _PEAK.search(shape.derivation_method)
     assert peak is not None, "발전 형상의 부기에 「최대는 인덱스 …」가 없다"
     claimed = int(peak.group(1))
-    actual = max(range(len(shape.weights)), key=lambda i: shape.weights[i])
+    weights = _weights_of(shape, _BASELINE_SEASON)
+    actual = max(range(len(weights)), key=lambda i: weights[i])
     assert claimed == actual, (
         f"부기는 최대가 인덱스 {claimed} 이라 적었는데 실제 최대는 {actual} 이다"
     )
@@ -92,7 +121,70 @@ def test_both_shapes_share_the_index_convention_the_header_declares() -> None:
         (LOAD_SHAPE_KEY, shapes.load),
         (GENERATION_SHAPE_KEY, shapes.generation),
     ):
-        assert len(shape.weights) == 24, (
-            f"{key} 가 {len(shape.weights)}스텝이다 — 머리말의 「인덱스 0 이 "
+        assert shape.steps == 24, (
+            f"{key} 가 {shape.steps}스텝이다 — 머리말의 「인덱스 0 이 "
             "00~01시」 관례는 24스텝을 전제한다"
         )
+
+
+def test_the_generation_provenance_names_every_season_span() -> None:
+    """★★ 부기가 **계절마다** 적은 0 이 아닌 구간이 그 계절 배열과 같다 (R60/WP-4).
+
+    ## 왜 계절마다 봐야 하는가
+
+    자산이 계절 넷을 선언한 뒤로 「그 형상」은 하나가 아니다. 위 두 검사는
+    기준 계절(`_BASELINE_SEASON`) 하나만 보므로, **여름·겨울의 낮 길이를
+    부기와 다르게 적어도 초록불**이다 — 그런데 낮 길이 차이가 바로 이 라운드가
+    가정으로 세운 것이다(`derivation_method` ⓒ). 그 주장을 배열에서 꺼낸
+    사실과 맞춘다.
+
+    ⚠ **여기서도 스텝 값을 옮겨 적지 않는다.** 부기가 적는 것은 **구간**이고
+    이 검사가 배열에서 꺼내는 것도 구간이다 — 값은 어느 쪽에도 없다.
+    """
+    shape = load_daily_shapes().generation
+    claimed = {
+        name: (int(lo), int(hi))
+        for name, lo, hi in _SEASON_SPAN.findall(shape.derivation_method)
+    }
+    declared = [season.name for season in shape.seasons]
+    assert set(claimed) == set(declared), (
+        f"부기가 구간을 적은 계절은 {sorted(claimed)} 인데 자산이 선언한 "
+        f"계절은 {declared} 다 — 한쪽이 낡았다"
+    )
+    for name in declared:
+        weights = _weights_of(shape, name)
+        nonzero = [i for i, w in enumerate(weights) if w != 0.0]
+        assert nonzero, f"계절 「{name}」 의 발전 형상이 전 스텝 0 이다"
+        actual = (nonzero[0], nonzero[-1])
+        assert claimed[name] == actual, (
+            f"부기는 「{name}」 을 인덱스 {claimed[name][0]}~{claimed[name][1]} "
+            f"이라 적었는데 실제 구간은 {actual[0]}~{actual[1]} 이다"
+        )
+        assert nonzero == list(range(actual[0], actual[1] + 1)), (
+            f"계절 「{name}」 의 0 이 아닌 인덱스가 이어지지 않는다: {nonzero}"
+        )
+
+
+def test_the_daylight_span_is_longest_in_summer_and_shortest_in_winter() -> None:
+    """★★ 낮 길이의 **계절 순서**가 자산에 실제로 서 있다 (R60/WP-4).
+
+    위 검사는 *「부기와 배열이 같다」* 만 본다 — 둘을 함께 여름 = 겨울로
+    적으면 그대로 통과한다. 이 자산이 가정으로 세운 것은 *「겨울은 낮이 짧고
+    여름은 길다」* 이므로 **그 부등호 자체**를 잰다.
+
+    ⚠ **수를 박지 않는다.** 스텝 수가 몇인지가 아니라 **순서**를 재므로,
+    낮 길이를 고쳐도 계절성이 살아 있으면 이 검사는 초록불이다.
+    """
+    shape = load_daily_shapes().generation
+    lit = {
+        season.name: sum(1 for w in weights if w != 0.0)
+        for season, weights in shape.by_season
+    }
+    assert lit["겨울"] < lit["봄"] <= lit["여름"], (
+        f"낮 길이(0 이 아닌 스텝 수)가 겨울 {lit['겨울']} · 봄 {lit['봄']} · "
+        f"여름 {lit['여름']} 이다 — 겨울이 가장 짧고 여름이 가장 길어야 한다"
+    )
+    assert lit["겨울"] < lit["가을"] <= lit["여름"], (
+        f"가을 {lit['가을']} 이 겨울 {lit['겨울']}·여름 {lit['여름']} 사이에 "
+        "있지 않다"
+    )

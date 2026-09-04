@@ -37,7 +37,7 @@
 한다 — 그렇지 않으면 「흑자 경로가 돈다」와 「늘 그 문면이 나온다」가
 구별되지 않는다. 그 대조군은 `fixtures/golden/scenario_subsidy_80.yaml`
 (기존 골든, 여기서 건드리지 않는다)이 이미 매 회귀에서 실측하는 값
-(`npv_won: -3697129`)과 같아야 하므로, 이 실측이 그 골든과 어긋나면 이
+(`npv_won: -3712270`)과 같아야 하므로, 이 실측이 그 골든과 어긋나면 이
 파일이 아니라 진짜 대장이나 `core/` 가 움직인 것이다.
 
 ## `fixtures/golden/` 의 자동 수집을 피한 자리 (판정 ③)
@@ -117,16 +117,16 @@ def test_control_group_the_real_ledger_still_shows_a_shortfall() -> None:
     이 대조군이 없으면 「흑자 경로가 돈다」와 「늘 그 문면이 나온다」가
     구별되지 않는다(모듈 독스트링 참조). `fixtures/golden/
     scenario_subsidy_80.yaml`(기존 골든)이 같은 `subsidy_rate=0.80` 을
-    진짜 대장으로 매 회귀에서 재는 값(`npv_won: -3697129`)과 일치해야
+    진짜 대장으로 매 회귀에서 재는 값(`npv_won: -3712270`)과 일치해야
     한다 — 이 실측이 그 값과 어긋나면 이 파일이 아니라 진짜 대장이나
     `core/` 가 움직인 것이다.
     """
     report = build_case_report(PROBE_SCENARIO_PATH, assumptions_path=REAL_ASSUMPTIONS_PATH)
 
     assert report.recovers_within_horizon is False
-    assert report.metrics["npv"] == -3697129.0, (
+    assert report.metrics["npv"] == -3712270.0, (
         "대조군의 순현재가치가 fixtures/golden/scenario_subsidy_80.yaml 의 "
-        "실측(-3697129)과 어긋난다 — 진짜 대장이나 core/ 가 움직였다는 뜻이다"
+        "실측(-3712270)과 어긋난다 — 진짜 대장이나 core/ 가 움직였다는 뜻이다"
     )
 
     rendered = render_markdown(report)
