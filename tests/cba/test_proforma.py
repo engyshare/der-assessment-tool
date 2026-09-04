@@ -421,3 +421,46 @@ def test_the_purchase_row_counts_years_from_one() -> None:
         )
 
     assert caught.value.field == "proforma.purchase_start_year"
+
+
+@pytest.mark.req("FR-705-AC2")
+def test_the_forfeit_row_builder_is_reexported_by_the_partition_package() -> None:
+    """★ **구획 패키지(`core.cba`)가 포기 항 빌더를 재수출한다** (R60/WP-3).
+
+    ## 왜 이것이 실재하는 계약인가
+
+    이 파일의 머리 import 가 그 계약을 쓰고 있다 — 프로포마 행 빌더 아홉을
+    **`core.cba` 경로로** 부른다(`from core.cba import capex_row, …`). 새
+    빌더만 그 목록에서 빠지면 *「모듈 경로(`core.cba.proforma`)를 아는 사람만
+    쓸 수 있는 행 빌더」* 가 하나 생기고, 그 비대칭은 **아무 예외도 내지
+    않는다** — 쓰는 사람이 긴 경로를 적으면 그냥 된다.
+
+    ⚠ **`__all__` 까지 본다.** import 가 되는 것만으로는 부족하다: mypy strict
+    는 `no_implicit_reexport` 로 **암묵 재수출을 거부**하므로, `__all__` 에
+    없으면 타입 검사를 받는 호출부에서 이 경로가 성립하지 않는다
+    (`core/casegrid/e2e_runner.py::__all__` 주석이 같은 사유를 적는다).
+
+    ⚠ **같은 객체인지 본다.** 이름만 맞고 다른 것을 가리키면 두 경로가 서로
+    다른 함수를 내주게 되고, 그때 한쪽에만 고친 검증이 다른 쪽을 지나간다.
+    """
+    import core.cba as cba_pkg
+    from core.cba import forfeited_self_consumption_row as reexported
+    from core.cba.proforma import forfeited_self_consumption_row as declared
+
+    assert reexported is declared, (
+        "`core.cba` 가 내주는 것과 `core.cba.proforma` 가 선언한 것이 다른 "
+        "객체다 — 두 경로가 서로 다른 함수를 내주면 한쪽에만 고친 검증이 "
+        "다른 쪽을 지나간다"
+    )
+    assert "forfeited_self_consumption_row" in cba_pkg.__all__, (
+        "`core.cba.__all__` 에 없다 — mypy strict 의 `no_implicit_reexport` 가 "
+        "암묵 재수출을 거부하므로 타입 검사를 받는 호출부에서 이 경로가 "
+        f"성립하지 않는다. 지금 목록: {sorted(cba_pkg.__all__)}"
+    )
+    row = reexported(
+        "ForfeitedSelfConsumption",
+        start_year=1,
+        end_year=2,
+        annual_amount_won=1_000,
+    )
+    assert row.total() == Money(2_000)

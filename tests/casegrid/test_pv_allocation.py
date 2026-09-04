@@ -69,12 +69,16 @@ from core.casegrid.e2e_runner import (
 )
 from core.casegrid.profiles import load_daily_shapes
 from core.casegrid.pv_allocation import (
+    FORFEITED_SELF_CONSUMPTION_TAG,
     _dispatch_inputs_under_baseline,
+    _forfeited_self_consumption_rows,
     _resolve_ess_dispatch_inputs,
 )
-from core.cba.baseline import BaselineArrangement
+from core.cba.baseline import BaselineArrangement, PoolMeteringDeclaration
 from core.contracts.der import DispatchContext
+from core.contracts.schemas import CashFlowRow
 from core.contracts.units import Year
+from core.contracts.validation import ValidationError
 from core.der.load import Load
 from core.der.pv import PV, OperatingMode, PVAllocationPriority
 
@@ -145,8 +149,14 @@ def _surplus(
     arrangement: BaselineArrangement,
     *,
     priority: PVAllocationPriority,
+    pool_metering: PoolMeteringDeclaration | None = None,
 ) -> tuple[list[float], PVAllocationPriority]:
-    """그 갈래·그 배분 순서로 감싸기를 부르고 (잉여 시계열, 넷째 반환값)을 낸다."""
+    """그 갈래·그 배분 순서로 감싸기를 부르고 (잉여 시계열, 넷째 반환값)을 낸다.
+
+    ⚠ `pool_metering` 의 기본값이 `None`(= 선언하지 않았다)이므로 **ⓒ 로 부르면
+    이 감싸기가 `DV-15` 로 거부한다** — F1~F3 은 ⓐ·ⓑ 만 쓰므로 그 기본값이
+    맞고, ⓒ 를 재는 F4~F6 은 선언을 넘긴다(R60/WP-3).
+    """
     _mode, _source, surplus, resolved = _dispatch_inputs_under_baseline(
         None,
         None,
@@ -156,6 +166,7 @@ def _surplus(
         pv_allocation_priority=priority,
         household=_probe_household(),
         baseline_arrangement=arrangement,
+        pool_metering=pool_metering,
     )
     return surplus, resolved
 
@@ -254,3 +265,158 @@ def test_the_branch_never_overwrites_the_allocation_priority() -> None:
                 f"{priority!r} → {resolved!r} 로 바뀌었다 — 갈래가 배분 순서 "
                 "축을 덮어썼다. 리포트가 고르지 않은 순서를 인쇄하게 된다"
             )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# R60/WP-3 — **포기한 자가소비의 물량을 만드는 자리가 이 모듈로 왔다**
+#
+# ★★ 감싸는 함수를 `e2e_runner.py` 에 두었더니 `NFR-206` 코드 줄 상한을 넘었다
+# (실측 529 > 500 · 「코드 스프롤」). R51/WP-5·R60/WP-2 와 **같은 이유로 같은
+# 모듈**에 옮겼고, 그 이동에는 근거가 하나 더 있다 — **포기액의 물량이 이
+# 모듈이 만드는 PV 잉여 시계열에서 나온다**(`대표일 자가소비 = 발전 − 잉여`).
+# 잉여를 만든 자리가 그 물량을 세면 배분 규칙이 바뀌는 날 두 곳이 어긋날 자리가
+# 없다.
+#
+# ⚠ **그래서 이 파일이 그 함수도 진다.** 아래 둘이 재는 것은 금액의 크기가
+# 아니라 **어느 갈래에서 행이 서는가**와 **물량이 이 모듈의 잉여에서 오는가**다.
+# 금액이 결론축을 얼마나 움직이는지는 `tests/report/test_pool_branch_calculated.py`
+# 가 진입점을 지나서 잰다 — 같은 것을 두 곳에서 재지 않는다.
+# ─────────────────────────────────────────────────────────────────────────
+
+#: 탐침 구매단가(원/kWh)와 분석기간(년). **대장을 읽지 않는다** — 위
+#: `_PROBE_PV_KW` 주석과 같은 규약이다(이 파일이 재는 것은 금액이 아니다).
+_PROBE_PRICE_WON_PER_KWH = 100.0
+_PROBE_HORIZON_YEARS = 3
+
+#: 둘 다 선언한 계측 전제 — ⓒ 가 서는 유일한 조건이다.
+def _declared() -> PoolMeteringDeclaration:
+    return PoolMeteringDeclaration(
+        ownership_or_operation_transferred=True, metering_separated=True
+    )
+
+
+def _forfeited_rows(
+    arrangement: BaselineArrangement,
+    *,
+    pool_metering: PoolMeteringDeclaration | None,
+) -> tuple[list[CashFlowRow], list[float], PV]:
+    """그 갈래로 포기 행을 짓고 (행 목록, 쓴 잉여, 탐침 PV)를 낸다.
+
+    ⚠ **잉여를 손으로 만들지 않는다.** 같은 모듈의 감싸기(`_surplus`)가 낸 것을
+    그대로 넘긴다 — 손으로 지으면 이 검사가 *실행이 쓰는 잉여*가 아니라 자기가
+    지은 수를 재게 된다.
+    """
+    pv = _probe_pv()
+    surplus, _ = _surplus(
+        arrangement,
+        priority=PVAllocationPriority.HOUSEHOLD_FIRST,
+        pool_metering=pool_metering,
+    )
+    rows = _forfeited_self_consumption_rows(
+        arrangement,
+        pool_metering,
+        pv=pv,
+        ctx=_ctx(),
+        surplus_profile_kwh=surplus,
+        price_won_per_kwh=_PROBE_PRICE_WON_PER_KWH,
+        horizon_years=_PROBE_HORIZON_YEARS,
+    )
+    return rows, surplus, pv
+
+
+@pytest.mark.req("FR-705-AC2")
+def test_the_forfeit_row_stands_only_in_the_pool_branch() -> None:
+    """**F4** — 포기 행은 **ⓒ 에서만** 서고 ⓐ·ⓑ 에서는 **빈 목록**이다.
+
+    ⓑ(`CANCEL_OUT` · 자가용 유지)는 자가소비가 Without·With **양쪽에 똑같이**
+    있어 차액에서 소거되고(판정 정본 `docs/decisions-2026-09-03-R57.md` §1
+    둘째), ⓐ(`NONE`)는 자가용이 없어 포기할 자가소비가 애초에 없다.
+
+    ★★ **이 단언이 골든을 지킨다.** 기본값은 ⓑ 이므로 여기서 빈 목록이 나오지
+    않으면 골든 3건의 무보조 `npv`(−11,537,129원)가 그 즉시 움직인다 — 그
+    어긋남은 골든 재생성 압력으로 나타나고, 「갈래를 열었으니 수가 바뀐 것이
+    당연하다」로 읽히기 쉽다.
+
+    ⚠ **ⓒ 쪽도 함께 본다.** 「전부 빈 목록」인 구현도 앞 절반을 통과한다.
+    """
+    for arrangement in (BaselineArrangement.NONE, BaselineArrangement.MAINTAIN):
+        rows, _surplus_kwh, _pv = _forfeited_rows(arrangement, pool_metering=None)
+        assert rows == [], (
+            f"갈래 {arrangement.value!r} 에 포기 항이 섰다: "
+            f"{[row.label for row in rows]} — ⓑ 의 자가소비는 차액에서 "
+            "소거되고 ⓐ 는 포기할 자가소비가 없다(골든이 그 즉시 움직인다)"
+        )
+
+    pool_rows, _surplus_kwh, _pv = _forfeited_rows(
+        BaselineArrangement.POOL, pool_metering=_declared()
+    )
+    assert len(pool_rows) == 1, (
+        f"ⓒ 의 포기 항이 {len(pool_rows)}건이다 — 대칭 항(총괄지침 제45조③)은 "
+        "한 줄로 선다"
+    )
+    assert pool_rows[0].tag == FORFEITED_SELF_CONSUMPTION_TAG
+
+
+@pytest.mark.req("FR-705-AC2")
+def test_the_forfeit_quantity_comes_from_this_modules_surplus() -> None:
+    """**F5** ★ — 포기액의 물량이 **이 모듈이 만든 잉여**에서 나온다.
+
+    오라클:
+
+        포기액(연) = (PV 발전 − PV 잉여) × 365일 × 구매단가
+
+    ★★ **감싸기가 낸 잉여를 그대로 넘겨 재는 것이 요점이다.** 물량을 러너의
+    비율 상수(`PV_SELF_CONSUMPTION_RATIO`)에서 읽는 구현은 그 상수가 **이미
+    0** 이므로 **언제나 0원**을 내는데, 「행이 있는데 0원」은 프로포마에서
+    「포기가 없었다」와 구별되지 않는다.
+
+    ⚠ **0 이 아님을 먼저 단언한다** — 잉여가 전량이면 자가소비가 0 이 되어 이
+    오라클이 `0 == 0` 으로 항등 통과한다(위 `_PROBE_LOAD_KWH` 주석과 같은
+    함정이다).
+
+    ⚠ **연차 폭도 본다.** 1년차만 채우고 나머지를 비우는 구현은 20년 프로포마에서
+    포기분을 19년치 놓친다.
+    """
+    rows, surplus, pv = _forfeited_rows(
+        BaselineArrangement.POOL, pool_metering=_declared()
+    )
+    daily_self_consumed = sum(pv.dispatch(_ctx()).electric) - sum(surplus)
+    assert daily_self_consumed > 0.0, (
+        f"탐침의 대표일 자가소비가 {daily_self_consumed!r} 다 — 0 이면 이 "
+        "오라클이 항등적으로 통과한다(부하·형상 전제가 바뀌었다)"
+    )
+
+    expected = int(
+        daily_self_consumed * DAYS_PER_YEAR * _PROBE_PRICE_WON_PER_KWH
+    )
+    row = rows[0]
+    assert sorted(row.amounts) == list(range(1, _PROBE_HORIZON_YEARS + 1)), (
+        f"포기 항의 연차가 {sorted(row.amounts)} 다 — 1년차부터 분석기간 끝까지 "
+        "서야 한다"
+    )
+    for year, amount in row.amounts.items():
+        assert amount == expected, (
+            f"{year}년차 포기액 {amount!r} 이 「자가소비 곱하기 365일 곱하기 "
+            f"구매단가」({expected:,}원)와 다르다 — 물량이 이 모듈의 잉여에서 "
+            "오지 않는다"
+        )
+
+
+@pytest.mark.req("FR-705-AC2")
+def test_the_forfeit_row_builder_refuses_the_pool_branch_without_a_declaration() -> None:
+    """**F6** — 선언 없이 ⓒ 로 부르면 이 함수도 `DV-15` 로 **거부**한다.
+
+    ★ 이 자리의 거부는 **값싼 중복**이다 — `_dispatch_inputs_under_baseline` 이
+    이미 같은 판정을 지난다. 그런데 그 함수를 건너뛰는 진입점이 생기는 날
+    **ⓒ 가 포기 항 없이 계산되고** 그때 리포트는 *「집합자원화인데 포기가
+    없는 사업」* 을 낸다 — 판정은 한 곳(`get_baseline_branch`)에만 있고
+    부르는 자리는 둘이다.
+
+    ⚠ 그 판정을 이 함수가 **다시 구현하지 않았다** — 규칙 ID·문면이 하나뿐인지는
+    `tests/cba/test_pool_metering_declaration.py` T1~T3 이 잰다.
+    """
+    with pytest.raises(ValidationError) as caught:
+        _forfeited_rows(BaselineArrangement.POOL, pool_metering=None)
+    assert caught.value.rule == "DV-15", (
+        f"규칙 ID 가 다르다: {caught.value.rule!r}"
+    )
