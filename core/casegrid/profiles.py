@@ -30,7 +30,7 @@
 **둘 다** 제 방향으로 움직인다 — 한쪽만 반영하는 상태가 아니다. R37 이 그것을
 재어 배선했다(연 −9,855원 · 순현재가치 −128,194원).
 
-## 계절 축 — **자리는 섰고 값은 비어 있다** (R56 · 사용자 판정 §4)
+## 계절 축 — **R56 이 자리를 세웠고 R60/WP-4 가 가정으로 채웠다**
 
 R56 이전에는 대표일 하나를 365번 되풀이하는 것이 전부여서, *「겨울철 일사가
 여름철보다 약하다」* 를 **적을 자리 자체가 없었다.** 이제 `DailyShape` 는
@@ -41,12 +41,20 @@ R56 이전에는 대표일 하나를 365번 되풀이하는 것이 전부여서,
 나누면 겨울 하루 발전량과 여름 하루 발전량이 **같아진다** — 계절을 넣고도
 계절 차이를 표현하지 못한다. 몫이 그 차이를 담는 유일한 자리다.
 
-⚠⚠ **지금 배포 자산은 계절을 선언하지 않는다.** 선언하지 않으면 계절
-하나(`연중` · 몫 1.0 · 일수는 읽는 쪽이 준 `days` 전부)로 읽히고, `spread()`
-의 출력은 R56 이전과 **원소 하나까지 같다**(`tests/casegrid/
-test_seasonal_axis.py` 가 손계산과 대조한다). 즉 축만 섰고 **결론축은 한 원도
-움직이지 않았다.** 계절 실측값이 오면 자산의 `seasons:` 를 채우는 것만으로
-축이 채워진다 — 읽는 쪽(`e2e_runner.py`)은 한 줄도 고치지 않는다.
+⚠⚠ **배포 자산은 이제 계절 넷을 선언한다 — 그 값은 「가정」이며 실측이 아니다**
+(R60/WP-4 · 사용자 판정 `docs/decisions-2026-09-04-R59b.md` §3). 근거는 자산의
+`derivation_method` 가 갖는다. 선언하지 **않으면** 종전대로 계절 하나
+(`연중` · 몫 1.0 · 일수는 읽는 쪽이 준 `days` 전부)로 읽히고, 그때 출력은 R56
+이전과 **원소 하나까지 같다**(`tests/casegrid/test_seasonal_axis.py` 가 손계산과
+대조한다).
+
+⚠⚠⚠ **계절을 채워도 「겨울 하루 < 여름 하루」는 결론에 서지 않는다.** 배포
+실행은 24스텝 하루를 돌려 365배로 연간화하므로, 계절이 여럿인 자산은
+`representative_day()` 가 내는 **몫 가중 평균 하루** 하나로 접혀 들어간다
+(`e2e_runner`). 접지 않고 `spread()` 를 그대로 넘기면 앞 하루가 **첫 계절의
+하루**가 되어 연간 총량이 대장과 어긋난다 — R60/WP-4 가 실측한 자리다. 그래서
+계절 몫이 담는 차이는 **선언돼 있고 운전에는 서지 않으며**, 그 결손은 붙임 8 이
+신고한다(`core/report/unreflected.py`).
 """
 from __future__ import annotations
 
@@ -198,6 +206,82 @@ class DailyShape:
                 "시계열의 길이가 연도와 어긋납니다"
             )
         return tuple(assigned)
+
+    def representative_day(self, total: float, *, days: int) -> tuple[float, ...]:
+        """연간 총량을 **몫 가중 평균 하루** 한 벌로 접는다 — `spread()` 의 형제.
+
+        ## 왜 형제가 필요한가 (R60/WP-4-fix)
+
+        `spread()` 는 계절을 **차례로 이어 붙인다** — 그것이 정의이고 연간 총량을
+        보존한다. 그런데 **배포 실행은 8,760 을 쓰지 않는다**: 운전은 24스텝
+        하루이고(`e2e_runner` 의 `DispatchContext(steps=STEPS_PER_DAY)`), 자원은
+        받은 시계열의 **앞 하루만** 잘라 쓴 뒤(`core/der/pv.py` ·
+        `core/der/load.py` 의 `[: ctx.steps]`) 그 결과를 365배로 연간화한다.
+
+        그래서 `spread()` 의 출력을 그대로 넘기면 **앞 하루가 「첫 계절의 하루」**
+        가 되고, 그것을 365배 한 총량이 대장·설계 변수가 정한 총량과 어긋난다.
+        R60/WP-4 가 실측했다 — 발전이 연 +281kWh 생기고 부하가 −315kWh 사라졌다
+        (`tests/report/test_shaped_run_invariants.py` 의 두 성질이 그 자리다).
+        **첫 계절이 무엇이냐가 결론을 만든다**는 뜻이며, 계절을 적는 차례만 바꿔도
+        수가 달라진다.
+
+        ⚠ **그것은 슬라이싱의 결함이 아니다.** *「대표일 하루를 365일로
+        연간화한다」* 는 이 저장소의 설계이고 리포트 문면이 그렇게 적는다
+        (`e2e_runner` 의 `dispatch_note`). 결함은 **계절이 선 자산에서 「대표일」이
+        무엇인지 아무도 말하지 않은 것**이었다. 이 메서드가 그것을 말한다.
+
+        ## 산식과 항등식
+
+            rep[j] = Σ_계절 ( total × share_계절 × weight_계절[j] ) / days
+
+        계절 하나의 하루 총량은 `total × share / 계절일수` 이고 그 계절이
+        `계절일수` 만큼 되풀이되므로, 한 해에서 스텝 `j` 가 갖는 에너지는
+        `total × share × weight[j]` 다 — **계절일수가 약분된다.** 그것을 `days`
+        로 나눈 것이 이 하루이며, 따라서
+
+            Σ_j rep[j] × days == total
+
+        이 항등식으로 성립한다(가중치 합이 계절마다 1 이므로). ⚠ 그 전제는
+        **읽는 쪽이 이미 강제한다** — `_normalised()` 가 계절마다 합으로 나눈 뒤에만
+        `by_season` 에 담기므로, 이 메서드는 그 성질 위에 서 있다.
+
+        ⚠ **계절이 하나(`연중`)면 `spread()` 의 앞 하루와 원소 하나까지 같다** —
+        `share` 가 1 이므로 `rep[j] = total × weight[j] / days` 이고, 그것이
+        `spread()` 가 `per_day = total / days` 로 내는 첫 하루다. 계절 축이 서기
+        전과 같은 수라는 성질은 `spread()` 독스트링이 적은 것과 같은 자리다.
+
+        ⚠⚠ **이 하루는 계절 간 차이를 담지 못한다** — 담는 것이 목적이 아니다.
+        「겨울 하루 < 여름 하루」를 운전에 세우려면 계절마다 대표일을 돌려 합산해야
+        하고, 그것은 이 자료형이 아니라 **러너의 구조**다. 그 결손은 붙임 8 이
+        신고한다(`core/report/unreflected.py::_season_reason`).
+        """
+        # ⚠ **연산 차례가 `spread()` 와 같아야 한다.** `total × share ÷ days` 를
+        # 먼저 짓고 가중치를 곱한다 — `spread()` 의 `per_day` 와 **같은 식**이며,
+        # 계절이 하나일 때 `days == 계절일수` 이므로 두 결과가 부동소수 마지막
+        # 자리까지 같아진다. 묶는 차례를 바꾸면(`Σ(total × share × w) ÷ days`)
+        # 값이 1 ULP 어긋나고, 그러면 위 ⚠ 의 「원소 하나까지 같다」가 거짓이 된다.
+        steps = self.steps
+        return tuple(
+            math.fsum(
+                total * season.share / days * weights[j]
+                for season, weights in self.by_season
+            )
+            for j in range(steps)
+        )
+
+    def spread_over_representative_day(self, total: float, *, days: int) -> list[float]:
+        """`representative_day()` 를 `days` 일 되풀이한 연간 시계열.
+
+        길이와 합이 `spread()` 와 **같다**(연간 스텝 수 · 연간 총량). 다른 것은
+        **하루하루가 전부 같다**는 것뿐이다 — 그래서 앞 하루를 잘라 쓰는 소비자가
+        365배 했을 때 총량이 되돌아온다.
+
+        ⚠ **길이를 하루로 줄이지 않는다.** 자원은 `[: ctx.steps]` 로 앞을 집을
+        뿐이지만, 길이는 `PV._resolve_generation` 의 `DV-4` 검증(연간 스텝 수)이
+        보는 값이다 — 줄이면 그 검증이 거부한다.
+        """
+        day = self.representative_day(total, days=days)
+        return [value for _day in range(days) for value in day]
 
     def spread(self, total: float, *, days: int) -> list[float]:
         """연간 총량을 **계절 차례로** 스텝별로 편다.
