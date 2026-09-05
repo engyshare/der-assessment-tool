@@ -61,6 +61,7 @@ from pathlib import Path
 
 import yaml
 
+from core.assumption.item import AssumptionItem
 from core.assumption.provider import AssumptionSet
 
 #: 대장 정본.
@@ -107,6 +108,33 @@ def test_the_dataclass_carries_the_label_to_the_boundary() -> None:
     ⚠ **「하나가 실린다」로 두지 않는다** — 로더가 한 항목만 채우는 경로는
     없지만, 전건을 세면 다음에 로더가 갈릴 때도 이 검사가 그대로 선다.
     """
+    # ★★ **자료형을 직접 세운다 — 로더를 지나지 않고 잰다.** 로더만 통해
+    # 재면 「필드가 있다」와 「로더가 채운다」가 한 검사에 섞이고, 둘 중 어느
+    # 쪽이 깨졌는지 실패 문면이 말해 주지 못한다.
+    # ⚠ **기본값이 있어야 한다** — `title` 을 안 주는 기존 호출자가 저장소
+    # 안에 있고(대장을 지나지 않고 항목을 세우는 자리), 필수로 만들면 그쪽이
+    # 깨진다. 라벨 부재는 계산 오류가 아니라 표시 결함이다.
+    #: 부기 7종은 이 검사의 관심이 아니므로 최소로 채운다 — 잰 것은 `title` 뿐이다.
+    _BOOKKEEPING = {
+        "value_unit": "원",
+        "base_year": "2026",
+        "applicable_scope": "라벨 검사용 표본",
+        "derivation_method": "이 검사가 세우는 표본이며 계산에 쓰이지 않는다",
+        "source": None,
+        "verified_at": None,
+        "confidence": "가정",
+    }
+    assert AssumptionItem(key="probe.label", value=1.0, **_BOOKKEEPING).title == "", (
+        "`AssumptionItem.title` 의 기본값이 빈 문자열이 아니다 — 라벨을 안 주는 "
+        "기존 호출자가 깨지거나 없는 이름이 지어진다"
+    )
+    assert (
+        AssumptionItem(
+            key="probe.label", value=1.0, title="시험용 이름", **_BOOKKEEPING
+        ).title
+        == "시험용 이름"
+    ), "자료형이 준 라벨을 그대로 나르지 않는다"
+
     loaded = AssumptionSet.load_from_yaml(str(_ASSUMPTIONS)).items()
     assert loaded, "대장에서 항목을 하나도 싣지 못했다"
 
