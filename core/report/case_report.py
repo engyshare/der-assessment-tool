@@ -710,7 +710,7 @@ def build_case_report(
     # 생기기 전과 같은 경로를 돌게 하는 것이 그 동일성이고, 그것이 결론축
     # 불변(무보조 `npv`)의 근거다.
     provider = apply_scenario_overrides(provider, scenario.get(ASSUMPTION_OVERRIDES_FIELD))
-    level_map = build_level_map(assumptions_path)
+    level_map = build_level_map(assumptions_path, overrides=provider.get_overrides())
     horizon_years = provider.analysis_years()
     subsidy_rate = float(scenario["subsidy_rate"])
     scheme = _scheme_for(subsidy_rate)

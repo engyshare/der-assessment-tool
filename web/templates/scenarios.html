@@ -21,7 +21,7 @@
     {# 화면들을 잇는다 — 대시보드에서 이 화면으로 오는 링크는 병합 뒤에 붙는다. #}
     <nav aria-label="주요 화면">
       <a href="/">대시보드</a>
-      <a href="/ui/settings">설정(전제)</a>
+      <a href="/ui/settings">설정</a>
       <a href="/ui/model-composer">자원 구성</a>
     </nav>
   </header>
@@ -181,7 +181,7 @@
         </select>
 
         <fieldset>
-          <legend>ⓒ 「자가용 집합자원화」 전제 — 둘이 함께 서야 성립합니다</legend>
+          <legend>ⓒ 「자가용 집합자원화」 계측 선언 — 둘이 함께 서야 성립합니다</legend>
           {% for field in prerequisites %}
           <label for="save-{{ field.name }}">
             <input id="save-{{ field.name }}" name="{{ field.name }}"
@@ -192,9 +192,9 @@
         </fieldset>
 
         {# ★ 「시나리오에서는 설정을 선택하여 적용할 수 있어야 함」 (사용자 §1). #}
-        <label for="save-settings">적용할 설정(전제 오버라이드 집합)</label>
+        <label for="save-settings">적용할 설정</label>
         <select id="save-settings" name="settings_id">
-          <option value="0">없음 — 전제 대장 그대로</option>
+          <option value="0">없음 — 분석 설정 대장 그대로</option>
           {% for row in settings %}
           <option value="{{ row.id }}" data-settings-choice>{{ row.name }} (판 {{ row.version }})</option>
           {% endfor %}
@@ -211,7 +211,7 @@
     <section id="settings-list" class="band" aria-labelledby="settings-list-title">
       <h2 id="settings-list-title">저장한 설정</h2>
       <table>
-        <caption>설정은 전제 대장 위에 얹는 오버라이드 집합입니다</caption>
+        <caption>설정은 분석 설정 대장 위에 얹는 오버라이드 집합입니다</caption>
         <thead>
           <tr>
             <th scope="col">이름</th><th scope="col">설명</th>
