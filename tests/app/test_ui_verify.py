@@ -87,7 +87,15 @@ _USER_STEPS = 4
 
 _GROUP = re.compile(r'data-group="(\d+)"')
 _STAGE = re.compile(r'data-stage="(\d+)"')
-_STAGE_BODY = re.compile(r'<pre class="stage-body">(.*?)</pre>', re.DOTALL)
+#: ⚠⚠ **속성을 더 붙일 수 있게 열어 둔다.** 종전에 이 정규식이
+#: `<pre class="stage-body">` 를 **글자까지 고정**하고 있었고, 접근성 위반
+#: (`scrollable-region-focusable`)을 고치려고 그 태그에 `tabindex="0"` 을 더한
+#: 순간 **찾은 본문이 0개가 되어** `assert 0 == 9` 로 빨간불이 됐다 —
+#: 화면은 멀쩡했고 깨진 것은 **재는 쪽**이다. 태그의 속성은 접근성·스타일 때문에
+#: 늘어나는 것이 정상이므로, 재는 것을 **클래스 이름 하나**로 좁힌다.
+_STAGE_BODY = re.compile(
+    r'<pre class="stage-body"[^>]*>(.*?)</pre>', re.DOTALL
+)
 _GAP_BLOCK = re.compile(r'<section class="verify-gap"(.*?)</section>', re.DOTALL)
 _GAP_TAG = re.compile(r'data-gap="([^"]+)"')
 _GAP_REASON = re.compile(r'<p class="gap-reason">(.*?)</p>', re.DOTALL)
