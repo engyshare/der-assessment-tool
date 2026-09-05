@@ -1,6 +1,6 @@
-{# 설정(전제) 보기·수정·저장·로드 화면 — FR-601(대장 전건) · FR-602(오버라이드).
+{# 설정 보기·수정·저장·로드 화면 — FR-601(대장 전건) · FR-602(오버라이드).
 
-   ## ⚠⚠ 전제 대장을 무르게 만들지 않는다 (NFR-202 · 사용자 판정 R63 §3 ⓐ)
+   ## ⚠⚠ 분석 설정 대장을 무르게 만들지 않는다 (NFR-202 · 사용자 판정 R63 §3 ⓐ)
 
    이 화면이 고치는 것은 **대장이 아니라 대장 위에 얹는 오버라이드**다. 그래서
    「대장 값」과 「내 값」이 두 칸으로 나란히 서고, 대장에 없는 키는 이 화면이
@@ -26,9 +26,9 @@
 <body>
   <a class="skip-link" href="#main">본문으로 이동</a>
   <header class="topbar">
-    <h1>설정 — 분석 전제</h1>
+    <h1>분석 설정</h1>
     <p class="hint">
-      여기서 고친 값은 <strong>전제 대장을 바꾸지 않습니다</strong>.
+      여기서 고친 값은 <strong>분석 설정 대장을 바꾸지 않습니다</strong>.
       대장 위에 얹는 「내 값」으로 저장되고, 시나리오가 그것을 골라 적용합니다.
     </p>
     <nav aria-label="주요 화면">
@@ -56,7 +56,17 @@
     {% if applied %}
     {# ★ FR-602-AC2 — 「기준 전제 대비 변경 항목」. 수는 `CaseReport` 가 준
        것이며 화면이 다시 계산하지 않는다. `data-npv` 는 서식 이전의 날값이고
-       `run_result.html` 과 **같은 이름**을 쓴다. #}
+       `run_result.html` 과 **같은 이름**을 쓴다.
+
+       ⛔⛔ **아래 표 이름의 「전제」를 바꾸지 마라.** 이 화면의 다른 자리는
+       R63 낱말표대로 「분석 설정 대장」·「설정 항목」으로 옮겼으나, 이 표
+       이름만은 **리포트 양식의 이름**이고 `FR-602-AC2` 의 문면이 그것을
+       글자 그대로 갖는다(*「리포트에 "기준 전제 대비 변경 항목" 목록이 자동
+       생성된다」*). R63 판정: 리포트 인쇄 문면은 이 라운드에서 바꾸지 않는다
+       (착수 목록 51번). 화면이 이 표를 리포트와 **다른 이름**으로 부르면
+       검토자는 같은 표인지 알 수 없다.
+       ⇒ `tests/app/test_screen_words.py` 가 **양쪽**을 잰다 — 낱말이 남은
+       것과, 이 이름이 **사라진** 것 둘 다 빨간불이다. #}
     <section id="applied" class="band" aria-labelledby="applied-title">
       <h2 id="applied-title">이 설정으로 돌린 결과 — {{ applied.name }}</h2>
       <dl class="metrics">
@@ -68,7 +78,7 @@
         <caption>기준 전제 대비 변경 항목 — 「대장 값」과 「내 값」을 나란히 둡니다</caption>
         <thead>
           <tr>
-            <th scope="col">전제 항목</th><th scope="col">대장 값</th>
+            <th scope="col">설정 항목</th><th scope="col">대장 값</th>
             <th scope="col">내 값</th><th scope="col">사유</th>
           </tr>
         </thead>
@@ -81,7 +91,7 @@
             <td>{{ row.reason }}</td>
           </tr>
           {% else %}
-          <tr><td colspan="4">고친 항목이 없습니다 — 전제 대장 그대로 돌았습니다.</td></tr>
+          <tr><td colspan="4">고친 항목이 없습니다 — 분석 설정 대장 그대로 돌았습니다.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -98,10 +108,10 @@
     <section id="user-named" class="band" aria-labelledby="user-named-title">
       <h2 id="user-named-title">사용자가 지목한 다섯</h2>
       <table>
-        <caption>사용자의 말이 전제 대장의 어느 항목인가</caption>
+        <caption>사용자의 말이 분석 설정 대장의 어느 항목인가</caption>
         <thead>
           <tr>
-            <th scope="col">사용자의 말</th><th scope="col">전제 대장 항목</th>
+            <th scope="col">사용자의 말</th><th scope="col">분석 설정 대장 항목</th>
             <th scope="col">있나</th><th scope="col">비고</th>
           </tr>
         </thead>
@@ -157,7 +167,7 @@
     </section>
 
     <section id="ledger" class="band" aria-labelledby="ledger-title">
-      <h2 id="ledger-title">전제 대장 — 전건</h2>
+      <h2 id="ledger-title">분석 설정 대장 — 전건</h2>
       <form method="post" action="/ui/settings">
         <input type="hidden" name="scenario" value="{{ scenario }}">
 
@@ -179,7 +189,7 @@
             <caption>키 · 대장 값 · 내 값 · 단위 · 신뢰도 · 출처</caption>
             <thead>
               <tr>
-                <th scope="col">전제 항목</th><th scope="col">대장 값</th>
+                <th scope="col">설정 항목</th><th scope="col">대장 값</th>
                 <th scope="col">내 값</th><th scope="col">단위</th>
                 <th scope="col">신뢰도</th><th scope="col">사유(권장)</th>
                 <th scope="col">출처</th>
@@ -215,7 +225,7 @@
         {# 대장 밖 키를 사람이 보낸 경우 — 그 칸도 되돌려 그린다. 지우면 무엇이
            거부됐는지 화면에서 사라진다. #}
         <fieldset data-ledger-group="대장 밖">
-          <legend>전제 대장에 없는 키 — 저장되지 않습니다</legend>
+          <legend>분석 설정 대장에 없는 키 — 저장되지 않습니다</legend>
           {% for row in unknown %}
           <label for="val-{{ row.key }}">{{ row.key }}</label>
           <input id="val-{{ row.key }}" name="val-{{ row.key }}" type="text"
