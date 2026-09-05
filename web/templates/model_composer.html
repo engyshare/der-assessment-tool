@@ -18,6 +18,12 @@
   <header class="topbar">
     <h1>자원 구성</h1>
     <p class="model-name">모델: {{ model_name }}</p>
+    {# 화면 셋을 잇는다 — 여기가 없으면 사용자는 주소를 손으로 쳐야 하고,
+       키보드만으로 도는 사람에게는 그것이 **완주 불가**다 (R62/WP-5 의 MC-8). #}
+    <nav aria-label="주요 화면">
+      <a href="/">대시보드</a>
+      <a href="/ui/regulation-admin">제도 관리</a>
+    </nav>
   </header>
 
   <main id="main">
@@ -34,15 +40,20 @@
             <td>{{ resource.name }}</td>
             <td>{{ resource.tag }}</td>
             <td>
+              {# ⚠ `action` 이 `/models/…`(JSON API)를 가리키면 폼 제출이
+                 **영어 422** 로 떨어진다 — 그 API 는 JSON 본문을 받는다.
+                 화면 전용 출구는 `app/routers/ui_forms.py` 다. #}
               <form method="post"
-                    action="/models/{{ model_name }}/resources/{{ resource.name }}/duplicate">
+                    action="/ui/model-composer/resources/{{ resource.name }}/duplicate">
                 <label for="new-name-{{ loop.index }}">복제본 이름</label>
                 <input id="new-name-{{ loop.index }}" name="new_name" type="text"
                        value="{{ resource.name }}-복제">
                 <button type="submit" name="action" value="duplicate">자원 복제</button>
               </form>
+              {# ⚠ `?_method=DELETE` 를 되살리지 않는다 — 그것을 푸는
+                 미들웨어가 없었고, 만들지 않기로 했다(동사를 경로 끝에 적는다). #}
               <form method="post"
-                    action="/models/{{ model_name }}/resources/{{ resource.name }}?_method=DELETE">
+                    action="/ui/model-composer/resources/{{ resource.name }}/delete">
                 <button type="submit" name="action" value="delete">자원 삭제</button>
               </form>
             </td>
@@ -56,7 +67,7 @@
 
     <section id="add-resource" class="band" aria-labelledby="add-title">
       <h2 id="add-title">자원 추가</h2>
-      <form method="post" action="/models/{{ model_name }}/resources">
+      <form method="post" action="/ui/model-composer/resources">
         <label for="resource-tag">자원 종류</label>
         <select id="resource-tag" name="tag">
           {% for tag in available_tags %}

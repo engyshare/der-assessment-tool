@@ -31,6 +31,19 @@ api = [                  # WP-11 (작업 14.0)
     # 메모리 하드 함수가 GPU 대량 시도에 더 강하다. 다만 **선택 자체를
     # 소스에 숨기지 않는다** — 어느 쪽을 썼는지는 검증 케이스가 말해야 한다.
     "argon2-cffi>=23.1",
+    # UI-1-AC1 · FR-201-AC1 · FR-504-AC3 — 화면 라우터(`app/routers/ui.py`)가
+    # `web.render` 를 모듈 수준에서 import 하고, 라우터 자동 수집이 그것을 앱
+    # 기동 시점에 끌어온다. **여기 없으면 `pip install -e ".[api]"` 만 한 배포
+    # 환경에서 앱이 기동하지 않는다.** 지금까지 도는 것은 `dev` 그룹의
+    # `diff-cover` 가 끌어온 전이 의존이었고, 그것은 배포에 깔리지 않는다.
+    "jinja2>=3.1",
+    # FR-201-AC1 · FR-504-AC3 — 화면의 폼이 `application/x-www-form-urlencoded`
+    # 로 제출하고, 그것을 받는 `app/routers/ui_forms.py` 가 `Form(...)` 을 쓴다.
+    # **`python-multipart` 가 없으면 FastAPI 는 그 라우트를 세우다가 기동 시점에
+    # 죽는다** — 화면이 안 뜨는 것이 아니라 앱 전체가 뜨지 않는다.
+    # 하한은 실측한 `0.0.27` 보다 낮은 `0.0.9` 로 잡는다 — 그 판부터
+    # `Form(...)` 이 요구하는 `multipart` 모듈 이름이 지금과 같다.
+    "python-multipart>=0.0.9",
 ]
 dev = [
     "pytest>=8.0",
@@ -42,6 +55,22 @@ dev = [
     # NFR-105 게이트 ① 변경분 커버리지 (작업 2.5)
     "diff-cover>=9.0",
     "pip-audit>=2.7.3",
+]
+e2e = [                  # R62/WP-4 (작업 15.12 E2E · 15.10 axe 접근성 스캔)
+    # ⚠⚠ **이 그룹은 본 `tests` 잡에도 깔린다.** CI 의 「의존성」 단계가
+    # optional-dependency 그룹을 읽어 전부 설치하기 때문이다(그것이 그 단계의
+    # 요점이다 — 손으로 나열하면 조용히 빠진다). 그런데 본 잡은
+    # `playwright install chromium` 을 돌리지 않으므로 **브라우저가 없다.**
+    # 그래서 이 그룹을 쓰는 검사는 `tests/` 가 아니라 **`tests_e2e/`** 에 둔다 —
+    # `[tool.pytest.ini_options]` 의 `testpaths = ["tests"]` 가 그것을 본 실행에서
+    # 수집하지 않는다. 마커나 `skip` 으로 거르지 않는 이유는 `tests_e2e/__init__.py`
+    # 머리말에 적었다. 깔리는 것 자체는 무해하다(둘 다 순수 파이썬 휠이다).
+    "playwright>=1.48",
+    # 노드가 아예 없는 저장소다(`grep -rn "node\|npm\|npx" .github/workflows/`
+    # → 0건). 이 휠은 **`axe.min.js` 를 안에 담아** 오므로 `@axe-core/cli` 와 달리
+    # `setup-node` 를 CI 에 들이지 않는다 — 고른 근거는
+    # `tests_e2e/test_axe_accessibility.py` 머리말이 갖는다.
+    "axe-playwright-python>=0.1.8",
 ]
 
 [build-system]

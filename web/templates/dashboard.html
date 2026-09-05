@@ -10,24 +10,126 @@
   <a class="skip-link" href="#main">본문으로 이동</a>
   <header class="topbar">
     <h1>분산특구 경제성 평가</h1>
+    {# 앵커 다섯은 **이 문서 안**을 가리킨다 — 지우지 않는다. 그 옆에 다른
+       화면 둘로 가는 **진짜 링크**를 더한다. 없으면 사용자는 주소를 손으로
+       쳐야 하고, 키보드만으로 도는 사람에게는 그것이 완주를 막는다
+       (R62/WP-5 의 D6 · MC-8). #}
     <nav aria-label="주요 화면">
       <a href="#wizard">마법사</a>
+      <a href="#run">분석 실행</a>
       <a href="#advanced">고급 모드</a>
       <a href="#results">결과</a>
       <a href="#regulations">제도 관리</a>
+    </nav>
+    <nav aria-label="다른 화면">
+      <a href="/ui/model-composer">자원 구성 화면</a>
+      <a href="/ui/regulation-admin">제도 프로파일 관리 화면</a>
     </nav>
   </header>
 
   <main id="main">
     <section id="wizard" class="band" aria-labelledby="wizard-title">
       <h2 id="wizard-title">마법사</h2>
+      {# ★ D7 (R62/WP-7) — **네 걸음이 갈 곳을 갖는다.**
+         종전 네 걸음은 **글자였고**, 그 아래 「다음 단계」 단추는
+         `type="button"` 이며 아무 일도 하지 않았다(템플릿 넷에 `<script>` 가
+         0개다). 「초심자를 안내한다」(`UI-1-AC1`)는데 누를 것이 없었다.
+         ⚠⚠ **자바스크립트를 새로 들이지 않는다.** 이 저장소는 `web/static/` 에
+         JS 가 0줄이고, 그것을 들이는 것은 이 WP 가 정할 일이 아니다.
+         ⇒ 네 걸음을 **그 자리로 가는 진짜 링크**로 만든다 — 앞 셋은 이 문서
+         안의 절이고, 넷째는 **리포트 경로**다.
+         ⚠ **「다음 단계」 단추를 지웠다.** 걸음마다 갈 곳이 생긴 지금 그 단추가
+         가리킬 「다음」은 어디에도 정의돼 있지 않다. 아무 일도 하지 않는 단추를
+         남기면 키보드 순회에 초점만 하나 더 서고, 누른 사람은 화면이 멈춘
+         것인지 자기가 잘못 누른 것인지 알 수 없다 — 그것이 이 WP 가 D7 로
+         잡은 상태 그대로다.
+         ⚠ 시나리오 이름을 여기 박지 않는다 — `scenarios` 는 저장소를 읽은
+         것이다(`app/services/ui_run.py::golden_scenario_names`). #}
       <ol class="steps">
-        <li>시나리오 선택</li>
-        <li>전제 확인</li>
-        <li>실행</li>
-        <li>내보내기</li>
+        <li><a href="#run">시나리오 선택</a></li>
+        <li><a href="#advanced">전제 확인</a></li>
+        <li><a href="#run">실행</a></li>
+        {% if scenarios %}
+        {# ⚠ **새 화면이 뜨지 않는다.** `/reports/golden/<이름>` 은
+           `text/markdown` 을 내고 브라우저는 그것을 그리지 않고 **내려받는다**
+           (`app/routers/reports.py::golden_report`). `tests_e2e` 의 시나리오 1
+           이 같은 이유로 이 주소를 `page.goto` 로 열지 않는다. 그 사실을 링크
+           글자에 적는다 — 적지 않으면 누른 사람은 화면이 안 바뀐 것을
+           「안 먹었다」로 읽는다.
+           ⚠ **어느 시나리오인가 — `scenarios` 의 첫째다.** 바로 아래 실행 폼의
+           `<select>` 가 같은 목록을 같은 순서로 그리고 브라우저는 그 첫째를
+           고른 채로 연다. 즉 마법사를 그대로 따라간 사람이 **실행한 것과 같은
+           시나리오**를 내보낸다. `/ui/run` 의 질의 기본값
+           (`scenario_unsubsidized`)을 여기 적지 않는 이유가 그것이다 — 그것을
+           적으면 「실행」과 「내보내기」가 서로 다른 시나리오를 가리킨다.
+           ⚠ 이름을 이 파일에 박지 않는다. 두 자리가 **같은 문맥 하나**를 보고
+           있어야 골든이 늘거나 이름이 바뀌는 날에도 함께 움직인다. #}
+        <li>
+          <a href="/reports/golden/{{ scenarios | first | urlencode }}">
+            내보내기 — 「{{ scenarios | first }}」 리포트를
+            <code>text/markdown</code> 파일로 <strong>내려받는다</strong>
+            (새 화면이 뜨지 않는다)
+          </a>
+        </li>
+        {% else %}
+        {# 골든 시나리오가 하나도 없으면 내보낼 것이 없다. 그때 링크를 그리면
+           주소만 그럴듯하고 404 가 난다 — 「없다」를 글자로 적는다. #}
+        <li>내보내기 — 저장소에 골든 시나리오가 없어 내보낼 것이 없다</li>
+        {% endif %}
       </ol>
-      <button type="button">다음 단계</button>
+    </section>
+
+    {# ★ 실행 폼 — FR-705-AC2 「ⓐ·ⓑ·ⓒ 를 선택할 수 있어야 한다」.
+       ⚠⚠ **`method="get"` 이다.** 실행은 읽기 전용이고(저장소·대장에 아무것도
+       쓰지 않는다) 결과가 링크가 되어 심의에서 다시 열린다. `POST` 폼은
+       `python-multipart` 를 요구하는데 그것은 이 저장소의 의존성이 아니다.
+       ⚠ 갈래 목록을 여기 적지 않는다 — `BaselineArrangement` 를 열거한 것이
+       `baseline_arrangements` 다 (`web/render.py::baseline_arrangement_choices`). #}
+    <section id="run" class="band" aria-labelledby="run-title">
+      <h2 id="run-title">분석 실행</h2>
+      <form method="get" action="/ui/run" aria-label="분석 실행">
+        <fieldset>
+          <legend>시나리오</legend>
+          <label for="run-scenario">시나리오</label>
+          <select id="run-scenario" name="scenario">
+            {% for name in scenarios %}
+            <option value="{{ name }}">{{ name }}</option>
+            {% endfor %}
+          </select>
+        </fieldset>
+
+        <fieldset>
+          <legend>기준선 갈래</legend>
+          {# ⚠ **기본 갈래를 여기 적지 않는다.** 값이 빈 칸이면 시나리오에
+             필드를 넣지 않고, 그때 `resolve_baseline_arrangement` 가
+             `DEFAULT_BASELINE_ARRANGEMENT` 로 답한다. 여기 문면을 두면
+             기본값이 두 곳에 살고 한쪽만 고쳐지는 날이 온다. #}
+          <label>
+            <input type="radio" name="arrangement" value="" checked>
+            고르지 않음 — 저장소가 정한 기본 갈래로 돈다
+          </label>
+          {% for item in baseline_arrangements %}
+          <label>
+            <input type="radio" name="arrangement" value="{{ item }}">
+            {{ item }}
+          </label>
+          {% endfor %}
+        </fieldset>
+
+        <fieldset>
+          <legend>「자가용 집합자원화」의 계측 전제</legend>
+          {# 둘 다 서야 그 갈래가 성립한다. 적지 않으면 DV-15 로 거부되며,
+             그 거부가 이 화면의 정상 동작이다 — 가정하지 말고 물어라. #}
+          {% for item in pool_prerequisites %}
+          <label>
+            <input type="checkbox" name="{{ item.name }}" value="true">
+            {{ item.label }}
+          </label>
+          {% endfor %}
+        </fieldset>
+
+        <button type="submit">분석 실행</button>
+      </form>
     </section>
 
     <section id="advanced" class="band" aria-labelledby="advanced-title">
@@ -35,7 +137,18 @@
       {# 「전체 파라미터」의 정본은 `core.model.parameters` 카탈로그다.
          여기에 필드를 손으로 적으면 자원 1종 추가가 이 파일 수정을 부르고,
          고치지 않은 동안 화면은 「전체」라고 적은 채 일부만 그린다. #}
-      <form aria-label="전체 파라미터">
+      {# ★ D9 (R62/WP-8) — **`action` 도 제출 단추도 없었다.** 50칸을 고쳐도
+         어디로도 가지 않았고, 그래서 화면이 낼 수 있는 거부가 `DV-15` 하나였다
+         (`MC-4` 가 요구하는 `DV-1`~`DV-13` 을 낼 모집단이 화면에 없었다).
+         칸 이름(`name`)은 **`web/render.py::_field` 가 지은 `id` 그대로**다 —
+         받는 쪽(`app/routers/ui_forms.py::_submissions`)도 같은 함수에서 받는다.
+         이름 규칙을 여기 따로 적으면 한쪽만 고쳐지는 날 폼은 아무 값도 못 받은
+         채 성공을 낸다. #}
+      <form
+        aria-label="전체 파라미터"
+        method="post"
+        action="/ui/advanced/parameters"
+      >
         <div class="field-grid">
           {% for item in parameters %}
           <div class="field" data-parameter="{{ item.parameter }}" data-kind="{{ item.kind }}">
@@ -62,24 +175,94 @@
               >?</button>
               {% else %}
               {# 시계열·구조·선택은 수치 칸으로 그릴 수 없다. 그리는 방법이 다를
-                 뿐 자리는 있어야 한다 — 자리가 없으면 그것이 「전체」가 아니다. #}
+                 뿐 자리는 있어야 한다 — 자리가 없으면 그것이 「전체」가 아니다.
+                 ★ D8 (R62/WP-7) — **단위 칸도 자리다.** 조항(`NFR-302-M1`)이
+                 요구하는 것은 *「단위·설명·기본값 출처」* **셋**인데 이 갈래는
+                 단위를 아예 그리지 않았고 `aria-label` 도 없었다. 그래서 위
+                 수치 갈래와 **같은 세 조각**(단위 칸 · 도움말 단추 ·
+                 `aria-describedby` 결속)을 여기에도 세운다 — 모양을 갈라 두면
+                 한쪽만 고쳐지는 날이 오고, 그 상태는 화면에서 보이지 않는다.
+                 ⚠ **없는 단위를 지어내지 않는다.** 단위의 정본은 카탈로그
+                 (`ParameterSpec.unit` · `core/model/parameters.py::resolve_unit`)
+                 이고 여기서 짓지 않는다. 카탈로그가 주면 그대로 그리고
+                 (`*_profile_kwh` → `kWh`), 주지 않으면 **「단위 없음」을 글자로
+                 적는다** — 빈칸과 「없다」는 다른 진술이다(§13.0.1 ④).
+                 ⚠ `aria-label` 은 **단추에만** 둔다. `<span>` 에 두면 axe 의
+                 `aria-prohibited-attr` 검토필요가 늘어난다(이 화면에 이미 둘). #}
               <button
                 type="button"
                 class="editor"
                 id="{{ item.id }}"
                 name="{{ item.id }}"
-                title="{{ item.kind }} · {{ item.help }} · 기본값 출처 {{ item.source }}"
+                aria-describedby="{{ item.id }}-unit {{ item.id }}-tip"
+                title="단위 {{ item.unit or '단위 없음' }} · {{ item.kind }} · {{ item.help }} · 기본값 출처 {{ item.source }}"
               >{{ item.kind }} 편집{% if item.value %} — 현재 {{ item.value }}{% endif %}</button>
+              <span id="{{ item.id }}-unit" class="unit" data-unit-for="{{ item.id }}">
+                {{ item.unit or '단위 없음' }}
+              </span>
+              <button
+                type="button"
+                class="tip"
+                aria-label="{{ item.label }} 도움말: 단위 {{ item.unit or '단위 없음' }}, {{ item.help }} 기본값 출처 {{ item.source }}"
+                title="단위 {{ item.unit or '단위 없음' }} · {{ item.help }} · 기본값 출처 {{ item.source }}"
+                id="{{ item.id }}-tip"
+              >?</button>
               {% endif %}
             </div>
           </div>
           {% endfor %}
         </div>
+        {# 수치 칸만 제출된다 — 시계열·구조·선택·예/아니오는 편집기 단추
+           (`type="button"`)이라 폼에 실리지 않는다. 그 갈래를 이 폼으로 보내면
+           받는 쪽이 3요소로 거부한다(`_value_of`). #}
+        <p class="form-actions">
+          <button type="submit">전체 파라미터 저장</button>
+        </p>
       </form>
     </section>
 
     <section id="results" class="band results" aria-labelledby="results-title">
       <h2 id="results-title">결과 대시보드</h2>
+
+      {# ★★ D5 (R62/WP-7) — **이 절의 수는 전부 데모 값이다.**
+         결과 카드·영향도 순위 셋·가정 배지 둘·입력값 부록은
+         `web/render.py::demo_context()` 가 지은 **박힌 수**이고, 그런데도 같은
+         화면의 「분석 실행」이 내는 **실제 결과와 나란히 놓인다** — 심의에서
+         이것이 실측으로 읽힐 자리다.
+         ⚠ **데모 값을 지우지 않는다.** 그 값들이 `UI-3`·`UI-4`·`UI-7`·`NFR-303`
+         을 재는 검사들의 대상이다(`tests/web/test_dashboard.py`). 지우면 그
+         검사들이 무너진다. 대신 **화면이 그것을 「데모」라고 말하게** 한다.
+         ⚠ **색만으로 말하지 않는다**(`UI-6`) — 글자로 적고, 실제 결과를 내는
+         자리로 가는 **진짜 링크**를 함께 둔다.
+         ⚠ **`aria-label` 을 쓰지 않는다.** 이 화면에는 `<span aria-label="가정 값">`
+         둘이 이미 axe 「검토필요」(`aria-prohibited-attr`)로 서 있고 늘리지 않는
+         것이 이 WP 의 지시다. 이름은 `aria-labelledby` 로 **제목에서** 가져온다 —
+         `role="note"` 는 저자가 이름을 주는 것이 허용된 역할이다.
+         ⚠ **`/ui/run` 의 결과 화면에는 이 표지를 붙이지 않는다**(`run_result.html`
+         에 없다) — 거기는 실제 결과다. #}
+      <section
+        class="demo-notice"
+        role="note"
+        data-demo-notice="results"
+        aria-labelledby="demo-notice-title"
+      >
+        <h3 id="demo-notice-title">데모 값 — 실제 결과가 아니다</h3>
+        <p>
+          아래 <strong>결과 카드·영향도 순위·가정 배지·입력값 부록</strong>은
+          <strong>화면 모양을 보이는 데모 값</strong>이며
+          <strong>실제 결과가 아니다</strong>.
+          실제 결과는 「분석 실행」이 낸다.
+          아래 「입력 오류」·「제도 관리」 절이 싣는 예시도 같은 데모 값이다.
+        </p>
+        <p>
+          다만 <strong>「결과 시각화」의 그림은 데모가 아니다</strong> — 그 주소는
+          실제 라우트를 가리키고, 그리는 수는 전부 실행이 낸 것이다.
+        </p>
+        <p>
+          <a href="#run">「분석 실행」으로 이동</a> ·
+          <a href="/ui/run">실행 결과 화면 열기</a>
+        </p>
+      </section>
 
       {% if compliance_alert and compliance_alert.triggered %}
       <section class="compliance-warning" role="alert" aria-labelledby="compliance-warning-title">
@@ -135,13 +318,28 @@
         {% endfor %}
       </section>
 
+      {# ★ 그림 칸을 **레지스트리로 편다** — FR-1004-AC1.
+         ⚠⚠ 종전에는 `<h3>` 여섯 개가 박혀 있었고 그림은 하나도 없었다. 제목을
+         손으로 적으면 차트가 늘 때 그 목록이 낡고, 낡은 것은 사람이 없는 칸을
+         찾을 때까지 드러나지 않는다 (`web/render.py::chart_figures`).
+         ⚠ **못 그리는 칸을 지우지 않는다.** 지우면 「그릴 수 없다」와 「그런
+         그림이 없다」가 화면에서 같아진다.
+         ⚠ `max-width` 를 여기 두는 이유: 그림은 960×540 인데 이 격자의 칸은
+         `minmax(14rem, 1fr)` 이다. 줄이지 않으면 칸 밖으로 넘친다 —
+         `web/static/wp12.css` 는 이 WP 가 고칠 수 있는 파일이 아니다. #}
       <section class="visual-grid" aria-label="결과 시각화">
-        <h3>디스패치 스택</h3>
-        <h3>월별 수지</h3>
-        <h3>누적 현금흐름</h3>
-        <h3>토네이도</h3>
-        <h3>히트맵</h3>
-        <h3>모델 비교</h3>
+        {% for figure in charts %}
+        <figure data-chart="{{ figure.tag }}">
+          {% if figure.wired %}
+          <img src="{{ figure.src }}" alt="{{ figure.alt }}" loading="lazy"
+               style="max-width:100%;height:auto">
+          <figcaption>{{ figure.label }} · 자료: {{ figure.source }}</figcaption>
+          {% else %}
+          <p class="chart-unwired" role="note">아직 배선되지 않았다 — {{ figure.reason }}</p>
+          <figcaption>{{ figure.label }}</figcaption>
+          {% endif %}
+        </figure>
+        {% endfor %}
       </section>
 
       <section id="result-input-appendix" aria-labelledby="appendix-title">

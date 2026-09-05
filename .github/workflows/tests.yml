@@ -419,3 +419,177 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           echo "게이트 ③은 PR 에서만 판정합니다. 이 실행은 통과가 아니라 **미수행**입니다." >> "$GITHUB_STEP_SUMMARY"
+
+  # ── E2E(작업 15.12) · axe 접근성 스캔(작업 15.10 · UI-6-AC1) ────────
+  #
+  # **왜 별도 잡인가.** 둘 다 *「앱을 띄우고 브라우저로 연다」* 가 선행이고,
+  # 그 선행은 위 `tests` 잡에 없는 것 — **크로미움** — 을 요구한다. 위 잡에
+  # `playwright install` 을 얹으면 단위 검사 한 줄을 고칠 때마다 200MB 를
+  # 내려받게 되고, 브라우저가 안 깔리는 날 **단위 검사까지 통째로 빨간불**이
+  # 된다. 두 관심사의 수명이 다르므로 §16.4 대로 잡을 나눈다.
+  #
+  # ⚠⚠ **위 `tests` 잡을 한 줄도 고치지 않았다.** `pyproject.toml` 의 `e2e`
+  # 그룹은 위 잡에도 깔리지만(그 잡의 「의존성」 단계가 그렇게 설계돼 있다),
+  # 그 검사들은 `tests_e2e/` 에 있고 `testpaths = ["tests"]` 가 본 실행에서
+  # 그것을 수집하지 않는다. **그 사실 자체를 아래에서 검사한다** — 어긋나면
+  # 본 잡이 브라우저 없이 브라우저 검사를 돌리게 되고, 그 빨간불의 원인은
+  # 이 잡이 만든 것이다.
+  #
+  # ★ **「돌지 않았다」를 초록불로 내지 않는다.** 0건을 수집하고 통과하면
+  # 아무도 모른다 — 이 저장소가 반복해 만난 형태다(§13.0.1 ④). 그래서
+  # 「센 것 확인」과 「axe 표식 확인」 두 단계가 **판정이 실제로 있었는지**를
+  # 산출물(`e2e.xml`·`e2e.log`)로 되짚는다.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 의존성
+        # 위 `tests` 잡과 **같은 방식**으로 그룹을 읽어 전부 설치한다. 여기에
+        # `e2e` 만 골라 적지 않는 이유는 그 잡의 주석이 이미 적었다 — 손으로
+        # 나열한 목록은 새 그룹이 생길 때 조용히 낡는다.
+        run: |
+          set -euo pipefail
+          groups=$(python -c "
+          import tomllib
+          with open('pyproject.toml','rb') as f:
+              print(','.join(tomllib.load(f)['project']['optional-dependencies']))")
+          echo "설치 그룹: $groups"
+          test -n "$groups"
+          pip install -e ".[$groups]"
+
+      - name: 브라우저 (chromium)
+        # `--with-deps` 로 러너의 공유 라이브러리까지 깐다. 빠뜨리면 브라우저
+        # 실행 파일은 있는데 `libnss3` 이 없어 기동에 실패하고, 그 실패 문면은
+        # 「화면이 깨졌다」와 구별되지 않는다.
+        run: python -m playwright install --with-deps chromium
+
+      - name: ruff (tests_e2e)
+        # 위 잡의 ruff 는 `core tests scripts` 를 본다. **그 명령을 고치지
+        # 않는다** — 새 층의 정적검사는 그 층을 세운 잡이 진다.
+        run: python -m ruff check tests_e2e
+
+      - name: ★ 본 pytest 가 tests_e2e 를 수집하지 않는지 확인
+        # 이 잡의 존재 근거를 검사한다. 수집되기 시작하면 위 `tests` 잡이
+        # **브라우저 없이** 브라우저 검사를 돌려 빨간불이 되고, 그때 가장 쉬운
+        # 대응은 「그 검사를 마커로 빼기」다 — 그것이 「검사가 조용히 빠지는
+        # 통로」이며 이 저장소가 막으려는 것이다.
+        run: |
+          set -uo pipefail
+          python -m pytest --collect-only > /tmp/collect_e2e.txt 2>&1
+          rc=$?
+          if [ "$rc" != "0" ]; then
+            echo "::error::수집 자체가 실패했습니다"
+            tail -20 /tmp/collect_e2e.txt
+            exit 1
+          fi
+          if grep -q "tests_e2e" /tmp/collect_e2e.txt; then
+            echo "::error::본 pytest 실행이 tests_e2e 를 수집했습니다 — 본 tests 잡에는 브라우저가 없습니다. pyproject.toml 의 testpaths 를 확인하십시오"
+            grep -n "tests_e2e" /tmp/collect_e2e.txt | head -20
+            exit 1
+          fi
+          echo 'testpaths = ["tests"] 가 tests_e2e 를 본 실행에서 제외하고 있습니다'
+
+      - name: E2E 3 시나리오 + axe 스캔
+        # ⚠ `--capture=no` 다. axe 스캔의 **위반 목록과 표식 줄**이 로그에
+        # 나와야 아래 「axe 표식 확인」이 그것을 되짚을 수 있다. 통과한
+        # 검사의 표준출력은 pytest 가 기본으로 삼킨다.
+        # ⚠ `tee` 로 물리지만 `pipefail` 이 켜져 있어(러너 기본 `bash -eo
+        # pipefail`) pytest 의 실패가 삼켜지지 않는다.
+        run: |
+          PYTHONUTF8=1 python -m pytest tests_e2e -p no:cacheprovider \
+            --capture=no --junitxml=e2e.xml 2>&1 | tee e2e.log
+
+      - name: ★ 센 것 확인 (0건 수집이 초록불이 되지 않게)
+        if: always()
+        run: |
+          python - <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          report = Path("e2e.xml")
+          if not report.exists():
+              print("::error::e2e.xml 이 없습니다 — 검사가 아예 돌지 않았습니다")
+              sys.exit(1)
+
+          root = ET.parse(report).getroot()
+          cases = [c for s in root.iter("testsuite") for c in s.iter("testcase")]
+          skipped = [c for c in cases if c.find("skipped") is not None]
+          # 조항 문면이 「핵심 3 시나리오」다. 시나리오 검사만 따로 센다 —
+          # 총계만 세면 axe 검사 넷이 시나리오 0건을 가려 준다.
+          scenarios = [c for c in cases
+                       if c.get("name", "").startswith("test_scenario_")]
+
+          print(f"E2E 수집 {len(cases)}건 · 그중 시나리오 {len(scenarios)}건 "
+                f"· 건너뜀 {len(skipped)}건")
+          for case in cases:
+              print(f"  - {case.get('classname')}::{case.get('name')}")
+
+          failed = False
+          if len(scenarios) < 3:
+              print("::error::E2E 시나리오가 3건 미만입니다 — 조항은 「핵심 3 시나리오」입니다")
+              failed = True
+          if skipped:
+              print("::error::건너뛴 검사가 있습니다 — 건너뛴 검사는 초록불과 구별되지 않습니다")
+              failed = True
+          sys.exit(1 if failed else 0)
+          PY
+
+      - name: ★ axe 표식 확인 (스캔이 돌지 않은 것을 「깨끗하다」로 읽지 않게)
+        if: always()
+        run: |
+          python - <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          # 표식 문면의 정본은 `tests_e2e/test_axe_accessibility.py::_MARKER` 다.
+          MARKER = "=== axe 스캔"
+
+          log = Path("e2e.log")
+          report = Path("e2e.xml")
+          if not log.exists() or not report.exists():
+              print("::error::e2e.log 또는 e2e.xml 이 없습니다 — 스캔이 돌지 않았습니다")
+              sys.exit(1)
+
+          text = log.read_text(encoding="utf-8", errors="replace")
+          # ⚠ `startswith` 로 잡지 않는다. `--capture=no` 는 pytest 의 진행
+          # 표시(`.`)와 시험의 표준출력을 **같은 줄에** 섞으므로 표식 넷 중
+          # 셋이 `.=== axe 스캔 …` 으로 나온다 — 실측으로 걸렀다(2026-09-05).
+          # 그 상태에서 `startswith` 는 「표식 1줄」을 세고 이 단계가 없는
+          # 결함을 신고한다.
+          markers = [ln for ln in text.splitlines() if MARKER in ln]
+          # 몇 개를 기대하는지 **여기 박지 않는다.** 훑은 화면 수는 시험이
+          # 정하므로 junit 산출물에서 그 검사 건수를 세어 맞댄다 — 박으면
+          # 화면이 늘 때 이 단계만 낡는다.
+          scans = [c for s in ET.parse(report).getroot().iter("testsuite")
+                   for c in s.iter("testcase")
+                   if c.get("name", "").startswith("test_screen_has_no_wcag")]
+
+          print(f"axe 표식 {len(markers)}줄 · 스캔 검사 {len(scans)}건")
+          for line in markers:
+              print(f"  {line}")
+          for line in text.splitlines():
+              stripped = line.strip()
+              if stripped.startswith(("위반 ", "검토필요 ")):
+                  print(f"  {stripped}")
+
+          failed = False
+          if not markers:
+              print("::error::axe 표식 줄이 하나도 없습니다 — 출력이 비었다는 것은 "
+                    "「깨끗하다」가 아니라 「스캔이 돌지 않았다」입니다")
+              failed = True
+          if len(markers) != len(scans):
+              print(f"::error::스캔 검사는 {len(scans)}건인데 표식은 {len(markers)}줄입니다 "
+                    "— 훑지 못한 화면이 있습니다")
+              failed = True
+          if len(scans) < 3:
+              print("::error::훑은 화면이 3건 미만입니다 (조항 15.10 · UI-6-AC1)")
+              failed = True
+          sys.exit(1 if failed else 0)
+          PY

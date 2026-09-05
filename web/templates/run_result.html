@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>분석 결과 — 분산특구 경제성 평가</title>
+  <link rel="stylesheet" href="/static/wp12.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">본문으로 이동</a>
+  <header class="topbar">
+    <h1>분석 결과</h1>
+    <nav aria-label="주요 화면">
+      <a href="/">대시보드</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    {% if error %}
+    {# 거부는 **3요소를 셋 다** 그린다 (NFR-303). 하나라도 빠지면 사람에게
+       남는 선택은 「값을 하나씩 바꿔 보기」다 — `#validation` 절이 대시보드에서
+       같은 모양으로 이미 그리고 있다. #}
+    <section id="validation" class="band" aria-labelledby="validation-title">
+      <h2 id="validation-title">실행할 수 없습니다</h2>
+      <article class="error-message" role="alert">
+        <strong>필드: {{ error.field }}</strong>
+        <span>사유: {{ error.reason }}</span>
+        <span>조치: {{ error.action }}</span>
+        <span>규칙: {{ error.rule }}</span>
+      </article>
+    </section>
+    {% else %}
+
+    {# ★ 영향도 순위가 **최상단**이다 (UI-7-AC1). 결과 화면이 답해야 하는
+       물음이 「어떤 가정이 바뀌면 결론이 뒤집히나」이고, 그 답을 아래로
+       내리면 위의 수만 발췌돼 나간다. #}
+    <section id="impact-ranking" class="band" aria-labelledby="impact-title">
+      <h2 id="impact-title">영향도 순위</h2>
+      <ol class="impact-list">
+        {% for item in influences %}
+        <li data-rank="{{ item.rank }}">
+          <strong>{{ item.name }}</strong>
+          <span class="ledger-key">{{ item.ledger_key }}</span>
+          <span>{{ item.impact }}</span>
+          {% if item.flips %}<span class="flip" role="note">결론 전환</span>{% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+
+    <section id="arrangement" class="band" aria-labelledby="arrangement-title">
+      <h2 id="arrangement-title">어느 갈래로 돌았나</h2>
+      <p class="arrangement" data-arrangement="{{ arrangement }}">{{ arrangement }}</p>
+      <dl>
+        <dt>기준선(Without)</dt><dd>{{ branch.without }}</dd>
+        <dt>사업(With)</dt><dd>{{ branch['with'] }}</dd>
+        <dt>성립 조건</dt><dd>{{ branch.viability }}</dd>
+        <dt>자가소비 처리</dt><dd>{{ branch.self_consumption }}</dd>
+        <dt>근거 조항</dt><dd>{{ branch.clause }}</dd>
+      </dl>
+    </section>
+
+    {# ⚠ 이 수는 `CaseReport` 가 준 값이다. 화면이 다시 계산하지 않는다 —
+       `data-npv` 는 서식 이전의 날값이며 검사가 그것을 리포트와 대조한다. #}
+    <section id="conclusion" class="band" aria-labelledby="conclusion-title">
+      <h2 id="conclusion-title">결론 — {{ scenario_name }}</h2>
+      <dl class="metrics">
+        <dt>순현재가치(NPV)</dt>
+        <dd class="npv" data-npv="{{ npv_raw }}">{{ npv }}</dd>
+        <dt>할인 회수기간</dt>
+        <dd class="payback">{{ payback }}</dd>
+      </dl>
+    </section>
+
+    <section id="cost-benefit" class="band" aria-labelledby="cost-benefit-title">
+      <h2 id="cost-benefit-title">편익·비용 요약</h2>
+      <h3>연 편익 합계 {{ annual_benefit }}</h3>
+      <ul class="benefit-list">
+        {% for line in benefits %}
+        <li><strong>{{ line.label }}</strong> <span>{{ line.annual }}</span></li>
+        {% endfor %}
+      </ul>
+      <h3>연 비용 합계 {{ annual_cost }}</h3>
+      <ul class="cost-list">
+        {% for line in costs %}
+        <li><strong>{{ line.label }}</strong> <span>{{ line.annual }}</span></li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    {# ★ 결과 그림 — FR-1004-AC1. 주소에 **이 실행의 질의**가 붙어 있어 위의
+       수와 같은 실행을 그린다. 칸은 레지스트리가 펴며, 못 그리는 칸은 지우지
+       않고 사유를 글자로 싣는다 (`web/render.py::chart_figures`).
+       ⚠ `max-width` 를 두는 이유는 대시보드 쪽과 같다 — 그림이 960×540 이고
+       `wp12.css` 는 이 WP 가 고칠 수 있는 파일이 아니다. #}
+    <section id="result-charts" class="band" aria-labelledby="charts-title">
+      <h2 id="charts-title">결과 그림</h2>
+      <div class="visual-grid">
+        {% for figure in charts %}
+        <figure data-chart="{{ figure.tag }}">
+          {% if figure.wired %}
+          <img src="{{ figure.src }}" alt="{{ figure.alt }}" loading="lazy"
+               style="max-width:100%;height:auto">
+          <figcaption>{{ figure.label }} · 자료: {{ figure.source }}</figcaption>
+          {% else %}
+          <p class="chart-unwired" role="note">아직 배선되지 않았다 — {{ figure.reason }}</p>
+          <figcaption>{{ figure.label }}</figcaption>
+          {% endif %}
+        </figure>
+        {% endfor %}
+      </div>
+    </section>
+
+    {# ★ 실행한 시나리오 문면. 심의에서 「그 수가 어느 전제로 나왔나」를 묻는
+       자리가 반드시 오고, 그때 화면이 답을 갖고 있어야 한다. 골든 파일의
+       주석은 여기 없다 — **실제로 넘긴 필드만** 직렬화한 것이다. #}
+    <section id="scenario-appendix" class="band" aria-labelledby="scenario-title">
+      <h2 id="scenario-title">붙임 — 실행한 시나리오</h2>
+      {# ⚠ 이 한 줄을 붙이는 이유 (WP-2 결과 6절 7항 · 오케스트레이터 판정).
+         붙임은 **돌린 파일 그대로**여야 하므로 `expected_values` 를 지우지
+         않는다. 대신 그것이 무엇인지 적는다 — 지우면 붙임이 「돌린 파일」이
+         아니라 「화면이 고른 것」이 되고, 그냥 두면 ⓐ·ⓒ 로 돌린 화면에서
+         결론과 그 키의 값이 나란히 놓여 「계산이 기대값과 어긋났다」로 읽힌다. #}
+      <p class="appendix-note"><code>expected_values</code> 는 골든 회귀
+        스냅숏(기본 갈래)이며 <strong>이 실행이 읽지 않는다</strong>.</p>
+      <pre class="scenario-text">{{ scenario_text }}</pre>
+    </section>
+    {% endif %}
+  </main>
+</body>
+</html>

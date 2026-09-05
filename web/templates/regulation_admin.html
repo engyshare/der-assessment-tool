@@ -19,6 +19,11 @@
     <h1>제도 프로파일 관리</h1>
     <p class="profile-name">프로파일: {{ profile_name }} <span class="version">{{ profile_version }}</span></p>
     <p class="role">역할: {{ role }}</p>
+    {# 화면 셋을 잇는다 — R62/WP-5 의 MC-8(키보드만으로 완주)이 막힌 자리다. #}
+    <nav aria-label="주요 화면">
+      <a href="/">대시보드</a>
+      <a href="/ui/model-composer">자원 구성</a>
+    </nav>
   </header>
 
   <main id="main">
@@ -51,7 +56,11 @@
     <section id="admin-edit" class="band" aria-labelledby="admin-title">
       <h2 id="admin-title">편집 (admin)</h2>
 
-      <form method="post" action="/regulation/profiles?role={{ role }}">
+      {# ⚠ `action` 이 `/regulation/profiles`(JSON API)를 가리키면 폼 제출이
+         **영어 422** 로 떨어진다. 화면 전용 출구는 `app/routers/ui_forms.py` 다.
+         역할은 종전대로 질의 파라미터로 간다 — 인가 판정을 화면이 대신하지
+         않기 위해서다(`app/routers/regulation.py` 머리말). #}
+      <form method="post" action="/ui/regulation-admin/profiles?role={{ role }}">
         <h3>프로파일 생성</h3>
         <label for="create-name">이름</label>
         <input id="create-name" name="name" type="text">
@@ -60,7 +69,8 @@
         <button type="submit" name="operation" value="create">프로파일 생성</button>
       </form>
 
-      <form method="post" action="/regulation/profiles/{{ profile_name }}/clone?role={{ role }}">
+      <form method="post"
+            action="/ui/regulation-admin/profiles/{{ profile_name }}/clone?role={{ role }}">
         <h3>프로파일 복제</h3>
         <label for="clone-name">복제본 이름</label>
         <input id="clone-name" name="name" type="text" value="{{ profile_name }}-개정안">
@@ -69,8 +79,9 @@
         <button type="submit" name="operation" value="clone">프로파일 복제</button>
       </form>
 
+      {# ⚠ `?_method=PATCH` 를 되살리지 않는다 — 푸는 미들웨어가 없었다. #}
       <form method="post"
-            action="/regulation/profiles/{{ profile_name }}/items?role={{ role }}&amp;_method=PATCH">
+            action="/ui/regulation-admin/profiles/{{ profile_name }}/items?role={{ role }}">
         <h3>항목 추가·개정</h3>
         <label for="item-key">항목키</label>
         <input id="item-key" name="key" type="text">
