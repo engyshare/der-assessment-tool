@@ -21,6 +21,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -29,10 +31,17 @@ import pytest
 from app.services import ScenarioRecord, ScenarioService, ScenarioStore
 from app.services.scenario_store import SOFT_DELETE_RETENTION_DAYS
 from app.services.scenario_store_file import (
+    _HISTORY,
+    _NEXT_ID,
+    _RECORDS,
+    SCENARIO_STORE_ENV,
+    STORE_FILENAME,
     JsonFileScenarioStore,
     build_scenario_store,
     default_scenario_store_dir,
+    resolve_scenario_store_dir,
 )
+from core.contracts.validation import ValidationError
 
 
 def _store(tmp_path: Path) -> JsonFileScenarioStore:
@@ -244,3 +253,333 @@ def test_the_default_place_is_under_the_home_directory_and_not_in_the_repo() -> 
     assert default.is_absolute()
     assert Path.home() in default.parents
     assert Path(__file__).resolve().parents[2] not in default.parents
+
+
+# ── R1 의 결함 재현 — 「모르면 멈춘다」가 저장 계층에서도 성립하는가 ──────
+#
+# 아래 열넷은 `result_R1.md` §0 의 **D-1 · D-2 · D-11 · D-12** 를 그대로 옮긴
+# 것이다. 넷 다 **예외 없이 조용히** 사용자의 저장을 잃거나(D-1 ⓑ · D-2 ·
+# D-12) 저장을 엉뚱한 자리에 떨어뜨렸다(D-11). 이 저장소의 규약은
+# `core/model/parameters.py::ParameterCatalogueError` 와
+# `core/assumption/provider.py` 의 `price_basis` 거부가 정한 **「모르면
+# 멈춘다」** 이고, 이 자리들만 그것을 어기고 **메웠다.**
+
+
+def _record_payload(scenario_id: int, name: str, owner_id: int = 7) -> dict[str, object]:
+    """파일 안의 레코드 한 벌 — `_encode` 가 내는 키와 같은 모양.
+
+    ⚠ 저장소의 `save` 로 짓지 않는다. `_write` 는 언제나 세 키를 다 쓰므로
+    「`next_id` 가 없는 파일」·「최상위가 목록인 파일」 같은 갈래를 저장소로는
+    만들 수 없다 — 그 갈래가 바로 R1 이 잰 것이다.
+    """
+    stamp = datetime.now(UTC).isoformat()
+    return {
+        "id": scenario_id,
+        "name": name,
+        "description": "",
+        "tags": [],
+        "definition_json": "",
+        "owner_id": owner_id,
+        "version": 1,
+        "created_at": stamp,
+        "updated_at": stamp,
+        "deleted_at": None,
+    }
+
+
+def _write_store_file(tmp_path: Path, payload: object) -> Path:
+    """저장 파일을 **손으로** 짓는다 — 다른 판이 쓴 것·손편집·백업 되돌리기."""
+    path = tmp_path / STORE_FILENAME
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+@pytest.mark.req("FR-902-AC1")
+def test_a_store_file_without_next_id_is_refused_instead_of_reissuing_id_one(
+    tmp_path: Path,
+) -> None:
+    """★★★ `next_id` 를 **모르면 멈춘다** — 메우면 남의 시나리오를 통째로 덮는다.
+
+    `result_R1.md` D-2 의 재현이다. `records` 는 있고 `next_id` 가 **없는**
+    파일에 새 시나리오를 저장하면 `int(loaded.get(next_id, 1))` 이 id 1 을
+    다시 발급해 기존 레코드와 그 **버전 이력 전체**를 덮었다. 예외는 어디에서도
+    나지 않았다 — 실측 `list_active(7) = [(1, '사업B')]` ·
+    `list_versions(1) = [(1, '사업B')]`.
+
+    ⛔ 조용히 `max(id)+1` 로 고쳐 쓰지 않는다 — 그러면 파일이 왜 어긋났는지
+    아무도 모르고, 다음 사람은 그 파일을 정상으로 읽는다.
+    """
+    _write_store_file(
+        tmp_path,
+        {
+            _RECORDS: {"1": _record_payload(1, "사업A")},
+            _HISTORY: {"1": [_record_payload(1, "사업A")]},
+        },
+    )
+
+    with pytest.raises(ValidationError) as caught:
+        _store(tmp_path).save(ScenarioRecord(id=0, name="사업B", owner_id=7))
+
+    assert caught.value.field and caught.value.reason and caught.value.action, (
+        "NFR-303 3요소가 비어 있다 — 운영자가 무엇을 고쳐야 하는지 모른다"
+    )
+    assert _NEXT_ID in caught.value.reason
+
+    with pytest.raises(ValidationError):
+        _store(tmp_path).load(1)
+
+
+@pytest.mark.req("FR-902-AC1")
+def test_a_next_id_that_would_reissue_a_live_id_is_refused(tmp_path: Path) -> None:
+    """★ `next_id` 가 파일 안 최대 id **이하**면 거부한다 — 「있는데 어긋났다」.
+
+    `result_R1.md` D-2 의 둘째 갈래다. 손편집·백업 되돌리기·D-1 ⓑ 로
+    `next_id` 보다 큰 id 가 파일에 남으면 몇 번 저장한 뒤 그 레코드를 덮는다
+    (실측 `새 id = 5  사업E 살아있나: 새`). `next_id` 가 있다는 것과 그것이
+    다음 id 라는 것은 다르다.
+    """
+    _write_store_file(
+        tmp_path,
+        {
+            _NEXT_ID: 3,
+            _RECORDS: {"5": _record_payload(5, "사업E")},
+            _HISTORY: {"5": [_record_payload(5, "사업E")]},
+        },
+    )
+
+    with pytest.raises(ValidationError) as caught:
+        _store(tmp_path).list_active(7)
+
+    assert "5" in caught.value.reason, "어느 id 와 부딪히는지를 말하지 않는다"
+
+
+@pytest.mark.req("FR-902-AC1")
+@pytest.mark.parametrize("payload", [[], "문자열", None, 3])
+def test_a_store_file_that_is_not_a_mapping_is_refused_with_the_three_parts(
+    tmp_path: Path, payload: object
+) -> None:
+    """저장 파일의 최상위 형이 틀리면 **맨 예외가 아니라 거부**다 (`NFR-303`).
+
+    `result_R1.md` D-12 의 재현이다 — 실측
+    `top-level list -> AttributeError: 'list' object has no attribute 'get'` ·
+    `null -> AttributeError: 'NoneType' object has no attribute 'get'`.
+    멈추기는 했으나 3요소가 없어 운영자가 무엇을 고쳐야 하는지 모른다.
+    """
+    _write_store_file(tmp_path, payload)
+
+    with pytest.raises(ValidationError) as caught:
+        _store(tmp_path).load(1)
+
+    assert caught.value.field and caught.value.reason and caught.value.action
+
+
+@pytest.mark.req("FR-902-AC1")
+def test_an_explicitly_empty_records_list_is_a_valid_state(tmp_path: Path) -> None:
+    """`records: []` 는 **정말 다 지운 뒤**일 수 있다 — 빈 상태로 받는다.
+
+    ⚠ `records` 키가 **없는** 것과 갈라야 한다(아래 시험). 키가 없으면
+    「모른다」이고, 빈 목록은 「없다」이다 — `result_R1.md` D-12 가 그 둘을
+    한 갈래로 묶어 조용히 잃던 자리다.
+    """
+    _write_store_file(tmp_path, {_NEXT_ID: 4, _RECORDS: [], _HISTORY: {}})
+
+    assert _store(tmp_path).list_active(7) == []
+
+    saved = _store(tmp_path).save(ScenarioRecord(id=0, name="다시 시작", owner_id=7))
+
+    assert saved.id == 4, "빈 상태인데 id 를 1 부터 다시 매겼다"
+
+
+@pytest.mark.req("FR-902-AC1")
+@pytest.mark.parametrize("missing", [_RECORDS, _HISTORY])
+def test_a_store_file_missing_a_section_is_refused(tmp_path: Path, missing: str) -> None:
+    """세 칸 중 하나가 **없으면** 멈춘다 — 없는 것과 빈 것은 다르다.
+
+    `_write` 는 언제나 셋을 함께 쓰므로, 하나가 없는 파일은 **이 저장소가
+    쓴 것이 아니다.** 그것을 빈 값으로 메우면 `list_versions` 가 조용히 빈
+    목록을 주고 `restore_version` 이 뒤늦게 `KeyError` 로 죽는다 —
+    `result_R1.md` §1 ⓐ5 가 `history` 결손에서 실제로 잰 형태다.
+    """
+    payload: dict[str, object] = {_NEXT_ID: 9, _RECORDS: {}, _HISTORY: {}}
+    del payload[missing]
+    _write_store_file(tmp_path, payload)
+
+    with pytest.raises(ValidationError) as caught:
+        _store(tmp_path).load(1)
+
+    assert missing in caught.value.reason
+
+
+@pytest.mark.req("FR-902-AC1")
+def test_a_truncated_store_file_names_the_file_the_operator_must_fix(
+    tmp_path: Path,
+) -> None:
+    """잘린 JSON 은 **그대로 멈추되** 무엇을 고쳐야 하는지 말한다.
+
+    `result_R1.md` §1 ⓐ5 — 빈 파일·잘린 JSON 은 이미 `JSONDecodeError` 로
+    멈춘다(규약대로). 바뀌는 것은 문면뿐이다: 어느 파일인지 말하지 않으면
+    운영자는 여러 배포 중 어느 자리를 열어야 하는지 모른다.
+    """
+    (tmp_path / STORE_FILENAME).write_text('{"records": {', encoding="utf-8")
+
+    with pytest.raises(ValidationError) as caught:
+        _store(tmp_path).load(1)
+
+    assert STORE_FILENAME in caught.value.reason
+
+
+@pytest.mark.req("FR-902-AC1")
+def test_two_writes_do_not_share_one_staging_name(tmp_path: Path) -> None:
+    """★ 옆에 쓰는 자리의 이름이 **호출마다 다르다** (`result_R1.md` D-1 ⓐ).
+
+    이름이 `scenarios.json.tmp` 로 고정이면 두 쓰기가 부딪혀
+    `PermissionError` 가 `save()` 밖으로 나가고 `POST /scenarios` 가 500 이
+    된다 — 실측 `A: 성공=26 PermissionError=4` · `B: 성공=26
+    PermissionError=4`.
+
+    ⚠ **같은 디렉터리**여야 한다. `os.replace` 가 원자적인 것은 같은
+    파일시스템 안에서이고, 다른 자리에 쓰면 교체가 복사가 되어 `_write` 의
+    독스트링이 막으려던 「반쯤 쓰인 파일」이 되돌아온다.
+    """
+    store = _store(tmp_path)
+
+    first_fd, first = store._open_staging()
+    second_fd, second = store._open_staging()
+    os.close(first_fd)
+    os.close(second_fd)
+
+    try:
+        assert first != second, "스테이징 이름이 고정이다 — 두 쓰기가 부딪힌다"
+        assert first.parent == tmp_path and second.parent == tmp_path
+    finally:
+        first.unlink(missing_ok=True)
+        second.unlink(missing_ok=True)
+
+
+@pytest.mark.req("FR-902-AC1")
+def test_a_staging_file_held_open_by_someone_else_does_not_break_a_save(
+    tmp_path: Path,
+) -> None:
+    """★ 남이 잡고 있는 옛 이름의 스테이징 파일이 저장을 막지 않는다.
+
+    윈도 실측에서 고정 이름이면 `staging.replace()` 가
+    `PermissionError [WinError 32]` 로 죽었고 그것이 `save()` 밖으로 나갔다.
+    ⚠ POSIX 에서는 열린 파일도 `os.replace` 가 성공하므로 이 시험은 그
+    자리에서 약하다 — 이름이 갈리는지는 위 시험이 따로 재고, 여기서는
+    **끝까지 도는 것**을 잰다.
+    """
+    _store(tmp_path).save(ScenarioRecord(id=0, name="첫째", owner_id=1))
+
+    with (tmp_path / f"{STORE_FILENAME}.tmp").open("w", encoding="utf-8") as holder:
+        holder.write("{}")
+        holder.flush()
+        second = _store(tmp_path).save(ScenarioRecord(id=0, name="둘째", owner_id=1))
+
+    assert second.id != 0
+    assert sorted(r.name for r in _store(tmp_path).list_active(1)) == ["둘째", "첫째"]
+
+
+@pytest.mark.req("FR-902-AC1")
+def test_a_save_that_would_lose_a_concurrent_write_reads_again_instead(
+    tmp_path: Path,
+) -> None:
+    """★★ 읽고-쓰기 **사이에 파일이 바뀌면 다시 읽는다** — 잃지 않는다.
+
+    `result_R1.md` D-1 ⓑ 의 재현이다. 두 프로세스가 각각 30번 저장했을 때
+    **「성공했다」를 돌려받은 30건이 파일에 없었다.** 예외는 아무 데서도 나지
+    않았으므로 사용자는 목록에서 없어진 것을 나중에 안다 — 그것이 이 결함의
+    본질이고, 「성공」을 돌려주고 잃는 것만은 하지 않는다.
+
+    ⚠ **프로세스를 띄우지 않는다**(느린 시험을 만들지 않는다). 두 store
+    인스턴스로 `_read`→`_write` 사이를 짓고 그 사이를 이 시험이 연다.
+    """
+    reader = _store(tmp_path)
+    other = _store(tmp_path)
+    attempts: list[int] = []
+
+    def mutate(state: dict[str, object]) -> int:
+        attempts.append(len(attempts) + 1)
+        if len(attempts) == 1:
+            other.save(ScenarioRecord(id=0, name="사이에 낀 저장", owner_id=1))
+        state[_NEXT_ID] = int(state[_NEXT_ID]) + 10
+        return int(state[_NEXT_ID])
+
+    reader._update(mutate)
+
+    assert attempts == [1, 2], "파일이 바뀐 것을 못 보고 그대로 덮었다"
+    assert [r.name for r in _store(tmp_path).list_active(1)] == ["사이에 낀 저장"], (
+        "성공을 돌려받은 저장이 사라졌다"
+    )
+
+
+@pytest.mark.req("FR-902-AC1")
+def test_a_second_collision_refuses_rather_than_reporting_a_success(
+    tmp_path: Path,
+) -> None:
+    """★ 다시 읽고도 또 바뀌었으면 **거부한다** — 잠금을 새로 발명하지 않는다.
+
+    ⚠ 이것이 이 라운드의 경계다: 파일 잠금은 플랫폼마다 다르고 범위가 아니다.
+    여기까지가 「잃지 않게」이며, 거부는 **남의 저장을 지우지 않는다** —
+    끼어든 둘이 그대로 남아 있는 것을 함께 잰다.
+    """
+    reader = _store(tmp_path)
+    other = _store(tmp_path)
+
+    def mutate(state: dict[str, object]) -> None:
+        other.save(ScenarioRecord(id=0, name="계속 끼어든다", owner_id=1))
+        state[_NEXT_ID] = int(state[_NEXT_ID]) + 10
+
+    with pytest.raises(ValidationError) as caught:
+        reader._update(mutate)
+
+    assert caught.value.field and caught.value.action
+    assert len(_store(tmp_path).list_active(1)) == 2, "거부가 남의 저장을 지웠다"
+
+
+@pytest.mark.req("FR-902-AC1")
+@pytest.mark.parametrize("configured", [".", "fixtures", "docs/..", "a/b"])
+def test_a_relative_store_place_is_refused(
+    monkeypatch: pytest.MonkeyPatch, configured: str
+) -> None:
+    """★ 상대경로는 저장을 **현재 작업 디렉터리**에 떨어뜨린다 — 거부한다.
+
+    `result_R1.md` D-11 의 재현이다: `DER_SCENARIO_STORE='.'` → 쓸 파일이
+    `scenarios.json`(저장소 뿌리) · `'fixtures'` → `fixtures/scenarios.json`.
+    `resolve_scenario_store_dir` 의 독스트링이 *「빈 경로를 그대로 넘기면
+    저장이 현재 작업 디렉터리(저장소 뿌리일 수 있다)로 떨어진다」* 로 막으려던
+    결과를 `"."` 이 **정확히** 낸다. 모듈 머리말의 ⛔ *「저장소
+    안(`fixtures/`·`docs/`)에 쓰지 않는다」* 를 강제하는 것이 없었다.
+    """
+    monkeypatch.setenv(SCENARIO_STORE_ENV, configured)
+
+    with pytest.raises(ValidationError) as caught:
+        resolve_scenario_store_dir()
+
+    assert SCENARIO_STORE_ENV in caught.value.reason
+    assert caught.value.action
+
+
+@pytest.mark.req("FR-902-AC1")
+@pytest.mark.parametrize("configured", ["", "   ", "\t "])
+def test_a_blank_store_place_means_not_configured(
+    monkeypatch: pytest.MonkeyPatch, configured: str
+) -> None:
+    """공백만 있는 값은 **「설정하지 않음」**이다 — 이름이 공백인 자리를 짓지 않는다.
+
+    실측(`result_R1.md` D-11): `DER_SCENARIO_STORE='   '` 이
+    `WindowsPath('   ')` 를 지나 그 밑에 `scenarios.json` 을 썼다. 빈값
+    방어가 `""` 하나만 잡았기 때문이다.
+    """
+    monkeypatch.setenv(SCENARIO_STORE_ENV, configured)
+
+    assert resolve_scenario_store_dir() is None
+
+
+@pytest.mark.req("FR-902-AC1")
+def test_an_absolute_store_place_is_accepted(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """양성 — 절대경로는 그대로 받는다. 거부만 재면 전부 막는 구현도 만점이다."""
+    monkeypatch.setenv(SCENARIO_STORE_ENV, f"  {tmp_path}  ")
+
+    assert resolve_scenario_store_dir() == tmp_path
