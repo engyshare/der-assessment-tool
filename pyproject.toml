@@ -37,6 +37,13 @@ api = [                  # WP-11 (작업 14.0)
     # 환경에서 앱이 기동하지 않는다.** 지금까지 도는 것은 `dev` 그룹의
     # `diff-cover` 가 끌어온 전이 의존이었고, 그것은 배포에 깔리지 않는다.
     "jinja2>=3.1",
+    # FR-201-AC1 · FR-504-AC3 — 화면의 폼이 `application/x-www-form-urlencoded`
+    # 로 제출하고, 그것을 받는 `app/routers/ui_forms.py` 가 `Form(...)` 을 쓴다.
+    # **`python-multipart` 가 없으면 FastAPI 는 그 라우트를 세우다가 기동 시점에
+    # 죽는다** — 화면이 안 뜨는 것이 아니라 앱 전체가 뜨지 않는다.
+    # 하한은 실측한 `0.0.27` 보다 낮은 `0.0.9` 로 잡는다 — 그 판부터
+    # `Form(...)` 이 요구하는 `multipart` 모듈 이름이 지금과 같다.
+    "python-multipart>=0.0.9",
 ]
 dev = [
     "pytest>=8.0",

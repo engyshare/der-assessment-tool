@@ -24,24 +24,27 @@
 from __future__ import annotations
 
 import mimetypes
-from datetime import date
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, Response
 from fastapi.responses import FileResponse, HTMLResponse
 
+from app.routers.ui_forms import (
+    DEMO_PROFILE_NAME,
+    composer_config,
+    refusal,
+    regulation_view,
+)
 from app.security.authorization import ADMIN_ROLE
 from app.services.ui_charts import chart_data
 from app.services.ui_run import UiRun, run_ui_case
-from core.contracts.regulation import RegulationItem
 from core.contracts.validation import ValidationError
-from core.regulation.profile import RegulationProfileDraft
 from core.report.charts import chart_registry, render_charts
 from web.render import (
-    DEMO_MODEL,
     chart_query,
+    error_context,
     model_composer_context,
-    regulation_admin_context,
+    regulation_admin_view_context,
     render_dashboard,
     render_model_composer,
     render_regulation_admin,
@@ -59,24 +62,6 @@ _STATIC_DIR = _REPO_ROOT / "web" / "static"
 #: 목록 밖 이름을 열지 않을 때 알려 줄 media type — 확장자를 못 알아본 경우.
 _FALLBACK_MEDIA_TYPE = "application/octet-stream"
 
-#: 제도 편집 화면이 그리는 **데모 프로파일**. `RegulationProfileAdminService` 는
-#: 빈 상태로 시작하므로(편집이 파일을 건드리지 않는 것이 FR-504-AC3 이다) 뿌리에서
-#: 화면을 열면 그릴 것이 없다. 새 대장을 만들지 않고
-#: `tests/app/test_regulation_admin_router.py` 가 지나는 것과 **같은 경로**
-#: (`RegulationProfileDraft.create(...).upsert(...).publish()`) 로 한 벌 만든다.
-_DEMO_PROFILE = (
-    RegulationProfileDraft.create(name="현행", version="v2026.1")
-    .upsert(
-        RegulationItem(
-            key="supply_duty.required_ratio",
-            value=0.70,
-            unit="비율",
-            source="분산법 시행령",
-        )
-    )
-    .publish()
-)
-
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard() -> HTMLResponse:
@@ -90,25 +75,49 @@ def dashboard() -> HTMLResponse:
 
 @router.get("/ui/model-composer", response_class=HTMLResponse)
 def model_composer() -> HTMLResponse:
-    """자원 구성 화면 — FR-201-AC1 「GUI에서」."""
-    return HTMLResponse(render_model_composer(model_composer_context(DEMO_MODEL)))
+    """자원 구성 화면 — FR-201-AC1 「GUI에서」.
+
+    ⚠ `web.render.DEMO_MODEL` 을 **그대로** 그리지 않는다. 그러면 화면이 늘
+    편집 전 구성을 보여 주고, 사용자가 방금 누른 복제·추가·삭제가 아무 데도
+    나타나지 않는다 — R62/WP-5 가 브라우저로 확인한 것이 그 상태다. 그릴
+    것은 **자원 편집 API 가 보관하는 그것**이며 `composer_config()` 가 같은
+    서비스에서 가져온다.
+    """
+    return HTMLResponse(
+        render_model_composer(model_composer_context(composer_config()))
+    )
 
 
 @router.get("/ui/regulation-admin", response_class=HTMLResponse)
-def regulation_admin() -> HTMLResponse:
+def regulation_admin(
+    profile: str = Query(
+        default=DEMO_PROFILE_NAME,
+        description="열어 볼 제도 프로파일 이름 — 보관된 것만 연다",
+    ),
+) -> HTMLResponse:
     """제도 프로파일 편집 화면 — FR-504-AC3 「웹 UI 에서」.
 
     역할을 `ADMIN_ROLE` 로 두는 것은 데모 값이다. **문자열 `"admin"` 을 여기
     적지 않는다** — 인가 규칙의 정본은 `app/security/authorization.py` 이고,
     화면이 역할 이름을 스스로 적으면 그 규칙이 두 곳에 생긴다.
+
+    ⚠ **어느 프로파일을 볼지 질의 파라미터로 받는다.** 늘 데모 한 벌만 그리면
+    화면에서 만든 프로파일이 어디에도 나타나지 않고, 사용자에게 그것은
+    「생성이 안 됐다」와 구별되지 않는다. 폼이 성공하면 그 이름으로 되돌아온다
+    (`app/routers/ui_forms.py::_regulation_url`).
     """
+    try:
+        view = regulation_view(profile)
+    except HTTPException as exc:
+        return refusal(
+            exc,
+            field="regulation.profile_name",
+            action="보관된 프로파일 이름으로 여십시오",
+        )
     return HTMLResponse(
         render_regulation_admin(
-            regulation_admin_context(
-                _DEMO_PROFILE,
-                role=ADMIN_ROLE,
-                when=date.today(),
-                versions=(_DEMO_PROFILE.version,),
+            regulation_admin_view_context(
+                view, role=ADMIN_ROLE, versions=(str(view["version"]),)
             )
         )
     )
@@ -164,6 +173,14 @@ def run_case(
         )
     except ValidationError as exc:
         return HTMLResponse(render_run_result(run_error_context(exc)), status_code=400)
+    except KeyError as exc:
+        # ★ **D3** — 목록 밖 시나리오도 화면으로 온다. 전에는 `_run()` 이 이것을
+        # `HTTPException(404, str(exc))` 로 바꿨고, 그래서 브라우저가 받은 것은
+        # 영어 JSON 이었다. `str(KeyError)` 는 `repr` 이므로 **문면에 겹따옴표를
+        # 덧씌운다** — `exc.args[0]` 이 저장소가 실제로 적은 문장이다.
+        return HTMLResponse(
+            render_run_result(_missing_scenario(exc)), status_code=404
+        )
     return HTMLResponse(
         render_run_result(
             run_result_context(
@@ -190,23 +207,38 @@ def _run(
     ownership_or_operation_transferred: bool,
     metering_separated: bool,
 ) -> UiRun:
-    """폼 값으로 한 번 돌린다 — **목록 밖 이름만 여기서 404 로 낮춘다.**
+    """폼 값으로 한 번 돌린다 — **거부도 「없다」도 그대로 올린다.**
 
-    `ValidationError` 는 잡지 않고 올린다. 거부의 표현 형식(화면이냐 JSON 이냐)은
-    부르는 라우트가 정할 일이고, 여기서 정하면 그림 라우트가 사람이 못 읽는
-    화면을 `<img>` 자리에 내게 된다.
+    ⚠ 여기서 `HTTPException` 으로 낮추지 않는다. 거부의 표현 형식(화면이냐
+    JSON 이냐)은 부르는 라우트가 정할 일이고, 여기서 정하면 화면 라우트가
+    사람이 못 읽는 JSON 을 내게 된다 — R62/WP-5 가 브라우저로 잡은 **D3** 이
+    정확히 그 상태였다. `ValidationError` 를 이미 그렇게 다루고 있었고,
+    `KeyError` 만 예외였다.
     """
-    try:
-        return run_ui_case(
-            scenario,
-            arrangement=arrangement or None,
-            ownership_or_operation_transferred=ownership_or_operation_transferred,
-            metering_separated=metering_separated,
-        )
-    except KeyError as exc:
-        # `app/routers/models.py::_not_found` 와 같은 모양이다 — 목록 밖 이름은
-        # 「틀린 입력」이 아니라 **없는 것**이므로 404 다.
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return run_ui_case(
+        scenario,
+        arrangement=arrangement or None,
+        ownership_or_operation_transferred=ownership_or_operation_transferred,
+        metering_separated=metering_separated,
+    )
+
+
+def _missing_scenario(exc: KeyError) -> dict[str, object]:
+    """목록 밖 시나리오를 **3요소로** 옮긴다 (`NFR-303`).
+
+    ⚠ **사유를 새로 짓지 않는다.** `app/services/ui_run.py` 가 「무엇이 없고
+    고를 수 있는 것은 무엇인가」를 이미 적었다. 여기서 다시 지으면 같은 거부가
+    그림 라우트(`/ui/chart/<태그>.png`)와 화면에서 다른 말을 한다.
+
+    ⚠ `str(exc)` 를 쓰지 않는다. `KeyError.__str__` 은 `repr(args[0])` 이라
+    문면에 **겹따옴표가 덧씌워진다** — 사람이 읽는 문장에 그 따옴표가 실린
+    것이 WP-5 가 인용한 실측이다.
+    """
+    return error_context(
+        field="run.scenario",
+        reason=str(exc.args[0]),
+        action="화면의 시나리오 목록에서 고르십시오",
+    )
 
 
 @router.get("/ui/chart/{tag}.png", response_class=Response)
@@ -280,6 +312,11 @@ def chart_png(
         )
     except ValidationError as exc:
         raise HTTPException(status_code=400, detail=_three_parts(exc)) from exc
+    except KeyError as exc:
+        # `app/routers/models.py::_not_found` 와 같은 모양이다 — 목록 밖 이름은
+        # 「틀린 입력」이 아니라 **없는 것**이므로 404 다. 이 라우트는 `<img>`
+        # 자리에 들어가므로 화면이 아니라 JSON 으로 낸다.
+        raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
 
     try:
         # ⚠ `registry[tag]().render(...)` 로 질러가지 않는다. `render_charts` 가

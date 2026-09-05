@@ -352,20 +352,54 @@ def regulation_admin_context(
     한쪽만 고쳐지고, 그때 화면과 서버가 서로 다른 답을 낸다 — 그리고 그 어긋남은
     권한 없는 사용자가 실제로 눌러 볼 때까지 드러나지 않는다.
     """
+    return regulation_admin_view_context(
+        {
+            "name": profile.name,
+            "version": profile.version,
+            "items": [
+                {
+                    "key": item.key,
+                    "value": item.value,
+                    "unit": item.unit,
+                    "source": item.source,
+                }
+                for item in profile.items(when=when)
+            ],
+        },
+        role=role,
+        versions=versions,
+    )
+
+
+def regulation_admin_view_context(
+    view: dict[str, Any], *, role: str, versions: tuple[str, ...] = ()
+) -> dict[str, Any]:
+    """같은 화면을 **`app/routers/regulation.py` 가 낸 응답 모양**에서 짓는다.
+
+    ## 왜 입구가 둘인가 — 그리고 왜 그것이 문맥을 둘로 만들지 않는가
+
+    R62/WP-6 에서 화면이 실제로 상태를 바꾸게 되면서, 화면이 그릴 프로파일은
+    더 이상 호출자가 손에 든 객체가 아니라 **admin 라우터가 보관하는 그것**이
+    됐다. 그런데 그 라우터가 밖으로 내는 것은 프로파일 객체가 아니라
+    `_view(...)` 가 지은 사전이다(모듈 사설 `_service` 를 뚫지 않는 것이
+    이 라운드의 판정이다).
+
+    그래서 **입구는 둘이되 문맥을 짓는 자리는 여기 하나**로 둔다.
+    `regulation_admin_context` 는 유효기간을 적용해 이 모양으로 옮긴 뒤
+    그대로 여기에 넘긴다 — 화면이 무엇을 받는가는 **이 함수만** 안다.
+    두 곳에서 각자 짓게 두면 한쪽이 항목 열을 하나 빠뜨려도 아무 검사도
+    걸리지 않는다.
+
+    ⚠ **`when` 을 여기서 다시 적용하지 않는다.** 사전이 든 항목은 이미
+    「그 시점에 유효한 것」이고, 여기서 또 거르면 어느 시점이 적용됐는지가
+    두 곳에 살게 된다.
+    """
     return {
-        "profile_name": profile.name,
-        "profile_version": profile.version,
+        "profile_name": view["name"],
+        "profile_version": view["version"],
         "role": role,
         "can_edit": can_edit_regulation_profile(role=role, operation="편집").allowed,
-        "items": tuple(
-            {
-                "key": item.key,
-                "value": item.value,
-                "unit": item.unit,
-                "source": item.source,
-            }
-            for item in profile.items(when=when)
-        ),
+        "items": tuple(view["items"]),
         "versions": versions,
     }
 
@@ -466,12 +500,31 @@ def run_error_context(exc: ValidationError) -> dict[str, Any]:
     일반 입력 검증을 화면이 가려 보여야 사람이 *「제도가 막은 것인가」* 를
     안다(`ValidationError` 독스트링의 「`rule` 은 선택이다」 절).
     """
+    return error_context(
+        field=exc.field, reason=exc.reason, action=exc.action, rule=exc.rule
+    )
+
+
+def error_context(
+    *, field: str, reason: str, action: str, rule: str | None = None
+) -> dict[str, Any]:
+    """거부 화면의 문맥 — **3요소를 실은 사전 하나** (`NFR-303`).
+
+    `ValidationError` 가 아닌 거부도 이 통로로 온다. 화면 폼이 없는 프로파일을
+    가리키거나(`KeyError` → 404) 권한 없이 눌렀을 때(`PermissionError` → 403)
+    라우터가 내는 것은 **문자열 한 줄**이며, 그것을 그대로 브라우저에 던지면
+    사람에게 남는 것은 「무엇을 하라」가 없는 문장이다 — 그것이 `NFR-303` 이
+    막으려는 상태다. 그래서 부르는 쪽이 셋을 갖춰 여기로 보낸다.
+
+    ⚠ **새 거부 화면을 만들지 않는다.** 낼 것은 `run_result.html` 의
+    `#validation` 절 하나이며, 이 함수는 그 절이 읽는 사전을 지을 뿐이다.
+    """
     return {
         "error": {
-            "field": exc.field,
-            "reason": exc.reason,
-            "action": exc.action,
-            "rule": exc.rule or NO_VALUE,
+            "field": field,
+            "reason": reason,
+            "action": action,
+            "rule": rule or NO_VALUE,
         }
     }
 
