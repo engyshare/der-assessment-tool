@@ -33,6 +33,7 @@ class AssumptionSet(AssumptionProvider):
         reasons: Mapping[str, str] | None = None,
         *,
         price_basis: PriceBasis,
+        group_titles: Mapping[str, str] | None = None,
     ):
         self._name = name
         self._version = version
@@ -41,6 +42,11 @@ class AssumptionSet(AssumptionProvider):
         #: 오버라이드 사유 — 권장 필드 (FR-602-AC3). 값이 없어도 된다.
         self._reasons = reasons or {}
         self._price_basis = price_basis
+        #: 키의 첫 마디 → 한국어 묶음 이름. 화면이 항목을 묶어 그릴 때 쓴다.
+        #: ⚠ **화면이 손으로 적지 않게 하려고 여기 있다** — 항목이 새 무리를
+        #: 만드는 날 템플릿이 따라오지 않으면 그 묶음만 조용히 키 조각으로
+        #: 돌아가고, 그 상태는 사람이 화면을 볼 때까지 드러나지 않는다.
+        self._group_titles = group_titles or {}
         # ★ **「전 항목에 강제」를 여기서 강제한다** (DV-7). 집합이 서는 순간
         # 보아야 한다 — 나중에 보면 그 사이에 이미 계산이 돌 수 있고, 그때는
         # 어느 기준으로 계산했는지 결과만 보고는 알 수 없다.
@@ -103,6 +109,10 @@ class AssumptionSet(AssumptionProvider):
             items[item_data["key"]] = AssumptionItem(
                 key=item_data["key"],
                 value=item_data["value"],
+                # ★ 라벨은 **대장이 정본**이고 여기서는 옮겨 싣기만 한다.
+                # 없으면 빈 문자열이다 — 라벨 부재로 대장 적재를 멈추지
+                # 않는다(`AssumptionItem.title` 이 그 사유를 적는다).
+                title=str(item_data.get("title") or ""),
                 value_unit=item_data.get("value_unit", ""),
                 base_year=str(item_data.get("base_year", "")),
                 applicable_scope=item_data.get("applicable_scope", ""),
@@ -114,7 +124,11 @@ class AssumptionSet(AssumptionProvider):
             )
 
         return cls(
-            name=name, version=version, items=items, price_basis=price_basis
+            name=name,
+            version=version,
+            items=items,
+            price_basis=price_basis,
+            group_titles=data.get("group_titles") or {},
         )
 
     @property
@@ -124,6 +138,16 @@ class AssumptionSet(AssumptionProvider):
     @property
     def set_version(self) -> str:
         return self._version
+
+    @property
+    def group_titles(self) -> Mapping[str, str]:
+        """키의 첫 마디 → 한국어 묶음 이름 (`docs/assumptions.yaml::group_titles`).
+
+        선언되지 않은 무리는 **없는 채로 돌려준다** — 부르는 쪽이 무엇으로
+        메울지 정한다. 여기서 키 조각으로 메우면 「이름을 안 지었다」와
+        「이름이 키 조각이다」가 구별되지 않는다.
+        """
+        return MappingProxyType(dict(self._group_titles))
 
     @property
     def price_basis(self) -> PriceBasis:
@@ -203,6 +227,9 @@ class AssumptionSet(AssumptionProvider):
             # 오버라이드는 값이다 — 시나리오가 기준을 바꿀 수 있으면 두 시나리오의
             # 금액이 서로 다른 뜻을 갖게 되고, FR-202(같은 전제 위 비교)가 깨진다.
             price_basis=self._price_basis,
+            # 묶음 이름은 대장의 것이고 오버라이드가 바꾸지 않는다 —
+            # 값과 표시 이름은 다른 축이다.
+            group_titles=self._group_titles,
         )
 
     def get_overrides(self) -> Mapping[str, Any]:
