@@ -246,3 +246,49 @@ def test_scenario_3_refused_without_prerequisites_then_runs_with_them(
         f"전제를 줬는데 「{arrangement.value}」 로 돌지 않았다"
     )
     assert math.isfinite(_npv_on_screen(page))
+
+
+@pytest.mark.req("FR-201-AC1")
+def test_scenario_4_duplicating_a_resource_in_the_browser_grows_the_list(
+    page: Page, live_server: str
+) -> None:
+    """★ **시나리오 4 — 자원 구성 화면에서 「자원 복제」를 실제로 클릭한다.**
+
+    R62/WP-5 가 브라우저로 눌러 보고 잡은 것이 이것이다. 그때 이 단추는 눌리면
+    **영어 `422`** 를 냈다 — 폼이 urlencoded 를 보내는데 `action` 이 가리키던
+    것은 JSON 본문을 받는 API 였다. 「화면이 있다」를 재던 검사들은 그 상태에서
+    전부 초록불이었다.
+
+    ⚠ **수를 박지 않는다.** 화면의 자원 수는 같은 프로세스 안 앞선 조작에 따라
+    다르다(`_service` 가 모듈 수준 인스턴스다). 재는 것은 **이 클릭이 목록을
+    늘렸는가**뿐이다.
+
+    ⚠ 셀렉터를 자리로 잡지 않는다. 복제할 행은 `data-resource-name` 으로,
+    누를 단추는 **접근 가능한 이름**으로 잡는다.
+    """
+    page.goto(f"{live_server}/ui/model-composer")
+
+    rows = page.locator("tr[data-resource-name]")
+    before = rows.count()
+    assert before > 0, "자원 구성 화면에 복제할 자원이 없다 — 누를 것이 없다"
+
+    row = rows.first
+    source = row.get_attribute("data-resource-name")
+    assert source, "자원 행이 이름을 싣지 않았다"
+    clone = f"{source}-브라우저복제-{before}"
+
+    # 복제본 이름 칸은 그 행 **안**의 것이다. 기본값을 그대로 두면 앞선 검사가
+    # 만든 이름과 겹칠 수 있고, 겹침 거부는 「단추가 안 먹는다」와 화면에서
+    # 구별되지 않는다.
+    row.locator('input[name="new_name"]').fill(clone)
+    row.get_by_role("button", name="자원 복제").click()
+
+    # PRG — 303 을 따라 화면으로 되돌아온다. 주소가 그대로여야 새로고침이
+    # 같은 복제를 다시 하지 않는다.
+    page.wait_for_url(re.compile(r"/ui/model-composer$"))
+
+    after = page.locator("tr[data-resource-name]")
+    assert after.count() == before + 1, (
+        f"「자원 복제」를 눌렀는데 목록이 {before} → {after.count()} 다"
+    )
+    expect(page.locator(f'tr[data-resource-name="{clone}"]')).to_be_visible()
