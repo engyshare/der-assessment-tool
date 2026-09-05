@@ -59,7 +59,13 @@
 동안 `status-history.md` 를 만졌다가 워커가 그것을 남의 편집으로 보고 `git checkout`
 으로 되돌린 사고를 겪었다 — **트리를 가르면 그 사고 자체가 성립하지 않는다.**
 
-### WP 표 — **스물세 축 · PR 열**
+### WP 표 — **스물다섯 행 = WP 축 스물하나 + 닫기 넷 · PR 열**
+
+⚠ **이 수를 직접 세었다** — 종전에 「열둘」·「스물」·「스물셋」으로 적혀 있던 것은
+어느 것도 표와 맞지 않았다(닫기 행을 세는지가 정해져 있지 않았다). 세는 법을
+못 박는다: **행 = `grep -c '^| \*\*'`** · **WP 축 = 그중 `닫기*` 를 뺀 것**.
+「세지 않은 수를 옮겨 적으면 그것이 다음 라운드의 계획으로 따라 들어간다」가
+이 저장소가 반복해 밟은 형태다.
 
 | WP | 워커 | 무엇 | PR | 결과 |
 |---|---|---|---|---|
@@ -380,6 +386,11 @@ N3 의 표시는 굳히는 줄의 **순서**에 기댔다. 갈래 셋 중:
 | ★ 전건 `pytest` | **2230 passed · 9 skipped · 1 xfailed** · `rc=0` — ⚠ **직접 셌다.** `-q` 요약줄이 이 저장소 설정에서 인쇄되지 않아 진행 표시의 `.`/`s`/`x` 를 세었다(`awk` 로 추출) |
 | 라벨 어긋남 재고 | `LABEL_BY_NAME` **85** 항목 · 카탈로그 (자원,이름) 짝 **141** · 둘 이상의 자원이 쓰는 이름 **19**(짝 75) · **거짓인 짝 0** · 소스에 `label=` 이 없는 짝 **96(68%)** · 인쇄되는 낱말 어긋남 **34짝** |
 | 계산 구간이 `get()` 으로 읽는 키 | **여덟** — 골든 셋 + 기준선 갈래 셋 **전건 여섯에서 합집합 = 교집합 = 8**(차집합 전건 공집합) |
+| 음성 검사 | **16종 전건 `rc=0`** — `ls scripts/negtest_*.py | wc -l` 로 세고 하나씩 돌렸다 |
+| 정적 게이트 | **13종 전건 `rc=0`** (`check_assumptions`·`check_hardcoded_params`·`check_source_rules`·`check_docstring_references`·`check_task_mapping`·`check_disclosure`·`check_status_round_blocks`·`check_marker_substance`·`check_partition_assignment`·`check_unread_extension_points`·`check_precommit_installed`·`check_file_size --code-strict`) + `gen_traceability` `rc=1`(정상) |
+| `docs/traceability.md` | 재생성 후 `git status` **공백** — 커밋본이 최신이다 |
+| 브라우저 검사 | `pytest tests_e2e` **22 passed · 실패 0** · `rc=0` |
+| PR 상태 | `gh pr list --state all` 로 확인 — **#12~#17 · #19~#29 `MERGED`** · **#18 `CLOSED`**(#20 이 포함) |
 | 설정 화면 대장 키 | **41종 → 0** · 변수명 꼴 토큰 **159 → 0** · 기계 자리 **41/41 그대로** |
 | 화면에 선 출처 칸 | **0 → `/` 5칸 · `/ui/run` 13칸** |
 | 「안 먹는 키」 실측 | `tax.vat_rate: 1e9` ⇒ Δ**0** (표시가 선다) · `capex.pv.rooftop: 1_500_000` ⇒ Δ**+299,438** (표시 없음) |
