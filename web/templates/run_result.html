@@ -5,6 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>분석 결과 — 분산특구 경제성 평가</title>
   <link rel="stylesheet" href="/static/wp12.css">
+  {# ⚠ `wp12.css` 는 이 축이 고칠 수 있는 파일이 아니다. 이 화면이 새로 쓰는
+     것은 **출처 문면의 가로 넘침** 하나뿐이며, `verify.html`·`dashboard.html`
+     이 세운 것과 같은 모양으로 여기 인라인에 둔다. #}
+  <style>
+    {# ★ 대장의 출처 한 줄은 100자를 넘는 것이 있다(KPX·전력거래소 인용).
+       줄이면 잘리고, 잘린 출처는 「어디서 왔나」에 답하지 못한다. #}
+    .impact-scroll { overflow-x: auto; }
+    .influence-source { display: block; }
+  </style>
 </head>
 <body>
   <a class="skip-link" href="#main">본문으로 이동</a>
@@ -34,18 +43,37 @@
     {# ★ 영향도 순위가 **최상단**이다 (UI-7-AC1). 결과 화면이 답해야 하는
        물음이 「어떤 가정이 바뀌면 결론이 뒤집히나」이고, 그 답을 아래로
        내리면 위의 수만 발췌돼 나간다. #}
+    {# ★★★ 인자마다 **출처**가 함께 선다 — 착수 목록 53 · `D12`.
+       종전에 이 목록이 실은 것은 이름·대장 키·영향액 셋이었고, 대장 키는
+       *어디를 보라*는 말이지 *무엇에 근거했는가* 가 아니다. 심의에서
+       「그 수가 어디서 왔나」를 묻는 자리가 반드시 온다.
+       ⛔ **문면을 여기 손으로 적지 마라** — `web/render_run.py::
+       run_result_context` 가 `CaseReport.assumptions` 에서 이어 준 것이다. #}
     <section id="impact-ranking" class="band" aria-labelledby="impact-title">
       <h2 id="impact-title">영향도 순위</h2>
-      <ol class="impact-list">
-        {% for item in influences %}
-        <li data-rank="{{ item.rank }}">
-          <strong>{{ item.name }}</strong>
-          <span class="ledger-key">{{ item.ledger_key }}</span>
-          <span>{{ item.impact }}</span>
-          {% if item.flips %}<span class="flip" role="note">결론 전환</span>{% endif %}
-        </li>
-        {% endfor %}
-      </ol>
+      {# ⚠ `tabindex="0"` 을 지우지 마라 — `overflow-x: auto` 인 영역은 키보드만
+         쓰는 사람이 스크롤할 수 없고 axe 가 `scrollable-region-focusable`
+         (serious) 위반을 낸다. R63 이 실물로 밟았다. #}
+      <div class="impact-scroll" tabindex="0" role="group"
+           aria-labelledby="impact-title">
+        <ol class="impact-list">
+          {% for item in influences %}
+          <li data-rank="{{ item.rank }}">
+            <strong>{{ item.name }}</strong>
+            <span class="ledger-key">{{ item.ledger_key }}</span>
+            <span>{{ item.impact }}</span>
+            {% if item.flips %}<span class="flip" role="note">결론 전환</span>{% endif %}
+            {# ⚠ 출처를 **자기 칸에 단독으로** 싣는다. 「출처: 」 같은 글자를 같은
+               텍스트 노드에 이어 적으면 그 조각이 대장 자료의 문면과 더 이상 같지
+               않고, `tests/app/test_screen_words.py::_offending_chunks` 가 대장이
+               자료로 든 글자를 사면하는 방식(**같은가**로 대조)이 깨진다 — 대장의
+               출처 인용에는 파일 이름 `…-전제값.md` 가 들어 있다. #}
+            <span class="influence-source"
+                  data-influence-source="{{ item.rank }}">{{ item.source }}</span>
+          </li>
+          {% endfor %}
+        </ol>
+      </div>
     </section>
 
     <section id="arrangement" class="band" aria-labelledby="arrangement-title">
