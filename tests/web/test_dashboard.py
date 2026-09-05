@@ -986,3 +986,61 @@ def test_the_ledger_source_word_moved_in_the_context() -> None:
 
     assert "전제 대장" not in sources, sources
     assert "분석 설정 대장" in sources, sources
+
+
+# ── R63 종료 — 대시보드에서 새 화면 셋으로 **닿는가** ─────────────────────
+#
+# R63 이 화면 셋(`/ui/scenarios`·`/ui/settings`·`/ui/verify`)을 세웠고, 그
+# 셋은 **축마다 다른 워커**가 만들었다. 이 파일은 낱말 축이 단독으로 소유했으므로
+# 링크는 오케스트레이터가 병합 뒤 한 커밋으로 넣었다 — 그 한 줄이 유일한 공유
+# 자리였고 그래서 병합에서 만나지 않았다.
+#
+# ⚠⚠ 링크 주소는 템플릿에 **손으로 적혀 있다**(라우트 상수를 템플릿이 읽을 길이
+# 없다). 손으로 적은 주소는 낡는다 — 그래서 아래 검사가 **앱 자신의 OpenAPI 문서**
+# 와 대조한다. 박아 두고 대조하지 않으면 화면이 늘어도 목록은 그대로이고, 그
+# 상태는 「닿는다」와 구별되지 않는다. `tests_e2e/test_axe_accessibility.py::
+# test_the_scanned_list_is_every_html_screen_the_app_serves` 가 같은 판단이다.
+
+
+@pytest.mark.req("UI-1-AC1")
+def test_every_html_screen_the_app_serves_is_reachable_from_the_dashboard() -> None:
+    """★★ **앱이 내놓는 화면 전건이 대시보드에서 닿는다.**
+
+    ⚠ **「하나 이상 링크가 있다」로 두지 않는다** — 그러면 화면 하나가 늘어도
+    초록불이고, 사용자는 주소를 손으로 쳐야 한다. 그것이 이 저장소가 R62/WP-5 에
+    `D6` 으로 잡은 상태이며 `MC-8`(핵심 시나리오 완주)이 여기 걸린다.
+
+    ⚠ `app.routes` 를 파이썬으로 뒤지지 않는다 — 그 자료구조의 모양은 FastAPI
+    판마다 다르고(R62/WP-1 이 CI 에서 실측했다) 여기서 재려는 것은 **밖으로
+    나가는 것**이다.
+    """
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app) as client:
+        spec = client.get("/openapi.json").json()
+
+    served = {
+        path
+        for path, operations in spec["paths"].items()
+        if "{" not in path
+        and "text/html"
+        in (
+            (operations.get("get") or {})
+            .get("responses", {})
+            .get("200", {})
+            .get("content", {})
+        )
+    }
+    assert served, "앱이 내놓는 화면을 한 건도 찾지 못했다 — 대조할 것이 없다"
+
+    body = render_dashboard()
+    linked = set(re.findall(r'href="(/[^"#]*)"', body))
+    # 대시보드 자신(`/`)은 링크로 서지 않아도 닿는다 — 지금 보고 있는 화면이다.
+    unreachable = sorted(served - linked - {"/"})
+
+    assert not unreachable, (
+        "앱이 내놓는데 대시보드에서 닿지 않는 화면이 있다: "
+        f"{unreachable}\n  대시보드가 링크한 것: {sorted(linked)}"
+    )
