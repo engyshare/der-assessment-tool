@@ -278,7 +278,7 @@
 | `FR-804` | Should-have | - | `FR-804-AC1` | 주요 변수별로 NPV=0이 되는 임계값을 표로 제시 | **미매핑** | — |
 | `FR-805` | Should-have | - | `FR-805-AC1` | 실행 중 완료 케이스 수·예상 잔여 시간 표시, 중단 가능 | 자동 | test_casegrid.py, test_variant_production_wiring.py, test_variant_report.py |
 | `FR-901` | Must-have | 1 | `FR-901-AC1` | 회원가입, 로그인, 비밀번호 재설정, 세션 만료(기본 24시간) | 자동 | test_auth.py 8건 |
-| `FR-902` | Must-have | 1 | `FR-902-AC1` | 이름·설명·태그·최종수정일시 부여 | 자동 | test_scenario_store_file.py 3건, test_scenarios.py 2건, test_scenario_store_deployment.py 2건 |
+| `FR-902` | Must-have | 1 | `FR-902-AC1` | 이름·설명·태그·최종수정일시 부여 | 자동 | test_scenario_store_file.py 16건, test_scenarios.py 2건, test_scenario_store_deployment.py 2건 |
 |  |  | 1 | `FR-902-AC2` | 저장 시 버전 이력이 남아 이전 버전 복원 가능 | 자동 | test_scenario_store_file.py, test_scenarios.py 2건 |
 |  |  | 1 | `FR-902-AC3` | 삭제는 소프트 삭제(30일 보관) | 자동 | test_scenario_store_file.py 2건, test_scenarios.py 2건 |
 | `FR-903` | Should-have | - | `FR-903-AC1` | admin(카탈로그·요금표 관리) / analyst(시나리오 생성·실행) / viewer(공유 결과 열람) | **미매핑** | — |
@@ -370,7 +370,7 @@
 | `UI-6` | Should-have | 2 | `UI-6-AC1` | 접근성: WCAG 2.1 AA 목표 (색상 단독 정보전달 금지, 명암비 4.5:1 이상, 키보드 내비게이션) | 자동 | test_ui_charts.py, test_dashboard.py 3건 |
 | `UI-7` | Must-have | 1 | `UI-7-AC1` | 결과 화면은 영향도 순위를 최상단에 둔다. 입력값 나열은 부록으로 보낸다 (FR-1002) | 자동 | test_narrative.py, test_dashboard.py |
 | `SC-1` | Must-have | 1 | `SC-1` | 이메일 + 비밀번호, 세션 쿠키(HttpOnly, Secure, SameSite=Lax) | 자동 | test_auth.py 2건 |
-| `SC-2` | Must-have | 1 | `SC-2` | 시나리오 접근은 소유자 또는 유효 공유 토큰 보유자로 제한 | 자동 | test_authorization.py 2건 |
+| `SC-2` | Must-have | 1 | `SC-2` | 시나리오 접근은 소유자 또는 유효 공유 토큰 보유자로 제한 | 자동 | test_authorization.py 2건, test_scenarios.py 5건 |
 | `SC-3` | Must-have | 1 | `SC-3` | 수집을 이메일·이름으로 최소화. 실증 참여 가구의 개별 식별정보 미저장 (부하 데이터는 익명 집계본만) | 자동 | test_sc3.py 2건, test_ci_gates.py, test_privacy_procedure.py |
 | `SC-4` | Must-have | 1 | `SC-4` | 로그인, 시나리오·전제 생성·수정·삭제, 관리자 카탈로그 변경 기록 | 자동 | test_audit.py |
 | `SC-5` | Must-have | 1 | `SC-5` | DB 경로·시크릿 키는 환경변수. 저장소 커밋 금지, gitleaks CI 스캔 | 자동 | test_auth.py 5건, test_ci_gates.py 2건, test_phase1_measurements.py 2건, test_precommit_installed.py 5건 |
