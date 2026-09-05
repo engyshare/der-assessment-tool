@@ -10,9 +10,15 @@ R29 가 이 조항의 항진 테스트를 걷어내면서 *「「전체」의 �
     ② 기준이 **줄지 않는다** — 시그니처의 인자가 카탈로그에서 빠지지 않는다
     ③ 기준이 **거짓이 될 때 멈춘다** — 열거 불가 시그니처 · 단위 없는 수치
     ④ 단위표 둘이 **겹치지 않는다** — 겹치면 우선순위가 조용히 뒤집힌다
+    ⑤ 파라미터마다 **한국어 라벨이 있다** — 없으면 화면이 변수명으로 돌아간다
 
 **③이 이 파일의 핵심이다.** ①②만 두면 「지금 맞다」를 고정할 뿐이고, 새 자원이
 규약을 벗어날 때 카탈로그가 조용히 반쪽을 내주는 것을 아무도 보지 못한다.
+
+**⑤가 세는 것으로 있는 이유는 ③과 다르기 때문이다.** 라벨 부재는 계산 오류가
+아니라 표시 결함이므로 카탈로그를 멈추게 두지 않는다(라벨 하나가 없어서 앱이
+못 뜨면 그것이 더 나쁘다). 대신 **세지 않으면 조용히 변수명으로 되돌아가므로**
+아래 셋이 전건을 요구한다.
 """
 
 from __future__ import annotations
@@ -26,6 +32,7 @@ import core.der
 from core.contracts.der import DER
 from core.contracts.registry import discover
 from core.model.parameters import (
+    LABEL_BY_NAME,
     UNIT_BY_NAME,
     UNIT_BY_SUFFIX,
     ParameterCatalogueError,
@@ -280,3 +287,68 @@ def test_the_longest_suffix_wins() -> None:
     assert resolve_unit("fixed_om_won_per_year") == "원/년"
     assert resolve_unit("battery_kwh") == "kWh"
     assert resolve_unit("바깥이름") == ""
+
+
+# ── ⑤ 파라미터마다 한국어 라벨이 있다 ─────────────────────────────────
+
+@pytest.mark.req("UI-1-AC1")
+def test_every_label_key_names_a_parameter_that_exists() -> None:
+    """`LABEL_BY_NAME` 에 **죽은 키**가 없다 — 모든 키가 실재하는 인자 이름이다.
+
+    이름을 고치거나 인자를 걷어내면 그 라벨은 남는데 아무도 쓰지 않는다. 쓰이지
+    않는 라벨은 **틀린 것을 알아차릴 방법이 없고**, 다음 사람은 그것을 보고
+    「이 파라미터는 있는데 화면에 왜 없지」를 묻게 된다. 겹침 검사(④)와 달리 이
+    검사는 표 **바깥**을 본다 — 표끼리의 모순이 아니라 표와 실물의 어긋남이다.
+    """
+    catalogued = {spec.name for specs in catalogue().values() for spec in specs}
+    dead = sorted(set(LABEL_BY_NAME) - catalogued)
+    assert dead == [], (
+        f"`LABEL_BY_NAME` 의 키가 어떤 자원의 인자도 아닙니다: {dead}. "
+        "이름이 바뀌었거나 인자가 없어진 자리이며, 그 라벨은 영영 쓰이지 "
+        "않습니다 — 지우거나 지금 이름으로 고치십시오"
+    )
+
+
+@pytest.mark.req("UI-1-AC1")
+def test_no_parameter_reaches_the_screen_without_a_label() -> None:
+    """실물 카탈로그의 파라미터가 **전건** 라벨을 갖는다.
+
+    ⚠ **「하나 이상 있다」로 두면 안 된다.** 하나만 채워도 초록불이 되고, 나머지
+    여든몇 개는 화면에서 변수명 그대로 인쇄된다 — 사용자가 지우라고 한 바로 그
+    상태다(*「"옥상 태양광 · azimuth_deg" 와 같이 coding 상의 변수명을 병기하지
+    않음」*). 카탈로그는 라벨이 없다고 멈추지 않으므로 **세는 것은 여기뿐이다.**
+    """
+    unlabelled = [
+        f"{spec.tag}.{spec.name}"
+        for specs in catalogue().values()
+        for spec in specs
+        if not spec.label
+    ]
+    assert unlabelled == [], (
+        f"라벨이 없는 파라미터가 {len(unlabelled)}개 있습니다: {unlabelled}. "
+        "`LABEL_BY_NAME` 에 한국어 라벨을 선언하십시오 — 라벨이 없으면 화면은 "
+        "변수명으로 되돌아가고 그 사실은 아무 오류도 내지 않습니다"
+    )
+
+
+@pytest.mark.req("UI-1-AC1")
+def test_no_label_leaks_the_variable_name() -> None:
+    """라벨이 **변수명을 담지 않는다** — 병기 금지는 문면 안에서도 성립한다.
+
+    라벨을 `"방위각(azimuth_deg)"` 로 적으면 위 검사는 초록불인데 화면에는
+    변수명이 그대로 남는다. 그래서 셋을 함께 요구한다: 비어 있지 않고 · 인자
+    이름을 부분 문자열로 담지 않고 · `_` 를 담지 않는다. 마지막 것은 라벨이
+    **사람이 읽는 말**임을 붙드는 값싼 대리 지표다 — 밑줄은 이 저장소의 인자
+    이름 규약이지 한국어 낱말의 것이 아니다.
+    """
+    for specs in catalogue().values():
+        for spec in specs:
+            assert spec.label, f"{spec.tag}.{spec.name} 의 라벨이 비어 있습니다"
+            assert spec.name not in spec.label, (
+                f"{spec.tag}.{spec.name} 의 라벨 {spec.label!r} 이 인자 이름을 "
+                "담고 있습니다 — 그것이 곧 변수명 병기입니다"
+            )
+            assert "_" not in spec.label, (
+                f"{spec.tag}.{spec.name} 의 라벨 {spec.label!r} 에 밑줄이 "
+                "있습니다 — 라벨은 사람이 읽는 말이어야 합니다"
+            )

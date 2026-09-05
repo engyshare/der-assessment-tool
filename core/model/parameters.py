@@ -5,10 +5,10 @@
 
 **R29 까지 이 조항을 붙드는 검사는 「전체」를 말할 수 없었다.** 기준이 저장소에
 없었기 때문이다 — `ModelConfig` 은 `name`·`resources`·`common_load`·`contract`·
-`regulation` 이고 `DERConfig.params` 는 `dict[str, Any]` 다. 그래서 R29 가
-`test_advanced_mode_shows_all_parameters` 의 항진을 걷어내면서 이름을 하는 일에
-맞춰 좁히고, *「기준이 생기기 전에는 어떤 검사도 「전체」를 말할 수 없다」* 를
-독스트링에 남겼다.
+`regulation` 이고 `DERConfig.params` 는 `dict[str, Any]` 다. R28·R29 가 화면 쪽
+검사의 항진을 걷어내며 *「기준이 생기기 전에는 어떤 검사도 「전체」를 말할 수
+없다」* 를 남겼고, **그때의 이름은 R28 에 없어졌다.** 지금 그 자리를 재는 것은
+`tests/web/test_dashboard.py::test_advanced_mode_shows_every_parameter_the_configuration_has` 다.
 
 **R31 이 그 기준을 정했다: 레지스트리에 등록된 자원의 `__init__` 시그니처.**
 
@@ -49,6 +49,26 @@ available_resource_tags()` 가 *「어떤 자원을 놓을 수 있는가」* 에
 두 표가 겹치면(접미어로 이미 풀리는 이름을 `UNIT_BY_NAME` 이 또 선언하면)
 `tests/model/test_parameters.py` 가 빨간불을 낸다 — 겹친 자리는 나중에 접미어
 규칙을 고칠 때 어느 쪽이 이기는지가 조용히 뒤집히는 자리다.
+
+## 한국어 라벨도 여기서 온다 — 화면이 손으로 적지 않는다
+
+사용자 판정(`docs/decisions-2026-09-05-R63.md` §1 「용어」)이 *「"옥상 태양광 ·
+azimuth_deg" 와 같이 coding 상의 변수명을 병기하지 않음」* 을 요구한다. 변수명을
+지우려면 **한국어 라벨이 어딘가에서 와야 하고**, 그 자리는 화면이 아니라 여기다 —
+화면 템플릿에 손으로 적으면 카탈로그가 늘 때 그 목록이 낡고, 낡은 것은 사람이
+없는 칸을 찾을 때까지 드러나지 않는다.
+
+    `LABEL_BY_NAME`   이름 하나에 라벨 하나. **접미어 규칙을 두지 않는다**
+
+접미어를 두지 않는 사유는 단위와 같고 **더 세다**. 단위는 이름이 문자 그대로
+담을 때가 있지만 라벨은 그런 규칙성이 없다 — `capex_unit_won_per_kw`(히트펌프
+난방 출력당 설치 단가)와 `unit_cost_won_per_kw`(부하 설비 단가)는 접미어가 같고
+가리키는 것이 다르다. 규칙이 라벨을 지어내면 **틀린 이름이 자신 있게 붙는다.**
+
+**라벨이 없는 것은 멈추는 자리가 아니라 세는 자리다.** 단위와 달리 라벨 부재는
+계산 오류가 아니라 표시 결함이고, 라벨 하나가 없어서 앱 전체가 못 뜨는 쪽이 더
+나쁘다. 그래서 `label` 은 빈 문자열로 나가고 **빠진 수를 시험이 센다**(⑤) —
+세지 않으면 화면이 조용히 변수명으로 되돌아간다.
 """
 
 from __future__ import annotations
@@ -157,6 +177,116 @@ UNIT_BY_NAME: Mapping[str, str] = MappingProxyType({
     "kwh_per_hdd": "kWh/난방도일",
 })
 
+#: 파라미터 이름의 **한국어 라벨**. 화면은 `spec.label` 하나만 읽는다.
+#:
+#: ⚠ **단위를 라벨에 넣지 마라** — `unit` 이 따로 있고, 같은 사실을 두 곳에 적으면
+#: 한쪽만 고쳐진 상태를 아무도 보지 않는다. ⚠ **밑줄과 인자 이름을 넣지 마라** —
+#: 그것이 곧 사용자가 지우라고 한 병기다.
+#:
+#: 사유는 이름마다 적지 않는다 — 단위와 달리 라벨은 이름의 번역이다. **뜻이
+#: 갈리는 것만** 주석으로 가른다.
+LABEL_BY_NAME: Mapping[str, str] = MappingProxyType({
+    # ── 모든 자원이 공통으로 받는 것 ──
+    "name": "자원 이름",
+    "dt": "시간 간격",
+    "operating_mode": "운전 방법",
+    "end_of_life_action": "수명 종료 처리",
+    "subcomponents": "하위 구성",
+    # 수명이 셋이고 **뜻이 갈린다**: 설비가 서 있는 햇수 · 달력 기준 열화 한계 ·
+    # 충방전 횟수. `unit`(년/년/회)이 둘째와 셋째를 갈라 주지 못하므로 라벨이 진다.
+    "lifetime": "설비 수명",
+    "calendar_life": "달력 수명",
+    "cycle_life": "사이클 수명",
+    "degradation_rate": "연간 성능저하율",
+    "vat_rate": "부가가치세율",
+    "fixed_om_won_per_year": "연간 고정 운영비",
+    "variable_om_won_per_kwh": "변동 운영비 단가",
+    # 물가 계수가 둘이고 **단위가 같고 뜻이 다르다**(R42 · `Q-17`) — 하나는 운영비,
+    # 하나는 교체 재취득 단가에 붙는다. 구별은 여기서 진다.
+    "escalation_rate": "운영비 실질 상승률",
+    "replacement_escalation_rate": "교체 단가 실질 상승률",
+    # ── 태양광 ──
+    # ⚠ `capacity_kw` 는 부하·열부하도 받는다. 거기서는 계약 용량을 뜻하지만
+    # 이름별 선언이므로 라벨은 하나다 — 자원 이름이 화면에서 그 차이를 진다.
+    "capacity_kw": "설비용량",
+    "capacity_factor": "이용률",
+    "generation_profile_kwh": "발전 프로파일",
+    "azimuth_deg": "방위각",
+    "tilt_deg": "경사각",
+    "inverter_lifetime": "인버터 수명",
+    "unit_capex_won_per_kw": "모듈 설치 단가",
+    "bos_capex_won": "부대설비 설치비",
+    "inverter_unit_capex_won_per_kw": "인버터 설치 단가",
+    "inverter_replacement_unit_won_per_kw": "인버터 교체 단가",
+    "self_consumption_ratio": "자가소비 비율",
+    # ── 배터리(ESS) ──
+    "capacity_kwh": "저장용량",
+    "power_kw": "충방전 출력",
+    "rte_pct": "왕복 효율",
+    "soc_min_pct": "최소 충전율",
+    "soc_max_pct": "최대 충전율",
+    "backup_reserve_pct": "비상 대비 예비율",
+    "eol_soh_pct": "수명 종료 잔존 성능",
+    "cycles_per_year": "연간 사이클 수",
+    "second_life": "재사용 배터리",
+    "charge_source": "충전 전원",
+    "mode_weights": "운전 방법별 가중치",
+    "pv_surplus_profile_kwh": "태양광 잉여 프로파일",
+    "capex_unit_won_per_kwh": "저장용량당 설치 단가",
+    "replacement_unit_won_per_kwh": "저장용량당 교체 단가",
+    "pcs_cost_won": "전력변환장치 비용",
+    "pcs_lifetime": "전력변환장치 수명",
+    "capex_extra_won": "추가 설치비",
+    # ── 전기차(V2G) ──
+    "vehicle_count": "차량 대수",
+    "battery_kwh": "차량 배터리 용량",
+    "max_charge_kw": "최대 충전 출력",
+    "max_discharge_kw": "최대 방전 출력",
+    "connect_start_hour": "접속 시작 시각",
+    "connect_end_hour": "접속 종료 시각",
+    "participation": "참여율",
+    "available_dod": "가용 방전심도",
+    "arrival_soc": "도착 시 충전상태",
+    "min_departure_soc": "출발 시 최소 충전상태",
+    "charge_efficiency": "충전 효율",
+    "discharge_efficiency": "방전 효율",
+    "charger_count": "충전기 수",
+    "charger_unit_cost_won": "충전기 단가",
+    "ancillary_cost_won": "충전기 부대공사비",
+    "degradation_compensation_won_per_kwh": "배터리 열화 보상 단가",
+    "replacement_cost_won": "교체 비용",
+    "daily_charge_kwh": "일일 충전량",
+    "discharge_benefit_enabled": "방전 편익 반영",
+    "avoided_price_won_per_kwh": "회피 전력 단가",
+    # ── 히트펌프 ──
+    "rated_heat_kw": "정격 난방 출력",
+    "cop_curve": "성능계수 곡선",
+    "heat_load_kwh": "열부하",
+    "aux_heater_kw": "보조 히터 용량",
+    "annual_ambient_temp_c": "연간 외기온도",
+    "default_ambient_temp_c": "기본 외기온도",
+    "night_hours": "심야 시간대",
+    "price_linked_hours": "가격 연동 운전 시간",
+    # 값을 시간별로 받는 것과 한 값으로 받는 것이 갈린다 — 단위는 둘 다 원/kWh다.
+    "price_profile_won_per_kwh": "시간별 전력 단가",
+    "elec_price_won_per_kwh": "전력 구입 단가",
+    "capex_unit_won_per_kw": "난방 출력당 설치 단가",
+    "fixed_om_won": "고정 운영비",
+    # `pump` 는 히트펌프가 아니라 **순환펌프**다 — 설비 자체의 수명은 `lifetime` 이다.
+    "pump_lifetime": "순환펌프 수명",
+    "pump_replacement_cost_won": "순환펌프 교체비",
+    # ── 전기부하 · 열부하 ──
+    "hourly_kwh": "시간별 사용량",
+    "monthly_kwh": "월별 사용량",
+    "shape": "표준 프로파일",
+    "monthly_weights": "월별 가중치",
+    "annual_growth_rate": "연간 수요 증가율",
+    "unit_cost_won_per_kw": "용량당 설비 단가",
+    "incidental_cost_won": "부대비",
+    "heating_degree_days": "난방도일",
+    "kwh_per_hdd": "난방도일당 사용량",
+})
+
 
 @dataclass(frozen=True)
 class ParameterSpec:
@@ -164,6 +294,10 @@ class ParameterSpec:
 
     tag: str
     name: str
+    #: 사람이 읽는 이름. **화면은 이것 하나만 읽는다** — 화면이 `LABEL_BY_NAME` 을
+    #: 직접 조회하면 조회하는 자리가 여럿이 되고 그중 하나가 빠져도 조용하다.
+    #: 선언되지 않았으면 빈 문자열이고, 그 수를 시험이 센다(⑤).
+    label: str
     kind: ParameterKind
     unit: str
     required: bool
@@ -236,6 +370,17 @@ def resolve_unit(name: str) -> str:
     return UNIT_BY_NAME.get(name, "")
 
 
+def resolve_label(name: str) -> str:
+    """파라미터 이름의 한국어 라벨. 선언되지 않았으면 **빈 문자열**이다.
+
+    `resolve_unit()` 과 나란히 두었으나 **두 가지가 다르다**: 접미어를 보지 않고
+    (모듈 독스트링 참조), 없다고 해서 카탈로그를 멈추게 하지 않는다. 라벨 부재는
+    계산 오류가 아니므로 새 자원 하나가 앱 전체를 못 뜨게 만들 이유가 없다 —
+    대신 빠진 수를 `tests/model/test_parameters.py` 가 센다.
+    """
+    return LABEL_BY_NAME.get(name, "")
+
+
 def _registry(package: ModuleType | None) -> dict[str, type[DER]]:
     scanned = package if package is not None else core.der
     return discover(scanned, DER)  # type: ignore[type-abstract]
@@ -279,6 +424,7 @@ def parameters_of(cls: type, *, tag: str | None = None) -> tuple[ParameterSpec, 
             ParameterSpec(
                 tag=resource_tag,
                 name=name,
+                label=resolve_label(name),
                 kind=kind,
                 unit=unit,
                 required=parameter.default is inspect.Parameter.empty,
