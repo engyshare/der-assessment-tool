@@ -498,8 +498,20 @@ jobs:
         # ⚠ `--capture=no` 다. axe 스캔의 **위반 목록과 표식 줄**이 로그에
         # 나와야 아래 「axe 표식 확인」이 그것을 되짚을 수 있다. 통과한
         # 검사의 표준출력은 pytest 가 기본으로 삼킨다.
-        # ⚠ `tee` 로 물리지만 `pipefail` 이 켜져 있어(러너 기본 `bash -eo
-        # pipefail`) pytest 의 실패가 삼켜지지 않는다.
+        #
+        # ⚠⚠⚠ **`shell: bash` 를 지우지 마라.** 종전 이 자리의 주석이
+        # *「`tee` 로 물리지만 `pipefail` 이 켜져 있어(러너 기본 `bash -eo
+        # pipefail`) pytest 의 실패가 삼켜지지 않는다」* 라고 적고 있었고
+        # **그 주장이 거짓이었다.** GitHub 의 `run:` 기본 셸은 `bash -e {0}`
+        # 이고 **`-o pipefail` 은 `shell: bash` 를 명시할 때만** 붙는다
+        # (`bash --noprofile --norc -eo pipefail {0}`). 그래서 `| tee` 가
+        # pytest 의 종료 코드를 0 으로 덮었고, **이 잡은 검사가 빨간불이어도
+        # 초록불을 냈다** — R63 이 실물로 밟았다: `/ui/verify` 가 axe 목록에
+        # 빠져 `test_the_scanned_list_is_every_html_screen_the_app_serves` 가
+        # `1 failed` 였는데 잡 결론은 `success` 였다.
+        # ⚠ 이 잡의 다른 `| tee` 자리(`source-rules.yml` 둘 · `pip-audit`)는
+        # **후속 스텝이 종료 코드를 따로 재므로** 같은 문제가 아니다.
+        shell: bash
         run: |
           PYTHONUTF8=1 python -m pytest tests_e2e -p no:cacheprovider \
             --capture=no --junitxml=e2e.xml 2>&1 | tee e2e.log
