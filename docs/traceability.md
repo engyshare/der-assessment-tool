@@ -278,7 +278,7 @@
 | `FR-804` | Should-have | - | `FR-804-AC1` | 주요 변수별로 NPV=0이 되는 임계값을 표로 제시 | **미매핑** | — |
 | `FR-805` | Should-have | - | `FR-805-AC1` | 실행 중 완료 케이스 수·예상 잔여 시간 표시, 중단 가능 | 자동 | test_casegrid.py, test_variant_production_wiring.py, test_variant_report.py |
 | `FR-901` | Must-have | 1 | `FR-901-AC1` | 회원가입, 로그인, 비밀번호 재설정, 세션 만료(기본 24시간) | 자동 | test_auth.py 8건 |
-| `FR-902` | Must-have | 1 | `FR-902-AC1` | 이름·설명·태그·최종수정일시 부여 | 자동 | test_scenario_store_file.py 3건, test_scenarios.py 2건 |
+| `FR-902` | Must-have | 1 | `FR-902-AC1` | 이름·설명·태그·최종수정일시 부여 | 자동 | test_scenario_store_file.py 3건, test_scenarios.py 2건, test_scenario_store_deployment.py 2건 |
 |  |  | 1 | `FR-902-AC2` | 저장 시 버전 이력이 남아 이전 버전 복원 가능 | 자동 | test_scenario_store_file.py, test_scenarios.py 2건 |
 |  |  | 1 | `FR-902-AC3` | 삭제는 소프트 삭제(30일 보관) | 자동 | test_scenario_store_file.py 2건, test_scenarios.py 2건 |
 | `FR-903` | Should-have | - | `FR-903-AC1` | admin(카탈로그·요금표 관리) / analyst(시나리오 생성·실행) / viewer(공유 결과 열람) | **미매핑** | — |
@@ -360,7 +360,7 @@
 | `NFR-405` | Should-have | 1 | `NFR-405-AC1` | 의존성 취약점 CI 자동 스캔 (pip-audit / Dependabot) | 자동 | test_phase1_measurements.py 2건 |
 | `NFR-501` | Should-have | 1 | `NFR-501-AC1` | 동시 사용자 20명, 등록 200명, 시나리오 5,000건 규모에서 정상 동작 | 자동 | test_phase1_measurements.py |
 | `NFR-502` | Must-have | 1 | `NFR-502-AC1` | SQLite 파일 일 1회 이상 자동 백업, 분기 1회 복원 리허설 | 자동 | test_backup_restore.py 6건 |
-| `NFR-503` | Must-have | 1 | `NFR-503-AC1` | 단일 컨테이너로 로컬 실행 가능 (docker run 1회) | 자동 | test_phase1_measurements.py |
+| `NFR-503` | Must-have | 1 | `NFR-503-AC1` | 단일 컨테이너로 로컬 실행 가능 (docker run 1회) | 자동 | test_phase1_measurements.py, test_scenario_store_deployment.py 3건 |
 | `NFR-504` | Must-have | 1 | `NFR-504-AC1` | 무료 티어 제약(메모리 512MB, 콜드스타트, 디스크 비영속) 하에서 데이터 유실 없이 운영 | 자동 | test_freetier.py 4건 |
 | `UI-1` | Should-have | 1 | `UI-1-AC1` | 마법사 방식으로 초심자를 안내하되, 숙련자용 전체 파라미터 단일 화면(고급 모드) 병행 | 자동 | test_ui_forms.py 2건, test_ui_router.py, test_parameters.py 9건, test_dashboard.py 8건 |
 | `UI-2` | Must-have | 1 | `UI-2-AC1` | 모든 수치 입력 옆에 단위 상시 표시 (kW, kWh, 원/kWh, %, 년) | 자동 | test_parameters.py 2건, test_dashboard.py |
