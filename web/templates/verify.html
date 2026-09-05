@@ -46,7 +46,16 @@
     {% else %}
 
     {# ★ 이 화면이 무엇인지 먼저 적는다. 「결과 화면」과 헷갈리면 사람은 여기서
-       결론을 찾고, 결론은 `/ui/run` 에 있다. #}
+       결론을 찾고, 결론은 `/ui/run` 에 있다.
+
+       ⛔ **아래 「ⓐ 전제한 수치」의 「전제」를 바꾸지 마라.** R63 낱말표는 대장을
+       「분석 설정 대장」으로 옮겼고 이 화면도 그렇게 부르지만(바로 아래 `dl`),
+       이 넷은 **렌더러가 단계마다 인쇄하는 칸 이름을 그대로 인용한 것**이다
+       (정본 `core/report/verification.py::_stage`). 여기서만 낱말을 바꾸면 이
+       소개 문단이 **바로 밑 `stage-body` 가 실제로 인쇄하는 칸 이름과 갈리고**,
+       그때 사람은 소개가 가리키는 칸을 본문에서 찾지 못한다.
+       ⇒ `tests/app/test_screen_words.py` 가 이 인용이 **아직 렌더러의 말인가**를
+       잰다 — 렌더러가 칸 이름을 바꾸는 날 그 검사가 빨간불로 알린다. #}
     <section id="verify-intro" class="band" aria-labelledby="intro-title">
       <h2 id="intro-title">분석 과정의 중간값 — {{ scenario_name }}</h2>
       <p>각 걸음이 <strong>ⓐ 전제한 수치 → ⓑ 계산된 수치 → ⓒ 다음 단계로 넘긴 값
@@ -54,7 +63,7 @@
         렌더러가 낸 문면을 <strong>그대로</strong> 싣는다 — 이 화면은 아무것도 다시
         계산하지 않는다.</p>
       <dl class="verify-run">
-        <dt>전제 대장</dt><dd>{{ assumption_set }}</dd>
+        <dt>분석 설정 대장</dt><dd>{{ assumption_set }}</dd>
         <dt>실행 매니페스트</dt><dd><code>{{ manifest }}</code></dd>
       </dl>
       {# ⚠ 묶음이 계산 순서를 가른다 — 적지 않으면 「5단계 다음이 4단계」가
