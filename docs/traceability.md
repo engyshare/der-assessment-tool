@@ -190,8 +190,8 @@
 |  |  | 1 | `FR-601-AC7` | 신뢰도 (v0.5 정정): 확정 / 추정 / 가정 3단계. 정의는 근거 표기 기준 2절을 따르며 여기서 재정의하지 않는다. 가정 항목이 결과에 미친 영향도를 리… | 자동 | test_items.py, test_no_deprecated_vocabulary.py |
 |  |  | 1 | `FR-601-AC8` | 버전·diff: 이름·버전으로 저장되고 두 버전 간 diff 뷰를 제공한다 | 자동 | test_set.py |
 |  |  | 1 | `FR-601-AC9` | 공유: 하나의 AssumptionSet을 여러 사업모델이 공유 참조한다 (FR-202의 전제 동일성 보장 근거) | 자동 | test_set.py |
-| `FR-602` | Must-have | 1 | `FR-602-AC1` | 시나리오 수준에서 특정 항목만 덮어쓸 수 있다 | 자동 | test_ui_run.py, test_ui_scenarios.py, test_scenario_overrides.py, test_set.py |
-|  |  | 1 | `FR-602-AC2` | 리포트에 "기준 전제 대비 변경 항목" 목록이 자동 생성된다 | 자동 | test_ui_run.py, test_ui_scenarios.py, test_scenario_overrides.py, test_set.py, test_case_report.py, test_narrative.py |
+| `FR-602` | Must-have | 1 | `FR-602-AC1` | 시나리오 수준에서 특정 항목만 덮어쓸 수 있다 | 자동 | test_ui_run.py, test_ui_scenarios.py, test_scenario_overrides.py, test_set.py, test_override_reaches_the_level_map.py 3건 |
+|  |  | 1 | `FR-602-AC2` | 리포트에 "기준 전제 대비 변경 항목" 목록이 자동 생성된다 | 자동 | test_screen_words.py, test_ui_run.py, test_ui_scenarios.py, test_scenario_overrides.py, test_set.py, test_case_report.py, test_narrative.py |
 |  |  | 1 | `FR-602-AC3` | 오버라이드 시 사유 입력을 권장 필드로 제공한다 | 자동 | test_ui_scenarios.py, test_scenario_overrides.py 2건, test_set.py, test_case_report.py, test_narrative.py |
 | `FR-603` | Must-have | 1 | `FR-603-AC1` | 항목 필드 (v0.5 정정): (자원유형, 규격, 단가·단위, 기준일·기준연도·버전, 적용 범위·조건, 산출 방법·표본, 출처(문서명·위치·전체URL), 최종확… | 자동 | test_catalog.py |
 |  |  | 1 | `FR-603-AC2` | 카탈로그 값과 사용자 변경값이 리포트에서 시각적으로 구분된다 | 자동 | test_catalog.py |
@@ -335,7 +335,7 @@
 |  |  | 1 | `NFR-107-AC5` | 수동 검증 분류의 정본은 docs/manual-checks.yaml이다. spec은 어느 수용기준이 수동인지 열거하지 않는다. 대장의 전건에 대해 ⓐ crite… | 자동 | test_traceability_gate.py |
 |  |  | 1 | `NFR-107-M1` | CI가 spec 수용기준 목록과 마커·YAML을 대조하여 미매핑 0건 확인. 구현: scripts/gen_traceability.py (Wave 0 산출물 0.… | 자동 | test_17_9_dod9.py, test_marker_substance.py 11건, test_traceability_gate.py 4건 |
 | `NFR-201` | Must-have | 1 | `NFR-201-M1` | 신규 자원 추가 PR에서 core/engine/, core/cba/ diff 0줄 | 자동 | test_phase1_measurements.py |
-| `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | 자동 | test_e2e_settlement_wiring.py 2건, test_ledger_levels.py 7건, test_surplus_sale_price_wiring.py 5건, test_ci_gates.py 6건, test_der_contract.py 2건, test_surplus_direct_sale_ledger_key.py, test_tariff.py, test_aggregated_ppa.py, test_settlement.py 3건, test_settlement_household_contract.py, test_settlement_manager_structure.py |
+| `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | 자동 | test_e2e_settlement_wiring.py 2건, test_ledger_levels.py 7건, test_override_reaches_the_level_map.py, test_surplus_sale_price_wiring.py 5건, test_ci_gates.py 6건, test_der_contract.py 2건, test_surplus_direct_sale_ledger_key.py, test_tariff.py, test_aggregated_ppa.py, test_settlement.py 3건, test_settlement_household_contract.py, test_settlement_manager_structure.py |
 | `NFR-203` | Should-have | 1 | `NFR-203-M1` | pytest-cov CI 게이트 | 자동 | test_ci_gates.py |
 | `NFR-204` | Should-have | 1 | `NFR-204-M1` | mypy strict 통과 | 자동 | test_ci_gates.py |
 | `NFR-205` | Must-have | 1 | `NFR-205-M1` | 코드 리뷰 + lint 규칙. 근거: DER-VET Params.py의 클래스 변수 전역 상태는 동시 실행·테스트 격리를 불가능하게 만든다 (부록 C.5) | 자동 | test_ledger_levels.py, test_ci_gates.py 2건, test_ess.py |

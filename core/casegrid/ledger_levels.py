@@ -25,6 +25,41 @@ R32 가 세 번 만난 형태와 같다 — **선언·계산은 있는데 읽는
 사본이 되지 않도록 `tests/casegrid/test_ledger_levels.py` 가 *「대장에
 할인율 항목이 생기면 빨간불」* 을 건다. 대장에 생기는 날 이 자리를 지우는 것이
 맞고, 그때 아무도 모르는 것이 유일하게 나쁜 결말이다.
+
+## ★★★ 시나리오 오버라이드가 **여기를 지난다** (R63/FIX2 · `FR-602-AC1`)
+
+`build_level_map()` 이 오버라이드를 받는 이유는 **통로가 둘이었기** 때문이다.
+`build_case_report()` 는 나란한 두 줄에서 오버라이드를 `provider` 에만 얹고
+수준표는 **파일에서 다시 읽었다** — 그런데 러너가 단가·요금을 받는 자리는
+`level_map` 이다. 그래서 브라우저 검수(`.orch/R63/result_V2.md` §2 D10)에서
+`capex.pv.rooftop` 을 1,600,000 → 1,500,000 으로 고쳐도 결론축이 **1원도 움직이지
+않았고**, 붙임 1 은 그 두 값을 나란히 인쇄했다. 실측으로 대장 39항목 중 축을
+움직인 것은 셋뿐이었고 이 표의 12축은 **전건 Δ = 0** 이었다.
+
+⚠ **시나리오 필드를 여기서 다시 해석하지 않는다.** 해석·검증은
+`core/assumption/scenario_overrides.py` 하나가 지고, 이 함수가 받는 것은 이미
+검증된 `키 → 값` 이다(`AssumptionSet.get_overrides()`). 두 번 해석하면 어느
+쪽이 이겼는지 산출물에서 알 수 없다.
+
+## ⚠⚠ 얹히는 자리는 **`base` 한 수준뿐**이다 — 재서 정했다
+
+대장에서 `sensitivity` 를 가진 25항목을 실측하면 **전건에서 `sensitivity.base ==
+value`** 이고(어긋난 항목 0건), `low`·`high` 는 기준값의 **일정한 배수가
+아니다**: `capex.pv.rooftop` 은 ±20%(그 항목
+`derivation_method` 가 *「FR-801 결합 집합의 기본 3수준과 같은 폭」* 이라
+적는다), `load.household.annual` 은 0.75·1.33(서로 다른 조사 두 건),
+`tariff.hv_single_contract.energy_only` 는 150−30·120−38·190−19 로 **각각 따로
+유도**된다. 즉 세 수준은 규칙으로 생성된 것이 아니라 **항목마다 따로 조사된
+띠**이며, 사용자가 고친 값이 그 띠를 함께 끌고 가야 할 근거가 대장에 없다.
+
+⇒ 사용자가 고친 값은 *그 사업의 기준값*이고, `low`·`high` 는 여전히 **대장이
+조사한 불확실 폭**이다. 5.1 영향도 표가 그 폭으로 돈다 — 사용자가 자기 단가를
+넣어도 *「그 단가가 얼마나 틀릴 수 있는가」* 는 대장이 말한다.
+
+⚠ **띠 밖으로 나가는 오버라이드를 막지 않는다.** 막으면 정당한 편집(대장 폭이
+좁게 조사된 항목에 실제 견적을 넣는 일)이 거부되고, 그때 가장 싼 선택이
+「오버라이드를 지우기」다. 그 상태는 5.1 표에서 `base` 가 띠 밖에 있는 것으로
+**보인다** — 조용하지 않다.
 """
 from __future__ import annotations
 
@@ -361,13 +396,49 @@ def required_scalar(provider: AssumptionProvider, key: str, *, note: str) -> flo
     return float(item.value)
 
 
-def build_level_map(assumptions_path: Path) -> Mapping[str, Mapping[str, float]]:
+def _with_overridden_base(
+    levels: Mapping[str, float], ledger_key: str, raw: Any, scale: float
+) -> Mapping[str, float]:
+    """사용자가 고친 값을 **「기준」 수준 한 자리에** 얹는다.
+
+    ⚠ **배율을 여기서도 곱한다.** 오버라이드 값은 대장과 같은 단위로 적히므로
+    (`escalation.electricity_tariff` 는 `%/년`), 이 곱을 빠뜨리면 같은 축에
+    환산된 값과 안 된 값이 섞이고 「2.5% 대신 250%」가 아니라 **그럴듯한 큰
+    수**가 나온다. 환산하는 자리는 이 파일 하나다.
+
+    ⚠ **여기서 형을 판정하지 않는다** — 그 자리는
+    `core/assumption/scenario_overrides.py::_kind` 하나이고, 배포 경로로 들어온
+    값은 이미 대장 값과 형이 맞대어져 있다. 아래 거부는 그 관문을 **거치지 않고**
+    이 함수를 직접 부르는 호출부(시험·스크립트)를 위한 것이며, 없으면 같은 입력이
+    수준표 깊은 곳에서 맨 `TypeError` 로 터져 3요소 없는 오류가 된다.
+    """
+    try:
+        base = float(raw)
+    except (TypeError, ValueError):
+        # 메시지가 「어느 항목이」·「왜」·「어떻게」 셋을 담는다 (NFR-303-M1).
+        raise ValueError(
+            f"대장 키 {ledger_key!r} 의 오버라이드 값이 수가 아닙니다: {raw!r}. "
+            "케이스 수준은 수로만 지어집니다 — 수 하나로 적으십시오"
+        ) from None
+    return MappingProxyType({**dict(levels), "base": base * scale})
+
+
+def build_level_map(
+    assumptions_path: Path, *, overrides: Mapping[str, Any] | None = None
+) -> Mapping[str, Mapping[str, float]]:
     """대장을 읽어 `run_single_case_e2e(level_map=...)` 에 넘길 수준표를 만든다.
+
+    `overrides` 는 **이미 검증된** `대장 키 → 값` 이다
+    (`AssumptionSet.get_overrides()`). 없거나 비면 **종전과 같은 표**가 나온다 —
+    호출부 20여 곳이 인자 없이 부르고, 기본값 실행의 결론축(무보조 `npv`)이
+    움직이지 않는 근거가 그 동일성이다. 얹히는 자리가 `base` 뿐인 사유와 축이
+    아닌 키를 거부하지 않는 사유는 이 파일 머리말에 있다.
 
     반환값은 전부 읽기 전용이다 — 케이스 그리드는 병렬로 돌고, 한 번의 변형이
     다른 케이스의 결과를 조용히 바꾼다 (NFR-205).
     """
     items = _index_by_key(assumptions_path)
+    edited: Mapping[str, Any] = overrides or {}
     level_map: dict[str, Mapping[str, float]] = {}
 
     for var_name, ledger_key, scale in _LEDGER_VARS:
@@ -377,7 +448,10 @@ def build_level_map(assumptions_path: Path) -> Mapping[str, Mapping[str, float]]
                 f"대장에 {ledger_key!r} 항목이 없습니다 (케이스 변수 "
                 f"{var_name!r}). docs/assumptions.yaml 을 확인하십시오"
             )
-        level_map[var_name] = _levels_of(item, ledger_key, scale)
+        swept = _levels_of(item, ledger_key, scale)
+        if ledger_key in edited:
+            swept = _with_overridden_base(swept, ledger_key, edited[ledger_key], scale)
+        level_map[var_name] = swept
 
     for var_name, levels in _MODELLING_VARS:
         level_map[var_name] = MappingProxyType(dict(levels))
