@@ -35,6 +35,7 @@ from typing import Any
 
 import yaml
 
+from core.assumption.scenario_overrides import ASSUMPTION_OVERRIDES_FIELD
 from core.cba.baseline import POOL_METERING_FIELD, PoolMeteringDeclaration
 from core.report.case_report import CaseReport, build_case_report
 
@@ -54,6 +55,28 @@ _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
 #: `test_choosing_an_arrangement_actually_moves_the_number` 가 「ⓐ 와 ⓑ 의
 #: npv 가 같다」로 빨간불이 된다(`tests/app/test_ui_run.py`).
 _ARRANGEMENT_FIELD = "baseline_arrangement"
+
+#: 화면이 아무것도 고르지 않았을 때 여는 **골든 시나리오**.
+#:
+#: ⚠⚠ **문면을 이 저장소가 두 곳에 두고 있다.** `app/routers/ui.py::run_case`
+#: 의 `scenario` 질의 기본값이 같은 글자를 리터럴로 적으며, 그 파일은 R63/S2 가
+#: 고칠 수 있는 자리가 아니었다(다른 축이 같은 시간에 고치고 있었다). 상수를
+#: 여기 두는 것은 **다음에 그 라우트가 이것을 집을 자리를 만드는 것**이고,
+#: 그때까지 둘이 갈리지 않게 재는 검사가
+#: `tests/app/test_ui_scenarios.py::test_the_settings_screen_defaults_to_the_
+#: same_scenario_as_the_run_screen` 이다 — 두 라우트의 `openapi()` 질의 기본값을
+#: 맞댄다. 갈리면 「오버라이드 안 건 실행의 결론축」이 화면마다 다른 수가 된다.
+DEFAULT_UI_SCENARIO = "scenario_unsubsidized"
+
+
+def assumptions_path() -> Path:
+    """실행 경로가 읽는 **그 전제 대장**의 자리.
+
+    ⚠ 화면이 대장을 따로 열어야 할 때 경로를 스스로 짓지 않게 하려고 함수로
+    내놓는다 — 두 곳이 각자 경로를 지으면 한쪽만 고쳐지는 날 화면과 실행이
+    **서로 다른 대장**을 보고, 그때 화면은 사용자가 고칠 수 없는 값을 그린다.
+    """
+    return _ASSUMPTIONS
 
 
 def golden_scenario_names() -> tuple[str, ...]:
@@ -89,6 +112,7 @@ def scenario_fields(
     arrangement: str | None = None,
     ownership_or_operation_transferred: bool = False,
     metering_separated: bool = False,
+    assumption_overrides: object | None = None,
 ) -> dict[str, Any]:
     """골든 시나리오 + 화면이 고른 것 → 넘길 매핑.
 
@@ -106,6 +130,20 @@ def scenario_fields(
     ⚠ 선언의 필드 이름을 손으로 적지 않는다 — `PoolMeteringDeclaration` 을
     지어 `dataclasses.asdict()` 로 편다. 손으로 적으면 자료형이 필드를 늘리는
     날 화면이 그 필드를 영영 넘기지 못한다.
+
+    ## ★★★ `assumption_overrides` — **안 주면 필드를 넣지 않는다**
+
+    `None` 이면 키를 넣지 않으므로 `apply_scenario_overrides` 가 대장을
+    **같은 객체로** 돌려주고(그 함수의 ★★★ 절), 기본값 실행은 이 통로가 생기기
+    전과 같은 경로를 돈다 — **결론축(무보조 `npv`)의 불변은 그 동일성이
+    근거다.** 빈 목록(`[]`)과 `None` 을 같게 다루지 않는 이유도 같다: 「적지
+    않았다」와 「하나도 없다고 적었다」는 다른 진술이며, ⓒ 전제 둘이 이미 같은
+    규약을 따른다.
+
+    ⚠ **여기서 검증하지 않는다.** 모양·키를 판정하는 자리는
+    `resolve_assumption_overrides` 하나이며(그 함수가 `build_case_report` 안에서
+    불린다), 여기서 미리 걸러 내면 거부 문면이 두 곳에 생긴다 — 이 파일 머리말의
+    ★★★ 가 갈래·ⓒ 전제에 대해 적은 것과 같은 판단이다.
     """
     available = golden_scenario_names()
     if name not in available:
@@ -124,6 +162,8 @@ def scenario_fields(
                 metering_separated=metering_separated,
             )
         )
+    if assumption_overrides is not None:
+        fields[ASSUMPTION_OVERRIDES_FIELD] = assumption_overrides
     return fields
 
 
@@ -133,6 +173,7 @@ def run_ui_case(
     arrangement: str | None = None,
     ownership_or_operation_transferred: bool = False,
     metering_separated: bool = False,
+    assumption_overrides: object | None = None,
 ) -> UiRun:
     """화면이 고른 것으로 **한 번 돌린다.**
 
@@ -152,6 +193,7 @@ def run_ui_case(
         arrangement=arrangement,
         ownership_or_operation_transferred=ownership_or_operation_transferred,
         metering_separated=metering_separated,
+        assumption_overrides=assumption_overrides,
     )
     text = yaml.safe_dump(fields, allow_unicode=True, sort_keys=False)
     with tempfile.TemporaryDirectory() as workspace:
