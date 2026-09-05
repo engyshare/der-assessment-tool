@@ -53,18 +53,30 @@ WP-5 가 브라우저로 눌러 보고 잡은 것이 이것이다. 템플릿의 
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import date
 from typing import Any
 
-from fastapi import APIRouter, Form, HTTPException, Query
+from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
+import core.der
 from app.routers import models as models_api
 from app.routers import regulation as regulation_api
 from app.security.authorization import ADMIN_ROLE
+from core.contracts.der import DER
+from core.contracts.registry import discover
 from core.contracts.regulation import RegulationItem
+from core.contracts.validation import ValidationError
+from core.model.composition import resource_name
+from core.model.parameters import ParameterKind, ParameterSpec, resource_parameters
 from core.model.schemas import DERConfig, ModelConfig
-from web.render import DEMO_MODEL, error_context, render_run_result
+from web.render import (
+    DEMO_MODEL,
+    advanced_mode_fields,
+    error_context,
+    render_run_result,
+)
 
 router = APIRouter(tags=["ui"])
 
@@ -393,3 +405,177 @@ def upsert_item_form(
             action="admin 권한으로 항목키와 새 버전을 채워 다시 제출하십시오",
         )
     return _see_other(_regulation_url(name))
+
+
+# ── 고급 모드의 「전체 파라미터」 폼 (UI-1-AC1 · R62/WP-8 의 D9) ─────────────
+#
+# WP-5 가 잰 것 — 그 폼에는 `action` 도 제출 단추도 없었다. 50칸을 고쳐도 어디로
+# 도 가지 않았고, 그래서 **화면이 낼 수 있는 거부가 `DV-15` 하나**였다.
+#
+# ★ DV 규칙은 `composition.add_resource` 가 아니라 **자원 클래스의 생성자**에서
+#   난다(`core/der/ess.py` 의 `DV-2`·`DV-3`). 그러므로 파라미터를 「검증」하는
+#   유일한 방법은 **그 자원을 실제로 세워 보는 것**이다. 규칙을 여기 옮겨 적으면
+#   대장이 둘이 되고, 갈린 뒤에도 화면은 멀쩡해 보인다.
+
+#: 성공한 제출이 되돌아갈 자리 — 고급 모드 절의 앵커다 (`dashboard.html` 의
+#: `<section id="advanced">`).
+ADVANCED_URL = "/#advanced"
+
+
+def _resource_classes() -> dict[str, type[DER]]:
+    """tag → 자원 클래스. `available_resource_tags()` 가 보는 그 레지스트리다."""
+    return discover(core.der, DER)  # type: ignore[type-abstract]
+
+
+def _submissions(
+    config: ModelConfig,
+) -> Iterator[tuple[int, DERConfig, ParameterSpec, str]]:
+    """(순번, 자원, 스펙, **폼 칸 이름**) — 화면이 그린 순서 그대로.
+
+    ⚠ **칸 이름을 여기서 짓지 않는다.** `web/render.py::_field` 가 지은 `id` 를
+    `advanced_mode_fields()` 에서 그대로 받아 쓴다. 규칙을 두 곳에 적으면 한쪽만
+    고쳐지는 날 폼은 **아무 값도 못 받은 채 303 을 낸다** — 아무 오류도 없이.
+    """
+    drawn = iter(advanced_mode_fields(config))
+    for index, resource in enumerate(config.resources):
+        for spec in resource_parameters(resource.tag):
+            yield index, resource, spec, str(next(drawn)["id"])
+
+
+def _input_error(
+    resource: DERConfig, spec: ParameterSpec, *, reason: str, action: str
+) -> ValidationError:
+    """대장 밖 일반 입력 검증 — **`rule` 을 비운다.**
+
+    `§7.3` 대장에 없는 ID 를 달면 추적표가 그 규칙을 검증된 것으로 세고 실제로는
+    아무 조항도 가리키지 않는다(`ValidationError` 독스트링). 형 변환 실패나 빈
+    필수 칸은 대장의 규칙이 아니라 폼 입력의 문제이므로 3요소만 갖춘다.
+
+    ⚠ `field` 는 `<tag소문자>.<필드>` 다. **어느 인스턴스인지는 `reason` 이**
+    적는다 — 인스턴스 이름은 사용자가 지은 자유 문자열이라 키가 될 수 없다.
+    """
+    return ValidationError(
+        field=f"{resource.tag.lower()}.{spec.name}",
+        reason=f"{resource_name(resource)}: {reason}",
+        action=action,
+    )
+
+
+def _value_of(resource: DERConfig, spec: ParameterSpec, text: str) -> Any:
+    """폼이 보낸 **글자 하나**를 카탈로그가 말하는 형으로 바꾼다.
+
+    ⚠ 「수처럼 보이면 수로」 같은 추측을 하지 않는다. 정본은
+    `ParameterSpec.kind` 와 `type_text` 이며, 여기서 형을 다시 판정하면 카탈로그가
+    바뀌는 날 조용히 갈린다.
+
+    ⚠ 수치가 아닌 갈래(시계열·구조·선택·예/아니오)는 **화면에 입력칸이 없다** —
+    `dashboard.html` 이 그리는 것은 편집기 단추(`type="button"`)이므로 제출되지
+    않는다. 그런데도 값이 오면 손으로 지은 요청이며, 조용히 글자로 받아 넣으면
+    자원 생성자가 엉뚱한 형으로 터진다. 그래서 **여기서 3요소로 거부한다.**
+    """
+    if spec.kind is ParameterKind.NUMBER:
+        try:
+            return int(text) if spec.type_text.startswith("int") else float(text)
+        except ValueError as exc:
+            raise _input_error(
+                resource,
+                spec,
+                reason=f"{spec.name} 은 {spec.type_text} 인데 «{text}» 를 받았습니다",
+                action=f"{spec.name} 을 {spec.type_text} 형식의 수로 적으십시오",
+            ) from exc
+    if spec.kind is ParameterKind.TEXT:
+        return text
+    raise _input_error(
+        resource,
+        spec,
+        reason=f"{spec.name}({spec.kind}) 은 이 폼이 받을 수 있는 갈래가 아닙니다",
+        action=f"{spec.kind} 파라미터는 그 칸의 편집기로 고치십시오",
+    )
+
+
+def _edited(config: ModelConfig, submitted: dict[str, str]) -> ModelConfig:
+    """폼 전체를 **자원별 `params`** 로 모은다 — 보관값 위에 덮는다.
+
+    ⚠ 보내지 않은 칸을 지우지 않는다. 화면이 입력칸을 그리지 않는 갈래(자원
+    이름·운전 방법·시계열)는 폼에 실려 오지 않으며, 없는 것을 「지웠다」로 읽으면
+    제출 한 번에 자원 이름이 사라진다.
+
+    ⚠ **빈 칸은 「안 적었다」이지 `0` 이 아니다.** 필수인데 비었으면 거부하고,
+    선택인데 비었으면 그 키를 넣지 않는다 — 넣으면 `None` 과 「기본값」이
+    구별되지 않는다.
+    """
+    params = [dict(resource.params) for resource in config.resources]
+    for index, resource, spec, key in _submissions(config):
+        if key not in submitted:
+            continue
+        text = submitted[key].strip()
+        if not text:
+            if spec.required:
+                raise _input_error(
+                    resource,
+                    spec,
+                    reason=f"{spec.name} 은 필수인데 비었습니다",
+                    action=f"{spec.name}({spec.type_text}) 칸을 채워 다시 제출하십시오",
+                )
+            params[index].pop(spec.name, None)
+            continue
+        params[index][spec.name] = _value_of(resource, spec, text)
+    return ModelConfig(
+        name=config.name,
+        resources=[
+            DERConfig(tag=resource.tag, params=values)
+            for resource, values in zip(config.resources, params, strict=True)
+        ],
+    )
+
+
+def _verified(config: ModelConfig) -> None:
+    """★ 자원 클래스를 **실제로 세워 본다** — 여기가 DV 규칙이 나는 자리다.
+
+    ⚠ 규칙을 이 파일에 옮겨 적지 않는다. `DV-2`(SOC 하한<상한)·`DV-3`(RTE 범위)
+    같은 판정은 `core/der/*.py` 의 생성자가 갖고 있고, 세워 보는 것 말고 그것을
+    부르는 방법은 없다(`composition.add_resource` 는 태그와 이름만 본다).
+
+    ⚠ `ValidationError` 를 먼저 잡는다 — `ValueError` 의 하위형이므로 순서가
+    뒤집히면 3요소를 갖춘 거부가 뭉뚱그려진 한 줄로 낮아진다.
+    """
+    classes = _resource_classes()
+    for resource in config.resources:
+        try:
+            classes[resource.tag](**resource.params)
+        except ValidationError:
+            raise
+        except (TypeError, ValueError) as exc:
+            raise ValidationError(
+                field=f"{resource.tag.lower()}.params",
+                reason=(
+                    f"{resource_name(resource)}: 이 파라미터로는 자원을 세울 수 "
+                    f"없습니다 — {exc}"
+                ),
+                action="화면이 「필수 입력」으로 표시한 칸을 채워 다시 제출하십시오",
+            ) from exc
+
+
+@router.post("/ui/advanced/parameters")
+async def advanced_parameters_form(request: Request) -> Any:
+    """전체 파라미터 제출 — UI-1-AC1 「숙련자용 전체 파라미터 단일 화면」.
+
+    ⚠ `Form(...)` 로 칸을 받지 않는다. 칸 이름이 `res{순번}-{파라미터}` 로
+    **구성에 따라 늘고 줄기** 때문이며, 시그니처에 적으면 자원 1종 추가가 이
+    파일 수정을 부른다 — 카탈로그를 둔 이유가 그것을 막는 것이다.
+
+    ⚠ 되돌아갈 곳은 `/#advanced` 이며 **303** 이다(PRG · WP-6 과 같은 규약).
+    """
+    submitted = {key: str(value) for key, value in (await request.form()).items()}
+    config = composer_config()
+    try:
+        edited = _edited(config, submitted)
+        _verified(edited)
+    except ValidationError as exc:
+        return refusal(
+            HTTPException(status_code=400, detail=exc.as_dict()),
+            field=exc.field,
+            action=exc.action,
+        )
+    models_api.register_model(edited)
+    return _see_other(ADVANCED_URL)

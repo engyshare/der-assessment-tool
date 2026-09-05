@@ -137,7 +137,18 @@
       {# 「전체 파라미터」의 정본은 `core.model.parameters` 카탈로그다.
          여기에 필드를 손으로 적으면 자원 1종 추가가 이 파일 수정을 부르고,
          고치지 않은 동안 화면은 「전체」라고 적은 채 일부만 그린다. #}
-      <form aria-label="전체 파라미터">
+      {# ★ D9 (R62/WP-8) — **`action` 도 제출 단추도 없었다.** 50칸을 고쳐도
+         어디로도 가지 않았고, 그래서 화면이 낼 수 있는 거부가 `DV-15` 하나였다
+         (`MC-4` 가 요구하는 `DV-1`~`DV-13` 을 낼 모집단이 화면에 없었다).
+         칸 이름(`name`)은 **`web/render.py::_field` 가 지은 `id` 그대로**다 —
+         받는 쪽(`app/routers/ui_forms.py::_submissions`)도 같은 함수에서 받는다.
+         이름 규칙을 여기 따로 적으면 한쪽만 고쳐지는 날 폼은 아무 값도 못 받은
+         채 성공을 낸다. #}
+      <form
+        aria-label="전체 파라미터"
+        method="post"
+        action="/ui/advanced/parameters"
+      >
         <div class="field-grid">
           {% for item in parameters %}
           <div class="field" data-parameter="{{ item.parameter }}" data-kind="{{ item.kind }}">
@@ -201,6 +212,12 @@
           </div>
           {% endfor %}
         </div>
+        {# 수치 칸만 제출된다 — 시계열·구조·선택·예/아니오는 편집기 단추
+           (`type="button"`)이라 폼에 실리지 않는다. 그 갈래를 이 폼으로 보내면
+           받는 쪽이 3요소로 거부한다(`_value_of`). #}
+        <p class="form-actions">
+          <button type="submit">전체 파라미터 저장</button>
+        </p>
       </form>
     </section>
 
