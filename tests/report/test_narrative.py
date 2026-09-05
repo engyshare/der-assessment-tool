@@ -1149,6 +1149,9 @@ def test_appendix_one_prints_the_change_table_even_when_nothing_changed() -> Non
                 base_value=20,
                 override_value=25,
                 reason="심의 요청 — 분석기간 연장",
+                # ⚠ 이 검사가 재는 것은 **변경 항목 표가 서는가**이지 「읽었는가」
+                # 표시가 아니다 — 표시를 부르지 않도록 읽힌 행으로 둔다(R63/N3).
+                read_by_this_run=True,
             ),
         ),
     )

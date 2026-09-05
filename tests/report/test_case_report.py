@@ -488,7 +488,11 @@ def test_the_change_list_carries_the_value_it_replaced_and_the_reason() -> None:
         {key: base + 5}, reasons={key: "심의 요청 — 분석기간 연장"}
     )
 
-    rows = _overrides(changed)
+    # ⚠ `read_keys` 는 조립부가 **계산이 끝난 자리에서 굳혀** 넘기는 것이다
+    # (R63/N3). 여기서는 이 검사가 재는 것(기준값·변경값·사유·정렬)과 무관
+    # 하므로 「이 실행이 읽었다」로 두고, 표시 자체는
+    # `tests/report/test_unread_override_marking.py` 가 잰다.
+    rows = _overrides(changed, read_keys=frozenset({key}))
 
     assert [row.key for row in rows] == [key], f"변경 항목 목록이 어긋난다 — {rows}"
     assert rows[0].base_value == base, "바뀌기 전 값이 기준값 칸에 없다"

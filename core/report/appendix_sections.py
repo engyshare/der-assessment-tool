@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 from core.report._format import NO_VALUE, _date, _num, _unit_head, _won
-from core.report.case_report import AssumptionRow, CaseReport
+from core.report.case_report import AssumptionRow, CaseReport, OverrideRow
 
 #: 산출 방법 표기 — 「단독 기여」를 문장 대신 이 라벨이 말한다 (`FR-1002-AC2`).
 SOLO_SWEEP = "1변수 스윕"
@@ -249,6 +249,26 @@ def _ledger_value(value: float | int | str) -> str:
     return _num(value) if isinstance(value, (int, float)) else str(value)
 
 
+#: 고쳤는데 계산이 안 읽은 행에 붙는 문면 (R63/N3 · 「인쇄되는데 안 먹는 키」).
+#:
+#: **읽는 사람이 알아야 하는 것은 「내가 고친 것이 결과에 안 들어갔다」**이지
+#: 「그 키가 대장에서 죽었다」가 아니다 — 어느 키가 읽히는지는 갈래·자원 구성에
+#: 따라 실행마다 다르므로, 문면을 **이 실행**에 매어 둔다.
+UNREAD_OVERRIDE_MARK = "⚠ 이 실행은 이 값을 읽지 않았다"
+
+
+def _override_cell(row: OverrideRow) -> str:
+    """변경값 칸 — **안 읽힌 행에만** 표시가 붙는다.
+
+    ⚠ **읽은 행에는 아무것도 붙이지 않는다.** 정상에 표를 달면 표가 배경이
+    되고, 그러면 정작 「안 먹었다」가 눈에 안 띈다.
+    """
+    printed = _ledger_value(row.override_value)
+    if row.read_by_this_run:
+        return printed
+    return f"{printed} — **{UNREAD_OVERRIDE_MARK}**"
+
+
 def _override_table(report: CaseReport) -> list[str]:
     """붙임 1 의 둘째 표 — **기준 전제 대비 변경 항목** (`FR-602-AC2`).
 
@@ -287,9 +307,19 @@ def _override_table(report: CaseReport) -> list[str]:
         lines.append(f"| {NO_OVERRIDE} | {NO_VALUE} | {NO_VALUE} | {NO_VALUE} |")
     lines += [
         f"| `{row.key}` | {_ledger_value(row.base_value)} | "
-        f"{_ledger_value(row.override_value)} | {row.reason or NO_VALUE} |"
+        f"{_override_cell(row)} | {row.reason or NO_VALUE} |"
         for row in report.overrides
     ]
+    # ★ 표시가 실제로 선 실행에만 범례를 붙인다 — 늘 붙이면 「안 먹은 것이
+    # 있다」와 「그런 일이 있을 수 있다」가 산출물에서 같아진다.
+    if any(not row.read_by_this_run for row in report.overrides):
+        lines += [
+            "",
+            f"- **{UNREAD_OVERRIDE_MARK}** — 그 행의 변경값은 이 실행의 계산에 "
+            "**들어가지 않았다.** 표에는 인쇄되지만 결과는 기준값으로 돌았다 "
+            "(R63/N3). ⚠ 「그 키가 쓸모없다」는 뜻이 아니다 — 어느 전제가 "
+            "읽히는지는 **갈래·자원 구성에 따라 실행마다 다르다**",
+        ]
     lines.append("")
     return lines
 
