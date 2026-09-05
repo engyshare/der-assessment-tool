@@ -261,7 +261,11 @@ def _scenarios_screen(
 ) -> str:
     scenarios, settings = _listed()
     versions = (
-        tuple(scenarios_api.list_scenario_versions(versions_of)) if versions_of else ()
+        tuple(
+            scenarios_api.list_scenario_versions(versions_of, DEMO_OWNER_ID, None)
+        )
+        if versions_of
+        else ()
     )
     return render_scenarios(
         scenarios_context(
@@ -342,7 +346,11 @@ async def save_scenario_form(request: Request) -> Any:
     }
     try:
         saved = (
-            scenarios_api.update_scenario(scenario_id, **payload)
+            scenarios_api.update_scenario(
+                scenario_id,
+                requesting_user_id=DEMO_OWNER_ID,
+                **payload,
+            )
             if scenario_id
             else scenarios_api.create_scenario(owner_id=DEMO_OWNER_ID, **payload)
         )
@@ -366,7 +374,7 @@ def delete_scenario_form(scenario_id: int) -> Any:
     """
     try:
         name = str(_record(scenario_id)["name"])
-        scenarios_api.delete_scenario(scenario_id)
+        scenarios_api.delete_scenario(scenario_id, DEMO_OWNER_ID, None)
     except ValidationError as exc:
         return _refused(exc, status=404)
     except HTTPException as exc:
@@ -382,7 +390,7 @@ def delete_scenario_form(scenario_id: int) -> Any:
 def restore_scenario_form(scenario_id: int) -> Any:
     """소프트 삭제 복원 (`FR-902-AC3`) — 보관 기간 안이면 되돌아온다."""
     try:
-        scenarios_api.restore_scenario(scenario_id)
+        scenarios_api.restore_scenario(scenario_id, DEMO_OWNER_ID, None)
     except HTTPException as exc:
         return _refused(
             _rejection(
@@ -412,7 +420,9 @@ async def restore_version_form(scenario_id: int, request: Request) -> Any:
             status=400,
         )
     try:
-        scenarios_api.restore_scenario_version(scenario_id, version)
+        scenarios_api.restore_scenario_version(
+            scenario_id, version, DEMO_OWNER_ID, None
+        )
     except HTTPException as exc:
         return _refused(
             _rejection(
@@ -683,7 +693,12 @@ async def save_settings_form(request: Request) -> Any:
     )
     try:
         rows = _submitted_rows(ledger, mine, reasons)
-        resolve_assumption_overrides(rows, known_keys=known.keys())
+        # ⚠ `known` 은 `키 → AssumptionItem` 이다 — **값만** 넘긴다.
+        # `apply_scenario_overrides` 가 같은 셈을 하고, 항목 자체를 넘기면
+        # 형 대조가 「알 수 없는 형」으로 떨어진다(R63 에서 실물로 밟았다).
+        resolve_assumption_overrides(
+            rows, base_values={key: item.value for key, item in known.items()}
+        )
     except ValidationError as exc:
         return HTMLResponse(
             _settings_screen(
