@@ -73,7 +73,7 @@ from core.model.parameters import ParameterKind, ParameterSpec, resource_paramet
 from core.model.schemas import DERConfig, ModelConfig
 from web.render import (
     DEMO_MODEL,
-    advanced_mode_fields,
+    equipment_setting_fields,
     error_context,
     render_run_result,
 )
@@ -407,7 +407,7 @@ def upsert_item_form(
     return _see_other(_regulation_url(name))
 
 
-# ── 고급 모드의 「전체 파라미터」 폼 (UI-1-AC1 · R62/WP-8 의 D9) ─────────────
+# ── 설비 설정의 「전체 파라미터」 폼 (UI-1-AC1 · R62/WP-8 의 D9) ─────────────
 #
 # WP-5 가 잰 것 — 그 폼에는 `action` 도 제출 단추도 없었다. 50칸을 고쳐도 어디로
 # 도 가지 않았고, 그래서 **화면이 낼 수 있는 거부가 `DV-15` 하나**였다.
@@ -417,9 +417,9 @@ def upsert_item_form(
 #   유일한 방법은 **그 자원을 실제로 세워 보는 것**이다. 규칙을 여기 옮겨 적으면
 #   대장이 둘이 되고, 갈린 뒤에도 화면은 멀쩡해 보인다.
 
-#: 성공한 제출이 되돌아갈 자리 — 고급 모드 절의 앵커다 (`dashboard.html` 의
-#: `<section id="advanced">`).
-ADVANCED_URL = "/#advanced"
+#: 성공한 제출이 되돌아갈 자리 — 설비 설정 절의 앵커다 (`dashboard.html` 의
+#: `<section id="equipment-settings">`).
+EQUIPMENT_SETTINGS_URL = "/#equipment-settings"
 
 
 def _resource_classes() -> dict[str, type[DER]]:
@@ -433,10 +433,10 @@ def _submissions(
     """(순번, 자원, 스펙, **폼 칸 이름**) — 화면이 그린 순서 그대로.
 
     ⚠ **칸 이름을 여기서 짓지 않는다.** `web/render.py::_field` 가 지은 `id` 를
-    `advanced_mode_fields()` 에서 그대로 받아 쓴다. 규칙을 두 곳에 적으면 한쪽만
+    `equipment_setting_fields()` 에서 그대로 받아 쓴다. 규칙을 두 곳에 적으면 한쪽만
     고쳐지는 날 폼은 **아무 값도 못 받은 채 303 을 낸다** — 아무 오류도 없이.
     """
-    drawn = iter(advanced_mode_fields(config))
+    drawn = iter(equipment_setting_fields(config))
     for index, resource in enumerate(config.resources):
         for spec in resource_parameters(resource.tag):
             yield index, resource, spec, str(next(drawn)["id"])
@@ -556,15 +556,15 @@ def _verified(config: ModelConfig) -> None:
             ) from exc
 
 
-@router.post("/ui/advanced/parameters")
-async def advanced_parameters_form(request: Request) -> Any:
+@router.post("/ui/equipment-settings/parameters")
+async def equipment_settings_form(request: Request) -> Any:
     """전체 파라미터 제출 — UI-1-AC1 「숙련자용 전체 파라미터 단일 화면」.
 
     ⚠ `Form(...)` 로 칸을 받지 않는다. 칸 이름이 `res{순번}-{파라미터}` 로
     **구성에 따라 늘고 줄기** 때문이며, 시그니처에 적으면 자원 1종 추가가 이
     파일 수정을 부른다 — 카탈로그를 둔 이유가 그것을 막는 것이다.
 
-    ⚠ 되돌아갈 곳은 `/#advanced` 이며 **303** 이다(PRG · WP-6 과 같은 규약).
+    ⚠ 되돌아갈 곳은 `/#equipment-settings` 이며 **303** 이다(PRG · WP-6 과 같은 규약).
     """
     submitted = {key: str(value) for key, value in (await request.form()).items()}
     config = composer_config()
@@ -578,4 +578,4 @@ async def advanced_parameters_form(request: Request) -> Any:
             action=exc.action,
         )
     models_api.register_model(edited)
-    return _see_other(ADVANCED_URL)
+    return _see_other(EQUIPMENT_SETTINGS_URL)

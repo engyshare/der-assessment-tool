@@ -93,7 +93,7 @@ def test_catalogue_keys_are_exactly_the_registry_tags() -> None:
     """카탈로그가 다루는 자원이 레지스트리와 **같다**.
 
     부분집합만 보면 고정 목록을 들고 있어도 통과한다 — `core/der/<tag>.py` 를
-    새로 놓아도 고급 모드에 그 자원의 칸이 생기지 않는 상태가 초록불이 된다.
+    새로 놓아도 설비 설정에 그 자원의 칸이 생기지 않는 상태가 초록불이 된다.
     그것이 이 저장소가 확장성이라 부르는 것의 반대다.
     """
     registry_tags = sorted(discover(core.der, DER))  # type: ignore[type-abstract]
@@ -163,7 +163,7 @@ def test_a_union_admitting_a_series_is_not_drawn_as_a_number() -> None:
 def test_a_signature_that_cannot_be_enumerated_is_refused() -> None:
     """`**kwargs` 자원은 거부한다 — 아는 것만 돌려주지 않는다.
 
-    통과시키면 그 자원의 파라미터 일부가 고급 모드에 영영 나타나지 않고, 그
+    통과시키면 그 자원의 파라미터 일부가 설비 설정에 영영 나타나지 않고, 그
     사실은 사용자가 없는 칸을 찾을 때까지 드러나지 않는다.
     """
     with pytest.raises(ParameterCatalogueError) as caught:
@@ -215,7 +215,7 @@ def test_both_escalation_rates_reach_the_screen_with_the_same_unit() -> None:
 
     `Q-17`(교체 설비단가의 실질 추세)을 스윕 축으로 배선하면서 자원 계약이
     `escalation_rate`(O&M)와 `replacement_escalation_rate`(교체 재취득)를 갈라
-    갖게 됐다. 고급 모드 화면(UI-1-AC1)은 **열거한 것만 그리므로**, 자원
+    갖게 됐다. 설비 설정 화면(UI-1-AC1)은 **열거한 것만 그리므로**, 자원
     생성자가 새 인자를 이름으로 내놓지 않으면 사용자는 그 값을 넣을 통로가
     없는 채 그 존재도 모른다.
 
@@ -252,7 +252,7 @@ def test_both_escalation_rates_reach_the_screen_with_the_same_unit() -> None:
     assert not missing, (
         f"{missing}: 교체 계수를 생성자 인자로 내놓지 않습니다 — 대장의 "
         "`capex.replacement_real_trend` 가 적용 대상으로 명시한 자원이며, "
-        "열거하지 않으면 고급 모드 화면에 나타나지 않습니다 (UI-1-AC1)"
+        "열거하지 않으면 설비 설정 화면에 나타나지 않습니다 (UI-1-AC1)"
     )
 
 

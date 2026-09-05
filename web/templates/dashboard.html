@@ -17,7 +17,7 @@
     <nav aria-label="주요 화면">
       <a href="#wizard">마법사</a>
       <a href="#run">분석 실행</a>
-      <a href="#advanced">고급 모드</a>
+      <a href="#equipment-settings">설비 설정</a>
       <a href="#results">결과</a>
       <a href="#regulations">제도 관리</a>
     </nav>
@@ -47,7 +47,7 @@
          것이다(`app/services/ui_run.py::golden_scenario_names`). #}
       <ol class="steps">
         <li><a href="#run">시나리오 선택</a></li>
-        <li><a href="#advanced">전제 확인</a></li>
+        <li><a href="#equipment-settings">설비 설정 확인</a></li>
         <li><a href="#run">실행</a></li>
         {% if scenarios %}
         {# ⚠ **새 화면이 뜨지 않는다.** `/reports/golden/<이름>` 은
@@ -117,7 +117,7 @@
         </fieldset>
 
         <fieldset>
-          <legend>「자가용 집합자원화」의 계측 전제</legend>
+          <legend>「자가용 집합자원화」의 계측 선언</legend>
           {# 둘 다 서야 그 갈래가 성립한다. 적지 않으면 DV-15 로 거부되며,
              그 거부가 이 화면의 정상 동작이다 — 가정하지 말고 물어라. #}
           {% for item in pool_prerequisites %}
@@ -132,8 +132,8 @@
       </form>
     </section>
 
-    <section id="advanced" class="band" aria-labelledby="advanced-title">
-      <h2 id="advanced-title">고급 모드</h2>
+    <section id="equipment-settings" class="band" aria-labelledby="equipment-settings-title">
+      <h2 id="equipment-settings-title">설비 설정</h2>
       {# 「전체 파라미터」의 정본은 `core.model.parameters` 카탈로그다.
          여기에 필드를 손으로 적으면 자원 1종 추가가 이 파일 수정을 부르고,
          고치지 않은 동안 화면은 「전체」라고 적은 채 일부만 그린다. #}
@@ -147,10 +147,31 @@
       <form
         aria-label="전체 파라미터"
         method="post"
-        action="/ui/advanced/parameters"
+        action="/ui/equipment-settings/parameters"
       >
+        {# ★ R63/WP-S1 — **자원 인스턴스마다 한 묶음.**
+           사용자 판정(`docs/decisions-2026-09-05-R63.md` §1 「디자인」):
+           *「그루핑이 가능한 아이템은 그룹화 — 예시: 태양광, ESS는 각각을
+           그룹화하여 제시」*.
+           ⚠ **종류별로 묶지 않는다** — `PV` 를 둘 놓으면 어느 자원의 값인지 알
+           수 없다. 묶는 단위와 그 사유는 `web/render.py::
+           equipment_setting_groups` 가 갖는다.
+           ⚠ **묶음 제목에 자원 종류의 한국어 이름을 적지 않는다.** 그 사전이
+           저장소에 없고, 여기에 지으면 자원 1종 추가가 이 파일 수정을 부른다
+           (같은 사유가 위 「전체 파라미터」 주석이다). `tag` 는 기계가 읽는
+           `data-resource-tag` 로만 싣는다.
+           ⚠ **`<fieldset>` + `<legend>` 로 묶는다.** `<div>` + `<h3>` 로 묶으면
+           묶음 이름이 안의 입력들과 접근성 트리에서 결속되지 않는다 — 같은
+           화면의 실행 폼이 이미 이 관용구를 쓴다. #}
+        {% for group in parameter_groups %}
+        <fieldset
+          class="resource-group"
+          data-resource-group="{{ group.id }}"
+          data-resource-tag="{{ group.tag }}"
+        >
+          <legend>{{ group.name }}</legend>
         <div class="field-grid">
-          {% for item in parameters %}
+          {% for item in group.fields %}
           <div class="field" data-parameter="{{ item.parameter }}" data-kind="{{ item.kind }}">
             <label for="{{ item.id }}">{{ item.label }}</label>
             <div class="control">
@@ -166,10 +187,16 @@
               <span id="{{ item.id }}-unit" class="unit" data-unit-for="{{ item.id }}">
                 {{ item.unit }}
               </span>
+              {# ⚠ **묶음의 자원 이름을 도움말 이름에 싣는다.** 라벨은 이제
+                 카탈로그의 한국어 이름 하나이고(자원 이름을 떼었다 — 묶음의
+                 `<legend>` 가 인쇄한다), 같은 종류를 둘 놓으면 두 자원의 같은
+                 파라미터가 **같은 라벨**을 갖는다. 화면에서는 묶음이 그 둘을
+                 가르지만 화면을 보지 않는 사람에게는 도움말 이름이 유일한
+                 손잡이다. #}
               <button
                 type="button"
                 class="tip"
-                aria-label="{{ item.label }} 도움말: 단위 {{ item.unit }}, {{ item.help }} 기본값 출처 {{ item.source }}"
+                aria-label="{{ group.name }} · {{ item.label }} 도움말: 단위 {{ item.unit }}, {{ item.help }} 기본값 출처 {{ item.source }}"
                 title="단위 {{ item.unit }} · {{ item.help }} · 기본값 출처 {{ item.source }}"
                 id="{{ item.id }}-tip"
               >?</button>
@@ -203,7 +230,7 @@
               <button
                 type="button"
                 class="tip"
-                aria-label="{{ item.label }} 도움말: 단위 {{ item.unit or '단위 없음' }}, {{ item.help }} 기본값 출처 {{ item.source }}"
+                aria-label="{{ group.name }} · {{ item.label }} 도움말: 단위 {{ item.unit or '단위 없음' }}, {{ item.help }} 기본값 출처 {{ item.source }}"
                 title="단위 {{ item.unit or '단위 없음' }} · {{ item.help }} · 기본값 출처 {{ item.source }}"
                 id="{{ item.id }}-tip"
               >?</button>
@@ -212,6 +239,8 @@
           </div>
           {% endfor %}
         </div>
+        </fieldset>
+        {% endfor %}
         {# 수치 칸만 제출된다 — 시계열·구조·선택·예/아니오는 편집기 단추
            (`type="button"`)이라 폼에 실리지 않는다. 그 갈래를 이 폼으로 보내면
            받는 쪽이 3요소로 거부한다(`_value_of`). #}

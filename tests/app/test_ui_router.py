@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 from core.model.composition import available_resource_tags
-from web.render import DEMO_MODEL, advanced_mode_fields
+from web.render import DEMO_MODEL, equipment_setting_fields
 
 
 @pytest.fixture(scope="module")
@@ -29,12 +29,12 @@ def client() -> TestClient:
 
 
 @pytest.mark.req("UI-1-AC1")
-def test_root_serves_the_dashboard_with_every_advanced_mode_field(
+def test_root_serves_the_dashboard_with_every_equipment_setting_field(
     client: TestClient,
 ) -> None:
     """`GET /` 가 **대시보드**를 낸다 — 200 만으로는 성립하지 않는다.
 
-    「고급 모드 화면이 전체 파라미터를 그린다」가 조항이므로, 카탈로그가 펴는
+    「전체 파라미터 단일 화면이 전체 파라미터를 그린다」가 조항이므로, 카탈로그가 펴는
     필드가 **전부** 나오는지 본다. 하나라도 있으면 통과로 두면 화면이 앞의 몇
     개만 그려도 초록불이다.
     """
@@ -46,14 +46,14 @@ def test_root_serves_the_dashboard_with_every_advanced_mode_field(
     body = response.text
     assert 'id="main"' in body, "받은 것이 대시보드가 아니다 — 본문 랜드마크가 없다"
 
-    fields = advanced_mode_fields(DEMO_MODEL)
+    fields = equipment_setting_fields(DEMO_MODEL)
     assert fields, "카탈로그가 파라미터를 한 건도 펴지 않았다 — 대조할 것이 없다"
     missing = [
         field["parameter"]
         for field in fields
         if f'data-parameter="{field["parameter"]}"' not in body
     ]
-    assert not missing, f"고급 모드 화면에 빠진 파라미터: {missing}"
+    assert not missing, f"설비 설정 화면에 빠진 파라미터: {missing}"
 
 
 @pytest.mark.req("FR-201-AC1")

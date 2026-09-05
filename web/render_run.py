@@ -1,7 +1,7 @@
 """실행 화면이 쓰는 문맥 — **결과·거부·그림·실행 폼의 고를 거리**.
 
 `web/render.py` 에서 갈라 나왔다 (`R62/WP-9`). 가른 선은 **`/ui/run` 이 지나는
-길**이다: 실행 폼이 고르게 하는 것(갈래·전제)과, 그 실행이 낸 결과·거부·그림을
+길**이다: 실행 폼이 고르게 하는 것(갈래·계측 선언)과, 그 실행이 낸 결과·거부·그림을
 화면 사전으로 옮기는 것이 여기 있고, 대시보드·자원 구성·제도 편집 화면과
 **템플릿을 부르는 자리**는 저쪽에 남았다.
 
@@ -39,7 +39,7 @@ def baseline_arrangement_choices() -> tuple[str, ...]:
 
     ⚠ **목록을 소스에 박지 않는다.** 박으면 여덟 번째 갈래가 서는 날 화면만
     셋을 그린 채 남고, 그 상태는 사람이 없는 칸을 찾을 때까지 드러나지 않는다
-    (`advanced_mode_fields` 가 같은 판단을 적어 두었다).
+    (`equipment_setting_groups` 가 같은 판단을 적어 두었다).
 
     ⚠ 값 문면 그대로인 이유: 시나리오 yaml 의 `baseline_arrangement` 필드가
     **문면 그대로**를 받는다 (`resolve_baseline_arrangement` 독스트링).
@@ -47,7 +47,7 @@ def baseline_arrangement_choices() -> tuple[str, ...]:
     return tuple(item.value for item in BaselineArrangement)
 
 
-#: ⓒ 전제 둘의 **화면 문면**. 이름은 `PoolMeteringDeclaration` 의 필드에서,
+#: ⓒ 계측 선언 둘의 **화면 문면**. 이름은 `PoolMeteringDeclaration` 의 필드에서,
 #: 문면은 `core.cba.baseline` 의 상수에서 온다 — 어느 쪽도 여기서 짓지 않는다.
 #: 거부 메시지와 화면이 **같은 문자열**을 봐야 사람이 *「어느 쪽이 빠졌는가」*
 #: 를 대조할 수 있다(그 상수들의 ⚠ 주석이 같은 이유를 적는다).
@@ -61,10 +61,10 @@ _POOL_PREREQUISITE_LABELS = MappingProxyType({
 
 
 def pool_prerequisite_fields() -> tuple[dict[str, str], ...]:
-    """ⓒ 전제 둘의 **화면 칸** — 이름은 자료형이, 문면은 상수가 정본이다.
+    """ⓒ 계측 선언 둘의 **화면 칸** — 이름은 자료형이, 문면은 상수가 정본이다.
 
-    ⚠ 전제가 하나 늘면 여기서 `KeyError` 로 **멈춘다.** 조용히 빠지는 대신인
-    이유: 안 그리면 새 전제를 아무도 선언할 수 없고, 그 상태는 화면에서
+    ⚠ 선언이 하나 늘면 여기서 `KeyError` 로 **멈춘다.** 조용히 빠지는 대신인
+    이유: 안 그리면 새 선언을 아무도 세울 수 없고, 그 상태는 화면에서
     「ⓒ 를 고를 수 없다」로만 보인다 — 왜 못 고르는지는 보이지 않는다.
     """
     return tuple(
@@ -105,7 +105,7 @@ def chart_figures(*, query: str = "") -> tuple[dict[str, Any], ...]:
     ⚠⚠ **제목을 손으로 적지 않는다.** 종전 `visual-grid` 는 `<h3>` 여섯 개를
     박아 두었고 그림은 하나도 없었다. 박아 두면 차트가 늘 때 그 목록이 낡고,
     낡은 것은 사람이 없는 칸을 찾을 때까지 드러나지 않는다
-    (`advanced_mode_fields` 가 같은 판단을 적었다).
+    (`equipment_setting_groups` 가 같은 판단을 적었다).
 
     ⚠ **못 그리는 칸을 빼지 않는다.** 빼면 「그릴 수 없다」와 「그런 그림이
     없다」가 화면에서 같아진다 — §13.0.1 ④ 가 금지한 형태다. 칸은 남기고

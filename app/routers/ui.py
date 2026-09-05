@@ -65,7 +65,7 @@ _FALLBACK_MEDIA_TYPE = "application/octet-stream"
 
 @router.get("/", response_class=HTMLResponse)
 def dashboard() -> HTMLResponse:
-    """대시보드 — 마법사와 고급 모드 (UI-1-AC1).
+    """대시보드 — 마법사와 설비 설정 (UI-1-AC1).
 
     **뿌리에 둔다.** 이 화면 뒤에 있는 것이 `NFR-301`(비개발자가 30분 안에 첫
     결과)이며, 뿌리에 아무것도 없으면 사람이 앱에서 처음 만나는 것이 `404` 다.
@@ -135,11 +135,11 @@ def run_case(
     ),
     ownership_or_operation_transferred: bool = Query(
         default=False,
-        description="ⓒ 전제 ① — 자가용 설비의 소유 또는 운영권 인계",
+        description="ⓒ 계측 선언 ① — 자가용 설비의 소유 또는 운영권 인계",
     ),
     metering_separated: bool = Query(
         default=False,
-        description="ⓒ 전제 ② — 발전량·전기사용량의 구분 계측·정산",
+        description="ⓒ 계측 선언 ② — 발전량·전기사용량의 구분 계측·정산",
     ),
 ) -> HTMLResponse:
     """고른 갈래로 한 번 돌려 결과 화면을 낸다 — `FR-705-AC2` · `UI-7-AC1`.
@@ -254,11 +254,11 @@ def chart_png(
     ),
     ownership_or_operation_transferred: bool = Query(
         default=False,
-        description="ⓒ 전제 ① — 자가용 설비의 소유 또는 운영권 인계",
+        description="ⓒ 계측 선언 ① — 자가용 설비의 소유 또는 운영권 인계",
     ),
     metering_separated: bool = Query(
         default=False,
-        description="ⓒ 전제 ② — 발전량·전기사용량의 구분 계측·정산",
+        description="ⓒ 계측 선언 ② — 발전량·전기사용량의 구분 계측·정산",
     ),
 ) -> Response:
     """차트 한 장을 **PNG 로** 낸다 — `FR-1004-AC1` · `FR-803-AC2`.
@@ -282,7 +282,7 @@ def chart_png(
     | 모르는 `tag` | **404** | 그런 그림이 **없다**. 등록 태그 목록을 문면에 |
     |  |  | 싣는다 — `render_charts` 가 쓰는 관용구다 |
     | 목록 밖 시나리오 | **404** | `_run()` — `/ui/run` 과 같은 판정이다 |
-    | 갈래·전제가 틀렸다 | **400** | 보낸 쪽이 고칠 수 있다 (`DV-15` 가 든다) |
+    | 갈래·계측 선언이 틀렸다 | **400** | 보낸 쪽이 고칠 수 있다 (`DV-15` 가 든다) |
     | 재료가 없어 못 그린다 | **501** | 아래 ★ |
 
     ★ **500 이 아니다.** 500 은 「우리가 깨졌다」이고 이것은 「**아직 배선되지

@@ -41,11 +41,13 @@ from web.render_run import (
 #: 「안 쓰는 import」가 아니라 「내놓는 이름」이라고 말하는 자리가 `__all__` 이다.
 __all__ = (
     "DEMO_MODEL",
-    "advanced_mode_fields",
+    "UNLABELLED",
     "baseline_arrangement_choices",
     "chart_figures",
     "chart_query",
     "demo_context",
+    "equipment_setting_fields",
+    "equipment_setting_groups",
     "error_context",
     "model_composer_context",
     "pool_prerequisite_fields",
@@ -66,7 +68,18 @@ _ENV = Environment(
 )
 
 
-#: 고급 모드 화면이 그리는 데모 구성. **자원 종류와 파라미터를 여기서 짓지
+#: 라벨이 카탈로그에 없을 때 화면이 **글자로 인쇄하는 것**.
+#:
+#: ⚠⚠ **파라미터 이름으로 되돌아가지 않는다.** 되돌아가면 사용자가 지적한 그
+#: 자리(`옥상 태양광 · azimuth_deg`)가 **조용히** 다시 나오고, 조용한 것은 사람이
+#: 그 칸을 실제로 볼 때까지 드러나지 않는다. 라벨 원천은
+#: `core/model/parameters.py`(`LABEL_BY_NAME`·`resolve_label`)이며 앞 축(R63/P1)의
+#: 검사가 빈 라벨 수를 **0** 으로 묶었으므로 **이 경로는 안 도는 것이 정상이다** —
+#: 그래도 눈에 보이게 두는 것이 규약이다(빈칸과 「없다」는 다른 진술 · §13.0.1 ④).
+UNLABELLED = "라벨 미등록"
+
+
+#: 설비 설정 화면이 그리는 데모 구성. **자원 종류와 파라미터를 여기서 짓지
 #: 않는다** — 종류는 레지스트리가, 파라미터는 `core.model.parameters` 카탈로그가
 #: 정본이며 여기는 「어떤 자원을 몇 개 놓았는가」만 정한다.
 DEMO_MODEL = ModelConfig(
@@ -78,25 +91,76 @@ DEMO_MODEL = ModelConfig(
 )
 
 
-def advanced_mode_fields(config: ModelConfig) -> tuple[dict[str, Any], ...]:
-    """고급 모드 화면의 **전체 파라미터** — UI-1-AC1.
+def equipment_setting_groups(config: ModelConfig) -> tuple[dict[str, Any], ...]:
+    """설비 설정 화면의 **전체 파라미터** — **자원 인스턴스마다 한 묶음.** UI-1-AC1.
 
     「전체」의 기준은 `core.model.parameters` 가 갖는다(레지스트리에 등록된 자원의
     생성자 시그니처). **이 함수는 그 목록을 줄이지 않는다** — 줄이면 화면이
     「전체」라고 적은 채 일부만 그리게 되고, 그 상태는 사용자가 없는 칸을 찾을
-    때까지 드러나지 않는다.
+    때까지 드러나지 않는다. `tests/web/test_dashboard.py::
+    test_grouping_loses_not_a_single_field` 가 묶기 전후의 개수를 대조한다.
 
-    자원 **인스턴스마다** 한 벌씩 편다. 같은 `PV` 를 둘 놓으면 파라미터도 두
-    벌이며, 종(種) 단위로 한 벌만 그리면 둘째 자원의 값을 고칠 방법이 없다.
+    ## ★ 왜 **인스턴스별**로 묶고 종류별로 묶지 않는가
+
+    사용자 판정(`docs/decisions-2026-09-05-R63.md` §1 「디자인」)의 예시가
+    *「태양광, ESS는 각각을 그룹화」* 여서 **종류별**로 읽을 수도 있다. 그런데
+    같은 `PV` 를 둘 놓으면 파라미터도 두 벌이고, 종(種) 단위로 한 벌만 그리면
+    **어느 자원의 값인지 알 수 없다** — 둘째 자원의 값을 고칠 방법이 없어진다.
+    `resource_parameters` 가 같은 자리에서 같은 판단을 적어 두었다.
+    ⇒ **인스턴스별로 묶고, 묶음마다 사용자가 지은 자원 이름을 인쇄한다.**
+
+    ## ⚠ 묶음이 **자원 종류의 한국어 이름을 갖지 않는다** — 원천이 없다
+
+    묶음이 내놓는 `tag` 는 레지스트리 키(`PV`·`ESS`)이며 **한국어 이름이 아니다.**
+    저장소에 `tag` → 한국어 이름 사전이 **없다**(R63/WP-S1 이 실측했다).
+    ⛔ **여기서 짓지 않는다** — 화면이 사전을 가지면 자원 1종 추가가 이 파일
+    수정을 부르고, 고치지 않은 동안 화면은 낡은 이름을 인쇄한다(판정 ⓑ 와 같은
+    사유). 원천이 서면 `core/model/parameters.py` 의 `LABEL_BY_NAME` 자리에
+    같은 모양으로 서야 한다.
+    ⇒ 그때까지 **묶음은 종류 이름을 사람에게 인쇄하지 않고** `tag` 를
+    `data-resource-tag` 로만 실어 보낸다(기계가 읽는 자리다).
     """
-    fields: list[dict[str, Any]] = []
+    groups: list[dict[str, Any]] = []
     for index, resource in enumerate(config.resources):
-        for spec in resource_parameters(resource.tag):
-            fields.append(_field(index, resource, spec))
-    return tuple(fields)
+        groups.append(
+            {
+                # **묶음 식별자도 자원 이름이 아니라 순번으로 짓는다** — 아래
+                # `_field` 와 같은 사유이며 같은 접두사(`res{순번}`)를 쓴다.
+                "id": f"res{index}",
+                "index": index,
+                "name": resource_name(resource),
+                "tag": resource.tag,
+                "fields": tuple(
+                    _field(index, resource, spec)
+                    for spec in resource_parameters(resource.tag)
+                ),
+            }
+        )
+    return tuple(groups)
+
+
+def equipment_setting_fields(config: ModelConfig) -> tuple[dict[str, Any], ...]:
+    """같은 목록을 **평평하게** — 묶음을 그리지 않는 쪽이 쓰는 모양이다.
+
+    ⚠ **목록을 여기서 다시 짓지 않는다.** `equipment_setting_groups` 를 펴서
+    낸다 — 두 곳에서 각자 지으면 한쪽이 순서나 개수를 달리해도 아무 검사도
+    걸리지 않고, 그때 폼이 받는 칸 이름과 화면이 그린 칸 이름이 갈린다
+    (`app/routers/ui_forms.py::_submissions` 가 그 사고를 적어 두었다).
+    """
+    return tuple(
+        field for group in equipment_setting_groups(config) for field in group["fields"]
+    )
 
 
 def _field(index: int, resource: DERConfig, spec: ParameterSpec) -> dict[str, Any]:
+    """칸 하나. **사람이 읽는 자리에 파라미터 이름을 넣지 않는다.**
+
+    사용자 판정(`docs/decisions-2026-09-05-R63.md` §1 「용어」): *「"옥상 태양광 ·
+    azimuth_deg" 와 같이 coding 상의 변수명을 병기하지 않음」*.
+    ⇒ `label`·`help` 는 **카탈로그의 한국어 라벨**(`ParameterSpec.label`)에서
+    오고, 파라미터 이름은 **`id`·`parameter` 에만** 남는다 — 폼 제출이 그것으로
+    되므로 지우면 폼이 아무 값도 못 받은 채 성공을 낸다.
+    """
     configured = resource.params.get(spec.name)
     if configured is not None:
         value, source = str(configured), "구성값"
@@ -104,18 +168,21 @@ def _field(index: int, resource: DERConfig, spec: ParameterSpec) -> dict[str, An
         value, source = "", "필수 입력 — 기본값 없음"
     else:
         value, source = spec.default_text, f"{spec.tag} 자원 기본값"
+    label = spec.label or UNLABELLED
     return {
         # **화면 식별자는 자원 이름이 아니라 순번으로 짓는다** — 자원 이름은
         # 사용자가 짓는 자유 문자열이라 HTML id 로 쓸 수 없고, 같은 이름이 두 번
         # 나오지 않는다는 보장도 `composition` 안에서만 성립한다.
         "id": f"res{index}-{spec.name}",
         "parameter": f"{index}.{spec.name}",
-        "label": f"{resource_name(resource)} · {spec.name}",
+        # ⚠ **자원 이름을 여기 다시 붙이지 않는다.** 묶음의 `<legend>` 가 이미
+        # 인쇄하며, 붙이면 칸 50개가 같은 이름을 되풀이한다.
+        "label": label,
         "kind": str(spec.kind),
         "unit": spec.unit,
         "value": value,
         "source": source,
-        "help": f"{spec.tag} 자원의 {spec.name} 입니다. 형식 {spec.type_text}.",
+        "help": f"{spec.tag} 자원의 「{label}」 입니다. 형식 {spec.type_text}.",
         # 정수·실수를 가리지 않고 `any` 다. 형식별로 가르면 그 규칙이 카탈로그의
         # 형식 판정과 갈리고, 갈린 뒤에도 화면은 멀쩡해 보인다.
         "step": "any",
@@ -126,15 +193,15 @@ def _field(index: int, resource: DERConfig, spec: ParameterSpec) -> dict[str, An
 def demo_context() -> dict[str, Any]:
     """Return deterministic UI data used by template tests and early integration.
 
-    ⚠ **`inputs` 와 `parameters` 는 다른 것이다.** `parameters` 는 고급 모드가 그리는
-    **전체 파라미터**(카탈로그가 정본)이고, `inputs` 는 결과 화면의 「입력값 부록」이
-    그리는 **결과를 낸 주요 입력의 요약**이다. 부록에 133개를 늘어놓으면 그것은
-    부록이 아니다.
+    ⚠ **`inputs` 와 `parameter_groups` 는 다른 것이다.** `parameter_groups` 는 설비
+    설정이 그리는 **전체 파라미터**(카탈로그가 정본 · 자원 인스턴스마다 한 묶음)
+    이고, `inputs` 는 결과 화면의 「입력값 부록」이 그리는 **결과를 낸 주요 입력의
+    요약**이다. 부록에 133개를 늘어놓으면 그것은 부록이 아니다.
     """
     supported = 1_250_000
     baseline = 980_000
     return {
-        "parameters": advanced_mode_fields(DEMO_MODEL),
+        "parameter_groups": equipment_setting_groups(DEMO_MODEL),
         "scenario_name": "에너지자립가구 기본안",
         "inputs": (
             {
@@ -161,7 +228,7 @@ def demo_context() -> dict[str, Any]:
                 "value": "162",
                 "unit": "원/kWh",
                 "help": "자가소비 편익 계산에 쓰는 명목 단가입니다.",
-                "source": "전제 대장",
+                "source": "분석 설정 대장",
                 "step": "0.1",
             },
             {
@@ -170,7 +237,7 @@ def demo_context() -> dict[str, Any]:
                 "value": "4.5",
                 "unit": "%",
                 "help": "현재가치 환산에 쓰는 사회적 할인율입니다.",
-                "source": "전제 대장",
+                "source": "분석 설정 대장",
                 "step": "0.1",
             },
             {
@@ -179,6 +246,16 @@ def demo_context() -> dict[str, Any]:
                 "value": "20",
                 "unit": "년",
                 "help": "현금흐름을 계산하는 기간입니다.",
+                # ⚠⚠ **이 문면은 R63 이 고치지 않았다 — 고치려던 문면이 틀렸다.**
+                # 판정 정본(`docs/decisions-2026-09-05-R63b.md` §1)이 이 칸을
+                # 「시나리오 기본값」으로 옮기라고 적으면서 *「정말로 시나리오
+                # 값인지 확인하라. 아니면 적고 멈춰라」* 를 함께 적었다.
+                # 확인 결과 **분석기간의 소유자는 시나리오가 아니라 대장**이다:
+                # `docs/assumptions.yaml` 이 `analysis.period_years` 로 갖고
+                # 있고, `infra/orm/scenario.py` 는 `analysis_years` 를 Scenario
+                # **금지 필드**로 열거한다(§7.1 O-1 · `DV-11`). 「시나리오
+                # 기본값」으로 적으면 화면이 `DV-11` 이 금지한 소유를 인쇄한다.
+                # ⇒ 적고 멈췄다(`.orch/R63/result_S1.md` §6).
                 "source": "사업 기본 설정",
                 "step": "1",
             },
