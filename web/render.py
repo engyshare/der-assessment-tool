@@ -8,10 +8,12 @@ from decimal import Decimal
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
+from urllib.parse import urlencode
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.security.authorization import can_edit_regulation_profile
+from app.services.ui_charts import chart_description, chart_source, unwired_reason
 from app.services.ui_run import golden_scenario_names
 from core.cba.baseline import (
     POOL_PREREQUISITE_METERING,
@@ -28,6 +30,7 @@ from core.model.schemas import DERConfig, ModelConfig
 from core.report._format import NO_VALUE, _won, _years
 from core.report.case_influences import CONCLUSION_METRIC, HEADLINE_METRIC
 from core.report.case_report import CaseReport
+from core.report.charts import chart_registry
 
 _ROOT = Path(__file__).resolve().parent
 _ENV = Environment(
@@ -208,6 +211,10 @@ def demo_context() -> dict[str, Any]:
         "scenarios": golden_scenario_names(),
         "baseline_arrangements": baseline_arrangement_choices(),
         "pool_prerequisites": pool_prerequisite_fields(),
+        # ★ 결과 그림 — 여기도 데모 값이 아니다. 주소는 실제 라우트를 가리키고,
+        # 그 라우트가 그리는 수는 전부 `CaseReport` 에서 온다. 질의가 비어 있어
+        # 라우트의 기본 시나리오·기본 갈래로 돈다.
+        "charts": chart_figures(),
     }
 
 
@@ -248,6 +255,63 @@ def pool_prerequisite_fields() -> tuple[dict[str, str], ...]:
         {"name": field.name, "label": _POOL_PREREQUISITE_LABELS[field.name]}
         for field in dataclasses.fields(PoolMeteringDeclaration)
     )
+
+
+def chart_query(
+    *,
+    scenario: str,
+    arrangement: str,
+    ownership_or_operation_transferred: bool,
+    metering_separated: bool,
+) -> str:
+    """그림 주소에 붙일 질의 문자열 — **결과 화면과 같은 실행을 그리게 한다.**
+
+    ⚠ 손으로 잇지 않는다(`urlencode`). 갈래 문면은 한국어라 그대로 이으면
+    주소가 깨지고, 깨진 주소는 브라우저가 기본 갈래로 되돌아간 그림을 가져온다 —
+    화면의 수는 ⓒ 인데 그림은 ⓑ 인 상태가 나오고 **둘 다 그럴듯해 보인다**.
+
+    ⚠ 참·거짓 문면을 파이썬 것(`True`)으로 두지 않는다 — 받는 쪽은 FastAPI 의
+    불리언 파서다.
+    """
+    return urlencode({
+        "scenario": scenario,
+        "arrangement": arrangement,
+        "ownership_or_operation_transferred": (
+            "true" if ownership_or_operation_transferred else "false"
+        ),
+        "metering_separated": "true" if metering_separated else "false",
+    })
+
+
+def chart_figures(*, query: str = "") -> tuple[dict[str, Any], ...]:
+    """결과 그림 칸 — **레지스트리로 편다.**
+
+    ⚠⚠ **제목을 손으로 적지 않는다.** 종전 `visual-grid` 는 `<h3>` 여섯 개를
+    박아 두었고 그림은 하나도 없었다. 박아 두면 차트가 늘 때 그 목록이 낡고,
+    낡은 것은 사람이 없는 칸을 찾을 때까지 드러나지 않는다
+    (`advanced_mode_fields` 가 같은 판단을 적었다).
+
+    ⚠ **못 그리는 칸을 빼지 않는다.** 빼면 「그릴 수 없다」와 「그런 그림이
+    없다」가 화면에서 같아진다 — §13.0.1 ④ 가 금지한 형태다. 칸은 남기고
+    사유를 글자로 싣는다.
+    """
+    suffix = f"?{query}" if query else ""
+    figures: list[dict[str, Any]] = []
+    for tag, chart in sorted(chart_registry().items()):
+        reason = unwired_reason(tag)
+        figures.append({
+            "tag": tag,
+            "label": chart.label,
+            "wired": reason is None,
+            "reason": reason,
+            "src": f"/ui/chart/{tag}.png{suffix}",
+            # `alt` 는 라벨 + **무엇을 보여 주는 그림인지**다. 라벨만 넣으면
+            # 그림을 못 보는 사람에게 남는 것이 제목뿐이고, `UI-6` 이 막으려는
+            # 것이 정확히 그 상태다 — 그림은 색으로만 말한다.
+            "alt": f"{chart.label} — {chart_description(tag)}" if reason is None else "",
+            "source": chart_source(tag) if reason is None else "",
+        })
+    return tuple(figures)
 
 
 def model_composer_context(
@@ -318,7 +382,9 @@ def render_dashboard(context: dict[str, Any] | None = None) -> str:
     return template.render(context or demo_context())
 
 
-def run_result_context(report: CaseReport, *, scenario_text: str) -> dict[str, Any]:
+def run_result_context(
+    report: CaseReport, *, scenario_text: str, chart_query: str = ""
+) -> dict[str, Any]:
     """실행 결과 화면의 문맥 — `UI-7-AC1` · `FR-705-AC2`.
 
     ## ⚠⚠⚠ **여기서 계산을 새로 하지 않는다**
@@ -382,6 +448,9 @@ def run_result_context(report: CaseReport, *, scenario_text: str) -> dict[str, A
             for line in report.basis.costs
         ),
         "scenario_text": scenario_text,
+        # ★ 그림은 **이 실행의** 질의를 달고 나간다. 기본값으로 그리면 위의 수와
+        # 아래 그림이 서로 다른 실행이 되고, 그 어긋남은 아무 오류도 내지 않는다.
+        "charts": chart_figures(query=chart_query),
     }
 
 

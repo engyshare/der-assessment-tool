@@ -91,11 +91,9 @@ KNOWN_UNREAD: frozenset[str] = frozenset({
     "exclusions",
     "fuel_price_signal_won_per_kwh",
     "is_full_year",
-    "mime",
     "notes",
     "order",
     "payer_by_structure",
-    "payload",
     # R42 신설. **접근자를 통해서만 읽는 속성**이며 `end_of_life_action` 과 같은
     # 갈래다 — 배포 코드가 읽는 것은 `replacement_escalation_factor()` 쪽이고
     # (`pv.py`·`ess.py`·`ev_v2g.py`·`load.py`·`thermal_load.py` 의 교체 경로),

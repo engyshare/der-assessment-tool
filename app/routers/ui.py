@@ -27,16 +27,19 @@ import mimetypes
 from datetime import date
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from fastapi.responses import FileResponse, HTMLResponse
 
 from app.security.authorization import ADMIN_ROLE
-from app.services.ui_run import run_ui_case
+from app.services.ui_charts import chart_data
+from app.services.ui_run import UiRun, run_ui_case
 from core.contracts.regulation import RegulationItem
 from core.contracts.validation import ValidationError
 from core.regulation.profile import RegulationProfileDraft
+from core.report.charts import chart_registry, render_charts
 from web.render import (
     DEMO_MODEL,
+    chart_query,
     model_composer_context,
     regulation_admin_context,
     render_dashboard,
@@ -153,7 +156,48 @@ def run_case(
     `web/render.py::run_error_context` 가 그대로 옮긴다 (`NFR-303`).
     """
     try:
-        run = run_ui_case(
+        run = _run(
+            scenario,
+            arrangement,
+            ownership_or_operation_transferred,
+            metering_separated,
+        )
+    except ValidationError as exc:
+        return HTMLResponse(render_run_result(run_error_context(exc)), status_code=400)
+    return HTMLResponse(
+        render_run_result(
+            run_result_context(
+                run.report,
+                scenario_text=run.scenario_text,
+                # ★ 그림도 **이 실행의** 것이어야 한다. 기본값으로 그리면 화면의
+                # 수는 ⓒ 인데 그림은 ⓑ 인 상태가 나오고, 둘 다 그럴듯해 보인다.
+                chart_query=chart_query(
+                    scenario=scenario,
+                    arrangement=arrangement,
+                    ownership_or_operation_transferred=(
+                        ownership_or_operation_transferred
+                    ),
+                    metering_separated=metering_separated,
+                ),
+            )
+        )
+    )
+
+
+def _run(
+    scenario: str,
+    arrangement: str,
+    ownership_or_operation_transferred: bool,
+    metering_separated: bool,
+) -> UiRun:
+    """폼 값으로 한 번 돌린다 — **목록 밖 이름만 여기서 404 로 낮춘다.**
+
+    `ValidationError` 는 잡지 않고 올린다. 거부의 표현 형식(화면이냐 JSON 이냐)은
+    부르는 라우트가 정할 일이고, 여기서 정하면 그림 라우트가 사람이 못 읽는
+    화면을 `<img>` 자리에 내게 된다.
+    """
+    try:
+        return run_ui_case(
             scenario,
             arrangement=arrangement or None,
             ownership_or_operation_transferred=ownership_or_operation_transferred,
@@ -163,13 +207,103 @@ def run_case(
         # `app/routers/models.py::_not_found` 와 같은 모양이다 — 목록 밖 이름은
         # 「틀린 입력」이 아니라 **없는 것**이므로 404 다.
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValidationError as exc:
-        return HTMLResponse(render_run_result(run_error_context(exc)), status_code=400)
-    return HTMLResponse(
-        render_run_result(
-            run_result_context(run.report, scenario_text=run.scenario_text)
+
+
+@router.get("/ui/chart/{tag}.png", response_class=Response)
+def chart_png(
+    tag: str,
+    scenario: str = Query(
+        default="scenario_unsubsidized",
+        description="골든 시나리오 이름 — 목록에 있는 것만 연다",
+    ),
+    arrangement: str = Query(
+        default="",
+        description="기준선 갈래의 값 문면. **비우면 시나리오에 적지 않는다**",
+    ),
+    ownership_or_operation_transferred: bool = Query(
+        default=False,
+        description="ⓒ 전제 ① — 자가용 설비의 소유 또는 운영권 인계",
+    ),
+    metering_separated: bool = Query(
+        default=False,
+        description="ⓒ 전제 ② — 발전량·전기사용량의 구분 계측·정산",
+    ),
+) -> Response:
+    """차트 한 장을 **PNG 로** 낸다 — `FR-1004-AC1` · `FR-803-AC2`.
+
+    ## ★ 그림을 여기서 다시 그리지 않는다
+
+    `core/report/charts/` 의 7종이 이미 `Chart` 계약을 지키고 matplotlib 으로
+    PNG 바이트를 낸다. 손으로 SVG 를 다시 그리면 **같은 그림이 두 곳에 살고**
+    그 순간 「화면의 수가 리포트와 어긋난다」가 구조적으로 가능해진다.
+    이 라우트가 하는 일은 **입력을 리포트에서 지어 넘기고 바이트를 내보내는
+    것**뿐이다.
+
+    ⚠ `media_type` 을 여기 박지 않는다 — `ChartArtifact.mime` 이 갖고 있고,
+    그 계약은 *「지금은 전부 PNG 이나 SVG 차트가 섞일 수 있어 선언으로 둔다」*
+    고 적었다. 박으면 SVG 차트가 서는 날 브라우저가 SVG 를 PNG 라고 듣는다.
+
+    ## 상태 코드 셋과 그 근거
+
+    | 형편 | 코드 | 근거 |
+    |---|---|---|
+    | 모르는 `tag` | **404** | 그런 그림이 **없다**. 등록 태그 목록을 문면에 |
+    |  |  | 싣는다 — `render_charts` 가 쓰는 관용구다 |
+    | 목록 밖 시나리오 | **404** | `_run()` — `/ui/run` 과 같은 판정이다 |
+    | 갈래·전제가 틀렸다 | **400** | 보낸 쪽이 고칠 수 있다 (`DV-15` 가 든다) |
+    | 재료가 없어 못 그린다 | **501** | 아래 ★ |
+
+    ★ **500 이 아니다.** 500 은 「우리가 깨졌다」이고 이것은 「**아직 배선되지
+    않았다**」이다. 404 도 아니다 — 404 로 내면 「그런 차트가 없다」와 같아져
+    §13.0.1 ④ 가 금지한 「구현이 없다와 수집이 안 됐다를 같게 읽기」가 된다.
+    501(Not Implemented)이 그 뜻을 그대로 갖는 유일한 칸이다.
+
+    ⚠ 재료가 없을 때 **빈 PNG 를 내지 않는다.** 빈 그림은 「그렸다」로 집계되고
+    그 빈자리는 심의자료가 인쇄된 뒤에 발견된다 (`ChartArtifact.__post_init__`
+    가 같은 자리에서 같은 판단을 한다).
+    """
+    registry = chart_registry()
+    if tag not in registry:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"차트 {tag!r} 이(가) 없습니다. 등록된 차트는 "
+                f"{', '.join(sorted(registry))} 입니다"
+            ),
         )
-    )
+    try:
+        run = _run(
+            scenario,
+            arrangement,
+            ownership_or_operation_transferred,
+            metering_separated,
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=_three_parts(exc)) from exc
+
+    try:
+        # ⚠ `registry[tag]().render(...)` 로 질러가지 않는다. `render_charts` 가
+        # **배포 코드가 부르지 않는 함수**였다는 것이 이 WP 가 뚫는 구멍이고,
+        # 질러가면 그 함수는 여전히 시험만 부르는 채로 남는다. 태그를 명시해
+        # 부르는 것이 그 함수가 요구하는 사용법이다.
+        artifact = render_charts(chart_data(run.report, tag), tags=(tag,))[tag]
+    except ValidationError as exc:
+        # 「재료가 없다」와 「차트가 입력을 거부했다」를 가르지 않는다 — 둘 다
+        # *이 리포트로는 이 그림을 그릴 수 없다* 이고, 사유 문면이 어느 쪽인지
+        # 말한다. 가르면 사유는 같은데 코드만 둘이 된다.
+        raise HTTPException(status_code=501, detail=_three_parts(exc)) from exc
+
+    return Response(content=artifact.payload, media_type=artifact.mime)
+
+
+def _three_parts(exc: ValidationError) -> dict[str, str]:
+    """거부를 **필드·사유·조치 셋 그대로** 옮긴다 (`NFR-303`).
+
+    ⚠ 문면을 새로 짓지 않는다 — 새로 지으면 같은 거부가 화면
+    (`web/render.py::run_error_context`)과 여기서 다른 말을 하게 되고, 그때
+    어느 쪽이 맞는지는 아무 검사도 말하지 않는다.
+    """
+    return {"field": exc.field, "reason": exc.reason, "action": exc.action}
 
 
 @router.get("/static/{filename}", response_class=FileResponse)
