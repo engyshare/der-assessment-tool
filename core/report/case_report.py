@@ -73,6 +73,7 @@ from core.casegrid.e2e_runner import PV_CAPACITY_FACTOR, run_single_case_e2e
 from core.casegrid.ledger_levels import (
     build_level_map,
     design_variables,
+    ledger_backed_variables,
     ledger_unit_scales,
     required_scalar,
 )
@@ -226,6 +227,18 @@ class OverrideRow:
     #: 오버라이드 사유 (`FR-602-AC3`). 조항이 **권장** 필드로 두므로 없을 수
     #: 있고, 없는 것과 빈 문자열을 가르려고 `None` 을 그대로 나른다.
     reason: str | None
+    #: ★ **이 실행이 그 값을 실제로 읽었는가** (R63/N3 · 「인쇄되는데 안 먹는 키」).
+    #:
+    #: `tax.vat_rate` 는 대장 **안**에 있으나 아무도 읽지 않는다. 그래서
+    #: `vat_rate: 1e9` 는 관문을 정당하게 통과하고 이 표는 `0.1 →
+    #: 1000000000.0` 을 인쇄하는데 **수는 한 푼도 안 움직인다** — 화면은 고친
+    #: 값을 인쇄하고 수는 옛 값으로 돈다. **거부도 통과도 아닌 표시**가 그
+    #: 자리를 메운다.
+    #:
+    #: ⚠ **`False` 는 이 실행에 대한 진술이지 대장에 대한 진술이 아니다.**
+    #: 어느 키가 읽히는지는 갈래·자원 구성에 따라 실행마다 다르다 — 「이
+    #: 키는 죽은 키다」로 읽으면 안 된다.
+    read_by_this_run: bool
 
 
 @dataclass(frozen=True)
@@ -654,7 +667,9 @@ def _appendix(provider: AssumptionSet) -> tuple[AssumptionRow, ...]:
     return tuple(rows)
 
 
-def _overrides(provider: AssumptionSet) -> tuple[OverrideRow, ...]:
+def _overrides(
+    provider: AssumptionSet, *, read_keys: frozenset[str]
+) -> tuple[OverrideRow, ...]:
     """기준 전제 대비 변경 항목 — **대장이 가른 것을 옮긴다** (`FR-602-AC2`).
 
     ## ⚠ 기준값과 변경값을 **여기서 맞대 보지 않는다**
@@ -673,6 +688,13 @@ def _overrides(provider: AssumptionSet) -> tuple[OverrideRow, ...]:
     순서**로 내주는데(`dict` 삽입 순서), 그 순서는 시나리오 파일의 편집
     순서라 산출물이 실행마다 달라진다 — 붙임 1 의 주제별 표가 키 순인 것과
     같은 이유다.
+
+    ## ★ `read_keys` 는 **밖에서 굳혀 온다** (R63/N3)
+
+    여기서 `provider.keys_read()` 를 부르면 **이미 늦다** — 위 `_appendix()`
+    가 대장 전체를 훑으며 `get()` 을 지나가므로, 그 뒤에 물으면 모든 키가
+    「읽었다」로 돌아온다. 계산이 끝난 자리에서 굳힌 것을 받는 이유가 그것이고,
+    굳히는 자리는 `build_case_report()` 안의 ★★★ 주석이 붙은 한 줄이다.
     """
     return tuple(
         OverrideRow(
@@ -680,6 +702,7 @@ def _overrides(provider: AssumptionSet) -> tuple[OverrideRow, ...]:
             base_value=changed["base"],
             override_value=changed["override"],
             reason=changed["reason"],
+            read_by_this_run=key in read_keys,
         )
         for key, changed in sorted(provider.overridden_items().items())
     )
@@ -819,6 +842,21 @@ def build_case_report(
         # 난다). 그래서 `_Sweeper` 쪽에 기본값을 두었다.
         pool_metering=pool_metering,
     )
+    # ★★★ **이 실행이 읽은 대장 키를 여기서 굳힌다** (R63/N3 · 「인쇄되는데
+    # 안 먹는 키」). 자리가 **여기**인 이유: 계산은 위에서 끝났고 아래 조립부는
+    # 붙임을 그리느라 대장 **전체**를 `get()` 으로 훑는다 — 뒤로 밀면 모든 키가
+    # 「읽었다」가 되어 표시가 통째로 죽는다.
+    #
+    # ⚠⚠ **통로가 둘이다 — 실측이다.** 지시문은 `AssumptionSet.get()` 을 유일한
+    # 통로로 보았으나 `capex.pv.rooftop` 은 무보조 `npv` 를 −11,552,270 →
+    # −11,252,832 로 옮기면서도 계산 중에 `get()` 을 지나지 않는다. 그 값은
+    # 위 `build_level_map()` 이 대장 YAML 에서 **직접** 읽어 수준표에 앉히고
+    # 엔진이 그 표를 본다. `get()` 이력만 세면 그 행에 「읽지 않았다」가 서고
+    # 그것은 **인쇄된 거짓**이다.
+    # ⚠ 둘째 통로의 목록을 **여기 적지 않는다** — 수준표에게 물어야(그 모듈이
+    # `_LEDGER_VARS` 로 declare 한다) 축이 늘 때 한쪽만 낡지 않는다. 같은 사실을
+    # 두 곳에 살게 하지 않는 것이 이 라운드가 두 번 밟은 함정이다.
+    read_keys = provider.keys_read() | frozenset(ledger_backed_variables().values())
     # ★ 부기 칸 만들기(`_provenance`)를 주입한다 — 그 함수는 이 파일에 남아
     # 있고(R54/WP-2 는 영향도 스윕 한 덩어리만 뗐다), `case_influences` 가
     # 여기서 import 하면 순환이 된다(그 모듈 독스트링의 「`_provenance` 는
@@ -922,7 +960,7 @@ def build_case_report(
         # ★ 이 경로는 오버라이드를 걸지 않으므로 **빈 짝**이 정상이다. 그래도
         # 실어 보내는 이유는 붙임이 「없다」를 인쇄해야 하기 때문이다 —
         # 위 `CaseReport.overrides` 주석 참조.
-        overrides=_overrides(provider),
+        overrides=_overrides(provider, read_keys=read_keys),
         manifest_hash=manifest.hash,
         # ★ 엔진 규칙과 운전 결과를 **실행이 내놓은 것에서** 읽는다 (의견 2·3).
         # 여기서 자원을 다시 세우거나 순서를 다시 적으면 사본이 되고, 러너가
