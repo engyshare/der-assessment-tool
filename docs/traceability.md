@@ -17,7 +17,7 @@
 | **Must-have 미매핑** | **10** |
 | 우선순위 미지정 요구사항 | 0 |
 | **Phase 미지정 요구사항** | **9** |
-| **차단 미수행 (판정불가)** | **1** |
+| **차단 미수행 (판정불가)** | **0** |
 
 > **Phase 미지정 9건 — §4.0 R-1 위반입니다.**
 >
@@ -33,17 +33,6 @@
 > **둘의 긴급도는 다릅니다.** Must-have가 여기 있으면 미매핑 게이트가 그 수용기준을
 > 감시하면서도 *언제까지* 지켜야 하는지는 말하지 못하는 상태입니다. Should-have만
 > 남았다면 R-1 정비 사항이며 게이트 판정에는 영향이 없습니다.
-
-> **차단 미수행(판정불가) 1건.**
-> `blocking_dod: true` 인 수동 검사가 아직 수행되지 않았습니다. Phase DoD
-> 판정에서 이 항목들은 **"충족"이 아니라 "판정불가"** 로 셉니다.
->
-> CI는 이 때문에 실패하지 않습니다 — 실패시키면 사람이 수행할 때까지 CI가
-> 영구히 빨간불이 되며, 그것은 `manual-checks.yaml` 머리말이 스스로 막으려는
-> 두 상황 중 하나입니다. 대신 Phase 완료 판정을 사람이 이 목록을 보고
-> 내려야 합니다.
->
-> · `FR-1001-AC5` — MC-1 (미수행)
 
 > **미매핑 10건.** NFR-107은 미매핑 0건을 요구합니다.
 >
@@ -306,7 +295,7 @@
 |  |  | 1 | `FR-1001-AC2` | (나) 산식 확인 — 임의 지표·프로포마 항목에서 그것을 만든 산식과 대입값을 그 자리에서 펼쳐볼 수 있다. 이동 횟수를 제약하지 않으며, "펼치면 보인다"가 … | 자동 | test_benefit_attribution.py, test_narrative.py 6건, test_operation_appendices.py 2건, test_report.py |
 |  |  | 1 | `FR-1001-AC3` | (다) 3중 표기 — 각 산식은 자연어 설명 + 수식 + 대입값으로 표기한다 | 자동 | test_phase1_dod.py, test_from_resource_conventions.py, test_grid_purchase_cost_row.py 3건, test_lifecycle_wiring.py, test_surplus_sale_price_wiring.py, test_case_report.py, test_conclusion_gap.py 2건, test_report.py 3건 |
 |  |  | 1 | `FR-1001-AC4` | (라) 출처 동반 — 산식에 등장하는 모든 입력값에 출처·기준연도·신뢰도가 함께 표시된다 | 자동 | test_case_report.py, test_narrative.py, test_report.py |
-|  |  | 1 | `FR-1001-AC5` | (마) 판정 기준 — 비개발자 검토자가 리포트만 보고 "이 회수기간이 왜 이 값인지"와 "어떤 가정이 바뀌면 결론이 달라지는지"를 설명할 수 있다. 측정: 심의… | 수동 | test_report.py (스텁) + MC-1 (미수행) |
+|  |  | 1 | `FR-1001-AC5` | (마) 판정 기준 — 비개발자 검토자가 리포트만 보고 "이 회수기간이 왜 이 값인지"와 "어떤 가정이 바뀌면 결론이 달라지는지"를 설명할 수 있다. 측정: 심의… | 수동 | test_report.py (스텁) + MC-1 (수행/충족) |
 | `FR-1002` | Must-have | 1 | `FR-1002-AC1` | 영향도 순 정렬이 1순위: 리포트 첫 화면은 주 지표(할인 회수기간)에 대한 인자별 영향도 순위로 시작한다. 입력 순·분류 순 나열은 부록으로 보낸다 | 자동 | test_phase1_dod.py, test_case_report.py, test_narrative.py 2건, test_report.py, test_sensitivity_real.py, test_dashboard.py |
 |  |  | 1 | `FR-1002-AC2` | 영향도 산출 방식: 각 인자를 합리적 변동 범위(전제의 신뢰구간, 없으면 기본 ±20%)에서 변동시켜 주 지표가 움직인 폭으로 측정한다. 케이스 그리드를 실행하… | 자동 | test_case_influences.py 2건, test_case_report.py 2건, test_combined_scenarios.py 6건, test_conclusion_gap.py, test_report.py, test_sensitivity_real.py |
 |  |  | 1 | `FR-1002-AC3` | 각 인자마다 함께 표시: 사용값 / 단위 / 기준연도 / 출처 / 신뢰도 / 최종확인일 / 지표 변동폭 / 결론이 뒤집히는 임계값 존재 여부 | 자동 | test_case_report.py 3건, test_conclusion_gap.py 2건, test_narrative.py, test_report.py |
