@@ -81,7 +81,7 @@
 |  |  | 1 | `FR-106-AC6` | 가구 단위 경제성 산출 시 안분된 공통비용이 별도 행으로 표시되어, 가구 자체 설비 비용과 구분된다 | 자동 | test_common_asset.py 3건 |
 |  |  | 1 | `FR-106-AC7` | CommonAsset이 없는 모델(단독주택 등)도 정상 동작한다 (기본값 없음) | 자동 | test_common_asset.py 3건 |
 |  |  | 1 | `FR-106-AC8` | (v0.15 신설) 안분 대상 목록의 이름은 유일하다 — 겹치면 즉시 오류다 | 자동 | test_common_asset.py |
-| `FR-201` | Must-have | 1 | `FR-201-AC1` | GUI에서 자원 추가/삭제/복제로 구성 가능하며, 구성 변경 시 엔진 코드 변경이 발생하지 않는다 | 자동 | test_model_composition_router.py 4건, test_composition.py 7건, test_model_composer_view.py 5건 |
+| `FR-201` | Must-have | 1 | `FR-201-AC1` | GUI에서 자원 추가/삭제/복제로 구성 가능하며, 구성 변경 시 엔진 코드 변경이 발생하지 않는다 | 자동 | test_model_composition_router.py 4건, test_ui_router.py, test_composition.py 7건, test_model_composer_view.py 5건 |
 |  |  | 1 | `FR-201-AC2` | 모델 정의 전체가 단일 JSON 문서로 export/import 된다 | 자동 | test_model.py |
 | `FR-202` | Must-have | 1 | `FR-202-AC1` | 하나의 AssumptionSet을 참조하는 여러 모델을 일괄 실행한다 | 자동 | test_comparison.py 3건 |
 |  |  | 1 | `FR-202-AC2` | 비교표에 모델별 NPV·IRR·회수기간·필요 지원율을 나란히 표시한다 | 자동 | test_comparison.py 3건 |
@@ -164,7 +164,7 @@
 | `FR-503` | Should-have | - | `FR-503-AC1` | 산정식·결과 표시, 미달 시 경고. 산정 기준(자급량 기준 / 계통부담 기준) 선택 가능 | 자동 | test_compliance.py |
 | `FR-504` | Must-have | 1 | `FR-504-AC1` | 기본 구성: RegulationProfile = {70% 의무 비율, 면제기간, 최소계약기간, 초과발전량 우선공급, 망이용요금 예외, 거래지원수수료, 자급률 기… | 자동 | test_profile.py |
 |  |  | 1 | `FR-504-AC2` | 항목 추가 확장성: 제도가 신설 항목을 요구할 때 스키마 변경·코드 배포 없이 항목을 추가할 수 있어야 한다. 프로파일은 고정 컬럼이 아닌 (항목키, 값, 단위… | 자동 | test_profile.py |
-|  |  | 1 | `FR-504-AC3` | 웹에서 편집: admin 권한 사용자가 웹 UI에서 프로파일을 생성·복제·수정할 수 있다. 파일 수정이나 재배포를 요구하지 않는다 | 자동 | test_regulation_admin_router.py 5건, test_profile_editing.py 6건, test_regulation_admin_view.py 4건 |
+|  |  | 1 | `FR-504-AC3` | 웹에서 편집: admin 권한 사용자가 웹 UI에서 프로파일을 생성·복제·수정할 수 있다. 파일 수정이나 재배포를 요구하지 않는다 | 자동 | test_regulation_admin_router.py 5건, test_ui_router.py, test_profile_editing.py 6건, test_regulation_admin_view.py 4건 |
 |  |  | 1 | `FR-504-AC4` | 개정 이력: 프로파일은 버전을 가지며 이전 버전으로 복원 가능하다. 두 버전 간 diff 뷰를 제공한다 | 자동 | test_profile.py, test_dashboard.py |
 |  |  | 1 | `FR-504-AC5` | 유효기간: 각 항목에 유효기간(from~to)을 부여하여 분석연도에 맞는 값이 자동 선택된다. 분석기간 중 제도가 바뀌는 경우(예: 면제기간 3년 → 5년 개정… | 자동 | test_profile.py |
 |  |  | 1 | `FR-504-AC6` | 근거 추적: 각 항목에 근거 고시·조문 링크와 최종확인일 필드를 보유한다 | 자동 | test_profile.py |
@@ -340,7 +340,7 @@
 | `NFR-204` | Should-have | 1 | `NFR-204-M1` | mypy strict 통과 | 자동 | test_ci_gates.py |
 | `NFR-205` | Must-have | 1 | `NFR-205-M1` | 코드 리뷰 + lint 규칙. 근거: DER-VET Params.py의 클래스 변수 전역 상태는 동시 실행·테스트 격리를 불가능하게 만든다 (부록 C.5) | 자동 | test_ledger_levels.py, test_ci_gates.py 2건, test_ess.py |
 | `NFR-206` | Should-have | 1 | `NFR-206-M1` | lint 경고. 근거: DER-VET Params.py 1,830줄의 유지보수 실패 사례 | 자동 | test_17_12_scale.py 2건, test_ess_build.py, test_ess_share.py, test_ess_share_benefits.py, test_phase1_measurements.py 2건, test_load.py, test_thermal_load.py |
-| `NFR-207` | Must-have | 1 | `NFR-207-AC1` | 등록은 패키지 디렉터리 스캔 또는 데코레이터 자동 수집으로 수행한다. 신규 자원 추가 시 core/der/__init__.py, REGISTRY = [...] … | 자동 | test_router_collection.py, test_chart_contract.py, test_registry.py 6건 |
+| `NFR-207` | Must-have | 1 | `NFR-207-AC1` | 등록은 패키지 디렉터리 스캔 또는 데코레이터 자동 수집으로 수행한다. 신규 자원 추가 시 core/der/__init__.py, REGISTRY = [...] … | 자동 | test_router_collection.py, test_ui_router.py, test_chart_contract.py, test_registry.py 6건 |
 |  |  | 1 | `NFR-207-AC2` | 등록 충돌(동일 tag 중복)은 기동 시점에 명확한 오류로 검출된다 | 자동 | test_registry.py |
 |  |  | 1 | `NFR-207-AC3` | (v0.15 신설) tag 미선언도 기동 시점 오류다 — 건너뛰면 그 자원이 | 자동 | test_registry.py |
 |  |  | 1 | `NFR-207-AC4` | (v0.15 신설) 스캔 결과가 0건이면 오류다 — 스캔이 성립하지 않은 | 자동 | test_registry.py |
@@ -362,7 +362,7 @@
 | `NFR-502` | Must-have | 1 | `NFR-502-AC1` | SQLite 파일 일 1회 이상 자동 백업, 분기 1회 복원 리허설 | 자동 | test_backup_restore.py 6건 |
 | `NFR-503` | Must-have | 1 | `NFR-503-AC1` | 단일 컨테이너로 로컬 실행 가능 (docker run 1회) | 자동 | test_phase1_measurements.py |
 | `NFR-504` | Must-have | 1 | `NFR-504-AC1` | 무료 티어 제약(메모리 512MB, 콜드스타트, 디스크 비영속) 하에서 데이터 유실 없이 운영 | 자동 | test_freetier.py 4건 |
-| `UI-1` | Should-have | 1 | `UI-1-AC1` | 마법사 방식으로 초심자를 안내하되, 숙련자용 전체 파라미터 단일 화면(고급 모드) 병행 | 자동 | test_parameters.py 6건, test_dashboard.py 6건 |
+| `UI-1` | Should-have | 1 | `UI-1-AC1` | 마법사 방식으로 초심자를 안내하되, 숙련자용 전체 파라미터 단일 화면(고급 모드) 병행 | 자동 | test_ui_router.py, test_parameters.py 6건, test_dashboard.py 6건 |
 | `UI-2` | Must-have | 1 | `UI-2-AC1` | 모든 수치 입력 옆에 단위 상시 표시 (kW, kWh, 원/kWh, %, 년) | 자동 | test_parameters.py 2건, test_dashboard.py |
 | `UI-3` | Must-have | 1 | `UI-3-AC1` | 신뢰도 가정 항목은 노란 배지로 표시하고, 결과에서 해당 값의 영향도와 함께 명시 (FR-1002) (v0.5: 배지 라벨 미확인 → 가정. DB enum도 동… | 자동 | test_dashboard.py |
 | `UI-4` | Must-have | 1 | `UI-4-AC1` | 결과 지표 카드는 항상 무지원 기준선 대비 증분을 함께 표시 | 자동 | test_dashboard.py |
