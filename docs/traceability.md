@@ -350,7 +350,7 @@
 |  |  | 1 | `NFR-208-AC3` | core/contracts/는 어떤 구획도 import하지 않는 순수 인터페이스·타입·단위 정의만 포함한다 | 자동 | test_import_boundaries.py, test_assumption_provider.py 2건, test_registry.py |
 |  |  | 1 | `NFR-208-M1` | import-linter 계약(layers + independence)을 CI에서 강제. 위반 0건 | 자동 | test_17_10_dod10.py, test_import_boundaries.py 2건 |
 | `NFR-301` | Should-have | 1 | `NFR-301-M1` | 사용자 5명 태스크 수행 테스트 | 수동 | test_manual_stubs.py (스텁) + MC-2 (미수행) |
-| `NFR-302` | Should-have | 1 | `NFR-302-M1` | UI 검수 체크리스트 | 자동 | test_dashboard.py 2건 |
+| `NFR-302` | Should-have | 1 | `NFR-302-M1` | UI 검수 체크리스트 | 자동 | test_dashboard.py 3건 |
 | `NFR-303` | Should-have | 1 | `NFR-303-M1` | 오류 메시지 리뷰 체크리스트 | 자동 | test_ui_forms.py 3건, test_ui_run.py, test_analysis_period.py 5건, test_price_basis.py 6건, test_dv9_dv10.py 2건, test_e2e_analysis_period_wiring.py 6건, test_e2e_exclusion_wiring.py, test_ess_share.py, test_ess_share_benefits.py, test_feasible_region_slice.py 3건, test_structured_errors.py 22건, test_variant_production_wiring.py, test_baseline.py, test_pool_metering_declaration.py 2건, test_proforma.py 4건, test_chart_contract.py, test_dv_catalogue_matches_spec.py 3건, test_dv_rule_enforcement.py 10건, test_leap_year_policy.py 3건, test_validation_contract.py 5건, test_ess.py 11건, test_ev_v2g.py 8건, test_heatpump.py 15건, test_load.py 17건, test_pv_validation.py 9건, test_thermal_load.py 15건, test_incentive.py 3건, test_tsstore.py 4건, test_tariff_fallback.py 7건, test_charts_feasible_region.py, test_charts_wp28a.py 3건, test_aggregated_ppa.py, test_settlement_household_contract.py, test_settlement_manager_structure.py 2건, test_dashboard.py |
 | `NFR-304` | Nice-to-have | 1 | `NFR-304-AC1` | 주요 화면은 1366×768 이상에서 가로 스크롤 없이 표시되어야 한다 | 수동 | test_manual_stubs.py (스텁) + MC-5 (미수행) |
 | `NFR-401` | Must-have | 1 | `NFR-401-AC1` | 비밀번호는 Argon2id 또는 bcrypt(cost≥12)로 해싱 저장 | 자동 | test_hashing.py 2건 |
@@ -362,12 +362,12 @@
 | `NFR-502` | Must-have | 1 | `NFR-502-AC1` | SQLite 파일 일 1회 이상 자동 백업, 분기 1회 복원 리허설 | 자동 | test_backup_restore.py 6건 |
 | `NFR-503` | Must-have | 1 | `NFR-503-AC1` | 단일 컨테이너로 로컬 실행 가능 (docker run 1회) | 자동 | test_phase1_measurements.py |
 | `NFR-504` | Must-have | 1 | `NFR-504-AC1` | 무료 티어 제약(메모리 512MB, 콜드스타트, 디스크 비영속) 하에서 데이터 유실 없이 운영 | 자동 | test_freetier.py 4건 |
-| `UI-1` | Should-have | 1 | `UI-1-AC1` | 마법사 방식으로 초심자를 안내하되, 숙련자용 전체 파라미터 단일 화면(고급 모드) 병행 | 자동 | test_ui_router.py, test_parameters.py 6건, test_dashboard.py 6건 |
+| `UI-1` | Should-have | 1 | `UI-1-AC1` | 마법사 방식으로 초심자를 안내하되, 숙련자용 전체 파라미터 단일 화면(고급 모드) 병행 | 자동 | test_ui_router.py, test_parameters.py 6건, test_dashboard.py 8건 |
 | `UI-2` | Must-have | 1 | `UI-2-AC1` | 모든 수치 입력 옆에 단위 상시 표시 (kW, kWh, 원/kWh, %, 년) | 자동 | test_parameters.py 2건, test_dashboard.py |
 | `UI-3` | Must-have | 1 | `UI-3-AC1` | 신뢰도 가정 항목은 노란 배지로 표시하고, 결과에서 해당 값의 영향도와 함께 명시 (FR-1002) (v0.5: 배지 라벨 미확인 → 가정. DB enum도 동… | 자동 | test_dashboard.py |
 | `UI-4` | Must-have | 1 | `UI-4-AC1` | 결과 지표 카드는 항상 무지원 기준선 대비 증분을 함께 표시 | 자동 | test_dashboard.py |
 | `UI-5` | Should-have | 1 | `UI-5-AC1` | 한국어 우선. 영어 병기는 지표명(NPV, IRR, LCOE)에 한정 | 수동 | test_manual_stubs.py (스텁) + MC-7 (미수행) |
-| `UI-6` | Should-have | 2 | `UI-6-AC1` | 접근성: WCAG 2.1 AA 목표 (색상 단독 정보전달 금지, 명암비 4.5:1 이상, 키보드 내비게이션) | 자동 | test_ui_charts.py, test_dashboard.py |
+| `UI-6` | Should-have | 2 | `UI-6-AC1` | 접근성: WCAG 2.1 AA 목표 (색상 단독 정보전달 금지, 명암비 4.5:1 이상, 키보드 내비게이션) | 자동 | test_ui_charts.py, test_dashboard.py 3건 |
 | `UI-7` | Must-have | 1 | `UI-7-AC1` | 결과 화면은 영향도 순위를 최상단에 둔다. 입력값 나열은 부록으로 보낸다 (FR-1002) | 자동 | test_narrative.py, test_dashboard.py |
 | `SC-1` | Must-have | 1 | `SC-1` | 이메일 + 비밀번호, 세션 쿠키(HttpOnly, Secure, SameSite=Lax) | 자동 | test_auth.py 2건 |
 | `SC-2` | Must-have | 1 | `SC-2` | 시나리오 접근은 소유자 또는 유효 공유 토큰 보유자로 제한 | 자동 | test_authorization.py 2건 |

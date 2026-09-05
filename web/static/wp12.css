@@ -44,11 +44,47 @@ body {
 }
 
 .field-grid,
-.cards,
-.visual-grid {
+.cards {
   display: grid;
   gap: 1rem;
   grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
+/* D4 (R62/WP-7) — **그림 칸만 갈라 넓힌다.**
+   그림 원본은 960x540 이다. 종전에는 위 셋이 한 규칙을 나눠 써서 그림 칸도
+   14rem(224px)이었고, 그 결과 1366px 화면에 **다섯 칸**이 서며 그림이
+   **171px**(원본의 0.178배)로 줄어 축 눈금과 범례를 읽을 수 없었다
+   (R62/WP-5 의 D4 · 2026-09-05 playwright 실측).
+
+   30rem(480px)을 고른 계산 — 1366px 화면에서 `.band` 좌우 여백 1.5rem 씩을
+   뺀 쓸 수 있는 폭이 1318px 이다.
+     3칸: 3 x 480 + 2 x 16(gap) = 1472px > 1318px  -> 서지 못한다
+     2칸: 2 x 480 + 1 x 16      =  976px <= 1318px -> 선다
+   그래서 **두 칸**이 서고 칸 하나가 651px = 원본의 0.68배가 된다.
+   24rem(384px)로는 3 x 384 + 32 = 1184px 이 들어와 세 칸이 서고 칸이 428px
+   (0.45배)에 그친다 — 그래서 24 가 아니라 30 이다.
+
+   최소값을 `min(30rem, 100%)` 으로 감싼 이유: 그냥 `30rem` 이면 컨테이너가
+   480px 보다 좁은 화면에서 칸이 컨테이너를 넘고 **가로 스크롤**이 생긴다.
+   `NFR-304`(1366x768 이상에서 가로 스크롤 없음 · `MC-5`)는 1366 만 말하지만,
+   좁은 화면에서 스크롤을 내는 규칙을 일부러 남길 이유가 없다.
+
+   ⚠ 그림의 `max-width:100%`는 `dashboard.html`/`run_result.html` 의 인라인
+   스타일로 남겨 둔다. 이리로 옮기려면 두 템플릿을 함께 고쳐야 하는데
+   `run_result.html` 은 이 WP 가 고칠 수 있는 파일이 아니고, 한쪽만 옮기면
+   같은 격자를 쓰는 두 화면의 규칙이 두 곳으로 갈린다. */
+.visual-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(30rem, 100%), 1fr));
+}
+
+/* 브라우저 기본 `figure` 여백이 좌우 40px 씩이다. 칸을 651px 로 넓혀 놓고도
+   그림은 571px(0.60배)로 그려졌다 — 칸 안에서 80px 을 여백이 먹는다.
+   격자가 이미 `gap` 으로 칸 사이를 벌리므로 그 여백은 몫이 겹친다. 지우면
+   그림이 칸 전체(651px · 0.68배)를 쓴다. */
+.visual-grid figure {
+  margin: 0;
 }
 
 .field label,
@@ -113,10 +149,31 @@ input[type="number"] {
   gap: 0.25rem;
 }
 
+/* D5 (R62/WP-7) — 데모 절 머리의 표지.
+   ⚠ **색이 정보를 지지 않는다**(`UI-6`). 이 규칙이 없어도 표지는 제목과
+   본문 글자로 다 말하며, 여기 색과 테두리는 눈에 띄게 하는 몫만 진다.
+   글자색은 `:root` 의 #172026 을 그대로 물려받아 이 배경 위에서 명암비가
+   4.5:1 을 크게 넘는다(`NFR-304`/axe `color-contrast`). */
+.demo-notice {
+  background: #fff4d6;
+  border: 1px solid #8a6d00;
+  border-left: 6px solid #8a6d00;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+}
+
+.demo-notice h3 {
+  margin-top: 0;
+}
+
+.demo-notice p {
+  margin: 0.4rem 0 0;
+}
+
 button:focus,
 a:focus,
 input:focus {
   outline: 3px solid #0b6fa4;
   outline-offset: 2px;
 }
-
