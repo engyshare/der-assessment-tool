@@ -132,12 +132,14 @@ _ROW_FIELDS = frozenset({_KEY, _VALUE, _REASON})
 #: `analysis.period_years: true` 가 스칼라로 통과했고 `int(True) == 1` 이 되어
 #: **분석기간이 1년**(무보조 `npv` −11,552,270 → −924,900)이 됐다. 붙임은
 #: `20 → True` 로 인쇄해서 검토자가 그것을 알 수도 없었다.
-#: ★★ **그런데 이 목록에서 빼는 것만으로는 아무것도 달라지지 않는다** —
-#: `bool` 은 `int` 의 하위형이라 `isinstance(True, _SCALARS)` 가 여전히 참이다.
-#: 관문은 아래 `_row` 의 `type(value) is bool` 이며, 이 목록은 **그 뒤에**
-#: 선다. 그 줄을 「스칼라 목록이 이미 본다」며 지우면 D-3 이 그대로 돌아온다.
-_SCALARS = (int, float, str)
-
+#: ★★ **그런데 스칼라 목록에서 빼는 것만으로는 아무것도 달라지지 않는다** —
+#: `bool` 은 `int` 의 하위형이라 `isinstance(True, (int, float, str))` 가 여전히
+#: 참이다. **그래서 스칼라 목록을 두지 않는다** — 형을 가르는 자리는 아래
+#: `_kind` 하나이고 그것이 `type(value) is bool` 을 **맨 앞**에 둔다.
+#: ⚠ 목록을 되살려 `_row` 에서 또 보면 **분류하는 자리가 둘**이 되고, 그때
+#: `_kind` 의 `참·거짓`·`알 수 없는 형` 갈래가 **닿지 않는 죽은 가지**가 된다 —
+#: R63 에서 변경분 커버리지 게이트(`NFR-105-M1`)가 그 두 줄을 실제로 잡았다.
+#:
 #: 값의 **형 갈래**. 대장 값과 오버라이드 값을 견주는 단위이며, `int` 와
 #: `float` 를 가르지 않고 한 갈래(`수`)로 묶는다 — 사유는 `_kind` 독스트링.
 _NUMBER = "수"
@@ -208,10 +210,16 @@ def _row(position: int, row: object) -> tuple[str, Any, str | None]:
             f"바꿀 값을 적으십시오. 되돌리려면 그 원소를 지우십시오. {_HOW_TO_WRITE}",
         )
     value = row[_VALUE]
-    # ★★ **`_SCALARS` 보다 **먼저** 본다.** `bool` 은 `int` 의 하위형이라
-    # `isinstance(True, _SCALARS)` 가 참이고, 그래서 스칼라 목록에서 `bool` 을
-    # 빼는 것만으로는 아무것도 막히지 않는다 — R1 D-3 이 그 자리다.
-    if type(value) is bool:
+    # ★★★ **형을 가르는 자리는 `_kind` 하나다.** 여기서 `type(value) is bool` 을
+    # 따로 보고 그 뒤에 스칼라 목록을 또 보면 **분류하는 자리가
+    # 둘**이 되고, 그때 `_kind` 의 `참·거짓`·`알 수 없는 형` 갈래는 **닿지 않는
+    # 죽은 가지**가 된다 — R63 에서 변경분 커버리지 게이트(`NFR-105-M1`)가 정확히
+    # 그 두 줄을 잡았다(90% · 하한 95%).
+    #
+    # ⚠ **`bool` 이 먼저 갈리는 것은 `_kind` 안에서 지켜진다** — `isinstance(True,
+    # int)` 가 참이므로 `_kind` 가 `type(value) is bool` 을 맨 앞에 둔다(D-3).
+    kind = _kind(value)
+    if kind is _BOOLEAN:
         _refuse(
             f"{position}번째 원소({key})의 값이 {_BOOLEAN}입니다: {value!r}",
             "YAML 은 따옴표 없는 `yes`·`on`·`true`(그리고 `no`·`off`·`false`)를 "
@@ -219,7 +227,7 @@ def _row(position: int, row: object) -> tuple[str, Any, str | None]:
             '두려면 `"true"` 처럼 따옴표로 감싸십시오. 전제 값은 '
             f"{_BOOLEAN}일 수 없습니다",
         )
-    if not isinstance(value, _SCALARS):
+    if kind is _UNKNOWN:
         _refuse(
             f"{position}번째 원소({key})의 값이 스칼라가 아닙니다: {value!r}",
             f"수 또는 문자열 하나로 적으십시오. {_HOW_TO_WRITE}",
