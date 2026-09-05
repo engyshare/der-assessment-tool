@@ -48,7 +48,7 @@ LIMIT = 500
 #: 검사 대상. 테스트는 제외한다 — 검증 케이스는 자원 하나에 수십 건이 붙으므로
 #: 같은 상한을 걸면 케이스를 쪼개는 압력이 되고, 그것은 NFR-106(자원별 케이스
 #: 의무)과 정면으로 부딪친다. NFR-206 이 말하는 것은 **소스 파일**이다.
-TARGETS = ("core", "app", "infra", "scripts")
+TARGETS = ("core", "app", "infra", "scripts", "web")
 
 EXCLUDE_PARTS = {"__pycache__", ".venv", "migrations"}
 
