@@ -82,15 +82,19 @@ def numeric_inputs_without_units(html: str) -> list[str]:
 
 
 @pytest.mark.req("UI-1-AC1")
-def test_wizard_and_advanced_mode_are_both_reachable() -> None:
+def test_wizard_and_equipment_settings_are_both_reachable() -> None:
     """UI-1-AC1: 마법사 방식으로 초심자를 안내하되,
-    숙련자용 전체 파라미터 단일 화면(고급 모드) 병행"""
+    숙련자용 전체 파라미터 단일 화면(고급 모드) 병행
+
+    ⚠ 위 인용은 **spec 조항 문면 그대로**다 — R63 이 화면 낱말을 「설비 설정」
+    으로 옮겼으나 **조항 개정은 `spec §16.5` 절차**이고 이 라운드의 표적이
+    아니었다(판정 정본 `docs/decisions-2026-09-05-R63b.md` §2ⓓ)."""
     parser = parse(render_dashboard())
     ids = element_ids(parser)
 
     # 조각 ③: 병행 — 둘 다 도달 가능
     assert "wizard" in ids
-    assert "advanced" in ids
+    assert "equipment-settings" in ids
 
 
 @pytest.mark.req("UI-1-AC1")
@@ -115,8 +119,11 @@ def test_wizard_has_multiple_ordered_steps() -> None:
     step_texts = [match.strip() for match in li_matches]
     assert step_texts, "마법사 단계 텍스트가 없습니다"
 
-    # 현재 템플릿에 4단계가 있음: 시나리오 선택, 전제 확인, 실행, 내보내기
-    expected_steps = ["시나리오 선택", "전제 확인", "실행", "내보내기"]
+    # 현재 템플릿에 4단계가 있음: 시나리오 선택, 설비 설정 확인, 실행, 내보내기
+    # ⚠ 둘째 걸음 이름은 **목적지 절의 이름을 그대로 싣는다** — 누르면
+    #   「설비 설정」 절로 간다(판정 정본 `docs/decisions-2026-09-05-R63b.md`
+    #   §1 정정). 「설정 확인」으로 두면 도착한 절의 이름과 갈린다.
+    expected_steps = ["시나리오 선택", "설비 설정 확인", "실행", "내보내기"]
     assert len(step_texts) == len(expected_steps), (
         f"예상 단계 {len(expected_steps)}개 vs 실제 {len(step_texts)}개"
     )
@@ -147,9 +154,17 @@ def _expected_parameters(config: ModelConfig) -> set[str]:
     }
 
 
+#: ⚠⚠ **이 이름을 R63 이 일부러 바꾸지 않았다.** 같은 라운드의 다른 축
+#: (R63/P1 교정)이 `core/model/parameters.py` 머리말에 *「지금 그 자리를 재는
+#: 것은 `tests/web/test_dashboard.py::
+#: test_advanced_mode_shows_every_parameter_the_configuration_has` 다」* 를
+#: 세웠고, 그 파일은 R63/WP-S1 의 **금지 파일**이다(판정 ⑤ — `core/` 는 읽기만).
+#: 이름을 바꾸면 그 인용이 없는 이름을 가리켜 `scripts/check_docstring_references.py`
+#: 가 CI 에서 빨간불이 되고, **고칠 자리가 이 축의 손 밖에 있다.**
+#: ⇒ 이름을 두고 **`.orch/R63/result_S1.md` 에 적었다** — 축 사이 조정 사항이다.
 @pytest.mark.req("UI-1-AC1")
 def test_advanced_mode_shows_every_parameter_the_configuration_has() -> None:
-    """고급 모드가 **전체 파라미터**를 그린다 — UI-1-AC1 의 「전체」.
+    """설비 설정이 **전체 파라미터**를 그린다 — UI-1-AC1 의 「전체」.
 
     ⚠ **R29 까지 이 자리는 「전체」를 말할 수 없었다.** 기준이 저장소에 없었기
     때문이다(`DERConfig.params` 는 `dict[str, Any]`). R31 이 기준을 정했다 —
@@ -163,7 +178,7 @@ def test_advanced_mode_shows_every_parameter_the_configuration_has() -> None:
     expected = _expected_parameters(DEMO_MODEL)
 
     assert on_screen == expected, (
-        "고급 모드가 그리는 파라미터가 카탈로그와 다릅니다. "
+        "설비 설정이 그리는 파라미터가 카탈로그와 다릅니다. "
         f"화면에 없음: {sorted(expected - on_screen)}, "
         f"카탈로그에 없음: {sorted(on_screen - expected)}"
     )
@@ -172,13 +187,13 @@ def test_advanced_mode_shows_every_parameter_the_configuration_has() -> None:
 
 
 @pytest.mark.req("UI-1-AC1")
-def test_advanced_mode_follows_the_configuration_not_a_fixed_list() -> None:
+def test_equipment_settings_follow_the_configuration_not_a_fixed_list() -> None:
     """구성이 바뀌면 화면도 바뀐다 — 템플릿이 필드를 하드코딩하지 않는다.
 
     자원을 하나 더 놓으면 그 자원의 파라미터가 **한 벌 더** 나와야 한다.
     고정 목록을 그리는 템플릿은 위 테스트를 통과할 수 있어도 이것은 못 한다.
     """
-    from web.render import advanced_mode_fields
+    from web.render import equipment_setting_groups
 
     grown = DEMO_MODEL.model_copy(
         update={
@@ -189,7 +204,7 @@ def test_advanced_mode_follows_the_configuration_not_a_fixed_list() -> None:
         }
     )
     context = demo_context()
-    context["parameters"] = advanced_mode_fields(grown)
+    context["parameter_groups"] = equipment_setting_groups(grown)
 
     assert _fields_on_screen(render_dashboard(context)) == _expected_parameters(grown)
     # 같은 종을 둘 놓으면 파라미터도 두 벌이다 — 종 단위로 한 벌만 그리면
@@ -232,14 +247,14 @@ def test_non_scalar_parameters_still_have_a_place_on_the_screen() -> None:
 def test_every_scalar_field_carries_label_unit_and_tooltip() -> None:
     """수치 칸마다 라벨·단위·도움말이 자기 입력과 결속된다."""
     parser = parse(render_dashboard())
-    advanced_inputs = [
+    setting_inputs = [
         element
         for element in parser.elements
         if element.tag == "input" and element.attrs.get("type") == "number"
     ]
-    assert advanced_inputs
+    assert setting_inputs
 
-    for inp in advanced_inputs:
+    for inp in setting_inputs:
         inp_id = inp.attrs.get("id")
         if not inp_id:
             continue
@@ -526,7 +541,7 @@ def test_every_parameter_has_a_unit_cell_including_the_non_numeric_ones() -> Non
     수치 파라미터에는 셋 다 있었고 **비수치 파라미터에는 단위가 없었다** —
     `aria-label` 도 없었다.
 
-    ⚠ **수를 박지 않는다.** 「전건」의 기준은 `advanced_mode_fields(DEMO_MODEL)`
+    ⚠ **수를 박지 않는다.** 「전건」의 기준은 `equipment_setting_fields(DEMO_MODEL)`
     를 **열거한 것**이며, 몇 개인지는 카탈로그가 정한다(`core/model/parameters.py`).
     39 이나 11 을 적어 두면 자원이 늘거나 생성자가 바뀌는 날 이 검사가
     「화면이 틀렸다」가 아니라 「검사가 낡았다」로 빨간불이 된다.
@@ -535,13 +550,13 @@ def test_every_parameter_has_a_unit_cell_including_the_non_numeric_ones() -> Non
     그대로이고, 그것이 비면 **「단위 없음」**이다 — 빈칸과 「없다」는 다른
     진술이며 이 검사가 가르는 것이 그 둘이다.
     """
-    from web.render import advanced_mode_fields
+    from web.render import equipment_setting_fields
 
     html = render_dashboard()
     cells = _unit_cells(html)
     labels = _tooltip_labels(html)
 
-    fields = advanced_mode_fields(DEMO_MODEL)
+    fields = equipment_setting_fields(DEMO_MODEL)
     assert fields, "데모 구성에 파라미터가 하나도 없다 — 검사가 성립하지 않는다"
 
     missing: list[str] = []
@@ -554,7 +569,7 @@ def test_every_parameter_has_a_unit_cell_including_the_non_numeric_ones() -> Non
             missing.append(item["parameter"])
         elif drawn != expected:
             wrong.append(f"{item['parameter']}: 화면 {drawn!r} ≠ 카탈로그 {expected!r}")
-        if not any(item["label"] in label for label in labels):
+        if not any(str(item["label"]) in label for label in labels):
             untold.append(item["parameter"])
 
     assert not missing, f"단위 칸이 없는 파라미터: {missing}"
@@ -646,3 +661,328 @@ def test_the_export_step_points_at_a_report_the_repository_actually_has() -> Non
         f"실행 폼이 처음 고르는 시나리오({options[:1]})와 「내보내기」가 가리키는 "
         f"시나리오({scenarios[0]})가 다르다"
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# R63/WP-S1 — **화면의 말·라벨·그룹.** 아래는 **더한 것만** 있다.
+#
+# 판정 정본: `docs/decisions-2026-09-05-R63b.md`(낱말표·§0 의 가르는 물음) ·
+# `docs/decisions-2026-09-05-R63.md` §1 「용어」·「디자인」.
+#
+# ★★ **이 절의 검사들이 가르는 것은 「사람이 읽는 자리」와 「기계가 읽는
+#    자리」다.** 파라미터 이름(`spec.name`)은 **폼 제출의 키**이므로
+#    `id`·`name`·`for`·`data-parameter` 에는 **있어야 한다** — 지우면 폼이
+#    아무 값도 받지 못한 채 성공을 낸다(`app/routers/ui_forms.py::_submissions`).
+#    없어야 하는 곳은 `<label>` 글자·툴팁 문면처럼 **사람이 눈으로 읽는 자리**다.
+#    한쪽만 재면 「변수명을 지웠다」와 「폼을 부쉈다」가 검사에서 같아진다.
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: 사람이 읽는 **속성**. 나머지 속성은 기계가 읽는 것으로 본다.
+#: ⚠ 여기에 `title` 이 있는 이유: 마우스를 올리면 브라우저가 그대로 인쇄한다.
+_HUMAN_ATTRS = ("title", "aria-label", "alt", "placeholder")
+
+
+class _HumanText(HTMLParser):
+    """화면이 **사람에게 인쇄하는 글자만** 모은다.
+
+    ⚠ **렌더된 문자열을 그대로 훑지 않는다.** 그렇게 하면 `id="res0-tilt_deg"`
+    같은 **기계용 속성**이 함께 걸리고, 그때 이 검사는 「변수명이 안 보인다」가
+    아니라 「변수명이 아예 없다」를 요구하게 된다 — 그것은 폼을 부수는 요구다.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.chunks: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        for key, value in attrs:
+            if key in _HUMAN_ATTRS and value:
+                self.chunks.append(value)
+
+    def handle_data(self, data: str) -> None:
+        if data.strip():
+            self.chunks.append(data)
+
+
+def human_text(html: str) -> str:
+    parser = _HumanText()
+    parser.feed(html)
+    return "\n".join(parser.chunks)
+
+
+def machine_attribute_text(html: str) -> str:
+    """기계가 읽는 속성값만 모은다 — 폼 제출이 이것으로 된다."""
+    return "\n".join(
+        value
+        for element in parse(html).elements
+        for key, value in element.attrs.items()
+        if key not in _HUMAN_ATTRS and value
+    )
+
+
+def _parameter_names(config: ModelConfig) -> set[str]:
+    """구성이 펴는 파라미터 이름 — **기준은 카탈로그가 갖는다.**"""
+    return {
+        spec.name
+        for resource in config.resources
+        for spec in resource_parameters(resource.tag)
+    }
+
+
+@pytest.mark.req("UI-1-AC1", "NFR-302-M1")
+def test_no_parameter_variable_name_is_printed_where_people_read() -> None:
+    """★★ **변수명이 사람이 읽는 자리에 하나도 없다** — 사용자 판정 §1 「용어」.
+
+    사용자 문면: *「"옥상 태양광 · azimuth_deg" 와 같이 coding 상의 변수명을
+    병기하지 않음」*(`docs/decisions-2026-09-05-R63.md` §1).
+
+    ⚠ **「하나만 확인」으로 두지 않는다 — 전건을 센다.** 한 자리만 보면 라벨
+    한 줄을 고치고 툴팁 39개에 변수명이 남은 상태가 초록불이 된다. 그것이
+    R63 착수 시점의 실측이었다(사람이 읽는 자리에 이름 41종 · 235회).
+
+    ⚠ **수를 박지 않는다.** 모집단은 `resource_parameters` 가 펴는 이름 전건이며
+    몇 개인지는 카탈로그가 정한다.
+    """
+    corpus = human_text(render_dashboard())
+
+    leaked = sorted(name for name in _parameter_names(DEMO_MODEL) if name in corpus)
+    assert not leaked, (
+        f"사람이 읽는 자리에 파라미터 변수명이 {len(leaked)}종 남아 있다: {leaked}"
+    )
+
+
+@pytest.mark.req("UI-1-AC1")
+def test_the_variable_name_is_still_in_the_places_the_form_reads() -> None:
+    """★ **그런데 기계가 읽는 자리에는 남아 있다** — 폼 제출이 그것으로 된다.
+
+    ⚠ 위 검사만 두면 「변수명을 지웠다」의 가장 싼 통과 방법이 **`id`·`name`
+    까지 지우는 것**이고, 그때 폼은 아무 값도 못 받은 채 303 을 낸다
+    (`app/routers/ui_forms.py::_submissions` 가 그 사고를 적어 두었다).
+    ⇒ **두 방향을 함께 잰다.**
+    """
+    machine = machine_attribute_text(render_dashboard())
+
+    missing = sorted(
+        name for name in _parameter_names(DEMO_MODEL) if name not in machine
+    )
+    assert not missing, (
+        f"폼이 읽는 속성(`id`·`name`·`data-parameter`)에서 사라진 파라미터: "
+        f"{missing} — 이 상태의 폼은 아무 값도 받지 못한 채 성공을 낸다"
+    )
+
+
+@pytest.mark.req("UI-1-AC1", "NFR-302-M1")
+def test_every_field_carries_a_human_label_and_never_the_variable_name() -> None:
+    """★ **필드마다 사람이 읽는 라벨이 서 있다** — 전건.
+
+    라벨 원천은 `core/model/parameters.py`(`LABEL_BY_NAME`·`resolve_label` ·
+    R63/P1 이 세웠다)이며 **화면이 손으로 적지 않는다**.
+
+    ⚠ **빈 라벨이면 파라미터 이름으로 되돌아가지 않는다** — 되돌아가면 변수명이
+    조용히 다시 나오고 그것이 사용자가 지적한 그 자리다. 화면은 「라벨 미등록」을
+    **글자로** 인쇄한다(빈칸과 「없다」는 다른 진술이다 · §13.0.1 ④).
+    """
+    from web.render import equipment_setting_fields
+
+    fields = equipment_setting_fields(DEMO_MODEL)
+    assert fields, "데모 구성에 파라미터가 하나도 없다 — 검사가 성립하지 않는다"
+
+    blank = [item["parameter"] for item in fields if not str(item["label"]).strip()]
+    assert not blank, f"라벨이 비어 있는 필드: {blank}"
+
+    underscored = [item["parameter"] for item in fields if "_" in str(item["label"])]
+    assert not underscored, (
+        f"라벨에 밑줄이 있다 — 변수명이 라벨로 새고 있다: {underscored}"
+    )
+
+    # 화면에도 그 라벨이 실제로 서 있는가 — 문맥만 맞고 템플릿이 안 그리는
+    # 상태를 가른다
+    drawn = {
+        element.attrs["for"]: element.text.strip()
+        for element in elements_by_tag(parse(render_dashboard()), "label")
+        if "for" in element.attrs
+    }
+    for item in fields:
+        if not item["scalar"]:
+            continue
+        assert drawn.get(str(item["id"])), (
+            f"{item['parameter']} 의 라벨이 화면에 없거나 비어 있다"
+        )
+
+
+@pytest.mark.req("UI-1-AC1")
+def test_the_unlabelled_case_is_printed_and_never_falls_back_to_the_name() -> None:
+    """★ **라벨이 없으면 「라벨 미등록」이 인쇄된다** — 판정 ③.
+
+    ⚠ 앞 축(R63/P1)의 검사가 빈 라벨 수를 **0** 으로 묶었으므로 **이 경로는 안
+    도는 것이 정상이다.** 그래도 눈에 보이게 두는 것이 규약이다 — 되돌아가는
+    구현은 카탈로그에 라벨 없는 이름이 하나 생기는 날 **조용히** 변수명을
+    화면에 되돌린다.
+
+    ⚠ **카탈로그를 흔들지 않는다.** 라벨이 빈 `ParameterSpec` 을 이 검사가
+    **직접 지어** `_field` 에 먹인다 — 실물 카탈로그를 monkey-patch 하면 그
+    변이가 다른 검사로 새어 나간다.
+    """
+    from core.model.parameters import ParameterSpec
+    from web.render import UNLABELLED, _field
+
+    spec = ParameterSpec(
+        tag="PV",
+        name="azimuth_deg",
+        label="",
+        kind=ParameterKind.NUMBER,
+        unit="도",
+        required=False,
+        default=180.0,
+        type_text="float",
+    )
+    field = _field(0, DEMO_MODEL.resources[0], spec)
+
+    assert field["label"] == UNLABELLED, field["label"]
+    assert "azimuth_deg" not in field["label"]
+    assert "azimuth_deg" not in field["help"]
+    # 기계가 읽는 자리는 그대로다 — 폼 제출이 이것으로 된다
+    assert field["id"] == "res0-azimuth_deg"
+
+
+@pytest.mark.req("UI-1-AC1")
+def test_grouping_loses_not_a_single_field() -> None:
+    """★★ **묶은 뒤에도 필드 총수가 묶기 전과 같다** — `UI-1-AC1` 의 「전체」.
+
+    ⚠ **수를 박지 않는다.** 기준은 `resource_parameters` 가 구성마다 펴는
+    개수이며, 박아 두면 카탈로그가 늘거나 자원이 늘 때 이 검사가 「화면이
+    틀렸다」가 아니라 「검사가 낡았다」로 빨간불이 된다.
+
+    ★ **그룹 안의 합계와 화면에 그려진 자리를 둘 다 센다.** 문맥만 맞고
+    템플릿이 한 묶음을 안 그리면 앞의 합계는 통과한다.
+    """
+    from web.render import equipment_setting_fields, equipment_setting_groups
+
+    expected = sum(
+        len(resource_parameters(resource.tag)) for resource in DEMO_MODEL.resources
+    )
+    grouped_total = sum(
+        len(group["fields"]) for group in equipment_setting_groups(DEMO_MODEL)
+    )
+
+    assert grouped_total == expected, (
+        f"묶는 동안 필드가 사라졌다 — 묶기 전 {expected} · 묶은 뒤 {grouped_total}"
+    )
+    assert len(equipment_setting_fields(DEMO_MODEL)) == expected
+    assert len(_fields_on_screen(render_dashboard())) == expected
+
+
+@pytest.mark.req("UI-1-AC1")
+def test_one_group_per_resource_instance_even_when_two_share_a_kind() -> None:
+    """★ **자원 인스턴스마다 그룹이 하나씩이고, 같은 종류가 둘이면 그룹도 둘이다.**
+
+    사용자 문면: *「그루핑이 가능한 아이템은 그룹화 — 예시: 태양광, ESS는 각각을
+    그룹화하여 제시」*(`docs/decisions-2026-09-05-R63.md` §1 「디자인」).
+
+    ⚠ **종류별로 묶지 않는다.** `PV` 를 둘 놓으면 **어느 자원의 값인지 알 수
+    없다** — `equipment_setting_groups` 독스트링이 그 사유를 적어 두었다.
+    """
+    from web.render import equipment_setting_groups
+
+    grown = DEMO_MODEL.model_copy(
+        update={
+            "resources": [
+                *DEMO_MODEL.resources,
+                DERConfig(tag="PV", params={"name": "벽면 BIPV", "capacity_kw": 4.0}),
+            ]
+        }
+    )
+    groups = equipment_setting_groups(grown)
+
+    assert len(groups) == len(grown.resources)
+    assert [group["name"] for group in groups] == ["옥상 태양광", "공용 ESS", "벽면 BIPV"]
+    # 같은 종류가 둘이면 그룹도 둘 — 종 단위로 한 벌만 그리면 이 단언이 진다
+    assert len([group for group in groups if group["tag"] == "PV"]) == 2
+
+    # 화면에도 묶음이 그만큼 서고, 각 묶음이 자기 자원 이름을 인쇄한다
+    context = demo_context()
+    context["parameter_groups"] = groups
+    html = render_dashboard(context)
+
+    drawn = [
+        element
+        for element in parse(html).elements
+        if "data-resource-group" in element.attrs
+    ]
+    assert len(drawn) == len(grown.resources), (
+        f"화면의 묶음이 {len(drawn)} 개 — 자원은 {len(grown.resources)} 개다"
+    )
+
+    corpus = human_text(html)
+    for group in groups:
+        assert group["name"] in corpus, (
+            f"묶음이 자기 자원 이름(「{group['name']}」)을 인쇄하지 않는다 — "
+            "그러면 어느 자원의 값인지 알 수 없다"
+        )
+
+
+#: 화면에서 물러난 낱말 — `.orch/R63/result_P2.md` 의 「바꾼다」 행이 짚은 것들이다.
+#: ⚠ **「전제」를 저장소 전체에서 세지 않는다.** 그 낱말은 일반 국어로 270줄,
+#: 전제 대장 뜻으로 328줄 쓰이며 그것들은 **바꿀 것이 아니다**(판정 ⓐ).
+#: 여기서 재는 것은 **대시보드가 사람에게 인쇄하는 글자**뿐이다.
+_RETIRED_SCREEN_WORDS = ("고급 모드", "고급모드", "전제")
+
+#: 그 자리에 선 낱말 — 판정 정본 `docs/decisions-2026-09-05-R63b.md` §1 낱말표.
+#:
+#: ⚠ **낱말표의 다섯째(결과 화면 출처 칸)는 여기 없다.** 그 값은
+#: `demo_context()["inputs"][…]["source"]` 이고 **어느 템플릿도 인쇄하지 않는다** —
+#: 대시보드의 「입력값 부록」은 `label`·`value`·`unit` 만 그리고 `run_result.html`
+#: 에는 `inputs` 순회가 없다(R63/WP-S1 실측). 화면에 없는 것을 「화면에 서라」로
+#: 재면 그 검사는 **없는 자리를 세우라고 요구한다** ⇒ 아래
+#: `test_the_ledger_source_word_moved_in_the_context` 가 **문맥에서** 잰다.
+_NEW_SCREEN_WORDS = ("설비 설정", "설비 설정 확인", "계측 선언")
+
+
+@pytest.mark.req("UI-1-AC1")
+def test_the_retired_words_are_gone_from_where_people_read() -> None:
+    """★ **종전 낱말이 사람이 읽는 자리에 0건이다** — 사용자 판정 §1 「용어」.
+
+    사용자 문면: *「'고급 모드'나 '전제'나 동일하게 설비 설정을 변경하는 것을
+    가르키는데 동일한 내용에 대해서 단일 단어를 사용해야 함」*.
+
+    ⚠ **전건을 센다.** 절 제목만 고치고 탐색 링크·마법사 걸음·`<legend>` 에
+    남은 상태가 「하나만 확인」에서는 초록불이다 — 착수 시점 실측이 그 넷이었다.
+    """
+    corpus = human_text(render_dashboard())
+
+    left = {word: corpus.count(word) for word in _RETIRED_SCREEN_WORDS}
+    assert not any(left.values()), (
+        "물러난 낱말이 화면에 남아 있다: "
+        f"{ {word: count for word, count in left.items() if count} }"
+    )
+
+
+@pytest.mark.req("UI-1-AC1")
+def test_the_new_words_stand_on_the_screen() -> None:
+    """★ **새 낱말이 실제로 서 있다** — 지운 것과 세운 것을 함께 잰다.
+
+    ⚠ 위 검사만 두면 「낱말을 지웠다」의 가장 싼 통과 방법이 **그 자리를 통째로
+    지우는 것**이다. 그때 사용자는 설비 설정으로 가는 입구를 잃는다.
+    """
+    corpus = human_text(render_dashboard())
+
+    missing = [word for word in _NEW_SCREEN_WORDS if word not in corpus]
+    assert not missing, f"새 낱말이 화면에 서지 않았다: {missing}"
+
+
+@pytest.mark.req("UI-1-AC1")
+def test_the_ledger_source_word_moved_in_the_context() -> None:
+    """★ **출처 칸의 「전제 대장」이 「분석 설정 대장」으로 옮겨졌다** — 문맥에서 잰다.
+
+    ⚠⚠ **이 값은 화면에 인쇄되지 않는다.** 「입력값 부록」은 `label`·`value`·
+    `unit` 만 그리고 `run_result.html` 에는 `inputs` 순회가 없다 — 즉 전수 목록
+    (`.orch/R63/result_P2.md` §1-2)이 이 두 줄을 「화면 인쇄물」로 분류한 것은
+    **실물과 다르다**(R63/WP-S1 이 실측했다). 그래도 낱말을 옮긴 이유: 이 값이
+    부록의 출처 칸으로 그려지는 날 옛 낱말이 되살아나며, 그때는 아무 검사도
+    빨간불을 내지 않는다.
+    ⇒ **화면이 아니라 문맥을 잰다** — 없는 자리를 세우라고 요구하지 않는다.
+    """
+    sources = {str(item["source"]) for item in demo_context()["inputs"]}
+
+    assert "전제 대장" not in sources, sources
+    assert "분석 설정 대장" in sources, sources

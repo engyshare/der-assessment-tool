@@ -282,7 +282,7 @@ excluded:
 
   # v0.7 우선순위 부여 시 함께 판정한 UI 항목 — 자동 검증으로 분류
   - requirement: "UI-1"
-    criterion: "마법사 + 고급 모드 병행"
+    criterion: "마법사 + 설비 설정(옛 「고급 모드」) 병행"
     why_automated: "두 진입점이 모두 도달 가능하고 같은 시나리오를 만드는지 E2E로 판정 가능"
 
   - requirement: "UI-2"

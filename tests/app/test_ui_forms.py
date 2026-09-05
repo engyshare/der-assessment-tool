@@ -343,25 +343,25 @@ def test_the_three_screens_link_to_each_other(client: TestClient) -> None:
 
 # ── 「전체 파라미터」 폼이 실제로 제출된다 (R62/WP-8 의 D9) ──────────────────
 #
-# WP-5 판정 — *「화면이 낼 수 있는 거부가 `DV-15` 하나다」*. 고급 모드의 50칸에는
+# WP-5 판정 — *「화면이 낼 수 있는 거부가 `DV-15` 하나다」*. 설비 설정의 50칸에는
 # `action` 도 제출 단추도 없었고, 그래서 `DV-1`~`DV-13` 을 화면으로 낼 모집단
 # 자체가 없었다(`MC-4` 가 막힌 자리다). 아래가 재는 것은 그 폼이 **먹는가**다.
 
-_ADVANCED = "/ui/advanced/parameters"
+_EQUIPMENT_SETTINGS = "/ui/equipment-settings/parameters"
 
 #: 화면이 「기본값 없음」이라 적은 칸의 말머리 — `web/render.py::_field` 가
 #: `source` 로 짓고 도움말 단추의 `aria-label` 에 실린다. **여기서 짓지 않는다.**
 _REQUIRED_MARK = "기본값 출처 필수 입력"
 
 
-def _advanced_form(client: TestClient) -> str:
+def _equipment_settings_form(client: TestClient) -> str:
     """대시보드가 그린 「전체 파라미터」 폼 **그 조각**만."""
     response = client.get("/")
     assert response.status_code == 200, response.text
     form = re.search(
         r'<form[^>]*aria-label="전체 파라미터".*?</form>', response.text, re.S
     )
-    assert form is not None, "고급 모드에 「전체 파라미터」 폼이 없다"
+    assert form is not None, "설비 설정에 「전체 파라미터」 폼이 없다"
     return form.group(0)
 
 
@@ -382,11 +382,22 @@ def _drawn_inputs(form: str) -> dict[str, str]:
 
 
 def _drawn_resource_names(form: str) -> tuple[str, ...]:
-    """폼이 그린 자원 이름 — 라벨이 `{자원 이름} · {파라미터}` 다."""
+    """폼이 그린 자원 이름 — **묶음의 `<legend>` 가 갖는다.**
+
+    ⚠⚠ **R63/WP-S1 이 이 함수를 고쳤다.** 종전에는 필드 라벨이
+    `{자원 이름} · {파라미터}` 라서 그 라벨을 정규식으로 갈라 이름을 얻었는데,
+    **사용자가 지적해 없앤 것이 바로 그 병기 형식**이다(*「"옥상 태양광 ·
+    azimuth_deg" 와 같이 coding 상의 변수명을 병기하지 않음」*). 자원 이름은
+    이제 묶음의 `<legend>` 에 한 번만 선다(`web/render.py::
+    equipment_setting_groups`).
+    ★ 고치지 않았다면 이 함수는 **빈 튜플**을 돌려주고, 그것을 쓰는
+    `_align_composer_with_dashboard` 가 **구성을 통째로 지워** 뒤 검사 넷이
+    「폼이 아무것도 안 그린다」로 진다 — 실측으로 그 넷이 빨간불이었다.
+    """
     seen: list[str] = []
-    for label in re.findall(r"<label for=\"[^\"]*\">([^<]*?) · ", form):
-        if label.strip() not in seen:
-            seen.append(label.strip())
+    for name in re.findall(r"<legend>([^<]+)</legend>", form):
+        if name.strip() and name.strip() not in seen:
+            seen.append(name.strip())
     return tuple(seen)
 
 
@@ -401,7 +412,7 @@ def _align_composer_with_dashboard(client: TestClient) -> None:
     고친 것과 **같은 결함**이며 대시보드에는 남아 있다 (result_8.md 의 D10).
     """
     for name in _resource_names(client):
-        if name not in _drawn_resource_names(_advanced_form(client)):
+        if name not in _drawn_resource_names(_equipment_settings_form(client)):
             client.post(f"{_COMPOSER}/resources/{name}/delete", follow_redirects=False)
 
 
@@ -421,7 +432,7 @@ def _accepted_payload(client: TestClient) -> dict[str, str]:
     거부가 `필드:` 로 **가리킨 칸만** 다음 후보로 옮긴다. 그래서 이 함수는
     「거부가 고칠 수 있는 칸을 가리키는가」까지 함께 잰다.
     """
-    drawn = _drawn_inputs(_advanced_form(client))
+    drawn = _drawn_inputs(_equipment_settings_form(client))
     blanks = [name for name, value in drawn.items() if not value]
     picked = dict.fromkeys(blanks, 0)
     for _ in range(len(_CANDIDATES) * (len(blanks) + 1)):
@@ -429,7 +440,7 @@ def _accepted_payload(client: TestClient) -> dict[str, str]:
             name: (value or _CANDIDATES[picked[name]])
             for name, value in drawn.items()
         }
-        response = client.post(_ADVANCED, data=payload, follow_redirects=False)
+        response = client.post(_EQUIPMENT_SETTINGS, data=payload, follow_redirects=False)
         if response.status_code == 303:
             return payload
         found = re.search(r"필드: [^.<]*\.([^<]*)</strong>", response.text)
@@ -447,7 +458,7 @@ def _accepted_payload(client: TestClient) -> dict[str, str]:
 
 
 @pytest.mark.req("UI-1-AC1")
-def test_the_advanced_parameter_form_can_actually_be_submitted(
+def test_the_equipment_settings_form_can_actually_be_submitted(
     client: TestClient,
 ) -> None:
     """★ 폼에 `action`·제출 단추가 있고, 그린 칸마다 `name` 이 있다.
@@ -455,9 +466,9 @@ def test_the_advanced_parameter_form_can_actually_be_submitted(
     `name` 이 없는 칸은 브라우저가 **보내지 않는다** — 폼이 제출되어도 그 칸은
     없는 것과 같고, 그 상태는 화면에서 보이지 않는다.
     """
-    form = _advanced_form(client)
+    form = _equipment_settings_form(client)
     assert 'method="post"' in form, f"제출 방법이 없다: {form[:200]}"
-    assert f'action="{_ADVANCED}"' in form, f"보낼 곳이 없다: {form[:200]}"
+    assert f'action="{_EQUIPMENT_SETTINGS}"' in form, f"보낼 곳이 없다: {form[:200]}"
     assert 'type="submit"' in form, "제출 단추가 없다"
     drawn = _drawn_inputs(form)
     assert drawn, "폼이 그린 입력칸이 하나도 없다"
@@ -471,12 +482,12 @@ def test_an_empty_required_parameter_is_refused_with_three_parts(
 ) -> None:
     """필수 칸이 빈 채로 제출되면 **거부**된다 — 빈 칸은 `0` 이 아니다."""
     _align_composer_with_dashboard(client)
-    form = _advanced_form(client)
+    form = _equipment_settings_form(client)
     assert _REQUIRED_MARK in form, "화면에 「기본값 없음」으로 표시된 칸이 없다"
     drawn = _drawn_inputs(form)
     assert "" in drawn.values(), f"빈 칸이 하나도 없다: {sorted(drawn)[:5]}"
 
-    response = client.post(_ADVANCED, data=drawn, follow_redirects=False)
+    response = client.post(_EQUIPMENT_SETTINGS, data=drawn, follow_redirects=False)
     assert response.status_code == 400, response.text
     _assert_three_parts(response.text)
 
@@ -495,7 +506,7 @@ def test_a_type_conversion_failure_also_answers_with_three_parts(
     target = next(iter(payload))
     payload[target] = "abc"
 
-    response = client.post(_ADVANCED, data=payload, follow_redirects=False)
+    response = client.post(_EQUIPMENT_SETTINGS, data=payload, follow_redirects=False)
     assert response.status_code == 400, response.text
     _assert_three_parts(response.text)
     assert "규칙: DV-" not in response.text, "대장 밖 검증에 규칙 ID 가 붙었다"
@@ -518,7 +529,7 @@ def test_a_dv_rule_violation_from_the_form_reaches_the_screen(
     for target in drawn:
         payload = dict(drawn)
         payload[target] = "-1"
-        response = client.post(_ADVANCED, data=payload, follow_redirects=False)
+        response = client.post(_EQUIPMENT_SETTINGS, data=payload, follow_redirects=False)
         if response.status_code == 400 and "규칙: DV-" in response.text:
             ruled.append(target)
             _assert_three_parts(response.text)
@@ -527,7 +538,7 @@ def test_a_dv_rule_violation_from_the_form_reaches_the_screen(
 
 
 @pytest.mark.req("UI-1-AC1")
-def test_submitting_the_advanced_parameter_form_changes_the_stored_value(
+def test_submitting_the_equipment_settings_form_changes_the_stored_value(
     client: TestClient,
 ) -> None:
     """★ 화면이 그린 칸을 보내면 **303** 이고, 보낸 값이 실제로 보관된다.
@@ -546,9 +557,9 @@ def test_submitting_the_advanced_parameter_form_changes_the_stored_value(
     payload[target] = str(float(drawn[target]) + 1)
 
     before = _stored_params(client)
-    response = client.post(_ADVANCED, data=payload, follow_redirects=False)
+    response = client.post(_EQUIPMENT_SETTINGS, data=payload, follow_redirects=False)
     assert response.status_code == 303, response.text[:400]
-    assert response.headers["location"].endswith("#advanced"), response.headers
+    assert response.headers["location"].endswith("#equipment-settings"), response.headers
     after = _stored_params(client)
     assert after != before, f"제출이 보관값을 하나도 바꾸지 않았다: {before}"
 
@@ -566,7 +577,7 @@ def _stored_params(client: TestClient) -> tuple[tuple[str, str], ...]:
 
     ⚠ 서비스를 직접 부르지 않는다(이 파일 머리말). 다만 화면이 아니라 API 를
     보는 것은 D10 때문이며, 대시보드가 보관 구성을 그리게 되는 날 이 함수는
-    `_advanced_form()` 로 바뀌어야 한다.
+    `_equipment_settings_form()` 로 바뀌어야 한다.
     """
     listing = client.get(f"/models/{_model_name(client)}/resources")
     assert listing.status_code == 200, listing.text

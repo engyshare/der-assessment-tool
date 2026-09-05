@@ -13,7 +13,12 @@
     .stage-body { overflow-x: auto; white-space: pre; }
     .net-demand { overflow-x: auto; }
     .verify-gap { border-left: 4px solid #b26b00; padding-left: .75rem; }
-    .gap-blank { color: #777; font-style: italic; }
+    {# ⚠⚠ `#777` 이 아니다. 흰 바닥에서 대비가 약 4.48:1 이라 WCAG 2.1 AA 의
+       4.5:1 에 **아슬하게 못 미치고**, axe 가 그것을 `color-contrast`
+       (serious) 위반으로 낸다 — R63 이 실물로 밟았다(칸 다섯이 전부 걸렸다).
+       `#595959` 는 같은 바닥에서 약 7:1 이다. **흐리게 보이려고 더 밝히지
+       마라** — 이 칸에 적힌 사유는 「왜 값이 없는가」이고 읽혀야 하는 글이다. #}
+    .gap-blank { color: #595959; font-style: italic; }
   </style>
 </head>
 <body>
@@ -83,12 +88,16 @@
         {# ⚠ markdown 을 해석하지 않는다. 해석하기 시작하면 이 화면이 변환기가
            되고, 변환기는 렌더러가 문법을 늘릴 때 낡는다. 고정폭 그대로가
            「수를 따라가며 대조한다」는 목적에 맞다. #}
-        <pre class="stage-body">{{ stage.body }}</pre>
+        {# ⚠ `tabindex="0"` 을 지우지 마라 — `overflow-x: auto` 인 영역은 키보드만
+           쓰는 사람이 스크롤할 수 없고, axe 가 그것을
+           `scrollable-region-focusable`(serious) 위반으로 낸다. R63 이 실물로
+           밟았다(넷이 걸렸다). #}
+        <pre class="stage-body" tabindex="0">{{ stage.body }}</pre>
       </details>
       {% endfor %}
 
       {% if group.net_demand %}
-      <figure class="net-demand">
+      <figure class="net-demand" tabindex="0">
         <table>
           <caption>스텝별 전력순수요 — <code>dispatch_hours</code></caption>
           <thead>
