@@ -12,6 +12,7 @@
     <h1>분산특구 경제성 평가</h1>
     <nav aria-label="주요 화면">
       <a href="#wizard">마법사</a>
+      <a href="#run">분석 실행</a>
       <a href="#advanced">고급 모드</a>
       <a href="#results">결과</a>
       <a href="#regulations">제도 관리</a>
@@ -28,6 +29,59 @@
         <li>내보내기</li>
       </ol>
       <button type="button">다음 단계</button>
+    </section>
+
+    {# ★ 실행 폼 — FR-705-AC2 「ⓐ·ⓑ·ⓒ 를 선택할 수 있어야 한다」.
+       ⚠⚠ **`method="get"` 이다.** 실행은 읽기 전용이고(저장소·대장에 아무것도
+       쓰지 않는다) 결과가 링크가 되어 심의에서 다시 열린다. `POST` 폼은
+       `python-multipart` 를 요구하는데 그것은 이 저장소의 의존성이 아니다.
+       ⚠ 갈래 목록을 여기 적지 않는다 — `BaselineArrangement` 를 열거한 것이
+       `baseline_arrangements` 다 (`web/render.py::baseline_arrangement_choices`). #}
+    <section id="run" class="band" aria-labelledby="run-title">
+      <h2 id="run-title">분석 실행</h2>
+      <form method="get" action="/ui/run" aria-label="분석 실행">
+        <fieldset>
+          <legend>시나리오</legend>
+          <label for="run-scenario">시나리오</label>
+          <select id="run-scenario" name="scenario">
+            {% for name in scenarios %}
+            <option value="{{ name }}">{{ name }}</option>
+            {% endfor %}
+          </select>
+        </fieldset>
+
+        <fieldset>
+          <legend>기준선 갈래</legend>
+          {# ⚠ **기본 갈래를 여기 적지 않는다.** 값이 빈 칸이면 시나리오에
+             필드를 넣지 않고, 그때 `resolve_baseline_arrangement` 가
+             `DEFAULT_BASELINE_ARRANGEMENT` 로 답한다. 여기 문면을 두면
+             기본값이 두 곳에 살고 한쪽만 고쳐지는 날이 온다. #}
+          <label>
+            <input type="radio" name="arrangement" value="" checked>
+            고르지 않음 — 저장소가 정한 기본 갈래로 돈다
+          </label>
+          {% for item in baseline_arrangements %}
+          <label>
+            <input type="radio" name="arrangement" value="{{ item }}">
+            {{ item }}
+          </label>
+          {% endfor %}
+        </fieldset>
+
+        <fieldset>
+          <legend>「자가용 집합자원화」의 계측 전제</legend>
+          {# 둘 다 서야 그 갈래가 성립한다. 적지 않으면 DV-15 로 거부되며,
+             그 거부가 이 화면의 정상 동작이다 — 가정하지 말고 물어라. #}
+          {% for item in pool_prerequisites %}
+          <label>
+            <input type="checkbox" name="{{ item.name }}" value="true">
+            {{ item.label }}
+          </label>
+          {% endfor %}
+        </fieldset>
+
+        <button type="submit">분석 실행</button>
+      </form>
     </section>
 
     <section id="advanced" class="band" aria-labelledby="advanced-title">

@@ -2,19 +2,32 @@
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from app.security.authorization import can_edit_regulation_profile
+from app.services.ui_run import golden_scenario_names
+from core.cba.baseline import (
+    POOL_PREREQUISITE_METERING,
+    POOL_PREREQUISITE_TRANSFER,
+    BaselineArrangement,
+    PoolMeteringDeclaration,
+)
 from core.contracts.regulation import RegulationProfile
 from core.contracts.units import Money
+from core.contracts.validation import ValidationError
 from core.model.composition import available_resource_tags, resource_name
 from core.model.parameters import ParameterKind, ParameterSpec, resource_parameters
 from core.model.schemas import DERConfig, ModelConfig
+from core.report._format import NO_VALUE, _won, _years
+from core.report.case_influences import CONCLUSION_METRIC, HEADLINE_METRIC
+from core.report.case_report import CaseReport
 
 _ROOT = Path(__file__).resolve().parent
 _ENV = Environment(
@@ -189,7 +202,52 @@ def demo_context() -> dict[str, Any]:
             "shortfall_kwh": 1250.0,  # 부족전력량 (kWh)
             "additional_cost": Money(Decimal("187500")),  # 추가 비용 (원)
         },
+        # ★ 실행 폼 — FR-705-AC2 「ⓐ·ⓑ·ⓒ 를 선택할 수 있어야 한다」.
+        # **여기 셋은 데모 값이 아니다.** 위의 `inputs`·`result_cards` 와 달리
+        # 실제 실행 경로(`GET /ui/run`)가 받는 값이며, 목록의 정본은 저장소다.
+        "scenarios": golden_scenario_names(),
+        "baseline_arrangements": baseline_arrangement_choices(),
+        "pool_prerequisites": pool_prerequisite_fields(),
     }
+
+
+def baseline_arrangement_choices() -> tuple[str, ...]:
+    """고를 수 있는 갈래의 **값 문면** — `BaselineArrangement` 를 열거해 얻는다.
+
+    ⚠ **목록을 소스에 박지 않는다.** 박으면 여덟 번째 갈래가 서는 날 화면만
+    셋을 그린 채 남고, 그 상태는 사람이 없는 칸을 찾을 때까지 드러나지 않는다
+    (`advanced_mode_fields` 가 같은 판단을 적어 두었다).
+
+    ⚠ 값 문면 그대로인 이유: 시나리오 yaml 의 `baseline_arrangement` 필드가
+    **문면 그대로**를 받는다 (`resolve_baseline_arrangement` 독스트링).
+    """
+    return tuple(item.value for item in BaselineArrangement)
+
+
+#: ⓒ 전제 둘의 **화면 문면**. 이름은 `PoolMeteringDeclaration` 의 필드에서,
+#: 문면은 `core.cba.baseline` 의 상수에서 온다 — 어느 쪽도 여기서 짓지 않는다.
+#: 거부 메시지와 화면이 **같은 문자열**을 봐야 사람이 *「어느 쪽이 빠졌는가」*
+#: 를 대조할 수 있다(그 상수들의 ⚠ 주석이 같은 이유를 적는다).
+#: ⚠ 읽기 전용으로 둔다 — 모듈 수준 가변 컨테이너는 `NFR-205` 가 막는 것이다
+#: (`scripts/check_hardcoded_params.py` 는 `web/` 를 훑지 않지만 규칙은 같다).
+#: `BASELINE_DECLARATIONS` 가 같은 자리에서 같은 모양을 쓴다.
+_POOL_PREREQUISITE_LABELS = MappingProxyType({
+    "ownership_or_operation_transferred": POOL_PREREQUISITE_TRANSFER,
+    "metering_separated": POOL_PREREQUISITE_METERING,
+})
+
+
+def pool_prerequisite_fields() -> tuple[dict[str, str], ...]:
+    """ⓒ 전제 둘의 **화면 칸** — 이름은 자료형이, 문면은 상수가 정본이다.
+
+    ⚠ 전제가 하나 늘면 여기서 `KeyError` 로 **멈춘다.** 조용히 빠지는 대신인
+    이유: 안 그리면 새 전제를 아무도 선언할 수 없고, 그 상태는 화면에서
+    「ⓒ 를 고를 수 없다」로만 보인다 — 왜 못 고르는지는 보이지 않는다.
+    """
+    return tuple(
+        {"name": field.name, "label": _POOL_PREREQUISITE_LABELS[field.name]}
+        for field in dataclasses.fields(PoolMeteringDeclaration)
+    )
 
 
 def model_composer_context(
@@ -258,3 +316,103 @@ def render_dashboard(context: dict[str, Any] | None = None) -> str:
     """Render the main dashboard template."""
     template = _ENV.get_template("dashboard.html")
     return template.render(context or demo_context())
+
+
+def run_result_context(report: CaseReport, *, scenario_text: str) -> dict[str, Any]:
+    """실행 결과 화면의 문맥 — `UI-7-AC1` · `FR-705-AC2`.
+
+    ## ⚠⚠⚠ **여기서 계산을 새로 하지 않는다**
+
+    `CaseReport` 가 준 값을 **옮겨 적기만** 한다. 화면이 인쇄하는 수가
+    리포트와 어긋나면 **그것이 새 결함**이다 — 이 저장소가 `cost_benefit_
+    section` 에서 이미 한 번 밟은 형태다(1년차 값으로 결손을 되지었더니 합이
+    맞지 않았다).
+
+    ⚠ 서식은 **`core/report/_format.py` 의 것을 그대로 쓴다.** 문면을 여기서
+    다시 지으면 「500,000원」과 「500000원」이, 「분석기간 내 미회수」와 다른
+    문면이 같은 저장소에 섞인다 — 그 파일이 존재하는 이유가 정확히 그것이다.
+    반올림·부호 뒤집기·단위 환산은 하지 않는다.
+
+    ⚠ **지표 키를 문자열로 박지 않는다** — `CONCLUSION_METRIC`(npv)·
+    `HEADLINE_METRIC`(payback_years) 이 정본이다.
+
+    ★ `npv_raw` 를 **날값 그대로** 함께 싣는다. 서식을 입힌 문면만 두면
+    「화면의 수가 리포트의 수와 같은가」를 기계가 대조할 수 없고, 그때 그
+    검사는 서식 문자열을 다시 짜 맞추게 된다.
+    """
+    return {
+        "error": None,
+        "scenario_name": report.scenario_name,
+        # ★ 영향도 순위 — 화면 **최상단**이다 (`UI-7-AC1`).
+        "influences": tuple(
+            {
+                "rank": rank,
+                "name": entry.variable,
+                "ledger_key": entry.ledger_key or NO_VALUE,
+                "impact": _won(entry.delta_won),
+                "flips": entry.flips_conclusion,
+            }
+            for rank, entry in enumerate(report.influences, start=1)
+        ),
+        # ★ 어느 갈래로 돌았나 — 갈래를 고르게 해 놓고 결과가 그것을 안 적으면
+        # 확인할 방법이 없다. 선언 다섯을 함께 싣는다(`CaseReport.
+        # baseline_branch` 의 ⚠ — 이름만 실으면 검토자가 그 이름이 뜻하는
+        # 기준선을 저장소 밖에서 찾아야 한다).
+        "arrangement": report.baseline_arrangement.value,
+        "branch": {
+            "without": report.baseline_branch.without_description,
+            "with": report.baseline_branch.with_description,
+            "viability": report.baseline_branch.viability_condition or NO_VALUE,
+            "self_consumption": (
+                report.baseline_branch.self_consumption_treatment.value
+            ),
+            "clause": report.baseline_branch.clause,
+        },
+        "npv": _won(report.metrics[CONCLUSION_METRIC]),
+        "npv_raw": report.metrics[CONCLUSION_METRIC],
+        "payback": _years(report.metrics[HEADLINE_METRIC]),
+        "annual_benefit": _won(report.basis.annual_benefit_won),
+        "annual_cost": _won(report.basis.annual_cost_won),
+        "benefits": tuple(
+            {"label": line.label, "annual": _won(line.annual_won)}
+            for line in report.basis.benefits
+        ),
+        "costs": tuple(
+            {"label": line.label, "annual": _won(line.annual_won)}
+            for line in report.basis.costs
+        ),
+        "scenario_text": scenario_text,
+    }
+
+
+def run_error_context(exc: ValidationError) -> dict[str, Any]:
+    """거부 화면의 문맥 — **필드·사유·조치 3요소** (`NFR-303`).
+
+    ⚠ **예외 문면을 여기서 새로 짓지 않는다.** `exc.field`·`exc.reason`·
+    `exc.action` 을 옮긴다 — 새로 지으면 같은 거부가 JSON 출구
+    (`app/routers/models.py::_bad_request`)와 화면에서 다른 말을 하게 되고,
+    그때 어느 쪽이 맞는지는 아무 검사도 말하지 않는다.
+
+    `rule` 도 함께 싣는다. ⓒ 거부는 `DV-15` 이며, 대장 ID 가 붙은 거부와
+    일반 입력 검증을 화면이 가려 보여야 사람이 *「제도가 막은 것인가」* 를
+    안다(`ValidationError` 독스트링의 「`rule` 은 선택이다」 절).
+    """
+    return {
+        "error": {
+            "field": exc.field,
+            "reason": exc.reason,
+            "action": exc.action,
+            "rule": exc.rule or NO_VALUE,
+        }
+    }
+
+
+def render_run_result(context: dict[str, Any]) -> str:
+    """실행 결과(또는 거부) 화면을 그린다 — `FR-705-AC2` · `NFR-303`.
+
+    ⚠ **거부를 다른 템플릿으로 가르지 않는다.** 가르면 결과 화면이 머리·
+    탐색을 고칠 때마다 거부 화면만 낡고, 그 낡음은 사람이 실제로 거부당할
+    때까지 보이지 않는다.
+    """
+    template = _ENV.get_template("run_result.html")
+    return template.render(context)

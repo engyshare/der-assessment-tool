@@ -27,11 +27,13 @@ import mimetypes
 from datetime import date
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse
 
 from app.security.authorization import ADMIN_ROLE
+from app.services.ui_run import run_ui_case
 from core.contracts.regulation import RegulationItem
+from core.contracts.validation import ValidationError
 from core.regulation.profile import RegulationProfileDraft
 from web.render import (
     DEMO_MODEL,
@@ -40,6 +42,9 @@ from web.render import (
     render_dashboard,
     render_model_composer,
     render_regulation_admin,
+    render_run_result,
+    run_error_context,
+    run_result_context,
 )
 
 router = APIRouter(tags=["ui"])
@@ -102,6 +107,67 @@ def regulation_admin() -> HTMLResponse:
                 when=date.today(),
                 versions=(_DEMO_PROFILE.version,),
             )
+        )
+    )
+
+
+@router.get("/ui/run", response_class=HTMLResponse)
+def run_case(
+    scenario: str = Query(
+        default="scenario_unsubsidized",
+        description="골든 시나리오 이름 — 목록에 있는 것만 연다",
+    ),
+    arrangement: str = Query(
+        default="",
+        description="기준선 갈래의 값 문면. **비우면 시나리오에 적지 않는다**",
+    ),
+    ownership_or_operation_transferred: bool = Query(
+        default=False,
+        description="ⓒ 전제 ① — 자가용 설비의 소유 또는 운영권 인계",
+    ),
+    metering_separated: bool = Query(
+        default=False,
+        description="ⓒ 전제 ② — 발전량·전기사용량의 구분 계측·정산",
+    ),
+) -> HTMLResponse:
+    """고른 갈래로 한 번 돌려 결과 화면을 낸다 — `FR-705-AC2` · `UI-7-AC1`.
+
+    ## ⚠⚠⚠ `POST` 가 아니라 `GET` 이다 — 세 이유가 함께 선다
+
+    ① **새 의존성이 안 든다.** FastAPI 의 `POST` 폼(`Form(...)`)은
+    `python-multipart` 를 요구하고 그것은 `pyproject.toml` 에 없다.
+    ② **의미가 맞다.** 실행은 읽기 전용이며 저장소·대장에 아무것도 쓰지
+    않는다(임시 시나리오는 `TemporaryDirectory` 안에서 나고 죽는다).
+    ③ **결과가 링크가 된다.** `/ui/run?scenario=…&arrangement=…` 하나로 그
+    결과를 다시 열 수 있고, 심의에서 이것이 값을 한다.
+
+    ⚠ **빈 `arrangement` 를 기본 갈래 문면으로 바꾸지 않는다.** 화면의
+    「고르지 않음」이 그대로 *「필드를 적지 않았다」* 로 내려가야
+    `resolve_baseline_arrangement` 하나가 기본값을 정한다 — 여기서 채우면
+    기본값이 두 곳에 살고, 한쪽만 고쳐지는 날 층마다 다른 갈래로 돌면서
+    아무 예외도 나지 않는다.
+
+    ⚠ **거부를 `_bad_request()` 처럼 JSON 으로 내지 않는다.** 이 라우트는
+    화면이고, JSON 을 받은 브라우저는 3요소를 사람이 읽을 모양으로 그리지
+    못한다. **낮추는 것은 형식뿐이고 내용은 같다** — 필드·사유·조치 셋을
+    `web/render.py::run_error_context` 가 그대로 옮긴다 (`NFR-303`).
+    """
+    try:
+        run = run_ui_case(
+            scenario,
+            arrangement=arrangement or None,
+            ownership_or_operation_transferred=ownership_or_operation_transferred,
+            metering_separated=metering_separated,
+        )
+    except KeyError as exc:
+        # `app/routers/models.py::_not_found` 와 같은 모양이다 — 목록 밖 이름은
+        # 「틀린 입력」이 아니라 **없는 것**이므로 404 다.
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationError as exc:
+        return HTMLResponse(render_run_result(run_error_context(exc)), status_code=400)
+    return HTMLResponse(
+        render_run_result(
+            run_result_context(run.report, scenario_text=run.scenario_text)
         )
     )
 
