@@ -20,6 +20,11 @@ from app.services.scenario_store import (
     ScenarioRecord,
     ScenarioStore,
 )
+from app.services.scenario_store_file import (
+    JsonFileScenarioStore,
+    build_scenario_store,
+    resolve_scenario_store_dir,
+)
 
 
 class AssumptionService:
@@ -118,14 +123,22 @@ class SupportSolverService:
         return target_npv_won - npv_no_support_won
 
 
+# **왜 `__all__` 을 두는가.** mypy strict 의 `no_implicit_reexport` 는 암묵
+# 재수출을 거부한다 — 여기 적히지 않은 이름을 `app.services` 에서 import 하는
+# 코드는 형 검사에서 「없는 이름」이 된다(`core/casegrid/e2e_runner.py::__all__`
+# 주석이 같은 사유를 적는다). 새 이름을 여기 싣지 않으면 **호출은 되는데
+# 검사만 빨간불**이 되고, 그 어긋남은 실행으로는 드러나지 않는다.
 __all__ = (
     "AssumptionService",
     "CaseGridService",
     "InMemoryScenarioStore",
+    "JsonFileScenarioStore",
     "ModelCompositionService",
     "RunService",
     "ScenarioRecord",
     "ScenarioService",
     "ScenarioStore",
     "SupportSolverService",
+    "build_scenario_store",
+    "resolve_scenario_store_dir",
 )

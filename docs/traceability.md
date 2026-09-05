@@ -190,9 +190,9 @@
 |  |  | 1 | `FR-601-AC7` | 신뢰도 (v0.5 정정): 확정 / 추정 / 가정 3단계. 정의는 근거 표기 기준 2절을 따르며 여기서 재정의하지 않는다. 가정 항목이 결과에 미친 영향도를 리… | 자동 | test_items.py, test_no_deprecated_vocabulary.py |
 |  |  | 1 | `FR-601-AC8` | 버전·diff: 이름·버전으로 저장되고 두 버전 간 diff 뷰를 제공한다 | 자동 | test_set.py |
 |  |  | 1 | `FR-601-AC9` | 공유: 하나의 AssumptionSet을 여러 사업모델이 공유 참조한다 (FR-202의 전제 동일성 보장 근거) | 자동 | test_set.py |
-| `FR-602` | Must-have | 1 | `FR-602-AC1` | 시나리오 수준에서 특정 항목만 덮어쓸 수 있다 | 자동 | test_set.py |
-|  |  | 1 | `FR-602-AC2` | 리포트에 "기준 전제 대비 변경 항목" 목록이 자동 생성된다 | 자동 | test_set.py, test_case_report.py, test_narrative.py |
-|  |  | 1 | `FR-602-AC3` | 오버라이드 시 사유 입력을 권장 필드로 제공한다 | 자동 | test_set.py, test_case_report.py, test_narrative.py |
+| `FR-602` | Must-have | 1 | `FR-602-AC1` | 시나리오 수준에서 특정 항목만 덮어쓸 수 있다 | 자동 | test_ui_run.py, test_scenario_overrides.py, test_set.py |
+|  |  | 1 | `FR-602-AC2` | 리포트에 "기준 전제 대비 변경 항목" 목록이 자동 생성된다 | 자동 | test_ui_run.py, test_scenario_overrides.py, test_set.py, test_case_report.py, test_narrative.py |
+|  |  | 1 | `FR-602-AC3` | 오버라이드 시 사유 입력을 권장 필드로 제공한다 | 자동 | test_scenario_overrides.py 2건, test_set.py, test_case_report.py, test_narrative.py |
 | `FR-603` | Must-have | 1 | `FR-603-AC1` | 항목 필드 (v0.5 정정): (자원유형, 규격, 단가·단위, 기준일·기준연도·버전, 적용 범위·조건, 산출 방법·표본, 출처(문서명·위치·전체URL), 최종확… | 자동 | test_catalog.py |
 |  |  | 1 | `FR-603-AC2` | 카탈로그 값과 사용자 변경값이 리포트에서 시각적으로 구분된다 | 자동 | test_catalog.py |
 |  |  | 1 | `FR-603-AC3` | 기준연도가 분석연도와 다르면 물가 조정 후 사용하며 조정 내역을 표시한다 | 자동 | test_catalog.py 2건 |
@@ -278,9 +278,9 @@
 | `FR-804` | Should-have | - | `FR-804-AC1` | 주요 변수별로 NPV=0이 되는 임계값을 표로 제시 | **미매핑** | — |
 | `FR-805` | Should-have | - | `FR-805-AC1` | 실행 중 완료 케이스 수·예상 잔여 시간 표시, 중단 가능 | 자동 | test_casegrid.py, test_variant_production_wiring.py, test_variant_report.py |
 | `FR-901` | Must-have | 1 | `FR-901-AC1` | 회원가입, 로그인, 비밀번호 재설정, 세션 만료(기본 24시간) | 자동 | test_auth.py 8건 |
-| `FR-902` | Must-have | 1 | `FR-902-AC1` | 이름·설명·태그·최종수정일시 부여 | 자동 | test_scenarios.py 2건 |
-|  |  | 1 | `FR-902-AC2` | 저장 시 버전 이력이 남아 이전 버전 복원 가능 | 자동 | test_scenarios.py 2건 |
-|  |  | 1 | `FR-902-AC3` | 삭제는 소프트 삭제(30일 보관) | 자동 | test_scenarios.py 2건 |
+| `FR-902` | Must-have | 1 | `FR-902-AC1` | 이름·설명·태그·최종수정일시 부여 | 자동 | test_scenario_store_file.py 3건, test_scenarios.py 2건 |
+|  |  | 1 | `FR-902-AC2` | 저장 시 버전 이력이 남아 이전 버전 복원 가능 | 자동 | test_scenario_store_file.py, test_scenarios.py 2건 |
+|  |  | 1 | `FR-902-AC3` | 삭제는 소프트 삭제(30일 보관) | 자동 | test_scenario_store_file.py 2건, test_scenarios.py 2건 |
 | `FR-903` | Should-have | - | `FR-903-AC1` | admin(카탈로그·요금표 관리) / analyst(시나리오 생성·실행) / viewer(공유 결과 열람) | **미매핑** | — |
 | `FR-904` | Should-have | - | `FR-904-AC1` | 만료기한 설정 가능한 공유 토큰, 비로그인 열람 옵션 | **미매핑** | — |
 | `FR-905` | Must-have | 1 | `FR-905-AC1` | 인스턴스 단위 바인딩: 데이터셋은 시나리오 전체가 아니라 개별 자원·부하 인스턴스에 바인딩된다. 가구부 부하와 공용부 부하, PV#1과 PV#2가 각각 다른 시… | 자동 | test_timeseries.py |
@@ -351,7 +351,7 @@
 |  |  | 1 | `NFR-208-M1` | import-linter 계약(layers + independence)을 CI에서 강제. 위반 0건 | 자동 | test_17_10_dod10.py, test_import_boundaries.py 2건 |
 | `NFR-301` | Should-have | 1 | `NFR-301-M1` | 사용자 5명 태스크 수행 테스트 | 수동 | test_manual_stubs.py (스텁) + MC-2 (미수행) |
 | `NFR-302` | Should-have | 1 | `NFR-302-M1` | UI 검수 체크리스트 | 자동 | test_dashboard.py 3건 |
-| `NFR-303` | Should-have | 1 | `NFR-303-M1` | 오류 메시지 리뷰 체크리스트 | 자동 | test_ui_forms.py 6건, test_ui_run.py, test_analysis_period.py 5건, test_price_basis.py 6건, test_dv9_dv10.py 2건, test_e2e_analysis_period_wiring.py 6건, test_e2e_exclusion_wiring.py, test_ess_share.py, test_ess_share_benefits.py, test_feasible_region_slice.py 3건, test_structured_errors.py 22건, test_variant_production_wiring.py, test_baseline.py, test_pool_metering_declaration.py 2건, test_proforma.py 4건, test_chart_contract.py, test_dv_catalogue_matches_spec.py 3건, test_dv_rule_enforcement.py 10건, test_leap_year_policy.py 3건, test_validation_contract.py 5건, test_ess.py 11건, test_ev_v2g.py 8건, test_heatpump.py 15건, test_load.py 17건, test_pv_validation.py 9건, test_thermal_load.py 15건, test_incentive.py 3건, test_tsstore.py 4건, test_tariff_fallback.py 7건, test_charts_feasible_region.py, test_charts_wp28a.py 3건, test_aggregated_ppa.py, test_settlement_household_contract.py, test_settlement_manager_structure.py 2건, test_dashboard.py |
+| `NFR-303` | Should-have | 1 | `NFR-303-M1` | 오류 메시지 리뷰 체크리스트 | 자동 | test_ui_forms.py 6건, test_ui_run.py, test_analysis_period.py 5건, test_price_basis.py 6건, test_scenario_overrides.py, test_dv9_dv10.py 2건, test_e2e_analysis_period_wiring.py 6건, test_e2e_exclusion_wiring.py, test_ess_share.py, test_ess_share_benefits.py, test_feasible_region_slice.py 3건, test_structured_errors.py 22건, test_variant_production_wiring.py, test_baseline.py, test_pool_metering_declaration.py 2건, test_proforma.py 4건, test_chart_contract.py, test_dv_catalogue_matches_spec.py 3건, test_dv_rule_enforcement.py 10건, test_leap_year_policy.py 3건, test_validation_contract.py 5건, test_ess.py 11건, test_ev_v2g.py 8건, test_heatpump.py 15건, test_load.py 17건, test_pv_validation.py 9건, test_thermal_load.py 15건, test_incentive.py 3건, test_tsstore.py 4건, test_tariff_fallback.py 7건, test_charts_feasible_region.py, test_charts_wp28a.py 3건, test_aggregated_ppa.py, test_settlement_household_contract.py, test_settlement_manager_structure.py 2건, test_dashboard.py |
 | `NFR-304` | Nice-to-have | 1 | `NFR-304-AC1` | 주요 화면은 1366×768 이상에서 가로 스크롤 없이 표시되어야 한다 | 수동 | test_manual_stubs.py (스텁) + MC-5 (미수행) |
 | `NFR-401` | Must-have | 1 | `NFR-401-AC1` | 비밀번호는 Argon2id 또는 bcrypt(cost≥12)로 해싱 저장 | 자동 | test_hashing.py 2건 |
 | `NFR-402` | Must-have | 1 | `NFR-402-AC1` | 모든 통신은 TLS 1.2 이상 | 자동 | test_phase1_measurements.py |

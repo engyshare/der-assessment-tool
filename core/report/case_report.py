@@ -65,6 +65,10 @@ from typing import Any
 import yaml  # type: ignore[import-untyped]
 
 from core.assumption.provider import AssumptionSet
+from core.assumption.scenario_overrides import (
+    ASSUMPTION_OVERRIDES_FIELD,
+    apply_scenario_overrides,
+)
 from core.casegrid.e2e_runner import PV_CAPACITY_FACTOR, run_single_case_e2e
 from core.casegrid.ledger_levels import (
     build_level_map,
@@ -693,6 +697,19 @@ def build_case_report(
     """
     scenario = _load_scenario(scenario_path)
     provider = AssumptionSet.load_from_yaml(str(assumptions_path))
+    # ★★★ **전제 오버라이드도 시나리오에서 읽는다** (`FR-602` · §7.2 O-2 ·
+    # 사용자 판정 `docs/decisions-2026-09-05-R63.md` §1 — *「분석에 필요한
+    # 사항을 수정, 저장, 로드할 수 있어야 함」*). **통로는 위 갈래와 같은
+    # 자리, 시나리오 필드 하나다** — 해석과 검증은 전부
+    # `core/assumption/scenario_overrides.py` 가 지고 여기는 재대입만 한다
+    # (이 파일은 `NFR-206` 코드 줄 상한에 가까이 닿아 있다).
+    # ⚠ **자리가 여기인 이유**: 아래 `build_level_map`·`analysis_years()` 보다
+    # **앞**이어야 오버라이드된 분석기간이 실제로 쓰인다. 뒤로 밀면 바꾼 값이
+    # 붙임에는 뜨고 계산에는 안 먹으며, 그 어긋남은 아무 예외도 내지 않는다.
+    # ⚠ **필드가 없으면 같은 객체가 그대로 돌아온다** — 기본값 실행이 통로가
+    # 생기기 전과 같은 경로를 돌게 하는 것이 그 동일성이고, 그것이 결론축
+    # 불변(무보조 `npv`)의 근거다.
+    provider = apply_scenario_overrides(provider, scenario.get(ASSUMPTION_OVERRIDES_FIELD))
     level_map = build_level_map(assumptions_path)
     horizon_years = provider.analysis_years()
     subsidy_rate = float(scenario["subsidy_rate"])
