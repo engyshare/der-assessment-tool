@@ -49,6 +49,22 @@ dev = [
     "diff-cover>=9.0",
     "pip-audit>=2.7.3",
 ]
+e2e = [                  # R62/WP-4 (작업 15.12 E2E · 15.10 axe 접근성 스캔)
+    # ⚠⚠ **이 그룹은 본 `tests` 잡에도 깔린다.** CI 의 「의존성」 단계가
+    # optional-dependency 그룹을 읽어 전부 설치하기 때문이다(그것이 그 단계의
+    # 요점이다 — 손으로 나열하면 조용히 빠진다). 그런데 본 잡은
+    # `playwright install chromium` 을 돌리지 않으므로 **브라우저가 없다.**
+    # 그래서 이 그룹을 쓰는 검사는 `tests/` 가 아니라 **`tests_e2e/`** 에 둔다 —
+    # `[tool.pytest.ini_options]` 의 `testpaths = ["tests"]` 가 그것을 본 실행에서
+    # 수집하지 않는다. 마커나 `skip` 으로 거르지 않는 이유는 `tests_e2e/__init__.py`
+    # 머리말에 적었다. 깔리는 것 자체는 무해하다(둘 다 순수 파이썬 휠이다).
+    "playwright>=1.48",
+    # 노드가 아예 없는 저장소다(`grep -rn "node\|npm\|npx" .github/workflows/`
+    # → 0건). 이 휠은 **`axe.min.js` 를 안에 담아** 오므로 `@axe-core/cli` 와 달리
+    # `setup-node` 를 CI 에 들이지 않는다 — 고른 근거는
+    # `tests_e2e/test_axe_accessibility.py` 머리말이 갖는다.
+    "axe-playwright-python>=0.1.8",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
