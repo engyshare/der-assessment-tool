@@ -36,10 +36,12 @@ available_resource_tags()` 가 *「어떤 자원을 놓을 수 있는가」* 에
 ## 단위는 어디서 오는가 — 이름이 말하거나, 사람이 선언하거나
 
 이 저장소의 자원 파라미터 이름은 **이미 단위를 담고 있다**(`capex_unit_won_per_kw`
-· `soc_min_pct` · `battery_kwh`). 그래서 단위표를 새로 발명하지 않고 둘로 가른다.
+· `soc_min_pct` · `battery_kwh`). 그래서 단위표를 새로 발명하지 않고 셋으로 가른다 —
+**셋째는 예외이고 사유가 아래에 있다.**
 
-    `UNIT_BY_SUFFIX`   이름이 단위를 **문자 그대로** 담은 것 — 규약을 읽는다
-    `UNIT_BY_NAME`     이름이 단위를 담지 않은 것 — 사람이 선언하고 사유를 적는다
+    `UNIT_BY_SUFFIX`          이름이 단위를 **문자 그대로** 담은 것 — 규약을 읽는다
+    `UNIT_OVERRIDING_SUFFIX`  이름이 단위를 담은 **척**하는 것 — 접미어를 이긴다
+    `UNIT_BY_NAME`            이름이 단위를 담지 않은 것 — 사람이 선언하고 사유를 적는다
 
 **접미어 규칙을 넓히지 않은 이유가 이 가름의 요점이다.** `cycle_life`(회)와
 `calendar_life`(년)는 같은 `_life` 로 끝나는데 단위가 다르고, `heating_degree_days`
@@ -49,6 +51,19 @@ available_resource_tags()` 가 *「어떤 자원을 놓을 수 있는가」* 에
 두 표가 겹치면(접미어로 이미 풀리는 이름을 `UNIT_BY_NAME` 이 또 선언하면)
 `tests/model/test_parameters.py` 가 빨간불을 낸다 — 겹친 자리는 나중에 접미어
 규칙을 고칠 때 어느 쪽이 이기는지가 조용히 뒤집히는 자리다.
+
+**셋째 표는 그 경고가 이미 실현된 자리다**(R63 적대적 검수 D-7·D-8). `_hours` 는
+`price_linked_hours`(길이 8시간)에 맞고 `night_hours`(시각의 집합 `(23,0,…,7)`)에
+틀리며, `_won` 은 `bos_capex_won`(저량)에 맞고 `fixed_om_won`(히트펌프의 **연액**)에
+틀리다 — **한 접미어가 이미 두 뜻을 지고 있다.** 규칙째 걷어내면 맞는 이름들이
+단위를 잃고 카탈로그가 멈추므로, **틀린 자리만 이름으로 이긴다.**
+
+그 이름을 `UNIT_BY_NAME` 에 넣지 않고 표를 하나 더 둔 이유: `UNIT_BY_NAME` 의
+규약은 *「접미어가 못 푸는 이름만 다룬다」* 이고 위 겹침 검사가 그것을 붙든다.
+예외를 그 표에 섞으면 규약과 예외가 같은 자리에 앉아 **어느 쪽이 정본인지 읽는
+사람이 알 수 없고**, 겹침 검사는 세는 일을 그만두게 된다. 표를 가르면 겹침
+검사는 그대로 서고 **예외는 하나하나 눈에 보인다** — 그리고 「선언해 두었는데
+접미어가 계속 이기는」 침묵을 시험이 따로 붙든다.
 
 ## 한국어 라벨도 여기서 온다 — 화면이 손으로 적지 않는다
 
@@ -126,15 +141,39 @@ UNIT_BY_SUFFIX: Mapping[str, str] = MappingProxyType({
     "_won_per_kwh": "원/kWh",
     "_won_per_kw": "원/kW",
     "_won_per_year": "원/년",
+    # ⚠ 두 뜻을 진다 — 히트펌프 `fixed_om_won` 은 저량이 아니라 연액이라
+    # `UNIT_OVERRIDING_SUFFIX` 가 이긴다.
     "_won": "원",
     "_kwh": "kWh",
     "_kw": "kW",
     "_pct": "%",
     "_deg": "°",
     "_temp_c": "℃",
+    # ⚠ 두 뜻을 진다 — `night_hours` 는 길이가 아니라 시각의 집합이라
+    # `UNIT_OVERRIDING_SUFFIX` 가 이긴다. `price_linked_hours` 는 길이가 맞다.
     "_hours": "시간",
     "_hour": "시",
     "_count": "개",
+})
+
+#: 이름이 단위를 담은 **척**하는 것. 이름별 선언이 접미어를 **이긴다**.
+#:
+#: 여기 드는 이름은 **반드시 어떤 접미어를 가려야 하고**(가릴 것이 없으면
+#: `UNIT_BY_NAME` 이 그 자리다), **접미어가 왜 틀렸는지를 값 옆에 적는다.**
+#: 사유를 적을 수 없으면 그것은 접미어가 맞다는 뜻이다.
+UNIT_OVERRIDING_SUFFIX: Mapping[str, str] = MappingProxyType({
+    # `_hours` 는 길이(「시간」)인데 이것은 **시각의 집합**이다 —
+    # `heatpump.py` 의 `DEFAULT_NIGHT_HOURS = (23, 0, 1, …, 7)` 이고
+    # `(… // SECONDS_PER_HOUR) % 24 in self.night_hours` 로 읽는다. 형제
+    # `connect_start_hour` 와 같은 뜻이며 그쪽은 `_hour` 라서 「시」를 받았다 —
+    # **같은 뜻이 접미어 한 글자 차이로 갈려 있었다.**
+    "night_hours": "시",
+    # `_won` 은 저량(원)인데 이것은 **연액**이다 — `heatpump.py::HeatPump.fixed_om()`
+    # 가 「C-2 고정 O&M A × (1+i)^(n−1)」로 해마다 계상한다. 다른 다섯 자원의
+    # 같은 개념은 인자 이름이 `fixed_om_won_per_year` 여서 접미어가 맞는다.
+    # ⚠ 인자 이름은 생성자 시그니처이고 부르는 자리가 여럿이므로 고치지 않는다 —
+    # 화면에 나가는 단위만 맞춘다.
+    "fixed_om_won": "원/년",
 })
 
 #: 이름이 단위를 담지 않은 것. **사유를 값 옆에 적는다** — 적을 수 없으면 그것은
@@ -206,9 +245,15 @@ LABEL_BY_NAME: Mapping[str, str] = MappingProxyType({
     "escalation_rate": "운영비 실질 상승률",
     "replacement_escalation_rate": "교체 단가 실질 상승률",
     # ── 태양광 ──
-    # ⚠ `capacity_kw` 는 부하·열부하도 받는다. 거기서는 계약 용량을 뜻하지만
-    # 이름별 선언이므로 라벨은 하나다 — 자원 이름이 화면에서 그 차이를 진다.
-    "capacity_kw": "설비용량",
+    # ⚠ `capacity_kw` 는 부하·열부하도 받고 **소스가 셋을 다르게 부른다**
+    # (`pv.py` 「용량(kW)」 · `load.py` 「계약전력」 · `thermal_load.py`
+    # 「정격 열용량」). 그 말이 그대로 거부 문면이 되므로 한 자원의 이름을
+    # 대표로 쓰면(R63/P1 의 「설비용량」) 나머지 두 자원의 사용자는 화면과 거부
+    # 에서 **다른 이름**을 본다 — 부하 칸을 「설비용량」으로 보고 값을 넣었는데
+    # 거부는 「계약전력」이라 답했다(R63 적대적 검수 D-9).
+    # 라벨을 (자원, 이름)별로 넓히지 않고 **셋 다에 참인 말**로 좁혔다 —
+    # 단위 `kW` 가 옆에 서므로 「용량」만으로 셋 다 참이다.
+    "capacity_kw": "용량",
     "capacity_factor": "이용률",
     "generation_profile_kwh": "발전 프로파일",
     "azimuth_deg": "방위각",
@@ -271,7 +316,11 @@ LABEL_BY_NAME: Mapping[str, str] = MappingProxyType({
     "price_profile_won_per_kwh": "시간별 전력 단가",
     "elec_price_won_per_kwh": "전력 구입 단가",
     "capex_unit_won_per_kw": "난방 출력당 설치 단가",
-    "fixed_om_won": "고정 운영비",
+    # 히트펌프의 고정 O&M 은 **연액**이라 다른 다섯 자원의
+    # `fixed_om_won_per_year` 와 같은 개념이다. 갈라 두면 두 자원을 함께 그린
+    # 화면에서 같은 개념이 두 줄로 갈라 보이고, 사용자가 20년 총액을 적으면
+    # 20배가 된다(R63 적대적 검수 D-8). 단위는 `UNIT_OVERRIDING_SUFFIX` 가 진다.
+    "fixed_om_won": "연간 고정 운영비",
     # `pump` 는 히트펌프가 아니라 **순환펌프**다 — 설비 자체의 수명은 `lifetime` 이다.
     "pump_lifetime": "순환펌프 수명",
     "pump_replacement_cost_won": "순환펌프 교체비",
@@ -361,9 +410,17 @@ def config_parameters(
 def resolve_unit(name: str) -> str:
     """파라미터 이름에서 단위를 푼다. 풀리지 않으면 빈 문자열이다.
 
-    **접미어를 먼저 본다.** 이름이 단위를 담고 있으면 그것이 정본이고,
-    `UNIT_BY_NAME` 은 담고 있지 않은 이름만 다룬다 (모듈 독스트링 참조).
+    **셋을 이 순서로 본다**: 접미어를 이기라고 선언한 이름
+    (`UNIT_OVERRIDING_SUFFIX`) → 접미어 → 접미어가 못 푸는 이름
+    (`UNIT_BY_NAME`).
+
+    접미어가 이름별 선언보다 앞인 이유는 이름이 단위를 담고 있으면 그것이
+    정본이기 때문이고, 그래서 **이기려면 이긴다고 적어야 한다** — 적지 않고
+    `UNIT_BY_NAME` 에만 두면 선언은 서 있는데 접미어가 계속 이기고 **아무
+    오류도 나지 않는다** (모듈 독스트링 참조).
     """
+    if name in UNIT_OVERRIDING_SUFFIX:
+        return UNIT_OVERRIDING_SUFFIX[name]
     for suffix in sorted(UNIT_BY_SUFFIX, key=len, reverse=True):
         if name.endswith(suffix):
             return UNIT_BY_SUFFIX[suffix]

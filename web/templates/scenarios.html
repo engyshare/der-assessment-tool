@@ -1,0 +1,239 @@
+{# 시나리오 목록·저장·불러오기·버전·삭제 화면 — FR-902-AC1~AC3.
+
+   **저장한 것이 목록에 뜨고, 그 값으로 실행 화면이 채워져야 한다.** 저장만 되고
+   불러올 수 없으면 사용자에게 그것은 「저장이 안 됐다」와 구별되지 않는다.
+
+   ⚠ 서식은 `regulation_admin.html` 을 베꼈다 — 새 서식을 발명하지 않는다.
+   `autoescape` 가 켜져 있으므로 사용자가 지은 이름·설명·태그를 그대로 그린다.
+#}
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>시나리오 — 분산특구 경제성 평가</title>
+  <link rel="stylesheet" href="/static/wp12.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">본문으로 이동</a>
+  <header class="topbar">
+    <h1>시나리오</h1>
+    {# 화면들을 잇는다 — 대시보드에서 이 화면으로 오는 링크는 병합 뒤에 붙는다. #}
+    <nav aria-label="주요 화면">
+      <a href="/">대시보드</a>
+      <a href="/ui/settings">설정(전제)</a>
+      <a href="/ui/model-composer">자원 구성</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    {% if error %}
+    {# 거부는 **3요소를 셋 다** 그린다 (NFR-303). 하나라도 빠지면 사람에게 남는
+       선택은 「값을 하나씩 바꿔 보기」다. #}
+    <section id="validation" class="band" aria-labelledby="validation-title">
+      <h2 id="validation-title">저장할 수 없습니다</h2>
+      <article class="error-message" role="alert">
+        <strong>필드: {{ error.field }}</strong>
+        <span>사유: {{ error.reason }}</span>
+        <span>조치: {{ error.action }}</span>
+      </article>
+    </section>
+    {% endif %}
+
+    {% if deleted_id %}
+    {# ★ FR-902-AC3 — 삭제는 소프트 삭제이고 **되돌릴 수 있다는 것이 보여야
+       한다.** 보관 기간을 여기 숫자로 적지 않는다: `SOFT_DELETE_RETENTION_DAYS`
+       가 정본이고 라우터가 건넨다. #}
+    <section id="deleted" class="band" aria-labelledby="deleted-title">
+      <h2 id="deleted-title">삭제했습니다 — 되돌릴 수 있습니다</h2>
+      <p data-deleted-id="{{ deleted_id }}">
+        「{{ deleted_name or deleted_id }}」 를 삭제했습니다.
+        소프트 삭제이므로 <strong>{{ retention_days }}일</strong> 안에는 되돌릴 수
+        있고, 그 뒤에는 행이 완전히 지워집니다.
+      </p>
+      <form method="post" action="/ui/scenarios/{{ deleted_id }}/restore">
+        <button type="submit">삭제 되돌리기</button>
+      </form>
+    </section>
+    {% endif %}
+
+    <section id="scenario-list" class="band" aria-labelledby="list-title">
+      <h2 id="list-title">저장한 시나리오</h2>
+      <table>
+        <caption>이름·설명·태그·최종수정일시 (FR-902-AC1)</caption>
+        <thead>
+          <tr>
+            <th scope="col">이름</th><th scope="col">설명</th>
+            <th scope="col">태그</th><th scope="col">최종수정일시</th>
+            <th scope="col">판</th><th scope="col">고른 것</th>
+            <th scope="col">조작</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in scenarios %}
+          <tr data-scenario-id="{{ row.id }}"
+              data-updated-at="{{ row.updated_at }}"
+              {% if row.id == saved_id %}data-just-saved="true"{% endif %}>
+            <td class="scenario-name">{{ row.name }}</td>
+            <td class="scenario-description">{{ row.description or "설명 없음" }}</td>
+            <td class="scenario-tags">
+              {% for tag in row.tags %}<span class="tag">{{ tag }}</span>{% else %}태그 없음{% endfor %}
+            </td>
+            <td class="scenario-updated">{{ row.updated_at }}</td>
+            <td>{{ row.version }}</td>
+            <td>
+              {% if row.broken %}
+              {# 못 읽는 정의를 숨기지 않는다 — 칸을 남기고 사유를 글자로. #}
+              <span class="broken" role="note">정의를 읽을 수 없다 — {{ row.broken }}</span>
+              {% else %}
+              <span class="golden">{{ row.definition.scenario or "시나리오 미지정" }}</span>
+              <span class="arrangement">{{ row.definition.baseline_arrangement or "갈래 미지정(기본값)" }}</span>
+              {% if row.definition.settings_id %}
+              <span class="applied-settings">설정 {{ row.definition.settings_id }} 적용</span>
+              {% endif %}
+              {% endif %}
+            </td>
+            <td>
+              <a href="/ui/scenarios/{{ row.id }}/run">불러와 실행</a>
+              <a href="/ui/scenarios?versions={{ row.id }}">판 이력</a>
+              <form method="post" action="/ui/scenarios/{{ row.id }}/delete">
+                <button type="submit">삭제</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7">저장한 시나리오가 없습니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    {% if versions_of %}
+    {# FR-902-AC2 — 판 이력이 남고 이전 판으로 되돌릴 수 있다. #}
+    <section id="versions" class="band" aria-labelledby="versions-title">
+      <h2 id="versions-title">판 이력 — 시나리오 {{ versions_of }}</h2>
+      <table>
+        <caption>저장할 때마다 판이 하나 쌓인다. 복원도 새 판으로 남는다</caption>
+        <thead>
+          <tr>
+            <th scope="col">판</th><th scope="col">이름</th>
+            <th scope="col">설명</th><th scope="col">저장 시각</th>
+            <th scope="col">조작</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in versions %}
+          <tr data-version="{{ item.version }}">
+            <td>{{ item.version }}</td>
+            <td>{{ item.name }}</td>
+            <td>{{ item.description or "설명 없음" }}</td>
+            <td>{{ item.updated_at }}</td>
+            <td>
+              <form method="post"
+                    action="/ui/scenarios/{{ versions_of }}/restore_version">
+                <input type="hidden" name="version" value="{{ item.version }}">
+                <button type="submit">이 판으로 되돌리기</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5">이력이 없습니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+
+    <section id="scenario-save" class="band" aria-labelledby="save-title">
+      <h2 id="save-title">시나리오 저장</h2>
+      {# ⚠ `action` 이 `/scenarios`(JSON API)를 가리키면 폼 제출이 **영어 422** 로
+         떨어진다. 화면 전용 출구는 `app/routers/ui_scenarios.py` 다 —
+         `web/templates/regulation_admin.html` 이 같은 자리에서 같은 주석을 단다. #}
+      <form method="post" action="/ui/scenarios">
+        <label for="save-scenario-id">고쳐 저장할 번호 (0 = 새로 저장)</label>
+        <input id="save-scenario-id" name="scenario_id" type="number" value="0" min="0">
+
+        <label for="save-name">이름</label>
+        <input id="save-name" name="name" type="text" required>
+
+        <label for="save-description">설명</label>
+        <input id="save-description" name="description" type="text">
+
+        <label for="save-tags">태그 (쉼표로 나눈다)</label>
+        <input id="save-tags" name="tags" type="text">
+
+        <label for="save-golden">분석할 시나리오</label>
+        <select id="save-golden" name="scenario">
+          {% for name in golden %}
+          <option value="{{ name }}" data-golden-choice>{{ name }}</option>
+          {% endfor %}
+        </select>
+
+        {# ★ 기준선 갈래는 **시나리오가 정하는 부분**이다 (사용자 판정 §1).
+           빈 값을 기본 갈래 문면으로 바꾸지 않는다 — 「고르지 않음」이 그대로
+           내려가야 `resolve_baseline_arrangement` 하나가 기본값을 정한다. #}
+        <label for="save-arrangement">기준선 갈래</label>
+        <select id="save-arrangement" name="arrangement">
+          <option value="">고르지 않음 (기본 갈래로 돈다)</option>
+          {% for value in arrangements %}
+          <option value="{{ value }}" data-arrangement-choice>{{ value }}</option>
+          {% endfor %}
+        </select>
+
+        <fieldset>
+          <legend>ⓒ 「자가용 집합자원화」 전제 — 둘이 함께 서야 성립합니다</legend>
+          {% for field in prerequisites %}
+          <label for="save-{{ field.name }}">
+            <input id="save-{{ field.name }}" name="{{ field.name }}"
+                   type="checkbox" value="true">
+            {{ field.label }}
+          </label>
+          {% endfor %}
+        </fieldset>
+
+        {# ★ 「시나리오에서는 설정을 선택하여 적용할 수 있어야 함」 (사용자 §1). #}
+        <label for="save-settings">적용할 설정(전제 오버라이드 집합)</label>
+        <select id="save-settings" name="settings_id">
+          <option value="0">없음 — 전제 대장 그대로</option>
+          {% for row in settings %}
+          <option value="{{ row.id }}" data-settings-choice>{{ row.name }} (판 {{ row.version }})</option>
+          {% endfor %}
+        </select>
+
+        <button type="submit">시나리오 저장</button>
+      </form>
+      <p class="hint">
+        저장하면 판이 하나 쌓입니다. 삭제는 소프트 삭제이므로
+        {{ retention_days }}일 안에는 되돌릴 수 있습니다.
+      </p>
+    </section>
+
+    <section id="settings-list" class="band" aria-labelledby="settings-list-title">
+      <h2 id="settings-list-title">저장한 설정</h2>
+      <table>
+        <caption>설정은 전제 대장 위에 얹는 오버라이드 집합입니다</caption>
+        <thead>
+          <tr>
+            <th scope="col">이름</th><th scope="col">설명</th>
+            <th scope="col">최종수정일시</th><th scope="col">판</th>
+            <th scope="col">조작</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in settings %}
+          <tr data-settings-id="{{ row.id }}" data-updated-at="{{ row.updated_at }}">
+            <td>{{ row.name }}</td>
+            <td>{{ row.description or "설명 없음" }}</td>
+            <td>{{ row.updated_at }}</td>
+            <td>{{ row.version }}</td>
+            <td><a href="/ui/settings?applied={{ row.id }}">열어 적용해 보기</a></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5">저장한 설정이 없습니다 — <a href="/ui/settings">설정 화면</a>에서 만듭니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,247 @@
+{# 설정(전제) 보기·수정·저장·로드 화면 — FR-601(대장 전건) · FR-602(오버라이드).
+
+   ## ⚠⚠ 전제 대장을 무르게 만들지 않는다 (NFR-202 · 사용자 판정 R63 §3 ⓐ)
+
+   이 화면이 고치는 것은 **대장이 아니라 대장 위에 얹는 오버라이드**다. 그래서
+   「대장 값」과 「내 값」이 두 칸으로 나란히 서고, 대장에 없는 키는 이 화면이
+   만들 수 없다 — 그 거부는 `resolve_assumption_overrides` 가 내고 이 화면은
+   그것을 **삼키지 않고 글자로** 보인다.
+
+   ## ⚠ 빈 「내 값」은 「안 고쳤다」이지 0 이 아니다
+
+   대장 값을 입력칸에 미리 채워 두지 않는다. 채워 두면 사람이 손대지 않은 칸이
+   전부 오버라이드가 되고, 그때 붙임의 「기준 전제 대비 변경 항목」은 아무것도
+   말하지 않는다.
+
+   ⚠ 서식은 `regulation_admin.html` 을 베꼈다 — 새 서식을 발명하지 않는다.
+#}
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>설정 — 분산특구 경제성 평가</title>
+  <link rel="stylesheet" href="/static/wp12.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">본문으로 이동</a>
+  <header class="topbar">
+    <h1>설정 — 분석 전제</h1>
+    <p class="hint">
+      여기서 고친 값은 <strong>전제 대장을 바꾸지 않습니다</strong>.
+      대장 위에 얹는 「내 값」으로 저장되고, 시나리오가 그것을 골라 적용합니다.
+    </p>
+    <nav aria-label="주요 화면">
+      <a href="/">대시보드</a>
+      <a href="/ui/scenarios">시나리오</a>
+      <a href="/ui/model-composer">자원 구성</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    {% if error %}
+    {# 거부는 **3요소를 셋 다** 그린다 (NFR-303). ★ 그리고 아래 폼이 사람이
+       넣은 값을 그대로 되돌려 그린다 — 잃으면 「고칠 수 없다」로 읽힌다. #}
+    <section id="validation" class="band" aria-labelledby="validation-title">
+      <h2 id="validation-title">저장할 수 없습니다</h2>
+      <article class="error-message" role="alert">
+        <strong>필드: {{ error.field }}</strong>
+        <span>사유: {{ error.reason }}</span>
+        <span>조치: {{ error.action }}</span>
+      </article>
+      <p class="hint">아래 폼에는 방금 넣은 값이 그대로 남아 있습니다.</p>
+    </section>
+    {% endif %}
+
+    {% if applied %}
+    {# ★ FR-602-AC2 — 「기준 전제 대비 변경 항목」. 수는 `CaseReport` 가 준
+       것이며 화면이 다시 계산하지 않는다. `data-npv` 는 서식 이전의 날값이고
+       `run_result.html` 과 **같은 이름**을 쓴다. #}
+    <section id="applied" class="band" aria-labelledby="applied-title">
+      <h2 id="applied-title">이 설정으로 돌린 결과 — {{ applied.name }}</h2>
+      <dl class="metrics">
+        <dt>분석 시나리오</dt><dd>{{ applied.scenario_name }}</dd>
+        <dt>순현재가치(NPV)</dt>
+        <dd class="npv" data-npv="{{ applied.npv_raw }}">{{ applied.npv }}</dd>
+      </dl>
+      <table data-override-count="{{ applied.overrides | length }}">
+        <caption>기준 전제 대비 변경 항목 — 「대장 값」과 「내 값」을 나란히 둡니다</caption>
+        <thead>
+          <tr>
+            <th scope="col">전제 항목</th><th scope="col">대장 값</th>
+            <th scope="col">내 값</th><th scope="col">사유</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in applied.overrides %}
+          <tr data-override-key="{{ row.key }}">
+            <td>{{ row.key }}</td>
+            <td class="ledger-value">{{ row.base }}</td>
+            <td class="my-value">{{ row.mine }}</td>
+            <td>{{ row.reason }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4">고친 항목이 없습니다 — 전제 대장 그대로 돌았습니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="hint">
+        <a href="/ui/scenarios">시나리오 화면</a>에서 이 설정을 시나리오에 붙이면
+        그 시나리오를 불러올 때마다 같은 값으로 돕니다.
+      </p>
+    </section>
+    {% endif %}
+
+    {# ★★ 사용자가 지목한 다섯을 **먼저** 보인다 (사용자 판정 R63 §1 「설정」).
+       대장에 없는 것은 지어내지 않고 「없다」로 적는다 — 「없는 항목」과
+       「안 그린 칸」을 같게 읽지 않는 것이 이 저장소의 규약이다. #}
+    <section id="user-named" class="band" aria-labelledby="user-named-title">
+      <h2 id="user-named-title">사용자가 지목한 다섯</h2>
+      <table>
+        <caption>사용자의 말이 전제 대장의 어느 항목인가</caption>
+        <thead>
+          <tr>
+            <th scope="col">사용자의 말</th><th scope="col">전제 대장 항목</th>
+            <th scope="col">있나</th><th scope="col">비고</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in user_items %}
+          <tr data-user-item="{{ row.word }}">
+            <td>{{ row.word }}</td>
+            <td>
+              {% for key in row.ledger_keys %}
+              <a href="#ledger-{{ key }}" class="ledger-key">{{ key }}</a>
+              {% else %}—{% endfor %}
+            </td>
+            <td>{{ "있다" if row.present else "없다" }}</td>
+            <td>
+              {% if row.note %}<span class="missing" role="note">{{ row.note }}</span>{% endif %}
+              {% for field in row.series %}
+              <span class="series-field" role="note">
+                시계열: {{ field.tag }} · {{ field.name }} — {{ field.reason }}
+              </span>
+              {% endfor %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    {# ⚠ 판정 ④ — 시계열은 수치 입력 칸 하나로 그릴 수 없다. **자리를 없애지
+       않고** 사유를 글자로 적는다. 없애면 사용자가 요구한 항목이 화면에서
+       사라진다. #}
+    <section id="series" class="band" aria-labelledby="series-title">
+      <h2 id="series-title">시계열 항목 — 이 라운드에서는 고칠 수 없습니다</h2>
+      <p class="series-out-of-scope" role="note">{{ series_note }}</p>
+      <table>
+        <caption>자원 파라미터 카탈로그가 가진 시계열 전건</caption>
+        <thead>
+          <tr>
+            <th scope="col">자원</th><th scope="col">항목</th>
+            <th scope="col">단위</th><th scope="col">왜 비어 있나</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for field in series_fields %}
+          <tr data-series-field="{{ field.tag }}.{{ field.name }}">
+            <td>{{ field.tag }}</td>
+            <td>{{ field.name }}</td>
+            <td>{{ field.unit }}</td>
+            <td><span class="chart-unwired" role="note">{{ field.reason }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    <section id="ledger" class="band" aria-labelledby="ledger-title">
+      <h2 id="ledger-title">전제 대장 — 전건</h2>
+      <form method="post" action="/ui/settings">
+        <input type="hidden" name="scenario" value="{{ scenario }}">
+
+        <label for="settings-name">설정 이름</label>
+        <input id="settings-name" name="name" type="text"
+               value="{{ settings_name }}" required>
+
+        <label for="settings-description">설명</label>
+        <input id="settings-description" name="description" type="text"
+               value="{{ settings_description }}">
+
+        {# 그룹화 — 사용자 판정 §1 「그루핑이 가능한 아이템은 그룹화」. 묶는
+           기준은 대장 키의 첫 마디이며, 한국어 이름을 손으로 적지 않는다
+           (적으면 항목이 늘 때 그 목록이 낡는다). #}
+        {% for group in groups %}
+        <fieldset data-ledger-group="{{ group.prefix }}">
+          <legend>{{ group.prefix }} — {{ group['items'] | length }}건</legend>
+          <table>
+            <caption>키 · 대장 값 · 내 값 · 단위 · 신뢰도 · 출처</caption>
+            <thead>
+              <tr>
+                <th scope="col">전제 항목</th><th scope="col">대장 값</th>
+                <th scope="col">내 값</th><th scope="col">단위</th>
+                <th scope="col">신뢰도</th><th scope="col">사유(권장)</th>
+                <th scope="col">출처</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in group['items'] %}
+              <tr id="ledger-{{ item.key }}" data-ledger-key="{{ item.key }}"
+                  {% if item.overridden %}data-overridden="true"{% endif %}>
+                <td><label for="val-{{ item.key }}">{{ item.key }}</label></td>
+                <td class="ledger-value">{{ item.base_text }}</td>
+                <td class="my-value">
+                  <input id="val-{{ item.key }}" name="val-{{ item.key }}"
+                         type="text" value="{{ item.mine }}"
+                         placeholder="비우면 대장 값 그대로">
+                </td>
+                <td>{{ item.unit }}</td>
+                <td>{{ item.confidence }}</td>
+                <td>
+                  <input id="reason-{{ item.key }}" name="reason-{{ item.key }}"
+                         type="text" value="{{ item.reason }}"
+                         aria-label="{{ item.key }} 오버라이드 사유">
+                </td>
+                <td class="source">{{ item.source }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </fieldset>
+        {% endfor %}
+
+        {% if unknown %}
+        {# 대장 밖 키를 사람이 보낸 경우 — 그 칸도 되돌려 그린다. 지우면 무엇이
+           거부됐는지 화면에서 사라진다. #}
+        <fieldset data-ledger-group="대장 밖">
+          <legend>전제 대장에 없는 키 — 저장되지 않습니다</legend>
+          {% for row in unknown %}
+          <label for="val-{{ row.key }}">{{ row.key }}</label>
+          <input id="val-{{ row.key }}" name="val-{{ row.key }}" type="text"
+                 value="{{ row.value }}">
+          {% endfor %}
+        </fieldset>
+        {% endif %}
+
+        <button type="submit">설정 저장</button>
+      </form>
+    </section>
+
+    <section id="saved-settings" class="band" aria-labelledby="saved-title">
+      <h2 id="saved-title">저장한 설정 — 골라 로드합니다</h2>
+      <ul>
+        {% for row in saved %}
+        <li data-settings-id="{{ row.id }}">
+          <a href="/ui/settings?scenario={{ scenario }}&amp;applied={{ row.id }}">{{ row.name }}</a>
+          <span>판 {{ row.version }}</span>
+          <span>{{ row.updated_at }}</span>
+        </li>
+        {% else %}
+        <li>저장한 설정이 없습니다.</li>
+        {% endfor %}
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
