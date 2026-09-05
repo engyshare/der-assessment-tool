@@ -251,21 +251,54 @@ def c_incomplete_record(d: Path):
 case("수행인데 performed_at 기록 없음", c_incomplete_record, "수행 기록 불완전")
 
 
-# 11 — 실제 대장의 차단 미수행(MC-1)이 「판정불가」로 표기되는가 (양성)
+# 11 — 차단 미수행이 있으면 「판정불가」로 표기되는가 (양성)
 #
-#     이 저장소의 실제 docs/manual-checks.yaml에는 이미 MC-1
-#     (blocking_dod: true, status: 미수행)이 있다. 이것을 fixture로 새로
-#     심을 필요가 없다 — 이미 심겨 있다. 여기서는 그 상태를 gen_traceability.py가
-#     조용히 지나치지 않고 실제로 표기하는지를 확인한다. 표기 로직이
-#     빠지면(회귀) 이 케이스가 MISS로 드러난다.
+#     ★★★ 2026-09-05(R61) — **이 케이스가 실제 대장을 fixture 로 쓰고 있었고,
+#     그래서 MC-1 이 닫히는 날 CI 가 빨간불이 됐다.** 종전 주석은
+#     *「이 저장소의 실제 docs/manual-checks.yaml 에는 이미 MC-1
+#     (blocking_dod: true, status: 미수행)이 있다. 이것을 fixture 로 새로 심을
+#     필요가 없다 — 이미 심겨 있다」* 였다.
+#
+#     ⚠⚠ **그 문장이 「대장은 앞으로도 그 상태일 것이다」를 가정한다.**
+#     MC-1 은 언젠가 반드시 수행되는 항목이고(그것이 이 저장소의 목표다),
+#     수행되는 순간 이 케이스가 MISS 로 뒤집힌다 — **검사 대상이 좋아지면
+#     검사가 빨간불이 되는** 형태다. 실제로 그렇게 됐다.
+#
+#     ★ 이 저장소는 같은 형태를 이미 두 번 적어 두었다 — 「검사가 자기 검사
+#     대상에서 정본을 읽어 오면 공허해진다」(R35) · 「대장이 좋아지면 음성
+#     사례가 조용히 죽는다」(R52). **여기는 조용히 죽는 대신 시끄럽게 죽었다**
+#     (CI 가 잡았다). 그것이 나은 쪽이지만, 애초에 실제 대장을 볼 이유가 없다.
+#
+#     ⇒ **자족적인 합성 대장으로 바꾼다.** 재는 것은 그대로다 — 차단 미수행이
+#     있을 때 gen_traceability.py 가 그것을 조용히 지나치지 않고 「판정불가」로
+#     표기하는가. 표기 로직이 빠지면(회귀) 이 케이스가 MISS 로 드러난다.
 def c_blocking_marked_positive(d: Path):
-    rc, out = baseline(d)
-    # rc는 0이 아닐 수 있다 — 빈 tests/ 디렉터리라 대부분의 조항이
-    # 미매핑(rc=1)이기 때문이며, blocking_dod 기능과는 무관하다. 여기서
-    # 확인하는 것은 결함(rc=2)이 아니면서 판정불가 표기가 실제로 나오는가다.
-    ok = rc != 2 and "판정불가" in out and "MC-1" in out
+    t = d / "t11"
+    t.mkdir()
+    write(t, "test_auto.py", (
+        "import pytest\n\n"
+        "@pytest.mark.req('FR-1-AC1')\n"
+        "def test_real():\n"
+        "    assert True\n"
+    ))
+    spec = write(d, "mini-spec-11.md", MINI_SPEC)
+    m = write(d, "blocking-unperformed.yaml", (
+        "version: 1\n"
+        "checks:\n"
+        "  - id: MC-Z11\n"
+        "    requirement: FR-1\n"
+        "    criterion_id: FR-1-AC1\n"
+        "    why_manual: x\n"
+        "    blocking_dod: true\n"
+        "    status: '미수행'\n"
+    ))
+    rc, out = run(t, manual=m, spec=spec)
+    # rc 는 0 이 아닐 수 있다 — 차단 미수행이 있으면 그 자체로 rc 가 움직인다.
+    # 여기서 확인하는 것은 **결함(rc=2)이 아니면서** 판정불가 표기가 그 항목의
+    # ID 와 함께 실제로 나오는가다.
+    ok = rc != 2 and "판정불가" in out and "MC-Z11" in out
     return (0 if ok else 9), out
-case("실제 대장의 차단 미수행(MC-1)이 판정불가로 표기됨 (양성)",
+case("차단 미수행이 있으면 판정불가로 표기됨 (양성)",
      c_blocking_marked_positive, "")
 
 
@@ -273,8 +306,10 @@ case("실제 대장의 차단 미수행(MC-1)이 판정불가로 표기됨 (양�
 #
 #     1~3만 있으면 판정 로직이 "항상 참"을 내도 초록불이다. 실제 spec은
 #     항상 어딘가 미매핑이 남아 있어(다른 레인이 동시에 채우는 중) rc를
-#     그것으로 오염시키므로, 여기만 **자족적인 미니 spec**을 심어 rc=0을
+#     그것으로 오염시키므로, **자족적인 미니 spec**을 심어 rc=0을
 #     literal하게 고정한다.
+#     ⚠ 종전 이 줄은 *「여기만」* 이라 적었는데 **R61 이 케이스 11 도 이 spec 을
+#     쓰게 바꿨다** — 그 케이스가 실제 대장을 보다가 MC-1 이 닫히자 깨졌다.
 MINI_SPEC = (
     "## 1. 요구사항\n\n"
     "- **FR-1** 샘플 요구사항\n"
