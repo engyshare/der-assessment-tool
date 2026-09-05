@@ -1,0 +1,110 @@
+# CLAUDE.md — 이 저장소에서 파이썬을 부르는 법
+
+## 인터프리터는 `.venv` 하나다
+
+**모든 파이썬 호출은 저장소의 `.venv` 로 한다.**
+
+```bash
+./.venv/Scripts/python.exe -m <module> ...
+```
+
+⛔ **시스템·전역 파이썬을 쓰지 마라.** 「`python` 이 PATH 에 있으니 그것으로
+돌린다」가 이 저장소에서 실제로 일어났고(2026-09-06), 그러면 **저장소 밖 인터프리터의
+패키지 구성을 검증하게 된다.** 다른 기계·CI·Docker 에서는 그 구성이 없다.
+
+- `python` · `py` · `pip` 를 맨 이름으로 부르지 않는다. **항상 `./.venv/Scripts/python.exe -m`** 로 시작한다.
+- ⚠ **`PYTHONUTF8=1` 을 걸어라.** 이 저장소의 소스·픽스처·상태 파일이 한글이라, 걸지
+  않으면 Windows 기본 코드페이지에서 `UnicodeDecodeError` 가 난다.
+
+### 환경을 채우는 것은 **uv 다** — `pip install` 로 넣지 마라
+
+`.venv` 는 `uv` 가 만든 것이다(`.venv/pyvenv.cfg` 의 `uv = 0.9.18`). 설치자는 uv 이고
+`pip` 은 `pip-audit` 이 끌고 들어온 부산물이다. **패키지를 손으로 넣지 말고 그룹째 동기화한다:**
+
+```bash
+uv lock                  # pyproject 가 바뀌었으면
+uv sync --all-extras     # base + api + persistence + dev + e2e 를 .venv 에 제자리 설치
+```
+
+- **`uv.lock` 은 `.gitignore` 안이다** — 의존성 정본은 `pyproject.toml` 하나이고 락은 로컬 부산물이다.
+- **`No module named pip` 은 고장이 아니다.** `uv venv` 는 기본적으로 pip 을 넣지 않는다.
+  2026-09-06 에 그것을 「`.venv` 가 손상됐다」로 읽은 오진이 있었다. **진짜 증상은
+  `import fastapi` 가 실패하는 것**이고, 그때의 원인은 **`uv.lock` 이 `api` · `e2e` 그룹이
+  `pyproject.toml` 에 append 되기 전에 만들어진 낡은 락**이었다. 진단은 이 한 줄로 한다:
+
+```bash
+uv sync --all-extras --locked --dry-run   # 락이 낡았으면 여기서 말해 준다
+```
+
+## 서버 실행
+
+```bash
+export PYTHONUTF8=1
+./.venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+**시나리오 저장을 파일로 남기려면 `DER_SCENARIO_STORE` 를 함께 준다.** 없으면 저장이
+인메모리로 동작하고 프로세스가 끝나면 사라진다 — 결함이 아니라 규약이다
+(`DER_DB_URL` 이 없으면 DB 가 인메모리가 되는 것과 같다. README 「로컬 실행」 절).
+
+## 서버가 떴는지 확인하는 법 — **`/health` 로는 아무것도 증명되지 않는다**
+
+`/health` 는 의존성이 빠져 있어도 200 을 낸다. 화면 여덟을 전부 때려라.
+
+```bash
+for p in / /health /ui/run /ui/scenarios /ui/settings /ui/verify /ui/model-composer /ui/regulation-admin; do
+  printf "%-24s %s\n" "$p" "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000$p)"
+done
+```
+
+기동조차 안 될 때는 서버를 띄우기 전에 이것으로 가른다 — **`routes 46`** 이 나와야 한다:
+
+```bash
+./.venv/Scripts/python.exe -c "import app.main; print('routes', app.main.app.state.route_count)"
+```
+
+### 의존성이 빠지면 **어디서 죽는지가 셋 다 다르다** (2026-09-06 실측)
+
+| 빠진 것 | 증상 | 터지는 자리 |
+|---|---|---|
+| `sqlalchemy` · `argon2-cffi` | **앱 전체가 기동 실패** | `app/routers/auth.py:9` — 라우터 자동 수집이 모듈을 전부 끌어온다 |
+| `jinja2` · `python-multipart` | **앱 전체가 기동 실패** | `Form(...)` 라우트를 세우다 죽는다 (README 경고) |
+| `matplotlib` | **`/health` 는 200, `/` 만 500** | `core/report/charts/_render.py:16` ← 차트 레지스트리가 **첫 요청 시점에** import 한다 |
+
+세 번째가 `/health` 를 믿으면 안 되는 이유다. `--selftest` 로도 안 잡힌다.
+
+### **떠 있는 것이 `.venv` 인지 증명하는 법**
+
+`200` 여덟 개는 「또 시스템 파이썬이 떴다」와 구별되지 않는다. 듣고 있는 프로세스를 캔다:
+
+```bash
+netstat -ano | grep ":8000 .*LISTENING"          # → PID
+```
+```powershell
+(Get-CimInstance Win32_Process -Filter 'ProcessId=<PID>').CommandLine
+```
+→ 저장소의 `...\.venv\Scripts\python.exe -m uvicorn ...` 이어야 한다.
+
+⚠ **`ExecutablePath` 를 보지 마라 — venv 가 아니라 base 인터프리터 경로가 나온다.**
+`.venv\Scripts\python.exe` 는 uv 의 트램폴린 바이너리라 WMI 가 해석된 base 이미지를
+보고한다. **이것을 「시스템 파이썬이 떴다」로 읽으면 오진이다.** 믿을 것은
+`CommandLine` 과 적재 모듈 경로(`(Get-Process -Id <PID>).Modules`)다.
+
+## 게이트
+
+**게이트를 이어 돌리지 말고 따로, 각각 배경 실행한다.** 겹쳐 돌리면 시간초과가 난다.
+
+⚠ **`pytest` 와 다른 게이트를 겹쳐 돌리지 마라.** 음성 검사가 잠깐 만드는
+`core/der/temp_acceptance2_bad_import.py` 를 `ruff` 가 잡아 `rc=1` 이 나는데,
+그것은 **위반이 아니라 남의 임시 파일을 본 것**이다.
+
+## 하지 말 것
+
+- ⛔ **`pyproject.toml` 을 편집하지 마라.** 명세 §16.4 가 그 파일을 **WP-15 단독 소유·
+  append-only** 로 못 박았다. 의존성이 빠져 있다고 판단되면 고치지 말고 **요청**한다.
+- ⛔ `docs/traceability.md` 는 **CI 자동 생성**이다. 수동 편집 금지 (NFR-107).
+- ⛔ `.venv/` · `.orch/` 는 `.gitignore` 안이다. 커밋에 끌어들이지 않는다.
+
+---
+
+라운드 인계 정본은 **`status.md`** 이고, 그 안의 `## 지금 할 일` 부터 읽는다.
