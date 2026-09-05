@@ -89,7 +89,7 @@ from core.cba.baseline import (
     resolve_baseline_arrangement,
     resolve_pool_metering,
 )
-from core.contracts.assumptions import AssumptionProvider, AssumptionValue
+from core.contracts.assumptions import ANALYSIS_PERIOD_KEY, AssumptionProvider, AssumptionValue
 from core.contracts.validation import ValidationError
 from core.engine.rule_based import DispatchRule
 from core.incentive.schemas import IncentiveScheme
@@ -167,6 +167,44 @@ DISTRIBUTED_CREDIT_LEDGER_KEYS: tuple[tuple[str, str], ...] = (
     ("grid_service_won", "benefit.distributed_credit.grid_service"),
     ("ghg_reduction_won", "benefit.distributed_credit.ghg_reduction"),
     ("resilience_won", "benefit.distributed_credit.resilience"),
+)
+
+#: ★★★ **계산 구간이 `get()` 으로 읽을 수 있는 대장 키 전건** (R63/N5 · 착수
+#: 55). `build_case_report()` 의 ★★★ 굳히는 줄이 이 선언 **안**의 키만 들고
+#: 있어야 하며, 그것을 `tests/report/test_unread_override_marking.py` ⑤ 절이
+#: 잰다. **선언이 소스에 있는 이유**: 시험에만 두면 「무엇이 정본인가」가
+#: 시험이 되고, 그러면 계산 쪽이 늘 때 **시험을 고쳐 통과시키는 길**이 열린다.
+#:
+#: ## 무엇을 닫는가 — 굳히는 줄은 **순서에 기댄다**
+#:
+#: 굳히는 줄이 **뒤로** 밀리면 모든 키가 「읽었다」로 서서 표시가 통째로 죽고,
+#: 그 방향은 붙임 검사가 이미 붙든다. **위험한 방향은 반대**다 — 조립부의
+#: 읽기(붙임이 대장 전체를 훑는다)가 그 줄 **앞으로** 오면 그 키가 「읽었다」로
+#: 서서 표시가 **조용히** 거짓이 되고, 그때는 읽기가 굳히기 **전**에 일어나므로
+#: 어떤 사후 차단도 못 본다. 이 선언이 그 자리를 막는다 — 선언 밖의 키가 굳힌
+#: 집합에 들어오면 빨간불이고, 계산 쪽에 정당한 새 읽기가 생기면 **선언을 함께
+#: 고쳐야** 하므로 그 고침이 커밋에 보인다.
+#:
+#: ⚠ **이름의 집합이지 개수가 아니다** — 수만 재면 한 키가 빠지고 다른 키가
+#: 들어와도 초록불이다.
+#: ⚠ **키 문면을 여기 새로 적지 않는다.** 위 상수들이 이미 정본이며, 다시
+#: 적으면 대장 키를 바꾸는 날 한쪽이 남는다(`REC_PRICE_LEDGER_KEY` 옆 주석과
+#: 같은 사유).
+#: ⚠⚠ **수준표 통로(`ledger_backed_variables()`)를 여기 베끼지 않는다** — 그것은
+#: **둘째 통로가 declare 한 것**이고 굳히는 줄이 그것을 물어서 합집합한다. 이
+#: 선언이 재는 것은 `provider.keys_read()` 쪽뿐이다(같은 사실을 두 곳에 살게
+#: 하지 않는 것이 이 라운드가 두 번 밟은 함정이다).
+#:
+#: ## 갈래마다 다른가 — **실측했다** (R63/N5 · 판정 ⓒ)
+#:
+#: 골든 셋(무보조·보조 20%·보조 80%)과 기준선 갈래 ⓐ(`NONE`)·ⓑ(`MAINTAIN`)·
+#: ⓒ(`POOL`, 계측 선언 있음) **여섯 전건 전부에서 이 여덟이 그대로였다** —
+#: 합집합과 교집합이 같고, **어느 전건도 자기만 더하는 키가 없다.** 그러므로
+#: 이 선언은 합집합이면서 동시에 각 전건의 실측값이다. 갈래가 늘어 달라지는
+#: 날에는 위 시험이 빨간불로 알려 준다.
+COMPUTE_PHASE_READ_KEYS: frozenset[str] = frozenset(
+    {ANALYSIS_PERIOD_KEY, REC_PRICE_LEDGER_KEY, REC_WEIGHT_LEDGER_KEY}
+    | {key for _field, key in DISTRIBUTED_CREDIT_LEDGER_KEYS}
 )
 
 
@@ -856,6 +894,12 @@ def build_case_report(
     # ⚠ 둘째 통로의 목록을 **여기 적지 않는다** — 수준표에게 물어야(그 모듈이
     # `_LEDGER_VARS` 로 declare 한다) 축이 늘 때 한쪽만 낡지 않는다. 같은 사실을
     # 두 곳에 살게 하지 않는 것이 이 라운드가 두 번 밟은 함정이다.
+    # ⚠⚠ **이 자리가 순서에 기대는 것을 선언으로 없앴다** (R63/N5 · 착수 55).
+    # 여기서 `provider.keys_read()` 가 들고 있을 수 있는 키는
+    # `COMPUTE_PHASE_READ_KEYS` 가 declare 하고, 시험이 **굳힌 집합 ⊆ 선언**을
+    # 잰다 — 조립부의 읽기가 이 줄 앞으로 오면 선언 밖의 키가 들어와 빨간불이
+    # 된다. ⛔ **선언을 넓혀 통과시키지 마라**: 선언 밖의 키가 들어왔다면
+    # 그것이 이 장치가 찾으려던 것이다.
     read_keys = provider.keys_read() | frozenset(ledger_backed_variables().values())
     # ★ 부기 칸 만들기(`_provenance`)를 주입한다 — 그 함수는 이 파일에 남아
     # 있고(R54/WP-2 는 영향도 스윕 한 덩어리만 뗐다), `case_influences` 가
