@@ -5,6 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>분산특구 경제성 평가</title>
   <link rel="stylesheet" href="/static/wp12.css">
+  {# ⚠ `wp12.css` 는 이 축이 고칠 수 있는 파일이 아니다(다른 축이 만진다).
+     이 화면이 새로 쓰는 것은 **입력값 부록 표의 가로 스크롤** 하나뿐이며,
+     `web/templates/verify.html` 이 세운 것과 **같은 모양**으로 여기 인라인에
+     둔다 — 새 모양을 발명하지 않는다. #}
+  <style>
+    {# ★ 출처 문면은 길이가 자료마다 다르다(대장의 한 줄은 100자를 넘는다).
+       칸을 줄이면 글자가 잘리고, 잘린 출처는 「어디서 왔나」에 답하지 못한다.
+       ⇒ 표는 자기 폭을 지키고 **감싼 칸이** 가로로 스크롤한다. #}
+    .appendix-scroll { overflow-x: auto; }
+    .input-appendix { border-collapse: collapse; }
+    .input-appendix th, .input-appendix td {
+      text-align: left; padding: .25rem .75rem .25rem 0; vertical-align: top;
+    }
+  </style>
 </head>
 <body>
   <a class="skip-link" href="#main">본문으로 이동</a>
@@ -382,14 +396,58 @@
         {% endfor %}
       </section>
 
+      {# ★★★ **「출처」 칸** — 착수 목록 53 · `.orch/R63/result_V2.md` §2 `D12`.
+
+         ⚠⚠ 종전에는 `<dl>` 이 `label`·`value`·`unit` 셋만 그렸고 `item.source`
+         는 **아무 데도 실리지 않았다.** 그래서 R63/S1 이 그 문면을 「전제 대장」
+         → 「분석 설정 대장」으로 옮겼을 때 브라우저 실측에서 **전 화면 일곱에 두
+         낱말이 0건**이었다 — 즉 **바꾼 자리가 죽은 데이터였다.** S1 이 그 사실을
+         스스로 적었다(`tests/web/test_dashboard.py::
+         test_the_ledger_source_word_moved_in_the_context`).
+
+         ★ 심의에서 *「그 수가 어디서 왔나」* 를 묻는 자리가 반드시 온다
+         (`app/services/ui_run.py::UiRun` 독스트링이 같은 사유를 적는다).
+         그때 화면이 답을 갖고 있어야 한다.
+
+         ⛔ **출처 문면을 여기 손으로 적지 마라.** `item.source` 를 그린다 —
+         손으로 적으면 문맥이 갱신되는 날 화면만 옛 글자를 인쇄하고, 그 상태가
+         정확히 방금 고친 병이다.
+
+         ⚠ `<dl>` 을 표로 바꾼 이유: 세 값이 **같은 줄에서 나란히 읽혀야** 어느
+         수의 출처인지 알 수 있다. `<dl>` 로 셋째 값을 붙이면 `<dd>` 둘이 이어
+         서고, 읽는 사람은 둘째 `<dd>` 가 값의 일부인지 출처인지 가릴 수 없다. #}
       <section id="result-input-appendix" aria-labelledby="appendix-title">
         <h3 id="appendix-title">입력값 부록</h3>
-        <dl>
-          {% for item in inputs %}
-          <dt>{{ item.label }}</dt>
-          <dd>{{ item.value }}{{ item.unit }}</dd>
-          {% endfor %}
-        </dl>
+        {# ⚠ `tabindex="0"` 을 지우지 마라 — `overflow-x: auto` 인 영역은 키보드만
+           쓰는 사람이 스크롤할 수 없고, axe 가 `scrollable-region-focusable`
+           (serious) 위반으로 낸다. R63 이 실물로 밟았다(`verify.html` 의 같은 주석). #}
+        <div class="appendix-scroll" tabindex="0" role="group"
+             aria-labelledby="appendix-title">
+          <table class="input-appendix">
+            <thead>
+              <tr>
+                <th scope="col">입력값</th>
+                <th scope="col">값</th>
+                <th scope="col">출처</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in inputs %}
+              <tr>
+                <th scope="row">{{ item.label }}</th>
+                <td>{{ item.value }}{{ item.unit }}</td>
+                {# ⚠ 출처를 **자기 칸에 단독으로** 싣는다. 「출처: 」 같은 글자를
+                   같은 칸에 이어 적으면 그 텍스트 노드가 자료의 문면과 더 이상
+                   같지 않고, `tests/app/test_screen_words.py::_offending_chunks`
+                   가 대장 자료를 사면하는 방식(**같은가**로 대조)이 깨진다 —
+                   대장의 출처 인용에는 파일 이름 `…-전제값.md` 가 들어 있다. #}
+                <td class="input-source"
+                    data-input-source="{{ item.id }}">{{ item.source }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </section>
     </section>
 

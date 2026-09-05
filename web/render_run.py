@@ -33,6 +33,18 @@ from core.report.case_influences import CONCLUSION_METRIC, HEADLINE_METRIC
 from core.report.case_report import CaseReport
 from core.report.charts import chart_registry
 
+#: 영향도 인자에 **이을 대장 줄이 없을 때** 출처 칸이 인쇄하는 것.
+#:
+#: ⚠⚠ **빈칸으로 두지 않는다.** 빈칸은 「출처가 없다」와 「화면이 싣지 못했다」를
+#: 같게 만든다(§13.0.1 ④ · `web/render.py::UNLABELLED` 가 라벨에서 같은 판단을
+#: 했다). 그리고 「출처가 대장에 안 적혀 있다」와도 **다른 진술**이다 — 그쪽은
+#: 대장이 자료로 「출처 미기재」를 갖고 있고, 이것은 **대장에 그 값의 줄 자체가
+#: 없다**는 뜻이다(기본값 실행에서는 `discount_rate` 한 건이며, 대장에
+#: 할인율 항목이 없다는 것이 실제 상태다).
+#:
+#: ⛔ **여기에 출처 문면을 짓지 마라.** 이것은 출처가 아니라 **자리의 상태**다.
+NO_LEDGER_SOURCE = "대장 밖의 값"
+
 
 def baseline_arrangement_choices() -> tuple[str, ...]:
     """고를 수 있는 갈래의 **값 문면** — `BaselineArrangement` 를 열거해 얻는다.
@@ -153,7 +165,23 @@ def run_result_context(
     ★ `npv_raw` 를 **날값 그대로** 함께 싣는다. 서식을 입힌 문면만 두면
     「화면의 수가 리포트의 수와 같은가」를 기계가 대조할 수 없고, 그때 그
     검사는 서식 문자열을 다시 짜 맞추게 된다.
+
+    ## ★★ 인자마다 **출처**를 함께 싣는다 (착수 목록 53)
+
+    심의에서 *「그 수가 어디서 왔나」* 를 묻는 자리가 반드시 온다
+    (`app/services/ui_run.py::UiRun` 독스트링이 같은 사유를 적는다). 종전에
+    이 화면이 인자마다 실은 것은 **이름·대장 키·영향액** 셋이었고, 대장 키는
+    *어디를 보라*는 말이지 *무엇에 근거했는가*가 아니다.
+
+    ⛔ **출처를 여기서 짓지 않는다.** `CaseReport.assumptions` 의 `source` 를
+    인자의 `ledger_key` 로 **잇는다** — 손으로 적으면 대장이 출처를 갱신하는 날
+    화면만 옛 글자를 인쇄하고, 그 상태는 아무 검사도 빨간불을 내지 않는다
+    (`.orch/R63/result_V2.md` §2 `D12` 가 그 형태였다).
+
+    ⚠ **대장 줄이 없는 인자를 빈칸으로 두지 않는다** — `NO_LEDGER_SOURCE` 를
+    글자로 인쇄한다(그 상수의 ⚠ 주석).
     """
+    ledger_sources = {row.key: row.source for row in report.assumptions}
     return {
         "error": None,
         "scenario_name": report.scenario_name,
@@ -164,6 +192,13 @@ def run_result_context(
                 "name": entry.variable,
                 "ledger_key": entry.ledger_key or NO_VALUE,
                 "impact": _won(entry.delta_won),
+                # ⚠ `NO_VALUE`(「—」)를 쓰지 않는다. 이 자리의 「없다」는 두
+                # 가지이며(대장에 줄이 없다 · 대장이 출처를 안 적었다) 뒤쪽은
+                # 대장이 **자료로** 「출처 미기재」를 갖는다. 같은 기호로 덮으면
+                # 그 둘이 화면에서 같아진다.
+                "source": ledger_sources.get(
+                    entry.ledger_key or "", NO_LEDGER_SOURCE
+                ),
                 "flips": entry.flips_conclusion,
             }
             for rank, entry in enumerate(report.influences, start=1)
