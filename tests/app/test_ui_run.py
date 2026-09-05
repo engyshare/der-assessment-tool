@@ -20,13 +20,18 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.services.ui_run import scenario_fields
+from core.assumption.scenario_overrides import ASSUMPTION_OVERRIDES_FIELD
 from core.cba.baseline import BaselineArrangement, get_baseline_branch
 from core.contracts.validation import ValidationError
+from core.report.case_report import REC_PRICE_LEDGER_KEY, build_case_report
 
 #: 결과 화면이 **서식 이전의 날값**으로 함께 싣는 결론 축. 서식을 입힌 문면만
 #: 보면 이 검사가 서식 문자열을 다시 짜 맞추게 되고, 그때 재는 것은 수가
@@ -36,6 +41,22 @@ _NPV_ATTRIBUTE = re.compile(r'data-npv="([^"]+)"')
 #: 대조에 쓰는 골든 시나리오. 셋 중 무엇이든 되지만 **`/reports` 와 같은 것**을
 #: 써야 두 응답의 수를 맞댈 수 있다.
 _SCENARIO = "scenario_unsubsidized"
+
+#: 저장소 뿌리 — `tests/app/test_ui_run.py` 에서 두 단계 위.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_GOLDEN = _REPO_ROOT / "fixtures" / "golden" / f"{_SCENARIO}.yaml"
+_ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
+
+
+def _golden_npv() -> float:
+    """골든 회귀가 대조하는 **바로 그 수**를 그 파일에서 읽는다.
+
+    ⚠ **수를 소스에 박지 않는다.** `tests/golden/test_regression_scenarios.py`
+    가 읽는 자리와 **같은 자리**(`expected_values.npv_won`)를 읽는다 — 자기
+    사본을 두면 어느 날 둘이 갈리고, 그때 무엇이 정본인지 산출물에서 알 수 없다.
+    """
+    case = yaml.safe_load(_GOLDEN.read_text(encoding="utf-8"))
+    return float(case["expected_values"]["npv_won"])
 
 
 @pytest.fixture(scope="module")
@@ -220,3 +241,70 @@ def test_an_unknown_scenario_name_is_a_404(client: TestClient) -> None:
     response = client.get("/ui/run", params={"scenario": "scenario_없는것"})
 
     assert response.status_code == 404, response.text
+
+
+# ── 전제 오버라이드 통로 — 기본값은 안 움직이고, 실으면 움직인다 ────────
+
+
+def test_the_default_run_does_not_move_the_conclusion_axis(client: TestClient) -> None:
+    """★★★ **기본값 실행의 결론축이 움직이지 않는다.**
+
+    전제 오버라이드 통로가 생겼다고 해서 아무것도 안 적은 실행이 달라지면
+    그것은 개선이 아니라 **새 결함**이다. 필드가 없으면
+    `apply_scenario_overrides` 가 `provider` 를 **그대로**(같은 객체로)
+    돌려주므로 기본값 실행은 같은 경로를 돈다 —
+    `tests/assumption/test_scenario_overrides.py` 가 그 동일성을 잰다.
+
+    ⚠ **수를 소스에 박지 않는다.** 골든 회귀가 쓰는 같은 원천
+    (`fixtures/golden/scenario_unsubsidized.yaml` 의 `expected_values.npv_won`)
+    과 대조한다.
+
+    ⚠ **`req()` 마커를 달지 않았다** — 조항 검증이 아니라 **회귀 불변** 단언이다
+    (`test_the_number_on_the_screen_is_the_number_in_the_report` 와 같은 사유).
+    """
+    screen = client.get("/ui/run", params={"scenario": _SCENARIO})
+    assert screen.status_code == 200, screen.text
+
+    assert _npv_on_screen(screen.text) == _golden_npv()
+
+
+@pytest.mark.req("FR-602-AC1", "FR-602-AC2")
+def test_a_scenario_that_carries_overrides_runs_on_the_changed_values(
+    tmp_path: Path,
+) -> None:
+    """★★ 오버라이드를 실은 시나리오는 **다른 수**를 내고 붙임이 그것을 적는다.
+
+    ⚠⚠ 수만 보면 부족하다. 수가 움직였는데 `overrides` 가 비어 있으면 검토자는
+    **왜 다른지 알 수 없고**, 그 상태는 「기준 전제 그대로 돌렸다」와 산출물에서
+    구별되지 않는다 (`CaseReport.overrides` 주석이 그 사유를 적는다).
+
+    ⚠ **화면을 지나지 않는다.** 결과 화면에 오버라이드 폼을 다는 것은 뒤 축
+    (R63/S2)이고 이 검사가 재는 것은 **통로가 실행에 닿는가**다. 그래서
+    `scenario_fields()` 가 짓는 매핑에 필드를 얹어 `build_case_report()` 로
+    바로 돌린다 — `app/services/ui_run.py::run_ui_case` 가 하는 것과 같은 절차다.
+
+    ⚠ **골든 픽스처를 고치지 않는다** — 읽기만 하고 쓰는 곳은 `tmp_path` 다.
+    """
+    fields = scenario_fields(_SCENARIO)
+    fields[ASSUMPTION_OVERRIDES_FIELD] = [
+        {
+            "key": REC_PRICE_LEDGER_KEY,
+            "value": 300.0,
+            "reason": "검사 — 대장(70원/kWh)과 다른 값을 시나리오가 적는다",
+        }
+    ]
+    path = tmp_path / f"{_SCENARIO}.yaml"
+    path.write_text(
+        yaml.safe_dump(fields, allow_unicode=True, sort_keys=False), encoding="utf-8"
+    )
+
+    report = build_case_report(path, assumptions_path=_ASSUMPTIONS)
+
+    assert float(report.metrics["npv"]) != _golden_npv(), (
+        "오버라이드를 실었는데 결론축이 그대로다 — 통로가 실행에 닿지 않았다"
+    )
+    assert report.overrides, "붙임의 「기준 전제 대비 변경 항목」이 비어 있다"
+    changed = {row.key: row for row in report.overrides}
+    assert changed[REC_PRICE_LEDGER_KEY].base_value == 70
+    assert changed[REC_PRICE_LEDGER_KEY].override_value == 300.0
+    assert changed[REC_PRICE_LEDGER_KEY].reason is not None

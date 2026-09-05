@@ -4,11 +4,22 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 
 from app.security.authorization import assert_can_access
-from app.services import InMemoryScenarioStore, ScenarioRecord, ScenarioService
+from app.services import (
+    ScenarioRecord,
+    ScenarioService,
+    build_scenario_store,
+    resolve_scenario_store_dir,
+)
 
 router = APIRouter(prefix="/scenarios", tags=["scenarios"])
 
-_store = InMemoryScenarioStore()
+#: 저장 자리는 **배포가 정한다** (`DER_SCENARIO_STORE`). 자리를 정하면 저장이
+#: 프로세스를 넘어 살고(`JsonFileScenarioStore`), 정하지 않으면 인메모리다 —
+#: 그 되돌림의 사유는 `app/deps.py::DEFAULT_DB_URL` 주석이 갖는다.
+#:
+#: ⚠ **경로를 여기 적지 않는다.** 적으면 배포마다 이 파일을 고쳐야 하고,
+#: 검사는 자기 `tmp_path` 를 줄 수 없다.
+_store = build_scenario_store(resolve_scenario_store_dir())
 _service = ScenarioService(_store)
 
 
