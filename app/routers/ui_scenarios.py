@@ -652,7 +652,7 @@ async def save_settings_form(request: Request) -> Any:
 
     ⚠ `Form(...)` 로 칸을 받지 않는다. 칸 이름이 `val-<대장 키>` 라 대장이 늘고
     줄 때마다 시그니처를 고쳐야 하고, 대장을 데이터로 둔 이유가 그것을 막는
-    것이다 (`app/routers/ui_forms.py::advanced_parameters_form` 과 같은 규약).
+    것이다 (`app/routers/ui_forms.py::equipment_settings_form` 과 같은 규약).
     """
     form = await request.form()
     mine = {
