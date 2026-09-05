@@ -40,22 +40,19 @@
 조항을 지어 붙이면 `docs/traceability.md` 가 거짓 인용을 싣는다 —
 `tests/app/test_screen_words.py` 머리말이 같은 자리에서 같은 판정을 적었다.
 
-## ⛔ 47ⓐ(가구 수·유형)는 이 축이 세우지 못했다 — 자리는 준비돼 있다
+## ★ 47ⓐ(가구 수·유형)도 여기서 선다 — **자리만. 값은 비어 있다**
 
-지시문 §A-3 4항이 요구한 **가구 수·유형의 대장 자리**를 `track: blocked` 로
-써서 넣었더니 `scripts/check_assumptions.py` 가 **`KeyError: 'q_ref'` 로 죽었다**
-(줄 337 — `print(f"    {b:28} ← {i['q_ref']} …")`). 새 `blocked` 항목에는
-`q_ref` 가 없다. spec §15.1 Q 표에 가구 수·유형을 묻는 행이 없고, 없는 Q 번호를
-적으면 같은 검사기의 Q 목록 양방향 대조가 「유령 Q」로 잡기 때문이다.
+지시문 §A-3 4항이 요구한 가구 수·유형의 대장 자리를 `track: blocked` 로 세웠다.
+⚠⚠ **값을 지어내지 않는다** — 실증단지 가구 수를 우리가 정하면 그 수로 돌린
+계산을 우리가 검증하게 된다(§13.0.2 자기충족). 자리가 서면 다음 라운드가 채운다.
 
-★ **바로 위 스무 줄이 같은 결함을 이미 한 번 고쳤다** — R31 이 「영향도」 표에서
-`i["q_ref"]` 를 `i.get("q_ref") or "(내부)"` 로 바꾸고 그 사유를 주석으로 적었다.
-**「유예 중인 판정」 표는 같이 고쳐지지 않았다.** 고칠 것은 한 줄이다.
+⚠ **`q_ref` 를 달지 않았다.** spec §15.1 Q 표에 이 물음의 행이 없고, 없는 Q
+번호를 적으면 같은 검사기의 Q 목록 양방향 대조가 「유령 Q」로 잡는다. Q 행을
+세우는 것은 spec 개정이므로 사람 몫이다.
 
-⇒ `scripts/` 는 이 축의 소유 파일이 아니므로(`WP-NEXT.md` §5) **우회하지 않고
-멈췄다.** 준비한 대장 블록과 시험은
-`.orch/R63/scratch/n1/47a-ledger-block.yaml`·`47a-test.py` 에 그대로 있다 —
-그 한 줄이 고쳐지면 붙여 넣는 것이 전부다.
+★ 그래서 **`scripts/check_assumptions.py` 의 인쇄문 한 줄을 함께 고쳤다** —
+「유예 중인 판정」 표가 `i["q_ref"]` 로 읽어 `KeyError` 로 죽었다. R31 이 스무
+줄 위 「영향도」 표에서 같은 결함을 고쳤으나 이 표는 같이 고쳐지지 않았다.
 
 """
 from __future__ import annotations
@@ -68,6 +65,9 @@ from core.assumption.provider import AssumptionSet
 
 #: 대장 정본.
 _ASSUMPTIONS = Path(__file__).resolve().parents[2] / "docs" / "assumptions.yaml"
+
+#: 47ⓐ 가 세우는 **자리 둘** — 값은 비어 있어야 한다.
+_HOUSEHOLD_KEYS = ("load.household.count", "load.household.type_mix")
 
 
 def _raw_items() -> list[dict]:
@@ -190,3 +190,44 @@ def test_every_ledger_group_has_a_label_and_none_is_stale() -> None:
 
     blank = sorted(head for head, title in declared.items() if not str(title).strip())
     assert not blank, f"묶음 {blank} 의 이름이 비어 있다"
+
+
+def test_the_household_count_and_type_stand_in_the_ledger_without_a_made_up_value() -> None:
+    """★ **47ⓐ — 가구 수·유형이 대장에 자리를 갖는다. 값은 비어 있다.**
+
+    검증 모드 1단계가 *「가구 수와 가구 유형을 적는 자리가 이 저장소에 **자료형
+    수준으로** 없다」* 로 칸을 비워 두었다(`app/services/verify_steps.py` 의
+    갭 사유 · 브라우저 실측 `.orch/R63/result_V2.md` §3). 이 라운드가 하는 것은
+    **자리를 세우는 것**이고, 값을 채우는 것이 아니다.
+
+    ⚠⚠ **값을 지어내지 않는다.** 실증단지 가구 수를 우리가 정하면 그 수로 돌린
+    계산을 우리가 검증하게 된다 — `track: blocked` 가 막는 그 형태다
+    (`docs/assumptions.yaml` 머리말 · `scripts/check_assumptions.py` 검사 4).
+    ⇒ `provider` 가 건너뛰고 화면은 「없다」를 그대로 유지한다.
+
+    ★ **자리가 서면 다음 라운드가 그 칸을 채운다** — 그것이 이 항목의 값이다.
+    """
+    items = {str(item.get("key")): item for item in _raw_items()}
+
+    absent = [key for key in _HOUSEHOLD_KEYS if key not in items]
+    assert not absent, (
+        f"가구 수·유형 자리가 대장에 없다: {absent} — 검증 모드 1단계가 "
+        "「자료형 수준으로 없다」로 비워 둔 칸이다(착수 목록 47ⓐ)"
+    )
+
+    for key in _HOUSEHOLD_KEYS:
+        item = items[key]
+        assert item.get("track") == "blocked", (
+            f"{key} 의 갈래가 `blocked` 가 아니다 — 실측이 없는데 값을 갖는다"
+        )
+        assert item.get("value") is None, (
+            f"{key} 에 값이 채워져 있다 — 지어낸 가구 수로 우리 계산을 검증하게 된다"
+        )
+        assert _label_of(item), f"{key} 에 한국어 라벨이 없다"
+
+    loaded = AssumptionSet.load_from_yaml(str(_ASSUMPTIONS)).items()
+    leaked = [key for key in _HOUSEHOLD_KEYS if key in loaded]
+    assert not leaked, (
+        f"{leaked} 가 provider 를 지나 실행 경로에 실렸다 — `blocked` 는 "
+        "건너뛰어야 하고, 실리면 화면이 「없다」 대신 빈 값을 그린다"
+    )

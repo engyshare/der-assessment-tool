@@ -334,7 +334,14 @@ def summarize(items: list) -> None:
         print(f"\n· 유예 중인 판정 — 가정 불가 {len(blocked)}건이 막고 있다")
         for i in blocked:
             for b in i.get("blocks", []):
-                print(f"    {b:28} ← {i['q_ref']} {i.get('title','')}")
+                # ★ **여기도 `get` 으로 읽는다 (R63 연장).** 위 「영향도」 표는
+                # R31 이 같은 결함을 고쳤으나 이 표는 같이 고쳐지지 않았고,
+                # `q_ref` 없는 `blocked` 항목(가구 수·유형 — spec §15.1 Q 표에
+                # 그 물음의 행이 없다)을 넣는 순간 검사기 전체가 `KeyError` 로
+                # 죽었다. **없는 Q 번호를 지어 적으면** 같은 검사기의 Q 목록
+                # 양방향 대조가 그것을 「유령 Q」로 잡는다 — 그러므로 고칠 것은
+                # 대장이 아니라 이 인쇄문이다.
+                print(f"    {b:28} ← {i.get('q_ref') or '(회신 대상 아님)'} {i.get('title','')}")
         print("  **이 판정들은 통과로도 실패로도 세지 않는다.** 미판정으로 남긴다")
 
 
