@@ -13,6 +13,17 @@
    전부 오버라이드가 되고, 그때 붙임의 「기준 전제 대비 변경 항목」은 아무것도
    말하지 않는다.
 
+   ## ★ 항목을 **라벨**로 부른다 — 키는 기계 자리에만 (R63 연장 · 착수 54)
+
+   사람이 읽는 칸(`<label>` 글자 · `<td>` 본문 · `aria-label` · `<legend>`)에는
+   한국어 이름이 서고, 키(`capex.pv.rooftop` 꼴)는 `data-ledger-key`·`id`·`for`·
+   `href` 에만 남는다. ⛔ **키를 지우지 마라** — 지우면 폼이 아무 값도 받지 못한
+   채 303 을 내고, 화면 안 이어짐(`#ledger-<키>`)도 끊긴다.
+
+   ⛔ **이름을 여기 손으로 적지 마라.** 항목 이름은 `docs/assumptions.yaml` 의
+   `title`, 묶음 이름은 같은 파일의 `group_titles` 가 정본이다. 여기 적으면 대장이
+   늘 때 그 목록이 낡고, 낡은 것은 사람이 없는 칸을 찾을 때까지 드러나지 않는다.
+
    ⚠ 서식은 `regulation_admin.html` 을 베꼈다 — 새 서식을 발명하지 않는다.
 #}
 <!doctype html>
@@ -84,8 +95,10 @@
         </thead>
         <tbody>
           {% for row in applied.overrides %}
+          {# 사람이 읽는 칸은 **라벨**, 기계가 읽는 자리는 **키**. 키를 지우면
+             검토자가 산출물과 화면을 대조할 수단을 잃는다. #}
           <tr data-override-key="{{ row.key }}">
-            <td>{{ row.key }}</td>
+            <td>{{ row.title }}</td>
             <td class="ledger-value">{{ row.base }}</td>
             <td class="my-value">{{ row.mine }}</td>
             <td>{{ row.reason }}</td>
@@ -120,8 +133,8 @@
           <tr data-user-item="{{ row.word }}">
             <td>{{ row.word }}</td>
             <td>
-              {% for key in row.ledger_keys %}
-              <a href="#ledger-{{ key }}" class="ledger-key">{{ key }}</a>
+              {% for item in row.ledger_keys %}
+              <a href="#ledger-{{ item.key }}" class="ledger-key">{{ item.title }}</a>
               {% else %}—{% endfor %}
             </td>
             <td>{{ "있다" if row.present else "없다" }}</td>
@@ -129,7 +142,10 @@
               {% if row.note %}<span class="missing" role="note">{{ row.note }}</span>{% endif %}
               {% for field in row.series %}
               <span class="series-field" role="note">
-                시계열: {{ field.tag }} · {{ field.name }} — {{ field.reason }}
+                {# ⛔ `field.name` 을 여기 적지 마라 — 「PV · generation_profile_kwh」
+                   는 사용자 문면이 금지한 **병기** 그 꼴이다. 이름은
+                   `data-series-field` 에 있다(아래 시계열 표). #}
+                시계열: {{ field.tag }} · {{ field.title }} — {{ field.reason }}
               </span>
               {% endfor %}
             </td>
@@ -157,7 +173,7 @@
           {% for field in series_fields %}
           <tr data-series-field="{{ field.tag }}.{{ field.name }}">
             <td>{{ field.tag }}</td>
-            <td>{{ field.name }}</td>
+            <td>{{ field.title }}</td>
             <td>{{ field.unit }}</td>
             <td><span class="chart-unwired" role="note">{{ field.reason }}</span></td>
           </tr>
@@ -183,10 +199,13 @@
            기준은 대장 키의 첫 마디이며, 한국어 이름을 손으로 적지 않는다
            (적으면 항목이 늘 때 그 목록이 낡는다). #}
         {% for group in groups %}
+        {# ⚠ 묶음 이름은 **대장**(`group_titles:`)이 정본이다. 여기 손으로
+           적으면 항목이 새 무리를 만드는 날 그 묶음만 조용히 키 조각으로
+           돌아간다. 이름이 없으면 빈 칸이 되고 검사가 그것을 센다. #}
         <fieldset data-ledger-group="{{ group.prefix }}">
-          <legend>{{ group.prefix }} — {{ group['items'] | length }}건</legend>
+          <legend>{{ group.title }} — {{ group['items'] | length }}건</legend>
           <table>
-            <caption>키 · 대장 값 · 내 값 · 단위 · 신뢰도 · 출처</caption>
+            <caption>설정 항목 · 대장 값 · 내 값 · 단위 · 신뢰도 · 사유 · 출처</caption>
             <thead>
               <tr>
                 <th scope="col">설정 항목</th><th scope="col">대장 값</th>
@@ -199,7 +218,7 @@
               {% for item in group['items'] %}
               <tr id="ledger-{{ item.key }}" data-ledger-key="{{ item.key }}"
                   {% if item.overridden %}data-overridden="true"{% endif %}>
-                <td><label for="val-{{ item.key }}">{{ item.key }}</label></td>
+                <td><label for="val-{{ item.key }}">{{ item.title }}</label></td>
                 <td class="ledger-value">{{ item.base_text }}</td>
                 <td class="my-value">
                   <input id="val-{{ item.key }}" name="val-{{ item.key }}"
@@ -211,7 +230,7 @@
                 <td>
                   <input id="reason-{{ item.key }}" name="reason-{{ item.key }}"
                          type="text" value="{{ item.reason }}"
-                         aria-label="{{ item.key }} 오버라이드 사유">
+                         aria-label="{{ item.title }} 오버라이드 사유">
                 </td>
                 <td class="source">{{ item.source }}</td>
               </tr>

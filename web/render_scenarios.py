@@ -25,6 +25,19 @@
 항목이 늘 때 그 목록이 낡고, **낡은 것은 사람이 없는 칸을 찾을 때까지
 드러나지 않는다** (`web/render.py::equipment_setting_fields` 가 같은 판단을 적었다).
 
+## ★ 사람이 읽는 자리에는 **라벨**, 기계가 읽는 자리에는 **키** (R63 연장 · 착수 54)
+
+대장 항목의 한국어 이름은 `docs/assumptions.yaml` 의 `title` 이, 묶음 이름은 같은
+파일의 `group_titles` 가, 자원 파라미터의 이름은 `core/model/parameters.py` 의
+`LABEL_BY_NAME` 이 정본이다. **이 파일은 셋 다 옮겨 싣기만 한다.**
+
+⚠⚠ **키를 없애지 않는다.** `data-ledger-key`·`id`·`for`·`href` 같은 **기계 자리**
+에는 키가 있어야 폼 제출과 화면 안 이어짐이 성립한다 — 지우면 설정 폼이 아무 값도
+받지 못한 채 303 을 낸다. 없어야 하는 곳은 `<label>` 글자·`<td>` 본문·`aria-label`
+처럼 **사람이 눈으로 읽는 자리**뿐이다. 한쪽만 재면 「변수명을 지웠다」와 「폼을
+부쉈다」가 검사에서 같아진다 — `tests/app/test_settings_labels.py` 가 양방향으로
+잰다(그 방식은 `tests/web/test_dashboard.py` 가 대시보드에서 세웠다).
+
 ⚠ **사용자가 든 다섯**(전기요금·태양광 발전 프로파일·전기사용자 부하·설비별
 단가·이용률)만은 사람의 말이므로 여기 적는다. 그러나 **「대장의 어느 키인가」는
 적지 않는다** — 접두사로 대장에 물어서 답을 짓는다. 키를 적어 두면 항목이
@@ -107,8 +120,13 @@ def user_named_items(ledger: AssumptionSet) -> tuple[dict[str, Any], ...]:
     known = tuple(ledger.items())
     rows: list[dict[str, Any]] = []
     for word, prefixes, series_hints in _USER_NAMED:
+        items = ledger.items()
+        # ★ 사람이 읽는 칸에는 **라벨**, 이어지는 자리(`href`)에는 **키**.
+        # 하나만 실으면 「변수명을 지웠다」와 「이어짐을 끊었다」가 같아진다.
         keys = tuple(
-            key for key in known if any(key.startswith(p) for p in prefixes)
+            {"key": key, "title": items[key].title}
+            for key in known
+            if any(key.startswith(p) for p in prefixes)
         )
         series = tuple(
             field
@@ -139,7 +157,12 @@ def series_fields() -> tuple[dict[str, str], ...]:
             if spec.kind is ParameterKind.SERIES:
                 fields.append({
                     "tag": tag,
+                    # `name` 은 **기계 자리**로 나간다(`data-series-field` ·
+                    # `user_named_items` 의 이름 조각 대조). 지우면 둘 다 끊긴다.
                     "name": spec.name,
+                    # ★ 사람이 읽는 칸. 카탈로그가 정본이고 화면이 손으로
+                    # 적지 않는다 — `core/model/parameters.py::resolve_label`.
+                    "title": spec.label,
                     "unit": spec.unit or NO_VALUE,
                     "reason": SERIES_OUT_OF_SCOPE,
                 })
@@ -170,6 +193,8 @@ def ledger_groups(
         head = key.split(".")[0] if _GROUP_DEPTH else key
         groups.setdefault(head, []).append({
             "key": key,
+            # ★ 사람이 읽는 이름. 대장이 정본이고 화면이 손으로 적지 않는다.
+            "title": item.title,
             "base_text": _text(item.value),
             "mine": typed.get(key, ""),
             "reason": why.get(key, ""),
@@ -178,8 +203,18 @@ def ledger_groups(
             "source": item.source or NO_VALUE,
             "overridden": bool(typed.get(key, "").strip()),
         })
+    titles = ledger.group_titles
     return tuple(
-        {"prefix": head, "items": tuple(items)} for head, items in groups.items()
+        {
+            # `prefix` 는 **기계 자리**다(`data-ledger-group`).
+            "prefix": head,
+            # ⚠ 없으면 키 조각으로 메우지 않고 **빈 문자열**로 둔다 —
+            # 메우면 「이름을 안 지었다」와 「이름이 키 조각이다」가
+            # 화면에서 구별되지 않고, 그 상태로 검사가 초록불이 된다.
+            "title": titles.get(head, ""),
+            "items": tuple(items),
+        }
+        for head, items in groups.items()
     )
 
 
@@ -225,6 +260,38 @@ def applied_settings_context(
     }
 
 
+def _labelled(
+    applied: dict[str, Any] | None, ledger: AssumptionSet
+) -> dict[str, Any] | None:
+    """「기준 전제 대비 변경 항목」 행에 **라벨을 붙인다.**
+
+    ★ **왜 `applied_settings_context` 가 아니라 여기인가.** 그 함수가 받는 것은
+    `CaseReport` 하나이고 대장이 없다. 라벨을 거기서 붙이려면 대장을 한 번 더
+    싣거나 인자를 늘려야 하는데, 이 함수는 **이미 대장을 손에 들고 있고** 같은
+    화면 문맥을 짓는다. 라벨을 두 곳에서 찾으면 그중 한 곳이 빠져도 조용하다.
+
+    ⚠ **대장에 없는 키는 키 그대로 둔다.** 오버라이드 행은 대장 밖 키를 실을
+    수 없으나(`resolve_assumption_overrides` 가 막는다), 막는 자리가 바뀌는 날
+    빈 이름으로 그리는 것보다 키를 보이는 편이 낫다 — 「없는 항목」이 화면에서
+    이름 없는 빈 칸이 되면 사람은 그것을 찾지 못한다.
+    """
+    if applied is None:
+        return None
+    items = ledger.items()
+    return {
+        **applied,
+        "overrides": tuple(
+            {
+                **row,
+                "title": (
+                    items[row["key"]].title if row["key"] in items else row["key"]
+                ),
+            }
+            for row in applied.get("overrides", ())
+        ),
+    }
+
+
 def settings_context(
     ledger: AssumptionSet,
     *,
@@ -252,7 +319,7 @@ def settings_context(
         ),
         "unknown": tuple(submitted.get("unknown", ())),
         "saved": saved,
-        "applied": applied,
+        "applied": _labelled(applied, ledger),
         "error": error,
         "series_note": SERIES_OUT_OF_SCOPE,
     }

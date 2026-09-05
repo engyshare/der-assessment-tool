@@ -38,6 +38,24 @@ class AssumptionItem(BaseModel):
     key: str
     value: float | int | str
 
+    #: 사람이 읽는 **한국어 이름**. 대장(`docs/assumptions.yaml`)의 `title` 이
+    #: 정본이고 이 칸은 그것을 **나르기만** 한다.
+    #:
+    #: **부기 7종이 아니다** — 근거 표기 기준 5절의 목록에 없고, 값이 어디서
+    #: 왔는지가 아니라 사람에게 무엇이라 부를지를 정한다.
+    #:
+    #: ⚠ **`core/` 에 `LABEL_BY_KEY` 사전을 두지 않는 이유.** 자원 파라미터는
+    #: 이름이 코드에만 있어 라벨도 코드가 갖는다
+    #: (`core/model/parameters.py::LABEL_BY_NAME`). 대장은 다르다 — 항목의
+    #: 정본이 데이터 파일이므로 라벨도 그 파일이 갖는다. 사전을 따로 두면 같은
+    #: 사실이 두 곳에 살고, 대장이 늘 때 그 사전이 낡는다.
+    #:
+    #: ★ **없으면 빈 문자열이고 멈추지 않는다** — `ParameterSpec.label` 과 같은
+    #: 판단이다. 라벨 부재는 계산 오류가 아니라 표시 결함이고, 라벨 하나가
+    #: 없어서 대장 전체를 못 싣는 쪽이 더 나쁘다. 대신 **빠진 수를 검사가 센다**
+    #: (`tests/assumption/test_ledger_titles.py`).
+    title: str = ""
+
     # ── 부기 7종 (FR-601-AC5) ────────────────────────────────────────
     value_unit: str
     base_year: str
