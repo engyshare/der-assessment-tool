@@ -390,7 +390,7 @@ N3 의 표시는 굳히는 줄의 **순서**에 기댔다. 갈래 셋 중:
 | 정적 게이트 | **13종 전건 `rc=0`** (`check_assumptions`·`check_hardcoded_params`·`check_source_rules`·`check_docstring_references`·`check_task_mapping`·`check_disclosure`·`check_status_round_blocks`·`check_marker_substance`·`check_partition_assignment`·`check_unread_extension_points`·`check_precommit_installed`·`check_file_size --code-strict`) + `gen_traceability` `rc=1`(정상) |
 | `docs/traceability.md` | 재생성 후 `git status` **공백** — 커밋본이 최신이다 |
 | 브라우저 검사 | `pytest tests_e2e` **22 passed · 실패 0** · `rc=0` |
-| PR 상태 | `gh pr list --state all` 로 확인 — **#12~#17 · #19~#29 `MERGED`** · **#18 `CLOSED`**(#20 이 포함) |
+| PR 상태 | `gh pr list --state all` 로 확인 — **#12~#17 · #19~#29 `MERGED`** · **#18 `CLOSED`**(#20 이 포함). ⚠ **#30 은 이 실측을 적은 PR 자신**이며 병합으로 목록이 `#19~#30` 이 된다 |
 | 설정 화면 대장 키 | **41종 → 0** · 변수명 꼴 토큰 **159 → 0** · 기계 자리 **41/41 그대로** |
 | 화면에 선 출처 칸 | **0 → `/` 5칸 · `/ui/run` 13칸** |
 | 「안 먹는 키」 실측 | `tax.vat_rate: 1e9` ⇒ Δ**0** (표시가 선다) · `capex.pv.rooftop: 1_500_000` ⇒ Δ**+299,438** (표시 없음) |
