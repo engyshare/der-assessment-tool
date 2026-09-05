@@ -362,13 +362,8 @@
 | `NFR-502` | Must-have | 1 | `NFR-502-AC1` | SQLite 파일 일 1회 이상 자동 백업, 분기 1회 복원 리허설 | 자동 | test_backup_restore.py 6건 |
 | `NFR-503` | Must-have | 1 | `NFR-503-AC1` | 단일 컨테이너로 로컬 실행 가능 (docker run 1회) | 자동 | test_phase1_measurements.py, test_scenario_store_deployment.py 3건 |
 | `NFR-504` | Must-have | 1 | `NFR-504-AC1` | 무료 티어 제약(메모리 512MB, 콜드스타트, 디스크 비영속) 하에서 데이터 유실 없이 운영 | 자동 | test_freetier.py 4건 |
-<<<<<<< Updated upstream
-| `UI-1` | Should-have | 1 | `UI-1-AC1` | 마법사 방식으로 초심자를 안내하되, 숙련자용 전체 파라미터 단일 화면(고급 모드) 병행 | 자동 | test_ui_forms.py 2건, test_ui_router.py, test_parameters.py 9건, test_dashboard.py 17건 |
-| `UI-2` | Must-have | 1 | `UI-2-AC1` | 모든 수치 입력 옆에 단위 상시 표시 (kW, kWh, 원/kWh, %, 년) | 자동 | test_parameters.py 2건, test_dashboard.py |
-=======
-| `UI-1` | Should-have | 1 | `UI-1-AC1` | 마법사 방식으로 초심자를 안내하되, 숙련자용 전체 파라미터 단일 화면(고급 모드) 병행 | 자동 | test_ui_forms.py 2건, test_ui_router.py, test_parameters.py 11건, test_dashboard.py 8건 |
+| `UI-1` | Should-have | 1 | `UI-1-AC1` | 마법사 방식으로 초심자를 안내하되, 숙련자용 전체 파라미터 단일 화면(고급 모드) 병행 | 자동 | test_ui_forms.py 2건, test_ui_router.py, test_parameters.py 11건, test_dashboard.py 17건 |
 | `UI-2` | Must-have | 1 | `UI-2-AC1` | 모든 수치 입력 옆에 단위 상시 표시 (kW, kWh, 원/kWh, %, 년) | 자동 | test_parameters.py 5건, test_dashboard.py |
->>>>>>> Stashed changes
 | `UI-3` | Must-have | 1 | `UI-3-AC1` | 신뢰도 가정 항목은 노란 배지로 표시하고, 결과에서 해당 값의 영향도와 함께 명시 (FR-1002) (v0.5: 배지 라벨 미확인 → 가정. DB enum도 동… | 자동 | test_dashboard.py |
 | `UI-4` | Must-have | 1 | `UI-4-AC1` | 결과 지표 카드는 항상 무지원 기준선 대비 증분을 함께 표시 | 자동 | test_dashboard.py |
 | `UI-5` | Should-have | 1 | `UI-5-AC1` | 한국어 우선. 영어 병기는 지표명(NPV, IRR, LCOE)에 한정 | 수동 | test_manual_stubs.py (스텁) + MC-7 (미수행) |
