@@ -28,10 +28,17 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
+from core.casegrid.ledger_levels import ledger_backed_variables
+from core.cba.baseline import POOL_METERING_FIELD, BaselineArrangement
 from core.report.appendix_sections import UNREAD_OVERRIDE_MARK, appendix_section
-from core.report.case_report import CaseReport, build_case_report
+from core.report.case_report import (
+    COMPUTE_PHASE_READ_KEYS,
+    CaseReport,
+    build_case_report,
+)
 
 _ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _ROOT / "docs" / "assumptions.yaml"
@@ -57,14 +64,19 @@ def _row(report: CaseReport, key: str) -> Any:
     return next(row for row in report.overrides if row.key == key)
 
 
-def _golden_npv() -> float:
-    """골든이 선언한 무보조 `npv` — **여기 수를 적지 않는다.**
+def _expected_npv(path: Path) -> float:
+    """골든 하나가 선언한 `npv` — **여기 수를 적지 않는다.**
 
     정본은 픽스처이고 `tests/golden/test_regression_scenarios.py` 가 같은
     자리를 읽는다. 리터럴을 들면 정본이 둘이 되고 한쪽만 고쳐진다.
     """
-    case = yaml.safe_load(_GOLDEN.read_text(encoding="utf-8"))
+    case = yaml.safe_load(path.read_text(encoding="utf-8"))
     return float(case["expected_values"]["npv_won"])
+
+
+def _golden_npv() -> float:
+    """★ 결론축 — 무보조 골든의 `npv`."""
+    return _expected_npv(_GOLDEN)
 
 
 # ── ① 안 읽히는 키에는 표시가 선다 ──────────────────────────────────────
@@ -173,3 +185,169 @@ def test_the_appendix_leaves_the_read_row_bare(tmp_path: Path) -> None:
     line = _override_line(appendix_section(report), _READ)
 
     assert UNREAD_OVERRIDE_MARK not in line, line
+
+
+# ── ⑤ 굳히는 자리가 **순서에 기대지 않는다** (R63/N5 · 착수 55) ──────────
+#
+# 종전에는 **한쪽 방향만** 붙들렸다:
+#
+#   굳히는 줄이 **뒤로** 밀린다        모든 키가 「읽었다」로 서서 표시가 통째로
+#                                      죽는다 → 위 ① 이 붙든다
+#   리포트 쪽 읽기가 그 줄 **앞으로**  그 키가 「읽었다」로 서서 표시가
+#                                      **조용히** 거짓이 된다 → 붙드는 것이 없었다
+#
+# 아래 검사가 그 칸을 닫는다. **소스가 declare 하고**(`COMPUTE_PHASE_READ_KEYS`)
+# 여기서는 **재기만 한다** — 선언을 시험에 두면 「무엇이 정본인가」가 시험이 되고,
+# 그러면 계산 쪽이 늘 때 시험을 고쳐 통과시키는 길이 열린다.
+
+#: 굳힌 집합을 산출물에서 읽어 내려고 심는 사유. 값은 대장 값 **그대로**다.
+_PROBE_REASON = "굳힌 집합을 산출물에서 읽어 낸다"
+
+#: 골든 셋이 사는 곳 — 전건을 이름으로 나열하지 않고 **디렉터리에서 센다**.
+#: 골든이 늘면 이 축도 함께 늘어야 하고, 목록을 여기 적으면 그때 낡는다.
+_GOLDEN_DIR = _GOLDEN.parent
+
+
+def _identity_overrides() -> list[dict[str, Any]]:
+    """대장 **전 항목을 자기 값으로** 덮는 오버라이드 목록.
+
+    ⚠⚠ **왜 전 항목인가.** 굳힌 집합은 `OverrideRow.read_by_this_run` 으로만
+    산출물에 드러나고 그 행은 **오버라이드한 키에만** 선다. 몇 개만 골라 덮으면
+    선언 **밖**의 키가 굳힌 집합에 들어와도 행이 없어 **안 보인다** — 그런데
+    이 축이 찾으려는 것이 바로 그 키다.
+
+    ⚠ 값을 그대로 두므로 계산은 통로가 열리기 전과 **같은 수**를 낸다
+    (`test_the_probe_does_not_move_any_golden_conclusion` 이 그것을 잰다).
+    관문을 통과시키려고 값을 흔들면 이 탐침 자체가 결론축을 옮긴다.
+
+    ⚠ **거를 것을 여기서 나열하지 않고 형으로 거른다** — 관문
+    (`core/assumption/scenario_overrides.py` 의 `_kind`)이 참·거짓과 비스칼라를
+    거부하므로 같은 판정을 이름 목록으로 베끼면 대장이 늘 때 한쪽만 낡는다.
+    """
+    ledger = yaml.safe_load(_ASSUMPTIONS.read_text(encoding="utf-8")) or {}
+    return [
+        {"key": item["key"], "value": item["value"], "reason": _PROBE_REASON}
+        for item in ledger["assumptions"]
+        if type(item["value"]) is not bool
+        and isinstance(item["value"], (int, float, str))
+    ]
+
+
+def _preconditions() -> list[tuple[str, dict[str, Any]]]:
+    """재는 전건 — **골든 전건 + 기준선 갈래 ⓐ·ⓒ** (판정 ⓒ).
+
+    ⚠ 골든 픽스처에는 `baseline_arrangement` 가 없다(기본 ⓑ). 갈래마다 읽는
+    키가 다르면 선언은 **합집합**이어야 하므로 갈래를 손으로 세워 함께 잰다 —
+    골든만 재면 ⓐ·ⓒ 가 더하는 키를 이 축이 영영 못 본다.
+    """
+    cases: list[tuple[str, dict[str, Any]]] = [
+        (path.stem, yaml.safe_load(path.read_text(encoding="utf-8")))
+        for path in sorted(_GOLDEN_DIR.glob("scenario_*.yaml"))
+    ]
+    cases.append((
+        "branch_none",
+        {
+            "scenario": "n5-branch-none",
+            "subsidy_rate": 0.0,
+            "baseline_arrangement": BaselineArrangement.NONE.value,
+        },
+    ))
+    cases.append((
+        "branch_pool",
+        {
+            "scenario": "n5-branch-pool",
+            "subsidy_rate": 0.0,
+            "baseline_arrangement": BaselineArrangement.POOL.value,
+            # ⓒ 는 계측 선언이 없으면 `DV-15` 로 거부된다 (R60/WP-3).
+            POOL_METERING_FIELD: {
+                "ownership_or_operation_transferred": True,
+                "metering_separated": True,
+            },
+        },
+    ))
+    return cases
+
+
+@pytest.fixture(scope="module")
+def probed(tmp_path_factory: pytest.TempPathFactory) -> dict[str, CaseReport]:
+    """전건마다 **전 항목을 자기 값으로 덮은** 리포트. 조립은 한 번씩만 돈다."""
+    folder = tmp_path_factory.mktemp("n5-freeze")
+    rows = _identity_overrides()
+    reports: dict[str, CaseReport] = {}
+    for name, body in _preconditions():
+        body["assumption_overrides"] = rows
+        path = folder / f"{name}.yaml"
+        path.write_text(
+            yaml.safe_dump(body, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+        reports[name] = build_case_report(path, assumptions_path=_ASSUMPTIONS)
+    return reports
+
+
+def _frozen_get_side(report: CaseReport) -> frozenset[str]:
+    """굳힌 집합 중 **`get()` 이력 몫** — 수준표가 declare 한 몫은 뺀다.
+
+    ⚠ **판정 ⓓ.** 둘째 통로(`ledger_backed_variables()`)는 수준표가 이미
+    declare 한 것이고 굳히는 줄이 그것을 **물어서** 합집합한다. 그것까지 이
+    선언에 베끼면 같은 사실이 두 곳에 살고 한쪽만 낡는다 — 이 라운드가 두 번
+    밟은 함정이다. 여기서 세는 것은 `provider.keys_read()` 쪽뿐이다.
+    """
+    marked = frozenset(row.key for row in report.overrides if row.read_by_this_run)
+    return marked - frozenset(ledger_backed_variables().values())
+
+
+def test_the_frozen_history_stays_inside_what_the_compute_phase_declares(
+    probed: dict[str, CaseReport],
+) -> None:
+    """★★★ **굳힌 집합 ⊆ 선언** — 전건 전부.
+
+    리포트 쪽 읽기가 굳히는 줄 **앞으로** 오면 선언 밖의 키가 굳힌 집합에
+    들어와 여기서 빨간불이 된다. ⚠⚠ **선언을 넓혀 통과시키지 마라** — 선언
+    밖의 키가 들어왔다면 그것이 이 축이 찾으려던 것이다.
+    """
+    outside = {
+        name: sorted(_frozen_get_side(report) - COMPUTE_PHASE_READ_KEYS)
+        for name, report in probed.items()
+    }
+
+    assert not any(outside.values()), (
+        "굳히는 줄이 **선언 밖의 키**를 들고 있다 — 리포트 쪽 읽기가 그 줄 "
+        "앞으로 왔는지 보라. 계산 쪽에 정당한 새 읽기가 생긴 것이면 "
+        f"COMPUTE_PHASE_READ_KEYS 를 함께 고쳐라: {outside}"
+    )
+
+
+def test_the_declaration_carries_no_key_the_compute_phase_never_reads(
+    probed: dict[str, CaseReport],
+) -> None:
+    """★ 선언에 **죽은 이름**이 없다 — 넓혀서 통과시키는 길을 막는다.
+
+    ⊆ 만 재면 선언을 대장 전체로 넓혀도 늘 초록불이고, 그러면 위 검사는
+    아무것도 붙들지 않는다. 전건 합집합과 선언이 **같아야** 한다.
+    """
+    union: frozenset[str] = frozenset().union(
+        *(_frozen_get_side(report) for report in probed.values())
+    )
+
+    assert COMPUTE_PHASE_READ_KEYS - union == frozenset(), (
+        "선언에 어느 전건도 읽지 않는 키가 있다 — 넓혀서 통과시킨 것이 아닌지 "
+        f"보라: {sorted(COMPUTE_PHASE_READ_KEYS - union)}"
+    )
+
+
+def test_the_probe_does_not_move_any_golden_conclusion(
+    probed: dict[str, CaseReport],
+) -> None:
+    """★ **결론축 불변** — 전 항목을 자기 값으로 덮었으니 수가 그대로다.
+
+    이 검사가 없으면 탐침이 값을 흔들어도 위 둘은 초록불이고, 그때 재고 있는
+    것은 **이 저장소의 실행이 아니다.**
+    """
+    moved = {
+        path.stem: (probed[path.stem].metrics["npv"], _expected_npv(path))
+        for path in sorted(_GOLDEN_DIR.glob("scenario_*.yaml"))
+        if probed[path.stem].metrics["npv"] != _expected_npv(path)
+    }
+
+    assert not moved, f"탐침이 결론축을 옮겼다 — {moved}"
