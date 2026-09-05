@@ -104,8 +104,17 @@ def test_ui_routes_are_collected_without_touching_a_registry_file() -> None:
     ⚠ **총 경로 수를 박지 않는다.** 다른 구획이 라우트를 하나 더하면 박은 수가
     틀리고, 그때 사람은 이 검사를 「수를 고쳐 통과시키는」 것으로 다룬다.
     이 파일이 들고 온 경로가 **실제로 앱에 있는지**를 본다.
+
+    ⚠⚠ **`app.routes` 를 훑지 않는다 — 그 목록의 모양이 FastAPI 판마다 다르다.**
+    0.141 은 `include_router` 가 넣은 것을 `_IncludedRouter` 한 겹으로 감싸
+    `route.path` 가 없고, 0.136 은 그것을 평평하게 편다. 로컬(0.136)에서
+    초록불이던 이 검사가 **CI(0.141)에서만 빨간불**이었고, 그때 보이는 것은
+    「라우터가 수집되지 않았다」라는 **틀린 진술**이었다 — 라우터는 수집돼
+    있었고 응답도 정상이었다.
+    ⇒ **앱이 공표하는 경로 목록(OpenAPI)을 본다.** 그것이 판을 건너 같은
+    뜻을 갖는 유일한 자리이며, 내부 자료구조가 아니라 **앱의 대외 계약**이다.
     """
-    paths = {getattr(route, "path", None) for route in create_app().routes}
+    paths = set(create_app().openapi()["paths"])
 
     for path in ("/", "/ui/model-composer", "/ui/regulation-admin", "/static/{filename}"):
         assert path in paths, (
