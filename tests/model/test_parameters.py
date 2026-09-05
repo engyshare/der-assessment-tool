@@ -11,6 +11,7 @@ R29 가 이 조항의 항진 테스트를 걷어내면서 *「「전체」의 �
     ③ 기준이 **거짓이 될 때 멈춘다** — 열거 불가 시그니처 · 단위 없는 수치
     ④ 단위표 둘이 **겹치지 않는다** — 겹치면 우선순위가 조용히 뒤집힌다
     ⑤ 파라미터마다 **한국어 라벨이 있다** — 없으면 화면이 변수명으로 돌아간다
+    ⑥ 라벨·단위가 **뜻과 갈리지 않는다** — 있는 것이 틀린 것보다 나쁘지 않게
 
 **③이 이 파일의 핵심이다.** ①②만 두면 「지금 맞다」를 고정할 뿐이고, 새 자원이
 규약을 벗어날 때 카탈로그가 조용히 반쪽을 내주는 것을 아무도 보지 못한다.
@@ -23,7 +24,9 @@ R29 가 이 조항의 항진 테스트를 걷어내면서 *「「전체」의 �
 
 from __future__ import annotations
 
+import ast
 import inspect
+import pathlib
 from collections.abc import Sequence
 
 import pytest
@@ -35,10 +38,12 @@ from core.model.parameters import (
     LABEL_BY_NAME,
     UNIT_BY_NAME,
     UNIT_BY_SUFFIX,
+    UNIT_OVERRIDING_SUFFIX,
     ParameterCatalogueError,
     ParameterKind,
     catalogue,
     parameters_of,
+    resolve_label,
     resolve_unit,
     resource_parameters,
 )
@@ -352,3 +357,146 @@ def test_no_label_leaks_the_variable_name() -> None:
                 f"{spec.tag}.{spec.name} 의 라벨 {spec.label!r} 에 밑줄이 "
                 "있습니다 — 라벨은 사람이 읽는 말이어야 합니다"
             )
+
+
+# ── ⑥ 라벨·단위가 뜻과 갈리지 않는다 (R63/F3 — R1 의 D-7·D-8·D-9) ──────
+
+def _source_labels(name: str) -> dict[str, str]:
+    """소스가 이 인자를 무엇이라 부르는가 — `core/der/*.py` 의 `field=`·`label=` 쌍.
+
+    **거부 문면 쪽이 정본이다**(사용자가 값을 잘못 넣으면 그 말로 답을 받는다).
+    그래서 화면 라벨이 그것과 갈리는지는 **소스를 읽어야** 알 수 있다. 손으로
+    베껴 두면 소스가 바뀔 때 이 시험이 옛 사실을 붙들고 초록불을 낸다.
+    """
+    found: dict[str, str] = {}
+    for path in sorted(pathlib.Path(core.der.__file__).parent.glob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.Call):
+                continue
+            given = {kw.arg: kw.value for kw in node.keywords if kw.arg}
+            field, label = given.get("field"), given.get("label")
+            if not (isinstance(field, ast.Constant) and isinstance(label, ast.Constant)):
+                continue
+            if str(field.value).rsplit(".", 1)[-1] == name:
+                found[path.name] = str(label.value)
+    return found
+
+
+@pytest.mark.req("UI-2-AC1")
+def test_night_hours_is_a_clock_hour_not_a_length() -> None:
+    """`night_hours` 는 **시각의 집합**이다 — 「시간」(길이)이 아니다.
+
+    `heatpump.py` 가 `DEFAULT_NIGHT_HOURS = (23, 0, 1, …, 7)` 로 두고
+    `(i * ctx.dt // SECONDS_PER_HOUR) % 24 in self.night_hours` 로 읽는다.
+    접미어 `_hours` 가 「시간」을 붙이면 화면은 `(23,0,…,7)` 옆에 **길이 단위**를
+    그린다 — 모듈 독스트링이 `cycle_life`/`calendar_life` 로 경고한 바로 그
+    형태이며, *「틀린 단위는 없는 단위보다 나쁘다」*.
+
+    형제 `connect_start_hour`·`connect_end_hour` 는 `_hour` 라서 「시」를 받는다.
+    **같은 뜻이 접미어 한 글자 차이로 갈렸다**는 것이 이 결함이다.
+    """
+    assert resolve_unit("night_hours") == "시"
+    assert resolve_unit("connect_start_hour") == "시"
+    assert resolve_unit("connect_end_hour") == "시"
+
+
+@pytest.mark.req("UI-2-AC1")
+def test_the_suffix_rule_still_reads_a_length_as_a_length() -> None:
+    """`_hours` 접미어를 **걷어내지 않았다** — `price_linked_hours` 는 길이가 맞다.
+
+    한 접미어가 두 뜻을 지고 있으므로 규칙째 지우고 싶어지지만, 지우면 길이인
+    이름이 단위를 잃고 카탈로그가 멈춘다(수치 파라미터 단위 거부). 이름별
+    선언으로 **틀린 자리만** 이기는 것이 이 라운드의 판정이다.
+    """
+    assert resolve_unit("price_linked_hours") == "시간"
+
+
+@pytest.mark.req("UI-1-AC1", "UI-2-AC1")
+def test_the_annual_fixed_om_does_not_split_between_resources() -> None:
+    """히트펌프 고정 O&M 은 **연액**이다 — 다른 다섯 자원과 라벨·단위가 같다.
+
+    `heatpump.py::HeatPump.fixed_om()` 가 *「C-2 고정 O&M A × (1+i)^(n−1)」* 로
+    해마다 계상한다. 나머지 다섯 자원의 **같은 개념**은 인자 이름이
+    `fixed_om_won_per_year` 이고 「연간 고정 운영비 · 원/년」이다.
+
+    갈라 두면 히트펌프와 태양광을 함께 놓은 화면에서 같은 개념이 두 줄로 갈라
+    보이고, 사용자가 20년 총액을 「원」 칸에 적으면 **20배**가 된다.
+
+    ⚠ **인자 이름은 고치지 않는다** — 생성자 시그니처이고 부르는 자리가 여럿이다.
+    갈린 것은 화면에 나가는 라벨·단위뿐이므로 그것만 맞춘다.
+    """
+    assert resolve_label("fixed_om_won") == resolve_label("fixed_om_won_per_year")
+    assert "연간" in resolve_label("fixed_om_won")
+    assert resolve_unit("fixed_om_won") == "원/년"
+    assert resolve_unit("fixed_om_won_per_year") == "원/년"
+
+    # 실물 카탈로그에서도 같다 — 두 자원을 함께 그린 화면이 이 결함이 사는 자리다
+    heatpump = {spec.name: spec for spec in resource_parameters("HeatPump")}
+    pv = {spec.name: spec for spec in resource_parameters("PV")}
+    assert heatpump["fixed_om_won"].label == pv["fixed_om_won_per_year"].label
+    assert heatpump["fixed_om_won"].unit == pv["fixed_om_won_per_year"].unit
+
+
+@pytest.mark.req("UI-1-AC1")
+def test_a_label_covering_three_resources_names_none_of_them() -> None:
+    """`capacity_kw` 를 받는 자원이 셋이고 **소스가 셋을 다르게 부른다**.
+
+    `pv.py` 는 「용량(kW)」, `load.py` 는 **「계약전력」**, `thermal_load.py` 는
+    **「정격 열용량」**이라 부르고 그 말이 그대로 거부 문면이 된다. 화면 라벨이
+    그중 하나를 대표로 쓰면 — R63/P1 이 고른 「설비용량」이 그랬다 — 사용자는
+    부하 칸을 「설비용량」으로 보고 값을 넣었는데 **거부는 「계약전력」이라고
+    답한다.** 같은 필드가 두 이름을 갖는다.
+
+    ★ 이 라운드는 라벨을 (자원, 이름)별로 넓히지 않는다. 대신 **셋 모두에 참인
+    말**로 좁힌다 — 「용량」은 세 자원 어느 것도 아닌 말이 아니라 셋 다에 참인
+    말이고, 단위 `kW` 가 그 옆에 선다.
+
+    ⚠ **이 시험이 재지 못하는 것**: 「용량」이 세 자원에 참인지는 **낱말의 뜻**에
+    대한 판단이라 기계가 재지 못한다. 여기서 기계가 재는 것은 ⓐ 소스가 정말
+    셋을 다르게 부른다는 것과 ⓑ 라벨이 그중 **어느 하나도 아니라는** 것이다.
+    자원이 넷째로 늘어 또 다른 이름을 붙이면 ⓐ 가 그 사실을 들고 온다.
+    """
+    source = _source_labels("capacity_kw")
+    assert len(set(source.values())) >= 3, (
+        f"소스가 `capacity_kw` 를 부르는 이름이 셋이 아닙니다: {source} — "
+        "이 시험이 전제한 상태가 바뀌었으니 라벨 판정을 다시 하십시오"
+    )
+
+    label = resolve_label("capacity_kw")
+    assert label == "용량"
+    assert label not in set(source.values()), (
+        f"화면 라벨 {label!r} 이 한 자원의 이름과 같습니다 — 나머지 자원의 "
+        f"사용자는 거부 문면에서 다른 이름을 보게 됩니다: {source}"
+    )
+    assert resolve_unit("capacity_kw") == "kW"
+
+
+def test_a_name_that_beats_the_suffix_is_declared_where_it_is_visible() -> None:
+    """접미어를 **이기는** 선언은 자기 표에 선다 — 세 표가 서로 겹치지 않는다.
+
+    ④ 가 붙드는 것(`UNIT_BY_NAME` 이 접미어를 가리지 않는다)은 그대로 두고,
+    **접미어가 틀린 단위를 붙이는 자리**만 별도 표로 뺀다. 한 표에 섞으면
+    「이름별 선언은 접미어를 못 이긴다」는 규약과 「이 둘은 이긴다」는 예외가
+    같은 자리에 앉아 어느 쪽이 정본인지 읽는 사람이 알 수 없다.
+
+    ⚠ **두 단언이 각각 다른 사고를 막는다**: 겹치지 않음은 같은 이름이 두 표에
+    앉는 것을, 아래 순환은 **선언해 두고 접미어가 계속 이기는 상태**를 막는다 —
+    후자가 이 결함(D-7)을 순진하게 고쳤을 때 실제로 나는 침묵이다.
+    """
+    assert set(UNIT_BY_NAME) & set(UNIT_OVERRIDING_SUFFIX) == set()
+
+    not_shadowing = [
+        name
+        for name in UNIT_OVERRIDING_SUFFIX
+        if not any(name.endswith(suffix) for suffix in UNIT_BY_SUFFIX)
+    ]
+    assert not_shadowing == [], (
+        f"접미어를 가리지 않는 이름이 예외 표에 있습니다: {not_shadowing}. "
+        "이길 것이 없으면 `UNIT_BY_NAME` 이 그 자리입니다"
+    )
+
+    for name, unit in UNIT_OVERRIDING_SUFFIX.items():
+        assert resolve_unit(name) == unit, (
+            f"{name} 를 예외로 선언했는데 접미어가 이깁니다 — "
+            f"`resolve_unit` 이 {resolve_unit(name)!r} 를 돌려줍니다"
+        )

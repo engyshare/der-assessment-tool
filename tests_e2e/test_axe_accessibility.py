@@ -68,6 +68,11 @@ _SCREENS: tuple[str, ...] = (
     # `pytest … | tee` 를 `pipefail` 없이 돌려 pytest 의 실패를 삼켰다.
     # 그 자리를 함께 고쳤다(`.github/workflows/tests.yml` 의 같은 스텝).
     "/ui/verify",
+    # R63 이 더한 시나리오·설정 화면. ★ 위 `/ui/verify` 를 놓친 뒤에 `pipefail` 을
+    # 고쳤으므로 **이 둘은 놓치는 순간 CI 가 실제로 빨간불이 된다** — 그것이 이
+    # 목록이 있는 이유다.
+    "/ui/scenarios",
+    "/ui/settings",
 )
 
 #: 조항 문면(WCAG 2.1 AA)이 정하는 태그 범위. `wcag2*` 는 2.0 의 A·AA,
