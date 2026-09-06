@@ -571,6 +571,38 @@ class CashflowSplit:
 
 
 @dataclass(frozen=True)
+class SeasonRun:
+    """계절 하나가 **실제로 돈 결과** (R64/WP-4 · 착수 36ⓐ · 사용자 요구 6).
+
+    운전은 `core/casegrid/seasonal_dispatch.py` 가 하고 이 자료형은 그 결과를
+    나른다. **여기서 인쇄하지 않는다** — 붙임·차트·화면은 다음 자리의 몫이며,
+    이 자료형이 정하는 것은 *「무엇을 인쇄할 수 있는가」* 뿐이다. 재료가 여기
+    실리지 않으면 표시 층이 자원을 다시 세워야 하고, 그러면 **인쇄된 계절과
+    결론이 선 계절이 갈릴 수 있다**(`ResourceLine`·`CaseOutcome.dispatch` 가
+    이미 같은 판단을 받은 자리다).
+
+    ⚠ **연간 기여를 여기서 담는 이유** — 계절마다 **다른 일수**를 곱하는 것이
+    이 축이 여는 것 그 자체다. 표시 층이 `dispatch` 만 받아 `DAYS_PER_YEAR` 를
+    곱하면 계절을 모르는 종전 연간화로 조용히 되돌아간다.
+    """
+
+    #: 자산이 적은 계절 이름 (`봄`·`여름`·`가을`·`겨울` 또는 `연중`).
+    name: str
+    #: 그 계절의 일수. **합이 `DAYS_PER_YEAR` 다** — 그 성질은 자산을 읽는
+    #: `DailyShape._calendar_days()` 가 거부로 지킨다(여기서 다시 세지 않는다).
+    days: int
+    #: 그 계절 **대표일 하루**의 운전. 24스텝이며 종전 대표일과 같은 해상도다.
+    dispatch: SystemDispatch
+    #: 자원 이름 → **그 계절이 한 해에 보태는 몫**(kWh) = 하루 합 × 계절일수.
+    #: 부호 규약은 `DispatchResult` 그대로다(양수 = 내보냄, 음수 = 받아들임).
+    per_resource_annual_kwh: Mapping[str, float]
+    #: 그 계절이 한 해에 보태는 계통 송전량(kWh, 양수).
+    grid_export_annual_kwh: float
+    #: 그 계절이 한 해에 보태는 계통 수전량(kWh, 양수).
+    grid_import_annual_kwh: float
+
+
+@dataclass(frozen=True)
 class CaseOutcome:
     """케이스 러너 하나의 산출 — 지표 **와 변형별 지표** (`FR-607-AC1` / R32).
 
@@ -623,7 +655,22 @@ class CaseOutcome:
     #:
     #: ⚠ **여기가 `CaseBasis` 가 아닌 이유**: `CaseBasis` 는 *「무엇을
     #: 넣었는가」* 를 담는다고 스스로 못 박고 있다. 운전 결과는 **나온 것**이다.
+    #:
+    #: ★★★ **R64/WP-4 뒤로 이것은 「연간등가 하루」다** — 계절마다 돌린 하루를
+    #: **계절일수로 가중 평균**한 것이며, 여기에 `DAYS_PER_YEAR` 를 곱하면
+    #: `Σ_계절 (계절 하루 × 계절일수)` 가 된다(`core/casegrid/seasonal_dispatch.py`
+    #: 머리말이 그 항등식을 갖는다). 계절 하나짜리 자산에서는 종전과 **원소
+    #: 하나까지** 같다. 계절별 하루하루는 아래 `seasons` 가 갖는다.
     dispatch: SystemDispatch
+    #: ★★★ **계절별 운전** (R64/WP-4 · 착수 36ⓐ · 사용자 요구 6).
+    #:
+    #: 계절마다 (이름 · 일수 · 그 하루의 운전 · 그 계절 연간 기여) 다. 위
+    #: `dispatch` 는 이것들을 일수로 가중 평균한 **한 벌**이므로, 계절 간 차이를
+    #: 묻는 표·도표는 이쪽을 읽어야 한다 — 접힌 하루에서는 되돌릴 수 없다.
+    #:
+    #: ⚠ **비어 있는 것이 정당한 상태다** — 형상 자산을 주지 않은 실행(케이스
+    #: 그리드·성능 측정)이 그렇다. 그때는 계절이 가를 것이 없다.
+    seasons: tuple[SeasonRun, ...]
     #: 이 실행이 **실제로 적용한** 디스패치 규칙 순서 (`FR-302-AC1`·`AC3`).
     #:
     #: ⚠ 리포트가 `DEFAULT_RULE_ORDER` 를 다시 읽게 두지 않는다. 순서는 엔진

@@ -43,6 +43,7 @@ from core.casegrid.operating_lines import DAYS_PER_YEAR
 from core.cba.baseline import BaselineArrangement
 from core.report.case_report import CaseReport, build_case_report
 from core.report.narrative import render_markdown
+from core.report.unreflected import measured_over_seasons
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -107,33 +108,26 @@ def _maintain(reports: dict[str, CaseReport]) -> CaseReport:
 
 
 def _daily_self_consumption_kwh(report: CaseReport) -> float:
-    """본 실행의 대표일 자가소비(kWh) — **스텝마다 min(발전, 부하)**.
+    """본 실행의 **연간등가 하루** 자가소비(kWh) — 스텝마다 `min(발전, 부하)`.
 
     ⚠ 러너의 내부(잉여 시계열)를 읽지 않는다. 운전 결과로 드러난 사실에서
-    독립적으로 다시 세어야 *「포기 항의 물량이 실제 자가소비인가」* 가 재진다 —
-    같은 규약을 `core/report/unreflected.py::_measured_quantities` 가 쓴다.
+    독립적으로 다시 세어야 *「포기 항의 물량이 실제 자가소비인가」* 가 재진다.
+
+    ## ⚠⚠ R64/WP-4 — **접힌 하루가 아니라 계절마다 재어 일수로 가중 평균한다**
+
+    러너가 계절 넷을 각각 돌려 합산하게 되면서 포기 물량(잉여 시계열에서 온다)은
+    **계절을 알게** 됐는데, 이 오라클이 접힌 하루에서 재고 있어 241,707 대
+    246,337원으로 갈렸다 — `min` 이 비선형이라 평균 하루에서 재면 자가소비가
+    과대 계상된다. **허용오차를 키우지 않고 창을 맞췄다**(오라클이 재는 것은
+    그대로 *「물량이 실제 자가소비인가」* 다).
+
+    ⚠ 여기서 합산 규칙을 손으로 다시 쓰지 않고 배포 코드가 쓰는 그 함수
+    (`core/report/unreflected.py::measured_over_seasons`)를 부른다 — 규칙을 두
+    벌로 적으면 한쪽만 고쳐지는 날 이 오라클이 조용히 다른 것을 잰다.
     """
-    hours = report.dispatch_hours
-    names = tuple(hours[0].per_resource)
-    generation = [
-        name
-        for name in names
-        if all(hour.per_resource.get(name, 0.0) >= 0.0 for hour in hours)
-        and any(hour.per_resource.get(name, 0.0) > 0.0 for hour in hours)
-    ]
-    load = [
-        name
-        for name in names
-        if all(hour.per_resource.get(name, 0.0) <= 0.0 for hour in hours)
-        and any(hour.per_resource.get(name, 0.0) < 0.0 for hour in hours)
-    ]
-    return sum(
-        min(
-            sum(hour.per_resource.get(name, 0.0) for name in generation),
-            -sum(hour.per_resource.get(name, 0.0) for name in load),
-        )
-        for hour in hours
-    )
+    measured = measured_over_seasons(report.dispatch_hours, report.seasons)
+    assert measured is not None, "부하 자원이 서지 않아 자가소비를 잴 수 없다"
+    return measured.self_consumption
 
 
 @pytest.mark.req("FR-705-AC2")

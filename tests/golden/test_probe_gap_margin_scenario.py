@@ -117,16 +117,25 @@ def test_control_group_the_real_ledger_still_shows_a_shortfall() -> None:
     이 대조군이 없으면 「흑자 경로가 돈다」와 「늘 그 문면이 나온다」가
     구별되지 않는다(모듈 독스트링 참조). `fixtures/golden/
     scenario_subsidy_80.yaml`(기존 골든)이 같은 `subsidy_rate=0.80` 을
-    진짜 대장으로 매 회귀에서 재는 값(`npv_won: -3712270`)과 일치해야
+    진짜 대장으로 매 회귀에서 재는 값(`npv_won: -3655622`)과 일치해야
     한다 — 이 실측이 그 값과 어긋나면 이 파일이 아니라 진짜 대장이나
     `core/` 가 움직인 것이다.
+
+    ## ⚠ 값이 한 번 바뀌었다 — **재는 것은 그대로다** (R64/WP-4)
+
+    종전 값은 `-3712270` 이었다. R64/WP-4 가 러너에 **계절 넷의 대표일을 각각
+    돌려 계절일수로 가중 합산하는 운전**을 세우면서 결론축이 움직였고(세
+    시나리오 각각 **+56,648원** · 그 골든 파일의 R64 블록이 경위와 산식을
+    갖는다), 이 대조군은 그 골든과 **같은 값을 재는 자리**이므로 함께 따라간다.
+    ⚠ **오라클은 한 자도 느슨해지지 않았다** — 여전히 완전 일치(`==`)이고,
+    여전히 「골든이 재는 그 수와 같은가」다.
     """
     report = build_case_report(PROBE_SCENARIO_PATH, assumptions_path=REAL_ASSUMPTIONS_PATH)
 
     assert report.recovers_within_horizon is False
-    assert report.metrics["npv"] == -3712270.0, (
+    assert report.metrics["npv"] == -3655622.0, (
         "대조군의 순현재가치가 fixtures/golden/scenario_subsidy_80.yaml 의 "
-        "실측(-3712270)과 어긋난다 — 진짜 대장이나 core/ 가 움직였다는 뜻이다"
+        "실측(-3655622)과 어긋난다 — 진짜 대장이나 core/ 가 움직였다는 뜻이다"
     )
 
     rendered = render_markdown(report)

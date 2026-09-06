@@ -96,7 +96,7 @@ from core.casegrid.ledger_levels import (
     ledger_unit_scales,
     required_scalar,
 )
-from core.casegrid.models import CaseBasis, CashflowSplit
+from core.casegrid.models import CaseBasis, CashflowSplit, SeasonRun
 from core.casegrid.perspectives import PerspectiveWiring
 from core.casegrid.profiles import load_daily_shapes
 from core.casegrid.variants import run_order
@@ -375,7 +375,19 @@ class CaseReport:
     rule_order: tuple[DispatchRule, ...]
     #: 대표일 스텝별 운전 (의견 3). **부하·일사 형상을 함께 세운 본 실행**이며
     #: 결론(프로포마·NPV)이 같은 실행 위에 선다 (R48/WP-B · 판정 B-1).
+    #:
+    #: ⚠ **R64/WP-4 뒤로 이 하루는 「연간등가 하루」다** — 계절별 하루를 계절
+    #: 일수로 가중 평균한 것이며, 계절 간 차이는 여기서 되돌릴 수 없다.
+    #: 그 차이를 묻는 표·도표는 아래 `seasons` 를 읽어야 한다.
     dispatch_hours: tuple[DispatchHour, ...]
+    #: ★★★ **계절별 운전** — 계절마다 (이름 · 일수 · 그 하루의 운전 · 그 계절
+    #: 연간 기여) (R64/WP-4 · 착수 36ⓐ · 사용자 요구 6).
+    #:
+    #: ⚠ **아직 인쇄하는 절이 없다.** 계절별 수치·도표를 세우는 것은 다음
+    #: 자리의 몫이며, 이 칸은 그 재료다 — 재료를 여기 싣지 않으면 그 절이
+    #: 자원을 다시 세워야 하고 **인쇄된 계절과 결론이 선 계절이 갈릴 수 있다.**
+    #: ⚠ 형상 자산이 없는 실행에서는 비어 있다.
+    seasons: tuple[SeasonRun, ...]
     #: 설계 변수(용량)를 탐색 구간에서 훑은 결과 — 4.4 · 붙임 10.
     #: *「적정 용량 검토가 선행되어야 한다」* 는 지적이 만든 절이다.
     capacity_review: tuple[CapacityFinding, ...]
@@ -991,6 +1003,11 @@ def build_case_report(
         ),
         rule_order=outcome.rule_order,
         dispatch_hours=build_hourly_profile(outcome.dispatch),
+        # ★★★ **계절별 운전을 그대로 받는다** (R64/WP-4 · 판정 ⑤ · 사용자 요구 6).
+        # 여기서 요약하거나 접지 않는다 — 접힌 하루(`dispatch_hours`)에서는
+        # 계절 간 차이를 되돌릴 수 없고, 되돌리려는 표시 층은 자원을 다시
+        # 세우게 된다(`dispatch_notes` 가 같은 판단을 받은 자리다).
+        seasons=outcome.seasons,
         capacity_review=capacity_review,
         self_sufficiency=self_sufficiency,
         # ★ 러너가 **가른 채로** 낸 현금흐름 행을 그대로 받는다 (판정 §3 ⓐ).

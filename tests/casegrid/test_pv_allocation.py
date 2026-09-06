@@ -133,9 +133,16 @@ def _probe_household() -> Load:
 
     손으로 `Load(...)` 를 짓지 않는 이유는 그것이 러너의 사본이 되기 때문이다
     (형상·물가 계수 인자가 갈리면 이 파일이 다른 부하를 재게 된다).
+
+    ⚠ **R64/WP-4 가 생성자를 `core/casegrid/seasonal_dispatch.py` 로 옮기면서
+    물가 계수가 인자가 됐다** — 계절마다 부하를 세워야 해서 `Load(...)` 를 한
+    자리로 모았고, 그 자리는 `e2e_runner.py` 의 모듈 상수를 읽을 수 없다(순환
+    import). 이름은 재수출로 남아 있으므로 이 파일의 import 는 그대로다.
+    **여기서 물가 계수를 지어내지 않고 러너의 상수를 그대로 넘긴다** — 위
+    독스트링이 경고한 「갈리면 다른 부하를 잰다」가 그 자리다.
     """
     household = _household_load_if_total_given(
-        load_daily_shapes(), _PROBE_LOAD_KWH
+        load_daily_shapes(), _PROBE_LOAD_KWH, escalation_rate=PRICE_ESCALATION_RATE
     )
     assert household is not None, "총량을 주었는데 부하가 서지 않았다"
     return household

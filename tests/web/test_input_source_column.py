@@ -50,8 +50,14 @@ from web.render import demo_context, render_dashboard, render_run_result
 from web.render_run import NO_LEDGER_SOURCE, run_result_context
 
 #: 기본값 실행의 무보조 결론축. **표시층은 이 수를 움직이지 않는다.**
-#: ⚠ 옛 수를 인용하지 마라(`−11,537,129`·`−12,591,162`·`−924,900`).
-_DEFAULT_NPV = -11_552_270.0
+#: ⚠ 옛 수를 인용하지 마라(`−11,552,270`·`−11,537,129`·`−12,591,162`·`−924,900`).
+#: ⚠⚠ **R64/WP-4 가 이 수를 갱신했다** — 러너가 계절 넷의 대표일을 각각 돌려
+#: 계절일수로 가중 합산하게 되면서 −11,552,270 → −11,495,622원(+56,648원)이
+#: 됐다(착수 36ⓐ · `fixtures/golden/scenario_unsubsidized.yaml` 의 R64 블록).
+#: **이 파일이 재는 것은 그 수의 크기가 아니라 「입력 출처 열을 켜도 축이
+#: 움직이지 않는가」** 이며, 아래 검사가 화면 날값과 리포트 값을 **같은
+#: 객체에서** 왔는지로 잰다 — 그 단언은 이 라운드에도 통과했다.
+_DEFAULT_NPV = -11_495_622.0
 
 #: 대조에 쓰는 골든 시나리오 — 결론축의 정의가 이것이다.
 _SCENARIO = "scenario_unsubsidized"
@@ -274,8 +280,13 @@ def test_a_sideways_scrolling_region_can_be_reached_by_keyboard(
 def test_the_source_column_does_not_move_the_conclusion(report) -> None:
     """★★★ **결론축 불변** — 이 축은 표시층이고 계산 경로를 한 줄도 만지지 않았다.
 
-    기본값 실행의 무보조 `npv` 는 **−11,552,270원**이며 화면이 인쇄하는 날값이
+    기본값 실행의 무보조 `npv` 는 **−11,495,622원**이며 화면이 인쇄하는 날값이
     리포트의 값과 **같은 객체에서** 온다. 움직였으면 그것이 새 결함이다.
+
+    ⚠ **「축이 절대 안 움직인다」를 재는 것이 아니다** — 이 파일이 재는 것은
+    *「입력 출처 열(표시층)을 켜도 축이 안 움직인다」* 이며, 그 실질은 아래
+    둘째 단언(화면 날값 == 리포트 값)이다. 계산 경로가 바뀌면 첫 단언의
+    리터럴은 따라간다(`_DEFAULT_NPV` 옆 ⚠⚠ 참조).
     """
     context = run_result_context(report, scenario_text="")
 
