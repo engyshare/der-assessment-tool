@@ -92,7 +92,7 @@ KNOWN_UNREAD: frozenset[str] = frozenset({
     "fuel_price_signal_won_per_kwh",
     "is_full_year",
     # ⚠ `notes` 는 **R64/WP-4 에 목록에서 빠졌다** — `core/casegrid/
-    # seasonal_dispatch.py::_blend_result` 가 계절별 운전을 연간등가 하루로
+    # season_blend.py::_blend_result` 가 계절별 운전을 연간등가 하루로
     # 접으면서 `DispatchResult.notes` 를 읽어 **버리지 않고 모은다**(계절 하나가
     # 낸 진단 문구를 떨어뜨리면 그 계절이 무엇을 못 했는지가 접힌 하루에서
     # 사라지고, 그 소멸은 아무 예외도 내지 않는다). 곧 계약이 내놓은 이름을

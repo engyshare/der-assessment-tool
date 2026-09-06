@@ -350,6 +350,7 @@ def run_single_case_e2e(
     annual_load_kwh: float | None = None,
     extra_appliance_load_kwh: float = 0.0,
     household_count: int | None = None,
+    dr_shiftable_share_pct: float = 0.0,
     rec_price_won_per_unit: float = 0.0,
     rec_weight_pv: float = 1.0,
     distributed_sub_items: DistributedSubItems | None = None,
@@ -527,6 +528,26 @@ def run_single_case_e2e(
     검토자가 보는 것은 우리가 고른 규모로 우리가 돌린 계산이 된다. 판정과
     거부는 `core/casegrid/household_scale.py::resolve_household_count` 하나가
     진다.
+
+    ★★★ **`dr_shiftable_share_pct` — 「AI 가전」이 하루 안에서 옮기는 몫**
+    (R64/WP-7 · 사용자 요구 2 의 남은 절반). *「집 전체 가전 부하 중 ○○% 는
+    하루 안에서 옮길 수 있다」* 하나이며, 그 몫은 **그 계절 하루의 태양광
+    잉여가 있는 시각으로** 간다(`core/casegrid/load_shift.py::
+    shift_into_pv_surplus`).
+
+    ⚠⚠ **총량은 한 kWh 도 변하지 않는다** — 옮기는 것이지 더하는 것이 아니다.
+    그래서 이 인자는 **위 두 인자와 성질이 다르다**: 저 둘은 총량을 키우고
+    이것은 하루의 모양만 바꾼다. 기본값 `0.0` 은 *「옮기지 않는다」* 이며 그때
+    이 배선이 생기기 전과 원소 하나까지 같다.
+
+    ⚠ **기기별 목록을 세우지 않았다.** 냉장고·세탁기의 소비량·이동 가능
+    시간 자료가 대장에도 참고자료에도 없다(사용자 판정 §5). 그래서 축은
+    **비율 하나**이고, 「AI 가전」을 가산 부하 항목으로 세우지 않은 사유는
+    `core/casegrid/appliance_load.py` 머리말의 ⚠⚠ 절이 갖는다.
+
+    ⚠ **새 편익 갈래를 만들지 않는다.** 절감은 사는 전기가 줄어 요금 엔진에서
+    나오며, 수요반응 **정산금**(`FR-401-AC2.DemandResponse`)은 정산단가가 없어
+    **미매핑 그대로**다 — 그 결손은 붙임 8 이 신고한다.
 
     ★★★ **`ess_shares` — 배터리 한 대를 몫으로 갈라 몫마다 다른 역할을 준다**
     (R57/WP-6 · ★분할). `None` 이 *「몫으로 가르지 않는다」* 이고 **그것이
@@ -720,6 +741,7 @@ def run_single_case_e2e(
         annual_load_kwh=annual_load_kwh,
         extra_appliance_load_kwh=extra_appliance_load_kwh,
         household_count=household_count,
+        dr_shiftable_share_pct=dr_shiftable_share_pct,
         ess_shares=ess_shares, ess_capacity_kwh=ess_capacity_kwh, ess_capex=ess_capex,
         ess_fixed_om=ess_fixed_om, ess_replacement_price=ess_replacement_price,
         ess_operating_mode=ess_operating_mode, ess_charge_source=ess_charge_source,

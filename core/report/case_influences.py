@@ -230,6 +230,7 @@ class _Sweeper:
         pool_metering: PoolMeteringDeclaration | None = None,
         household_count: int | None = None,
         extra_appliance_load_kwh: float = 0.0,
+        dr_shiftable_share_pct: float = 0.0,
     ) -> None:
         self._baseline_arrangement = baseline_arrangement
         # ★★ **단지 규모** (R64/WP-1 · 착수 47ⓐ). 기본값 `None` 은 *「적지
@@ -244,6 +245,11 @@ class _Sweeper:
         # 기본값과 같다 — 위 가구 수와 같은 자리이고, 어긋남을 붙드는 것은
         # `tests/report/test_appliance_load_wired.py` 다.
         self._extra_appliance_load_kwh = extra_appliance_load_kwh
+        # ★★ **「AI 가전」이 하루 안에서 옮기는 비율** (R64/WP-7 · 사용자 요구
+        # 2). 기본값 `0.0` 은 *「옮기지 않는다」*이며 그때 러너 인자의 기본값과
+        # 같다 — 위 둘과 같은 자리이고, 어긋남을 붙드는 것은
+        # `tests/report/test_load_shift_wired.py` 다.
+        self._dr_shiftable_share_pct = dr_shiftable_share_pct
         # ★ ⓒ 의 계측 선언 (R60/WP-3). **기본값을 두는 것이 안전한 자리다** —
         # 잊으면 ⓒ 의 스윕이 `DV-15` 로 **거부**되므로 어긋남이 조용히
         # 지나가지 않는다. 위 갈래는 그렇지 않아서(기본값이 조용히 다른
@@ -303,6 +309,11 @@ class _Sweeper:
             # `base_npv` 와 견주는 `build_coupled_sweeps` 가 **부하 차이를
             # 인자 기여로 인쇄한다** — 위 가구 수가 적어 둔 것과 같은 함정이다.
             extra_appliance_load_kwh=self._extra_appliance_load_kwh,
+            # ★ **본 실행과 같은 비율로 부하를 옮긴다** (R64/WP-7 · 사용자 요구
+            # 2). 안 넘기면 스윕이 **부하를 옮기지 않는 하루**를 재고, 그 결과를
+            # 옮긴 하루 위에 선 본문의 `base_npv` 와 견주는 `build_coupled_sweeps`
+            # 가 **형상 차이를 인자 기여로 인쇄한다** — 위 둘과 같은 함정이다.
+            dr_shiftable_share_pct=self._dr_shiftable_share_pct,
             # ★ **본 실행과 같은 REC 단가·가중치를 쓴다** (사용자 판정 §4·§5 ·
             # R51/WP-6·R52/WP-6). 안 넘기면 러너의 기본값이 쓰이고, 대장이
             # 값을 얻는 날 **본문과 5.1 이 서로 다른 사업을 그린다** — 위

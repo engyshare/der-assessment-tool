@@ -78,16 +78,38 @@
 는 계절별 잉여(`max(0, 그 계절 발전 − 그 계절 부하)`)를 일수로 가중 평균한 것이며,
 종전의 *「평균 하루의 잉여」* 와 다르다(클램프가 비선형이다). 배터리가 한 해 동안
 실제로 받는 잉여의 연간 평균이 그쪽이므로 이 값을 쓴다.
+
+## ★★★ 「AI 가전」이 **계절마다** 부하를 옮긴다 (R64/WP-7 · 사용자 요구 2)
+
+`dr_shiftable_share_pct` 가 *「가전 부하 중 하루 안에서 옮길 수 있는 몫」* 이고,
+그 몫은 **그 계절 하루의 태양광 잉여가 있는 시각으로** 간다
+(`core/casegrid/load_shift.py::shift_into_pv_surplus`).
+
+⚠⚠ **계절마다 따로 옮긴다.** 계절마다 잉여가 나는 시각과 크기가 다르므로 —
+겨울에는 하루 종일 잉여가 없을 수 있다 — 연간등가 하루에서 옮기고 계절에 나눠
+주면 이 모듈이 푼 상쇄가 **부하 쪽에서 다시 접힌다.** 충전 쪽 PV 잉여를 계절별로
+넘기면서 부하 이동만 접는 것은 같은 하루를 두 해상도로 읽는 것이다
+(`_setup_one_season` 의 ★★ 절이 방전 쪽에서 같은 판단을 적었다).
+
+⚠ **총량은 한 kWh 도 움직이지 않는다** — 옮기는 것이지 더하는 것이 아니다.
+그래서 성질 「가」(자원에 들어가는 발전·부하의 연간 총량 불변)는 **그대로**다.
+
+⚠ **연간등가 부하 하루는 옮긴 계절 하루들의 일수 가중 평균으로 다시 세운다**
+(`_shifted_household`). 접힌 하루를 따로 옮기면 그 하루가 리포트가 인쇄하는
+하루(계절별 하루의 가중 평균)와 갈리고, 그때 「부하 추종」 방전이 인쇄된 하루와
+다른 하루를 따라간다. **옮긴 몫이 하나도 없으면 종전 객체를 그대로 쓴다** —
+그 실행은 이 배선이 생기기 전과 원소 하나까지 같다.
 """
 from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from core.casegrid.ess_build import build_case_ess_fleet
 from core.casegrid.ess_share import ESSShare, ESSSharePlan
 from core.casegrid.household_scale import household_scale
+from core.casegrid.load_shift import shift_into_pv_surplus
 from core.casegrid.models import SeasonRun
 from core.casegrid.operating_lines import DAYS_PER_YEAR
 from core.casegrid.profiles import DailyShapes
@@ -95,6 +117,7 @@ from core.casegrid.pv_allocation import (
     _dispatch_inputs_under_baseline,
     resolve_ess_discharge_inputs,
 )
+from core.casegrid.season_blend import blend_dispatch, blend_series
 from core.cba.baseline import BaselineArrangement, PoolMeteringDeclaration
 from core.cba.proforma import check_analysis_period
 from core.contracts.der import DER, DispatchContext, DispatchResult
@@ -210,6 +233,7 @@ def build_and_dispatch_case(
     annual_load_kwh: float | None,
     extra_appliance_load_kwh: float,
     household_count: int | None,
+    dr_shiftable_share_pct: float,
     ess_shares: Sequence[ESSShare] | None,
     ess_capacity_kwh: float,
     ess_capex: float,
@@ -236,6 +260,8 @@ def build_and_dispatch_case(
     ## 도는 차례
 
     ① 계절 목록을 자산에서 받는다(`_season_inputs`) — 없으면 계절 하나짜리 실행
+    ①ⓑ **계절마다 가전 부하를 그 계절의 PV 잉여 시각으로 옮긴다**(`_shift_seasons` ·
+       R64/WP-7). 총량은 그대로이고 하루의 모양만 바뀐다
     ② 계절마다 PV·부하를 세우고 **그 계절의 PV 잉여**를 만든다(저장장치는 아직)
     ③ 잉여를 일수로 가중 평균해 **연간등가 자원 한 벌**을 세운다 — 저장장치의
        설정 판정(`충전원=태양광 잉여인데 한 해에 잉여가 없다`)이 여기서 난다
@@ -275,17 +301,32 @@ def build_and_dispatch_case(
         escalation_rate=price_escalation_rate,
         replacement_escalation=replacement_escalation_rate,
     )
+    inputs = _season_inputs(daily_shapes, generation_total_kwh, load_total_kwh)
+    weights = tuple(season.days / DAYS_PER_YEAR for season in inputs)
+    # ★★★ **「AI 가전」이 계절마다 부하를 옮긴다** (R64/WP-7 · 사용자 요구 2).
+    # 모듈 머리말의 ★★★ 절이 정본이다. 총량은 그대로이고 옮겨 가는 곳은 **그
+    # 계절 하루의 태양광 잉여가 있는 시각**이며, 잉여가 없는 계절에서는 하루가
+    # 원소 하나까지 그대로다.
+    inputs = _shift_seasons(
+        inputs, share_pct=dr_shiftable_share_pct,
+        appliance_ratio=_appliance_ratio(annual_load_kwh, extra_appliance_load_kwh),
+    )
+    household = _shifted_household(
+        household, inputs, weights, escalation_rate=price_escalation_rate
+    )
     # ★★ **방전 배분 축은 계절이 갈리기 전에 한 번만 고른다** (R64/WP-6b).
     # *「이 실행에 따라갈 수요가 있는가」* 는 연간 수준의 사실이라 계절마다 다시
     # 내리면 부하가 어느 계절에만 0 인 자산에서 갈래가 계절마다 갈리고,
     # `_resolved_once` 가 그것을 거부한다. 여기서 고른 갈래를 계절마다 **인자로
     # 되먹이고**, 계절이 새로 짓는 것은 **그 계절의 부하 시계열 하나**다.
     # 짝으로 나오는 `load_whole` 은 연간등가 배터리가 설 하루다 — 아래 ★★ 참조.
+    # ⚠ **부하를 옮긴 뒤에 부른다** (R64/WP-7) — 이 호출이 짓는 `load_whole` 이
+    # 연간등가 배터리가 따라갈 하루이고, 그 하루는 리포트가 인쇄하는 하루와
+    # 같아야 한다(모듈 머리말 마지막 ⚠). 옮기기 전에 부르면 그 배터리가 **옮기기
+    # 전 저녁 봉우리**를 따라가고, 그 어긋남은 아무 예외도 내지 않는다.
     discharge_allocation, load_whole = resolve_ess_discharge_inputs(
         ess_discharge_allocation, case_values, ctx, household=household,
     )
-    inputs = _season_inputs(daily_shapes, generation_total_kwh, load_total_kwh)
-    weights = tuple(season.days / DAYS_PER_YEAR for season in inputs)
     setups = [
         _setup_one_season(
             ctx, season=season, pv_spec=pv_spec,
@@ -298,9 +339,12 @@ def build_and_dispatch_case(
         for season in inputs
     ]
     # ★★ **연간등가 자원 한 벌** — 판정 ① (총량은 자산이 정하고 운전만 계절을
-    # 안다). PV·부하는 계절 대표일의 일수 가중 평균이 곧 `representative_day()`
+    # 안다). PV 는 계절 대표일의 일수 가중 평균이 곧 `representative_day()`
     # 이므로(모듈 머리말의 항등식) 종전과 **원소 하나까지 같은** 하루 위에 선다.
     # ESS 만은 계절별 잉여의 가중 평균 위에 서며, 그 이유는 머리말 마지막 ⚠ 다.
+    # ⚠ **부하는 옮긴 하루 위에 선다** (R64/WP-7) — 위 `_shifted_household` 가
+    # 계절별 옮긴 하루의 일수 가중 평균으로 다시 세웠고, **옮긴 몫이 없으면**
+    # 그 항등식이 그대로여서 종전과 원소 하나까지 같다.
     #
     # ⚠⚠ **배터리는 계절 운전보다 **먼저** 선다** — 「충전원이 태양광 잉여인데
     # 한 해에 잉여가 하나도 없다」를 거부하는 자리가 여기 하나여야 하기 때문이다.
@@ -312,8 +356,17 @@ def build_and_dispatch_case(
             generation_total_kwh, days=DAYS_PER_YEAR
         )
     )
-    surplus = _blend_series([s.surplus for s in setups], weights)
+    surplus = blend_series([s.surplus for s in setups], weights)
     mode, source, priority, allocation = _resolved_once(setups)
+    # ★★★ **연간등가 배터리의 설정 판정은 「옮기기 전」 잉여로 한다** (R64/WP-7).
+    # 근거 전문은 `_setup_one_season` 의 ★★★ 절이 갖는다 — 그 거부는 **설비
+    # 구성**의 물음이고 부하 이동은 **운전**이며, 그 비율은 우리가 세운 가정값이다.
+    # ⚠ 옮기지 않은 실행에서는 두 목록이 같으므로 이 줄은 종전과 같은 값을 낸다.
+    # ⚠ **`CaseDispatch.pv_surplus_profile_kwh` 는 옮긴 뒤 잉여 그대로다**(위
+    # `surplus`) — 자가소비율·ⓒ 대칭 항이 읽는 것은 **실제로 남은 잉여**여야 한다.
+    surplus_for_setting = blend_series(
+        [s.surplus_before_shift for s in setups], weights
+    )
     # ★★ **연간등가 배터리에는 연간등가 하루의 부하를 넘긴다** (R64/WP-6b).
     # 이 한 대는 **설정 오류를 잡는 자리**이고(위 ⚠⚠ 절) 리포트 0절이 「운전
     # 방식」 칸에 그 대의 `discharge_allocation` 을 인쇄한다 — 그러므로 그 대가
@@ -321,7 +374,8 @@ def build_and_dispatch_case(
     # 하루)와 같아야 한다. 계절 하나의 부하를 여기 넣으면 **어느 계절의 것인지**
     # 말할 수 없고, 그 대가 받는 설정 판정도 그 계절의 것이 된다.
     ess_fleet, ess_plans, ess_whole = ess_spec.build(
-        operating_mode=mode, charge_source=source, pv_surplus_profile_kwh=surplus,
+        operating_mode=mode, charge_source=source,
+        pv_surplus_profile_kwh=surplus_for_setting,
         discharge_allocation=allocation, load_profile_kwh=load_whole,
     )
     runs = [
@@ -343,9 +397,16 @@ def build_and_dispatch_case(
         resources=(
             (pv, *ess_fleet) if household is None else (pv, *ess_fleet, household)
         ),
-        dispatch=_blend_dispatch([run.dispatch for run in runs], weights),
+        dispatch=blend_dispatch([run.dispatch for run in runs], weights),
         seasons=(
-            () if daily_shapes is None else tuple(_season_run(run) for run in runs)
+            () if daily_shapes is None
+            # ★ **옮긴 몫을 계절 결과에 함께 싣는다** (R64/WP-7) — 표시 층이
+            # 그것을 자산에서 다시 세면 인쇄된 이동량과 결론이 선 이동량이
+            # 갈릴 수 있다(`SeasonRun` 독스트링의 같은 판단).
+            else tuple(
+                _season_run(run, load_shift_kwh=season.load_shift_kwh)
+                for run, season in zip(runs, inputs, strict=True)
+            )
         ),
         pv_surplus_profile_kwh=surplus,
         pv_allocation_priority=priority,
@@ -362,7 +423,24 @@ class _SeasonInput:
     name: str
     days: int
     generation_day: tuple[float, ...] | None
+    #: 자산이 낸 **옮기기 전** 부하 하루. ⚠ 옮긴 뒤에도 이 칸은 그대로다 —
+    #: 「설비 구성에 잉여가 있는가」를 묻는 자리가 이 하루를 쓴다
+    #: (`_setup_one_season` 의 ★★★ 절).
     load_day: tuple[float, ...] | None
+    #: 「AI 가전」이 **옮긴 뒤**의 부하 하루. `None` 이면 옮기지 않았다는 뜻이며
+    #: 그때 운전도 `load_day` 로 돈다 (`_operating_day`).
+    shifted_load_day: tuple[float, ...] | None = None
+    #: 그 계절 하루에서 **옮긴 가전 부하**(kWh/일) — `_shift_seasons` 가 채운다.
+    #:
+    #: ⚠ 기본값 `0.0` 은 *「아직 옮기지 않았다」*이며, `_season_inputs` 가 내는
+    #: 값이 그것이다 — 옮기는 것은 그 다음 단계이고 두 단계를 한 함수에 넣지
+    #: 않는다(형상을 읽는 일과 형상을 옮기는 일은 다른 판정이다).
+    load_shift_kwh: float = 0.0
+
+    @property
+    def operating_day(self) -> tuple[float, ...] | None:
+        """운전이 도는 하루 — 옮겼으면 옮긴 하루, 아니면 자산이 낸 하루."""
+        return self.load_day if self.shifted_load_day is None else self.shifted_load_day
 
 
 def _season_inputs(
@@ -417,6 +495,104 @@ def _year_of(day: tuple[float, ...]) -> list[float]:
     하는 일과 같으며, 다른 것은 되풀이하는 하루가 **그 계절의 것**이라는 점뿐이다.
     """
     return [value for _day in range(DAYS_PER_YEAR) for value in day]
+
+
+# ── 「AI 가전」 — 계절마다 부하를 옮긴다 (R64/WP-7) ─────────────────────────
+
+
+def _appliance_ratio(
+    annual_load_kwh: float | None, extra_appliance_load_kwh: float
+) -> float:
+    """그 하루 부하 중 **가전의 몫** — 옮길 수 있는 비율의 분모를 좁힌다.
+
+    사용자 문면이 *「집 전체 **가전** 부하 중 비율」* 이므로 히트펌프·전기차는
+    분모에서 빠진다(`core/casegrid/load_shift.py` 머리말 마지막 ⚠ 절이 정본).
+
+    ⚠ **가구 수는 약분된다** — 총량과 증분에 같은 배수가 곱해지므로 이 비율은
+    가구 수에 무관하다. 그래서 여기서 `household_scale` 을 부르지 않는다.
+
+    ⚠ 부하를 세우지 않은 실행과 총량이 0 인 실행에서는 `1.0` 이다 — 그때
+    옮길 부하 자체가 없어 이 수가 어떤 값이어도 옮긴 몫이 0 이다.
+    """
+    total = (annual_load_kwh or 0.0) + extra_appliance_load_kwh
+    return annual_load_kwh / total if annual_load_kwh and total > 0.0 else 1.0
+
+
+def _shift_seasons(
+    inputs: tuple[_SeasonInput, ...], *, share_pct: float, appliance_ratio: float
+) -> tuple[_SeasonInput, ...]:
+    """계절마다 **그 계절의 잉여로** 부하를 옮긴다 (사용자 판정 §4·§5).
+
+    ⚠ **비율이 0 이면 받은 것을 그대로 돌려준다** — 새 객체를 짓지 않으므로
+    그 실행은 이 배선이 생기기 전과 **원소 하나까지** 같다. 골든 회귀가 그
+    동일성을 재는 자리이며(`tests/golden/test_regression_scenarios.py`), 러너
+    인자의 기본값이 0 인 이유도 그것이다.
+
+    ⚠ **발전 하루가 없는 실행은 옮기지 않는다.** 형상 자산 없이 도는 실행
+    (케이스 그리드·성능 측정)에서는 PV 가 이용률 하나로 균등 배분되어 「잉여가
+    있는 시각」이라는 개념이 서지 않는다 — 그때 옮기면 **하루 종일 조금씩
+    잉여가 있는 가짜 하루**로 옮기는 것이 되고, 그 이동은 실물 근거가 없다.
+    """
+    if share_pct <= 0.0:
+        return inputs
+    return tuple(
+        _shifted_season(season, share_pct=share_pct, appliance_ratio=appliance_ratio)
+        for season in inputs
+    )
+
+
+def _shifted_season(
+    season: _SeasonInput, *, share_pct: float, appliance_ratio: float
+) -> _SeasonInput:
+    """계절 하나를 옮긴다 — **두 칸을 함께** 바꿔 든다.
+
+    ⚠ 하루만 옮기고 이동량을 두지 않으면 산출물이 *「옮길 곳이 없어 그대로다」*
+    와 *「비율이 0 이라 그대로다」* 를 가릴 수 없다.
+    """
+    if season.load_day is None or season.generation_day is None:
+        return season
+    shift = shift_into_pv_surplus(
+        season.load_day, season.generation_day,
+        share_pct=share_pct, appliance_ratio=appliance_ratio,
+    )
+    if shift.moved_kwh <= 0.0:
+        # ★ **옮긴 것이 없으면 새 하루를 달지 않는다** — `shifted_load_day` 가
+        # `None` 이어야 아래 `_setup_one_season` 이 잉여를 **한 번만** 짓는다.
+        return season
+    return replace(
+        season, shifted_load_day=shift.day, load_shift_kwh=shift.moved_kwh
+    )
+
+
+def _shifted_household(
+    household: Load | None,
+    inputs: tuple[_SeasonInput, ...],
+    weights: Sequence[float],
+    *,
+    escalation_rate: float,
+) -> Load | None:
+    """연간등가 부하를 **옮긴 계절 하루들의 일수 가중 평균**으로 다시 세운다.
+
+    ## 왜 접힌 하루를 따로 옮기지 않는가
+
+    옮기는 연산은 `max(0, 발전 − 부하)` 를 지나므로 **비선형**이다. 그래서
+    「접은 뒤에 옮긴 하루」와 「옮긴 뒤에 접은 하루」가 다르고, 리포트가
+    인쇄하는 하루(`core/casegrid/season_blend.py::blend_dispatch` 가 낸 연간등가
+    하루)는 **뒤쪽**이다. 앞쪽을
+    세우면 연간등가 배터리가 인쇄되지 않은 하루를 따라간다.
+
+    ⚠ **옮긴 몫이 하나도 없으면 받은 객체를 그대로 돌려준다.** 그때 계절별
+    하루의 일수 가중 평균은 `representative_day()` 와 항등이지만(모듈 머리말)
+    **연산 차례가 달라 마지막 자리가 어긋날 수 있다** — 그 어긋남이 골든의
+    수를 움직이면 「무엇이 축을 옮겼나」가 흐려진다. 그래서 여기서 동일성을
+    성질에 맡기지 않고 **객체를 그대로 두는 것으로** 지킨다.
+    """
+    if household is None or not any(s.load_shift_kwh > 0.0 for s in inputs):
+        return household
+    day = blend_series(
+        [s.operating_day for s in inputs if s.operating_day is not None], weights
+    )
+    return _build_load(_year_of(tuple(day)), escalation_rate)
 
 
 # ── 자원 조립 — **한 자리에서만 세운다** ───────────────────────────────────
@@ -655,7 +831,13 @@ class _SeasonSetup:
     days: int
     pv: PV
     household: Load | None
+    #: 그 계절의 PV 잉여 — **부하를 옮긴 뒤**의 하루에서 난다. 운전이 이것으로
+    #: 돈다(그 계절의 배터리가 실제로 받는 몫).
     surplus: list[float]
+    #: 같은 계절의 PV 잉여 — **부하를 옮기기 전**의 하루에서 난다. 이것을 쓰는
+    #: 자리는 **연간등가 배터리의 설정 판정 하나**다(`_setup_one_season` 의
+    #: ★★★ 절이 근거를 갖는다). 옮기지 않은 실행에서는 위 칸과 같은 목록이다.
+    surplus_before_shift: list[float]
     operating_mode: ESSOperatingMode | str
     charge_source: ESSChargeSource | str
     priority: PVAllocationPriority
@@ -726,9 +908,10 @@ def _setup_one_season(
     pv = pv_spec.build(
         None if season.generation_day is None else _year_of(season.generation_day)
     )
+    operating = season.operating_day
     household = (
-        None if season.load_day is None
-        else _build_load(_year_of(season.load_day), escalation_rate)
+        None if operating is None
+        else _build_load(_year_of(operating), escalation_rate)
     )
     mode, source, surplus, priority = _dispatch_inputs_under_baseline(
         ess_operating_mode, ess_charge_source, dict(case_values), pv, ctx,
@@ -736,12 +919,47 @@ def _setup_one_season(
         baseline_arrangement=baseline_arrangement,
         pool_metering=pool_metering,
     )
+    # ★★★ **옮기기 전 잉여를 함께 짓는다 — 설정 판정만 이것으로 한다** (R64/WP-7)
+    #
+    # 왜 둘이 필요한가. `ESS(충전원=태양광 잉여)` 는 잉여 시계열이 전부 0 이면
+    # **거부한다**(`core/der/ess_schedule.py::check_pv_surplus_profile`). 그
+    # 거부가 묻는 것은 *「이 **설비 구성**(태양광 용량 · 부하 총량 · 배터리)에
+    # 한 해 동안 태양광 잉여가 있는가」* 이며, 그래서 그 문면이 조치로 적는 것도
+    # **설비·규모의 손잡이 둘**이다 — *「부하를 줄이거나(가구 수·히트펌프·전기차)
+    # 태양광 용량을 키우십시오」*.
+    #
+    # 「가전 부하를 하루 안에서 옮긴다」는 그 구성을 **하나도 바꾸지 않는 운전
+    # 선택**이고, 게다가 그 비율은 **우리가 대장에 세운 가정값**이다. 그것이
+    # 설비 구성의 성립 여부를 뒤집으면 **우리 가정 때문에 사용자의 실행이
+    # 거부된다** — 실측(2026-09-06): 골든 시나리오에 가구 수 2호를 적으면
+    # 비율 5%까지는 서고 **10%에서 `DV` 거부**가 난다(옮긴 부하가 그 구성의
+    # 얇은 잉여를 전부 채운다). 가구 수 축(R64/WP-1)이 화면에서 답하던 값이
+    # 가정값 하나로 사라지는 것이므로 그렇게 두지 않는다.
+    #
+    # ⇒ **설정 판정은 옮기기 전 잉여로, 운전은 옮긴 뒤 잉여로** 한다.
+    # ⛔ 그 대신 **운전을 옮기기 전 잉여로 돌리지 않는다** — 그러면 배터리가
+    #    가구가 이미 쓴 전기로 충전해 같은 kWh 가 두 번 쓰인다.
+    # ✅ 옮긴 뒤 잉여가 0 인 계절에서는 **그 계절의 배터리가 쉰다** — 아래
+    #    `_dispatch_one_season` 이 이미 갖고 있는 갈래이며(잉여 없는 계절),
+    #    그 사실은 붙임 7 의 계절 표에서 **0 으로 보인다.**
+    before = (
+        surplus if season.shifted_load_day is None
+        else _dispatch_inputs_under_baseline(
+            ess_operating_mode, ess_charge_source, dict(case_values), pv, ctx,
+            pv_allocation_priority=pv_allocation_priority,
+            household=_build_load(_year_of(season.load_day), escalation_rate)
+            if season.load_day is not None else None,
+            baseline_arrangement=baseline_arrangement,
+            pool_metering=pool_metering,
+        )[2]
+    )
     allocation, load_profile = resolve_ess_discharge_inputs(
         ess_discharge_allocation, case_values, ctx, household=household,
     )
     return _SeasonSetup(
         name=season.name, days=season.days, pv=pv, household=household,
-        surplus=surplus, operating_mode=mode, charge_source=source, priority=priority,
+        surplus=surplus, surplus_before_shift=before,
+        operating_mode=mode, charge_source=source, priority=priority,
         discharge_allocation=allocation, load_profile=load_profile,
     )
 
@@ -845,12 +1063,16 @@ def _resolved_once(
     )
 
 
-def _season_run(run: _OneSeason) -> SeasonRun:
+def _season_run(run: _OneSeason, *, load_shift_kwh: float) -> SeasonRun:
     """계절 하나의 운전을 **다음 WP 가 읽을 모양**으로 옮긴다 (판정 ⑤).
 
     「그 계절 연간 기여」는 **하루 합 × 그 계절 일수**다 — 계절마다 다른 일수를
     곱하는 것이 이 WP 가 여는 것 그 자체이므로, 여기서 `DAYS_PER_YEAR` 를 곱하면
     표가 종전(계절을 모르는 연간화)으로 되돌아간다.
+
+    ⚠ **옮긴 부하도 같은 규약으로 연간화한다** (R64/WP-7) — 하루 옮긴 몫 ×
+    그 계절 일수다. `DAYS_PER_YEAR` 를 곱하면 겨울에 옮기지 못한 몫이 봄의
+    이동량으로 메워진 것처럼 보인다.
     """
     return SeasonRun(
         name=run.name,
@@ -862,66 +1084,5 @@ def _season_run(run: _OneSeason) -> SeasonRun:
         },
         grid_export_annual_kwh=math.fsum(run.dispatch.grid_export) * run.days,
         grid_import_annual_kwh=math.fsum(run.dispatch.grid_import) * run.days,
-    )
-
-
-# ── 합산 — **일수 가중 평균 하루** ─────────────────────────────────────────
-
-
-def _blend_series(series: Sequence[Sequence[float]], weights: Sequence[float]) -> list[float]:
-    """스텝별 일수 가중 평균. **`math.fsum` 이라 차례에 무감하다**(성질 「다」).
-
-    ⚠ 계절이 하나면 가중치가 `365/365 == 1.0` 이고 `fsum([x * 1.0]) == x` 이므로
-    **원소 하나까지** 계절 축이 서기 전과 같다(성질 「라」).
-    """
-    return [
-        math.fsum(row[step] * weight for row, weight in zip(series, weights, strict=True))
-        for step in range(len(series[0]))
-    ]
-
-
-def _blend_result(results: Sequence[DispatchResult], weights: Sequence[float]) -> DispatchResult:
-    """자원 하나의 계절별 결과를 연간등가 하루로 접는다 — **매체 넷과 미충족 넷 전부.**
-
-    ⚠ **미충족을 빼놓지 않는다.** 빼면 어느 계절이 수요를 못 채웠다는 사실이
-    연간등가 하루에서 사라지고, 그 소멸은 아무 예외도 내지 않는다.
-    """
-    return DispatchResult(
-        electric=_blend_series([r.electric for r in results], weights),
-        heat=_blend_series([r.heat for r in results], weights),
-        cool=_blend_series([r.cool for r in results], weights),
-        fuel=_blend_series([r.fuel for r in results], weights),
-        unmet_electric=_blend_series([r.unmet("electric") for r in results], weights),
-        unmet_heat=_blend_series([r.unmet("heat") for r in results], weights),
-        unmet_cool=_blend_series([r.unmet("cool") for r in results], weights),
-        unmet_fuel=_blend_series([r.unmet("fuel") for r in results], weights),
-        # ⚠ **진단 문구는 합치지 않고 모은다** — 계절 하나가 낸 문구를 버리면 그
-        # 계절이 무엇을 못 했는지가 연간등가 하루에서 사라진다. 같은 문구가 여러
-        # 계절에서 나면 한 번만 싣는다(차례는 **처음 나온 차례**다).
-        notes=tuple(dict.fromkeys(n for result in results for n in result.notes)),
-    )
-
-
-def _blend_dispatch(
-    dispatches: Sequence[SystemDispatch], weights: Sequence[float]
-) -> SystemDispatch:
-    """계절별 하루를 **연간등가 하루** 하나로 접는다 (모듈 머리말 ★★★ 절).
-
-    ⚠ **수지는 선형이라 그대로 닫힌다** — `Σ 자원 + 수전 − 송전 = 0` 이 계절마다
-    성립하므로 그 일수 가중 평균에서도 성립한다. 그래서 이 하루를 다시
-    `verify_balance()` 에 걸 필요가 없고, 걸어도 통과한다.
-
-    ⚠ **연간등가 하루의 한 스텝에서 송전과 수전이 함께 0 이 아닐 수 있다.**
-    그것은 결함이 아니라 **평균이라는 뜻**이다 — 어떤 계절은 그 시각에 내보내고
-    어떤 계절은 받아들인다. 붙임 7 이 인쇄하는 하루가 그 하루이며, 그 표의
-    문면(`dispatch_note`)이 계절 넷을 각각 돌려 합산했다고 적는다.
-    """
-    names = tuple(dispatches[0].per_resource)
-    return SystemDispatch(
-        per_resource={
-            name: _blend_result([d.per_resource[name] for d in dispatches], weights)
-            for name in names
-        },
-        grid_import=_blend_series([d.grid_import for d in dispatches], weights),
-        grid_export=_blend_series([d.grid_export for d in dispatches], weights),
+        load_shift_annual_kwh=load_shift_kwh * run.days,
     )

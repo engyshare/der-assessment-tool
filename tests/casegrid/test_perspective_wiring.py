@@ -74,6 +74,11 @@ def test_operator_perspective_keeps_the_conclusion_axis(report) -> None:
     추종」으로 바뀌고 러너가 계절별 가구 부하를 ESS 에 넘기면서 −11,495,622 →
     **−11,502,062원**(−6,440원)으로 옮겼다(사용자 요구 5 · 그 골든 파일의
     R64/WP-6b 블록이 경위와 산식을 갖는다).
+    ⚠ **R64/WP-7 이 다시 갱신했다** — 「AI 가전」이 가전 부하를 하루 안에서
+    태양광 잉여 시각으로 옮기면서 −11,502,062 → **−11,625,181원**(−123,119원)
+    으로 옮겼다(사용자 요구 2 · 그 골든 파일의 R64/WP-7 블록이 경위와 산식을
+    갖는다). 연간 부하 총량은 **한 kWh 도 움직이지 않았다** — 움직인 것은
+    하루의 모양이고, 그 모양이 계통 수전·송전과 첨두 절감을 바꿨다.
 
     ⚠⚠ **이 검사가 재는 것은 「축이 절대 안 움직인다」가 아니다** — *「관점 층이
     축을 **다시 계산하지 않는가**」* 이며 그 실질은 **위 첫 단언**이다(사업자
@@ -84,7 +89,7 @@ def test_operator_perspective_keeps_the_conclusion_axis(report) -> None:
         r for r in report.perspectives.results if r.perspective is Perspective.OPERATOR
     )
     assert int(operator.npv_value) == int(report.metrics[CONCLUSION_METRIC])
-    assert int(operator.npv_value) == -11_502_062
+    assert int(operator.npv_value) == -11_625_181
 
 
 @pytest.mark.req("FR-402-AC7")
@@ -155,9 +160,10 @@ def test_npv_row_prints_no_number_for_perspectives_without_cost_basis(report) ->
     npv_line = next(line for line in text.splitlines() if line.startswith("| NPV |"))
     assert npv_line.count("미산출") == 3, npv_line
     # ⚠ R64/WP-4 가 계절 합산을 세우며 −11,552,270 → −11,495,622원으로,
-    # R64/WP-6b 가 방전 부하 추종을 세우며 −11,495,622 → −11,502,062원으로
-    # 옮겼다 (위 `test_operator_perspective_keeps_the_conclusion_axis` 의 ⚠ 참조).
-    assert "-11,502,062원" in npv_line, npv_line
+    # R64/WP-6b 가 방전 부하 추종을 세우며 −11,495,622 → −11,502,062원으로,
+    # R64/WP-7 이 「AI 가전」의 부하 이동을 세우며 −11,502,062 → −11,625,181원
+    # 으로 옮겼다 (위 `test_operator_perspective_keeps_the_conclusion_axis` 의 ⚠).
+    assert "-11,625,181원" in npv_line, npv_line
     cells = [cell.strip() for cell in npv_line.strip().strip("|").split("|")]
     assert "0원" not in cells, npv_line
     assert "0" not in cells, npv_line
@@ -174,7 +180,13 @@ def test_cost_total_row_prints_not_allocated_for_perspectives_without_cost_basis
     # 구매 비용이 오르며 17,746,097 → 17,929,097원이 됐다.
     # ⚠ R64/WP-6b — 저녁 부하가 큰 시각에 방전이 몰리며 계통 수전이 도로 조금
     # 줄어(대표일 2.723034 → 2.717654kWh) 17,929,097 → 17,924,397원이 됐다.
-    assert "17,924,397원" in cost_line, cost_line
+    # ⚠ R64/WP-7 — 「AI 가전」이 가전 부하를 태양광 잉여 시각으로 옮겨 **사는
+    # 전기가 줄었다**(대표일 2.717654 → 2.480669kWh · 연 −86.50kWh). 전력 구매
+    # 비용이 연 −10,380원이고 20년 누계가 −207,600원이라 17,924,397 →
+    # **17,716,797원**이 됐다. ★ 이 축에서는 **비용이 내려간 것이 요구가 시킨
+    # 결과**다 — 그런데도 결론축이 나빠진 이유(잉여판매·REC·첨두 절감의 감소)는
+    # 아래 `test_benefit_total_row_always_prints_a_real_number` 가 적는다.
+    assert "17,716,797원" in cost_line, cost_line
 
 
 def test_benefit_total_row_always_prints_a_real_number(report) -> None:
@@ -200,12 +212,22 @@ def test_benefit_total_row_always_prints_a_real_number(report) -> None:
     3.130487kWh) 잉여판매·REC 가 각 −365원/년, 사업자가 5,684,440 →
     **5,669,840원**이 됐다. **참여 주민은 이번에도 그대로다** — 자가소비량
     (대표일 5.518432kWh)이 한 자리도 안 움직였다.
+
+    ⚠ **R64/WP-7 은 둘 다 갱신했다** — 「AI 가전」이 가전 부하를 낮의 태양광
+    잉여 시각으로 옮기면서 ⓐ 저녁 봉우리가 낮아져 **첨두 절감이 연 −7,800원**
+    (`PeakShaving` 은 사업장 최대부하가 정하는 편익이다) ⓑ 계통으로 나가는 잉여가
+    줄어 **잉여판매 −7,300원 · REC −4,745원**이 됐다. 참여 주민은 ⓐ 만 지므로
+    1,559,940 → **1,403,940원**(20년 누계 −156,000원), 사업자는 셋을 다 지므로
+    5,669,840 → **5,272,940원**(20년 누계 −396,900원)이다.
+    ⚠⚠ **참여 주민이 처음으로 움직였다** — 앞의 두 항이 *「참여 주민은
+    그대로다」* 라고 적은 것은 그 배선들이 **자가소비량**을 바꾸지 않았기
+    때문이고, 이 축은 **부하의 시각 자체**를 옮기므로 사업장 최대부하가 바뀐다.
     """
     text = render_markdown(report)
     benefit_line = next(line for line in text.splitlines() if line.startswith("| 편익 합계 |"))
     assert "미산출" not in benefit_line and "미배분" not in benefit_line
-    assert "1,559,940원" in benefit_line  # 참여 주민
-    assert "5,669,840원" in benefit_line  # 사업자
+    assert "1,403,940원" in benefit_line  # 참여 주민
+    assert "5,272,940원" in benefit_line  # 사업자
 
 
 def test_header_row_pairs_repository_and_user_vocabulary(report) -> None:

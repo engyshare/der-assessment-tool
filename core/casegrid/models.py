@@ -600,6 +600,19 @@ class SeasonRun:
     grid_export_annual_kwh: float
     #: 그 계절이 한 해에 보태는 계통 수전량(kWh, 양수).
     grid_import_annual_kwh: float
+    #: 그 계절에 **하루 안에서 옮긴 가전 부하**의 연간 몫(kWh) = 하루 옮긴
+    #: 몫 × 계절일수 (R64/WP-7 · 사용자 요구 2 · `core/casegrid/load_shift.py`).
+    #:
+    #: ⚠⚠ **총량이 아니라 형상의 이동이다** — 이 수가 커져도 그 계절의 부하
+    #: 총량은 한 kWh 도 변하지 않는다. 옮긴 곳은 **그 계절 하루의 태양광
+    #: 잉여가 있는 시각**이다.
+    #:
+    #: ⚠ **`0.0` 은 「옮길 곳이 없었다」이며 빈 값이 아니다.** 그 계절 하루에
+    #: 잉여가 하루 종일 없으면(겨울처럼 발전이 적은 계절) 옮길 자리가 없어
+    #: 0 이 되고, 산출물이 그 사실을 글자로 남긴다
+    #: (`core/casegrid/load_shift.py::DR_SHIFT_NOTHING_MOVED`). 여기서 기본값을
+    #: 두지 않는 이유는 **잊은 것과 0 인 것이 구별돼야** 하기 때문이다.
+    load_shift_annual_kwh: float
 
 
 @dataclass(frozen=True)

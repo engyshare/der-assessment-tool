@@ -96,6 +96,10 @@ from core.casegrid.ledger_levels import (
     ledger_unit_scales,
     required_scalar,
 )
+from core.casegrid.load_shift import (
+    DR_SHIFTABLE_SHARE_LEDGER_KEY,
+    shiftable_share_pct,
+)
 from core.casegrid.models import CaseBasis, CashflowSplit, SeasonRun
 from core.casegrid.perspectives import PerspectiveWiring
 from core.casegrid.profiles import load_daily_shapes
@@ -224,7 +228,15 @@ DISTRIBUTED_CREDIT_LEDGER_KEYS: tuple[tuple[str, str], ...] = (
 #: 이 선언은 합집합이면서 동시에 각 전건의 실측값이다. 갈래가 늘어 달라지는
 #: 날에는 위 시험이 빨간불로 알려 준다.
 COMPUTE_PHASE_READ_KEYS: frozenset[str] = frozenset(
-    {ANALYSIS_PERIOD_KEY, REC_PRICE_LEDGER_KEY, REC_WEIGHT_LEDGER_KEY}
+    {
+        ANALYSIS_PERIOD_KEY,
+        REC_PRICE_LEDGER_KEY,
+        REC_WEIGHT_LEDGER_KEY,
+        # ★ **「AI 가전」이 옮기는 비율** (R64/WP-7 · 사용자 요구 2). 계산
+        # 구간이 `required_scalar()` 로 읽어 러너·스윕에 함께 넘긴다 — 그래서
+        # 이 선언 안에 든다. 키 문면은 `core/casegrid/load_shift.py` 가 정본이다.
+        DR_SHIFTABLE_SHARE_LEDGER_KEY,
+    }
     | {key for _field, key in DISTRIBUTED_CREDIT_LEDGER_KEYS}
 )
 
@@ -337,6 +349,20 @@ class CaseReport:
     #: ⚠ **대장에서 오지 않는다.** `load.heatpump.annual`·`load.ev.annual` 은
     #: `track: blocked` · `value: null` 이며 *「사업 계획이 정하는 사실」* 이다.
     appliance_loads: ApplianceLoads
+    #: 이 실행이 **하루 안에서 옮힌 가전 부하의 비율**(%) — 「AI 가전」
+    #: (R64/WP-7 · 사용자 요구 2). 대장 `load.dr_shiftable_share` 에서 오며,
+    #: 사용자가 바꾸는 통로는 **오버라이드**다(시나리오 yaml 의
+    #: `assumption_overrides` · 설정 화면의 대장 항목 칸).
+    #:
+    #: ⚠⚠ **총량이 아니라 형상의 축이다.** 이 수가 커져도 연간 부하 총량은
+    #: 한 kWh 도 변하지 않는다 — 옮겨 가는 곳은 **그 계절 하루의 태양광 잉여가
+    #: 있는 시각**이며, 실제로 옮긴 몫은 계절마다 다르다(`SeasonRun.
+    #: load_shift_annual_kwh` 가 그 값을 나른다).
+    #:
+    #: ⚠ **위 `appliance_loads` 와 성질이 다르다.** 저것은 `track: blocked` 인
+    #: 두 항목의 실행 입력이고 이것은 **대장이 값을 갖는** 항목이다 — 그래서
+    #: 「미지정」이 없고 `0` 은 *「옮기지 않는다」*를 뜻한다.
+    dr_shiftable_share_pct: float
     #: 그 갈래의 **선언 다섯** — Without · With · 성립 조건 · 자가소비 처리 ·
     #: 근거 조항. 붙임 1 의 셋째 표가 이것을 인쇄한다.
     #:
@@ -801,6 +827,23 @@ def build_case_report(
     rec_weight = required_scalar(
         provider, REC_WEIGHT_LEDGER_KEY, note="REC 편익 가중치 (사용자 판정 §5, R52/WP-6)"
     )
+    # ★★★ **「AI 가전」이 옮기는 비율도 대장에서 온다** (R64/WP-7 · 사용자 요구
+    # 2 · 사용자 판정 §4·§5). `REC_PRICE_LEDGER_KEY` 와 **같은 통로**이며 이유도
+    # 같다 — 러너에 리터럴을 두면 대장을 고쳐도 옛 값이 쓰인다(`NFR-202`).
+    # ⚠ **통로를 새로 내지 않았다.** 히트펌프·전기차는 대장이 값을 갖지 않아
+    # (`track: blocked`) 시나리오 필드를 따로 세웠지만, 이 비율은 **대장이 값을
+    # 갖는다** — 그래서 사용자가 바꾸는 자리는 이미 있는 오버라이드 통로
+    # (`ASSUMPTION_OVERRIDES_FIELD` · 설정 화면의 대장 항목 칸)이다. 필드를 또
+    # 세우면 통로가 둘이 되고, 그때 어느 것이 이겼는지 산출물에서 알 수 없다.
+    # ⚠ **범위 판정을 여기서 하지 않는다** — 0~100 을 거부로 지키는 자리는
+    # `core/casegrid/load_shift.py::resolve_shiftable_share` 하나다(오버라이드는
+    # 형만 맞대어져 오므로 −5·500 이 여기까지 올 수 있다).
+    dr_shiftable_share = shiftable_share_pct(
+        required_scalar(
+            provider, DR_SHIFTABLE_SHARE_LEDGER_KEY,
+            note="옮길 수 있는 가전 부하 비율 (사용자 요구 2 · R64/WP-7)",
+        )
+    )
     # ★ **분산편익 크레딧도 대장에서 온다** (R53/WP-1 · R54/WP-3 판정 ① — 대장이
     # 다섯 칸으로 나뉘었다). 지금 값은 다섯 모두 0이며(`track: default0`) 사회
     # 열 편익이 0원을 낸다 — `build_society_annualised()` 가 이 값으로 사회
@@ -831,6 +874,10 @@ def build_case_report(
         # 러너 시그니처가 늘어난다(`ApplianceLoads.total_kwh` 가 정본).
         # ⚠ 안 준 실행은 `0.0` 이며 그때 인자의 기본값과 같다 — 종전과 같다.
         extra_appliance_load_kwh=appliance_loads.total_kwh,
+        # ★★ **「AI 가전」이 하루 안에서 옮기는 몫** (R64/WP-7 · 사용자 요구 2).
+        # 총량은 한 kWh 도 변하지 않고 **하루의 모양만** 바뀐다 — 바로 위
+        # 두 인자(가구 수·기기 부하)와 성질이 다르다.
+        dr_shiftable_share_pct=dr_shiftable_share,
         rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
         distributed_sub_items=distributed_sub_items,
         baseline_arrangement=baseline_arrangement,
@@ -853,6 +900,12 @@ def build_case_report(
         # 이 축도 부하 총량에 더해지므로 어긋나면 `build_coupled_sweeps` 의
         # `base_npv` 대조가 뜻을 잃는다.
         extra_appliance_load_kwh=appliance_loads.total_kwh,
+        # ★★ **본 실행과 같은 비율로 부하를 옮겨 스윕한다** (R64/WP-7). 안
+        # 넘기면 본문 4절은 옮긴 하루로, 5·6절은 옮기지 않은 하루로 계산되어
+        # 두 절이 서로 다른 사업을 그린다 — 바로 위 둘과 같은 함정이며, 이
+        # 축은 형상을 바꾸므로 어긋나면 `build_coupled_sweeps` 의 `base_npv`
+        # 대조가 형상 차이를 인자 기여로 인쇄한다.
+        dr_shiftable_share_pct=dr_shiftable_share,
         # ★ **본 실행과 같은 기준선 갈래로 스윕한다** (`FR-705-AC2`). 안 넘기면
         # 본문 4절은 고른 갈래로, 5·6절(민감도·용량 검토)은 **기본 갈래**로
         # 계산되어 두 절이 서로 다른 사업을 그린다 — 위 `annual_load_kwh`·
@@ -989,6 +1042,11 @@ def build_case_report(
         # `None` 도 그대로 나른다 — 「미지정」을 글자로 적는 것이 붙임의 몫이다
         # (`core/report/appendix_sections.py::_appliance_load_table`).
         appliance_loads=appliance_loads,
+        # ★ 산출물이 **얼마를 옮길 수 있다고 보고 돌았는지**를 인쇄한다
+        # (R64/WP-7). 실제로 옮긴 몫은 계절 결과가 나른다 —
+        # `core/report/appendix_sections.py::_load_shift_table` 이 둘을 함께
+        # 인쇄하고, *「옮길 곳이 없었다」* 를 글자로 적는 것도 그 자리다.
+        dr_shiftable_share_pct=dr_shiftable_share,
         baseline_branch=baseline_branch,
         metrics=outcome.variants[PLAN_VARIANT],
         baseline_metrics=outcome.variants[BASELINE_VARIANT],

@@ -55,7 +55,11 @@ from core.report.shortfall import (
     SECTION_NUMBER as SHORTFALL_SECTION,
 )
 from core.report.shortfall import SENSITIVITY_SECTION
-from tests.report.conftest import report_rec_terms, report_shapes
+from tests.report.conftest import (
+    report_rec_terms,
+    report_shapes,
+    report_shift_share,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -236,6 +240,9 @@ def test_support_at_the_ceiling_moves_the_conclusion_to_the_reported_residual() 
         daily_shapes=report_shapes(),
         annual_load_kwh=_load_kwh(),
         rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
+        # ★ **부하 이동도 같은 배선** (R64/WP-7 · 사용자 요구 2) — 안 넘기면
+        # 리포트(옮긴 하루)와 재실행(옮기지 않은 하루)이 서로 다른 사업을 그린다.
+        dr_shiftable_share_pct=report_shift_share(),
     )
     npv = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
 
@@ -393,6 +400,9 @@ def test_the_summary_row_carries_the_same_support_numbers_as_the_body() -> None:
             daily_shapes=report_shapes(),
             annual_load_kwh=_load_kwh(),
             rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
+            # ★ **부하 이동도 같은 배선** (R64/WP-7 · 사용자 요구 2) — 안 넘기면
+            # 리포트(옮긴 하루)와 재실행(옮기지 않은 하루)이 서로 다른 사업을 그린다.
+            dr_shiftable_share_pct=report_shift_share(),
         )
         npv = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
         assert npv < 0.0, (
@@ -611,6 +621,9 @@ def test_the_endpoint_values_are_paired_with_the_run_that_produced_them() -> Non
                 # 재실행과 맞대는 것이 되어 항상 갈린다.
                 annual_load_kwh=probe["household_load_annual_kwh"]["base"],
                 rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
+                # ★ **부하 이동도 같은 배선** (R64/WP-7 · 사용자 요구 2) — 안 넘기면
+                # 리포트(옮긴 하루)와 재실행(옮기지 않은 하루)이 서로 다른 사업을 그린다.
+                dr_shiftable_share_pct=report_shift_share(),
             )
             measured = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
             assert reported == pytest.approx(measured, abs=1.0), (

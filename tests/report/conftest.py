@@ -85,6 +85,7 @@ import yaml  # type: ignore[import-untyped]
 
 from core.assumption.provider import AssumptionSet
 from core.casegrid.ledger_levels import required_scalar
+from core.casegrid.load_shift import DR_SHIFTABLE_SHARE_LEDGER_KEY
 from core.casegrid.models import COST_TAG_VARIABLE_OM, CostLine
 from core.casegrid.profiles import DailyShapes, load_daily_shapes
 from core.report.case_report import REC_PRICE_LEDGER_KEY, REC_WEIGHT_LEDGER_KEY
@@ -148,6 +149,27 @@ def report_rec_terms() -> tuple[float, float]:
     return (
         required_scalar(provider, REC_PRICE_LEDGER_KEY, note="REC 단가(검사용 재실행)"),
         required_scalar(provider, REC_WEIGHT_LEDGER_KEY, note="REC 가중치(검사용 재실행)"),
+    )
+
+
+def report_shift_share() -> float:
+    """리포트가 쓰는 **부하 이동 비율**(%) — 진입점을 다시 돌리는 검사가 쓴다
+    (R64/WP-7 · 사용자 요구 2).
+
+    ## 왜 검사 쪽이 대장을 직접 읽는가
+
+    `build_case_report` 가 `load.dr_shiftable_share` 를 대장에서 읽어
+    `run_single_case_e2e(dr_shiftable_share_pct=…)` 로 넘긴다. 「보고된 값으로
+    다시 돌려 본다」 형태의 검사가 이것을 넘기지 않으면 러너 기본값(`0.0` =
+    옮기지 않는다)이 쓰여 **부하를 옮기지 않은 다른 사업**의 결론에 대고 재게
+    된다 — `report_shapes()`·`report_rec_terms()` 가 형상·REC 에서 막는 것과
+    **같은 함정**이며, 이 저장소가 그 형태를 여섯 번째로 만난 자리다.
+
+    ⚠ 수를 리터럴로 적지 않는다 — 대장이 정본이다.
+    """
+    provider = AssumptionSet.load_from_yaml(str(_ASSUMPTIONS))
+    return required_scalar(
+        provider, DR_SHIFTABLE_SHARE_LEDGER_KEY, note="부하 이동 비율(검사용 재실행)"
     )
 
 

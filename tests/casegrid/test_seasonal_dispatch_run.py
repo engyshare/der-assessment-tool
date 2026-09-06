@@ -452,6 +452,11 @@ def _deployed_case(**overrides: object) -> object:
         "annual_load_kwh": _load_kwh(),
         "extra_appliance_load_kwh": 0.0,
         "household_count": None,
+        # `0.0` 이 「부하를 옮기지 않는다」이며 러너 인자의 기본값과 같다
+        # (R64/WP-7 · 사용자 요구 2). 이 파일이 재는 것은 **계절 합산 운전**
+        # 이므로 축을 하나 더 켜지 않는다 — 부하 이동의 성질은
+        # `tests/casegrid/test_load_shift.py` 가 잰다.
+        "dr_shiftable_share_pct": 0.0,
         "ess_shares": None,
         "ess_capacity_kwh": levels["ess_capacity_kwh"]["base"],
         "ess_capex": levels["ess_unit_cost"]["base"],

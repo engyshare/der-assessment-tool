@@ -20,15 +20,21 @@
 `build_case_report(scenario_path, *, assumptions_path=...)` 의
 `assumptions_path` 인자로 넘긴다 — `core/` 조립기 코드는 한 줄도 고치지
 않는다. 그 파생 대장은 `docs/assumptions.yaml` 을 그대로 복제한 뒤
-`benefit.rec_price` 「한 항목의 `value` 한 칸만」 70 → 320원/kWh 로
-올렸다(그 파일 머리말이 실측 경위를 갖는다) — **나머지 전 항목은 진짜
-대장과 바이트 단위로 같다.**
+`benefit.rec_price` 「한 항목의 `value` 한 칸만」 70 → **400원/kWh** 로
+올렸다(그 파일 머리말이 실측 경위와 값의 변경 이력을 갖는다) — **나머지 전
+항목은 진짜 대장과 같다.**
 
-## ⚠⚠⚠ 이 320원/kWh 은 사업 전망이 아니다
+## ⚠⚠⚠ 이 400원/kWh 은 사업 전망이 아니다
 
 실제 REC 시세(2026-09-02 KPX·haezoom 조사, `docs/assumptions.yaml` 참조)의
-**4.6배**에 달하는 비현실적인 시험 값이며, 오직 이 코드 경로를 실행시키기
+**5.7배**에 달하는 비현실적인 시험 값이며, 오직 이 코드 경로를 실행시키기
 위해서만 골랐다. 이 사업이 흑자라는 주장이 전혀 아니다.
+
+⚠ **이 수를 여기 다시 적지 않으려 해도 적어야 하는 이유**: 사람이 읽는
+문면이므로 그 파일과 갈릴 수 있다. 실제로 갈려 있었다 — R60/WP-4-fix 가
+320 → 340 으로 올렸을 때 이 독스트링이 따라오지 않아 **320 이라고 적힌 채로
+한 라운드를 지났다**(R64/WP-7 이 400 으로 올리며 함께 고쳤다). 값의 정본은
+**그 파일의 항목**이며, 이 절은 「비현실적인 시험 값이다」를 말하는 자리다.
 
 ## 대조군 (판정 ④)
 
@@ -117,7 +123,7 @@ def test_control_group_the_real_ledger_still_shows_a_shortfall() -> None:
     이 대조군이 없으면 「흑자 경로가 돈다」와 「늘 그 문면이 나온다」가
     구별되지 않는다(모듈 독스트링 참조). `fixtures/golden/
     scenario_subsidy_80.yaml`(기존 골든)이 같은 `subsidy_rate=0.80` 을
-    진짜 대장으로 매 회귀에서 재는 값(`npv_won: -3662062`)과 일치해야
+    진짜 대장으로 매 회귀에서 재는 값(`npv_won: -3785181`)과 일치해야
     한다 — 이 실측이 그 값과 어긋나면 이 파일이 아니라 진짜 대장이나
     `core/` 가 움직인 것이다.
 
@@ -136,13 +142,24 @@ def test_control_group_the_real_ledger_still_shows_a_shortfall() -> None:
     계절별 가구 부하를 ESS 에 넘기도록 배선하면서 결론축이 다시 움직였다(세
     시나리오 각각 **−6,440원** · 그 골든 파일의 R64/WP-6b 블록이 경위와
     산식을 갖는다). `-3655622` → `-3662062`.
+
+    ## ⚠ 값이 세 번째로 바뀌었다 — **역시 재는 것은 그대로다** (R64/WP-7)
+
+    R64/WP-7 이 「AI 가전」을 **가전 부하의 시간 이동**으로 세우면서(대장
+    `load.dr_shiftable_share` 10% · 사용자 요구 2) 결론축이 다시 움직였다(세
+    시나리오 각각 **−123,119원** · 그 골든 파일의 R64/WP-7 블록이 경위와
+    산식을 갖는다). `-3662062` → `-3785181`.
+    ⚠ **같은 WP 가 이 파일의 파생 대장에도 그 항목을 옮겨 적었다** — 없으면
+    `build_case_report()` 가 *「전제 대장에 항목이 없습니다」* 로 멈춘다(그
+    파일의 해당 항목 위 주석이 사유를 갖는다). 파생 대장이 진짜 대장과 다른
+    칸은 여전히 `benefit.rec_price` 하나뿐이다.
     """
     report = build_case_report(PROBE_SCENARIO_PATH, assumptions_path=REAL_ASSUMPTIONS_PATH)
 
     assert report.recovers_within_horizon is False
-    assert report.metrics["npv"] == -3662062.0, (
+    assert report.metrics["npv"] == -3785181.0, (
         "대조군의 순현재가치가 fixtures/golden/scenario_subsidy_80.yaml 의 "
-        "실측(-3662062)과 어긋난다 — 진짜 대장이나 core/ 가 움직였다는 뜻이다"
+        "실측(-3785181)과 어긋난다 — 진짜 대장이나 core/ 가 움직였다는 뜻이다"
     )
 
     rendered = render_markdown(report)

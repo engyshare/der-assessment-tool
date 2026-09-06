@@ -35,7 +35,7 @@ from core.report.dispatch_sections import (
     dispatch_rule_section,
 )
 from core.report.narrative import render_markdown
-from tests.report.conftest import report_shapes
+from tests.report.conftest import report_shapes, report_shift_share
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -177,6 +177,11 @@ def test_hourly_export_total_matches_the_benefit_formula_quantity() -> None:
         horizon_years=report.basis.horizon_years,
         daily_shapes=report_shapes(),
         annual_load_kwh=levels["household_load_annual_kwh"]["base"],
+        # ★ **부하 이동도 같은 배선** (R64/WP-7 · 사용자 요구 2) — 안 넘기면
+        # 붙임 7 이 실은 하루(옮긴 하루)를 **다른 사업**의 송전 합계에 대고
+        # 재게 되고, 그때 옳은 리포트가 빨간불이 된다. 바로 위 두 배선
+        # (형상 · 가구 부하)이 적어 둔 것과 같은 함정이다.
+        dr_shiftable_share_pct=report_shift_share(),
     )
     expected = sum(outcome.dispatch.grid_export)
     reported = sum(hour.grid_export for hour in report.dispatch_hours)
