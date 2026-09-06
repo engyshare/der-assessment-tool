@@ -53,6 +53,12 @@ from core.casegrid.ess_build import (
 # ⚠ **이름을 다른 모듈로 우회해 문자열 검사를 피하지 않는다** — 피하면 그
 # 래칫이 거짓을 참으로 인쇄한다.
 from core.casegrid.ess_share import ESSShare
+
+# ★ **가구 수 배수는 이 파일 것이 아니다** (R64/WP-1) — 아래 `ess_build` ·
+# `pv_allocation` 과 같은 사유로 `core/casegrid/household_scale.py` 에 있다
+# (그 모듈 머리말이 실측 495/500 을 적는다). 여기서 오는 것은 **배수 하나**이며
+# 판정(1 이상의 정수인가)도 그 모듈이 진다.
+from core.casegrid.household_scale import household_scale
 from core.casegrid.incentive_cases import (
     Viewpoint,
     build_capex_cashflows_for_all_cases,
@@ -256,12 +262,28 @@ def _household_load_if_total_given(
     daily_shapes: DailyShapes | None,
     annual_load_kwh: float | None,
     extra_appliance_load_kwh: float = 0.0,
+    household_count: int | None = None,
 ) -> Load | None:
     """가구 부하 자원 — **부하 총량(`annual_load_kwh`)이 왔을 때만** 세운다.
 
     `extra_appliance_load_kwh` (판정 §5·B-2)는 히트펌프 등 추가 전력사용기기의
     **연간 소비전력량**이며 총량에 더해진다 — `annual_load_kwh` 가 `None`
     이면(부하를 세우지 않는 실행) 더할 기저가 없으므로 **무시된다**.
+
+    ⚠⚠ **`extra_appliance_load_kwh` 는 「호당」이다** (R64/WP-1 이 판정해 여기
+    적는다 — 여태 어느 문서도 이것을 적지 않았다). 근거는 대장이다:
+    `docs/assumptions.yaml::load.household.annual` 의 `applicable_scope` 가
+    *「이 총량은 추가 전력사용기기(히트펌프 등)가 없는 가구 기준이다 … 그
+    기기의 **연간 소비전력량을 이 값에 더해** 총량이 비례 증가하는 형태여야
+    한다」* 라고 적고, 그 「이 값」이 **kWh/호·년** 이다. 그러므로 증분도 한
+    호의 것이고 **더한 뒤에 가구 수를 곱한다** — 곱한 뒤에 더하면 추가 기기가
+    단지에 딱 한 대 있는 사업이 된다.
+
+    ★★ **`household_count` 는 「총량」에만 곱한다** (R64/WP-1 · 착수 47ⓐ).
+    대표일 24스텝 **형상은 건드리지 않는다** — 형상은 합이 1 인 배분 벡터라
+    가구 수와 무관하고, 형상을 만지면 계절 축(착수 36번)과 충돌한다.
+    `None` 이 **「적지 않았다」**이며 그때 배수가 1 이라 이 배선이 생기기 전과
+    원소 하나까지 같다(`core/casegrid/household_scale.py` 머리말 ⚠⚠⚠).
 
     ## 왜 함수 이름이 조건을 말하는가 (R37)
 
@@ -305,7 +327,8 @@ def _household_load_if_total_given(
         # `representative_day()` 는 **몫 가중 평균 하루**를 내므로 그 하루를
         # 365배 한 것이 총량이다. 계절이 하나면 종전과 원소 하나까지 같다.
         hourly_kwh=daily_shapes.load.spread_over_representative_day(
-            annual_load_kwh + extra_appliance_load_kwh, days=DAYS_PER_YEAR
+            (annual_load_kwh + extra_appliance_load_kwh) * household_scale(household_count),
+            days=DAYS_PER_YEAR,
         ),
         # ★ **지금 어떤 수도 움직이지 않는다** — 이 `Load` 에는 비용 인자가 하나도
         # 없어(단가·O&M·부속설비 전부 미지정) 곱할 것이 없다. 그런데도 넘기는
@@ -391,6 +414,7 @@ def run_single_case_e2e(
     daily_shapes: DailyShapes | None = None,
     annual_load_kwh: float | None = None,
     extra_appliance_load_kwh: float = 0.0,
+    household_count: int | None = None,
     rec_price_won_per_unit: float = 0.0,
     rec_weight_pv: float = 1.0,
     distributed_sub_items: DistributedSubItems | None = None,
@@ -525,6 +549,20 @@ def run_single_case_e2e(
     인자는 무시된다.** 기기 소비량은 가구 부하에 **더하는 증분**이지 그
     자체로 부하를 만드는 값이 아니다 — 기저 없이 증분만 있으면 「무엇에
     비례해 늘었는가」에 답할 수 없다.
+
+    ★★★ **`household_count` — 단지에 몇 호가 있는가** (R64/WP-1 · 착수 47ⓐ).
+    `load.household.annual` 이 **kWh/호·년**(한 호당)이므로 단지 총량을
+    내려면 이 수가 있어야 한다. `None` 이 **기본**이고 *「적지 않았다」*를
+    뜻하며, 그때 러너는 **가구 한 호 기준**으로 돈다 — 이 인자가 생기기 전과
+    원소 하나까지 같다. 정수 `n ≥ 1` 을 주면 단지 총부하가 `n` 배가 되고
+    형상은 그대로다(`_household_load_if_total_given` 의 ★★ 절이 정본).
+
+    ⚠⚠ **기본 가구 수를 두지 않는다.** 대장의 `load.household.count` 는
+    `track: blocked` · `value: null` 이고 *「가정하면 안 된다」* 가 그 항목의
+    `derivation_method` 다 — 여기에 수를 두면 그것이 단지 규모를 정하고,
+    검토자가 보는 것은 우리가 고른 규모로 우리가 돌린 계산이 된다. 판정과
+    거부는 `core/casegrid/household_scale.py::resolve_household_count` 하나가
+    진다.
 
     ★★★ **`ess_shares` — 배터리 한 대를 몫으로 갈라 몫마다 다른 역할을 준다**
     (R57/WP-6 · ★분할). `None` 이 *「몫으로 가르지 않는다」* 이고 **그것이
@@ -745,7 +783,7 @@ def run_single_case_e2e(
     # 배분(`HOUSEHOLD_FIRST`)이 이 부하 시계열을 봐야 하는 지금 자리로 옮겨도
     # 안전하다.
     household = _household_load_if_total_given(
-        daily_shapes, annual_load_kwh, extra_appliance_load_kwh
+        daily_shapes, annual_load_kwh, extra_appliance_load_kwh, household_count
     )
 
     # ★ **운전 방법·충전원·PV 잉여 배분 순서 — 하드코딩을 세 갈래로 노출한다**

@@ -36,6 +36,7 @@ from typing import Any
 import yaml
 
 from core.assumption.scenario_overrides import ASSUMPTION_OVERRIDES_FIELD
+from core.casegrid.household_scale import HOUSEHOLD_COUNT_FIELD
 from core.cba.baseline import POOL_METERING_FIELD, PoolMeteringDeclaration
 from core.report.case_report import CaseReport, build_case_report
 
@@ -113,6 +114,7 @@ def scenario_fields(
     ownership_or_operation_transferred: bool = False,
     metering_separated: bool = False,
     assumption_overrides: object | None = None,
+    household_count: str | int | None = None,
 ) -> dict[str, Any]:
     """골든 시나리오 + 화면이 고른 것 → 넘길 매핑.
 
@@ -144,6 +146,17 @@ def scenario_fields(
     `resolve_assumption_overrides` 하나이며(그 함수가 `build_case_report` 안에서
     불린다), 여기서 미리 걸러 내면 거부 문면이 두 곳에 생긴다 — 이 파일 머리말의
     ★★★ 가 갈래·ⓒ 전제에 대해 적은 것과 같은 판단이다.
+
+    ## ★★ `household_count` — **빈 칸이면 필드를 넣지 않는다** (R64/WP-1)
+
+    폼의 빈 칸(`""`)과 `None` 이 *「가구 수를 적지 않았다」*이고, 그때 필드가
+    시나리오에 실리지 않아 `build_case_report` 가 `None` 으로 읽는다 — 러너는
+    **가구 한 호 기준**으로 돌고 결과는 이 통로가 생기기 전과 같다.
+
+    ⚠ **여기서 정수로 바꾸지 않는다.** 문면 그대로 실어 보내고 판정은
+    `core/casegrid/household_scale.py::resolve_household_count` 하나가 한다 —
+    위 갈래·오버라이드와 같은 자리이며, 여기서 미리 바꾸면 「40.5호」 같은
+    입력의 거부 문면이 두 곳에 생긴다.
     """
     available = golden_scenario_names()
     if name not in available:
@@ -164,6 +177,8 @@ def scenario_fields(
         )
     if assumption_overrides is not None:
         fields[ASSUMPTION_OVERRIDES_FIELD] = assumption_overrides
+    if household_count is not None and household_count != "":
+        fields[HOUSEHOLD_COUNT_FIELD] = household_count
     return fields
 
 
@@ -174,6 +189,7 @@ def run_ui_case(
     ownership_or_operation_transferred: bool = False,
     metering_separated: bool = False,
     assumption_overrides: object | None = None,
+    household_count: str | int | None = None,
 ) -> UiRun:
     """화면이 고른 것으로 **한 번 돌린다.**
 
@@ -194,6 +210,7 @@ def run_ui_case(
         ownership_or_operation_transferred=ownership_or_operation_transferred,
         metering_separated=metering_separated,
         assumption_overrides=assumption_overrides,
+        household_count=household_count,
     )
     text = yaml.safe_dump(fields, allow_unicode=True, sort_keys=False)
     with tempfile.TemporaryDirectory() as workspace:

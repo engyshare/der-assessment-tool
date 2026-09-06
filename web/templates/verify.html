@@ -19,6 +19,12 @@
        `#595959` 는 같은 바닥에서 약 7:1 이다. **흐리게 보이려고 더 밝히지
        마라** — 이 칸에 적힌 사유는 「왜 값이 없는가」이고 읽혀야 하는 글이다. #}
     .gap-blank { color: #595959; font-style: italic; }
+    {# ★ 값이 선 칸은 빈 칸과 **눈으로도 갈려야** 한다 — 같은 모양이면 사유
+       문단이 붙은 것만 보고 「또 빈 칸이구나」로 읽는다. 왼쪽 띠 색만 바꾸고
+       글자색은 본문 그대로 둔다(값은 흐리게 보일 글이 아니다). #}
+    .verify-fill { border-left: 4px solid #1f6f43; padding-left: .75rem; }
+    .fill-value { font-weight: 700; }
+    .fill-note { color: #595959; }
   </style>
 </head>
 <body>
@@ -128,6 +134,20 @@
         <figcaption>{{ group.net_demand_caption }}</figcaption>
       </figure>
       {% endif %}
+
+      {% for fill in group.fills %}
+      {# ★★ 재료가 도착해 **값이 선** 칸이다 (R64/WP-1). 빈 칸과 **다른 자리**에
+         두는 이유는 `app/services/verify_steps.py::VerifyFill` 독스트링이
+         갖는다 — 같은 자리에 두 뜻을 담으면 「사유가 비었다」와 「값이 비었다」를
+         검사가 구별하지 못한다.
+         ⚠ `data-filled="true"` 다. 빈 칸의 `false` 와 짝을 이루며,
+         `tests/app/test_ui_verify.py` 가 그 짝으로 두 갈래를 가른다. #}
+      <section class="verify-fill" data-fill="{{ fill.tag }}" data-filled="true">
+        <h3>{{ fill.title }}</h3>
+        <p class="fill-value">{{ fill.value }}</p>
+        <p class="fill-note">{{ fill.note }}</p>
+      </section>
+      {% endfor %}
 
       {% for gap in group.gaps %}
       {# ⚠⚠ 「빈 칸 + 사유」가 「없는 값」보다 정직하고 「지어낸 값」보다 훨씬

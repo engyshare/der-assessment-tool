@@ -21,6 +21,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from app.services.ui_charts import chart_description, chart_source, unwired_reason
+from core.casegrid.household_scale import HOUSEHOLD_COUNT_UNSPECIFIED
 from core.cba.baseline import (
     POOL_PREREQUISITE_METERING,
     POOL_PREREQUISITE_TRANSFER,
@@ -91,6 +92,7 @@ def chart_query(
     arrangement: str,
     ownership_or_operation_transferred: bool,
     metering_separated: bool,
+    household_count: str = "",
 ) -> str:
     """그림 주소에 붙일 질의 문자열 — **결과 화면과 같은 실행을 그리게 한다.**
 
@@ -100,15 +102,23 @@ def chart_query(
 
     ⚠ 참·거짓 문면을 파이썬 것(`True`)으로 두지 않는다 — 받는 쪽은 FastAPI 의
     불리언 파서다.
+
+    ★★ **가구 수는 빈 칸이면 아예 붙이지 않는다** (R64/WP-1). 갈래처럼 빈 값을
+    붙여도 뜻은 같지만(받는 쪽이 `or None` 으로 낮춘다), 붙이면 **가구 수를
+    준 적 없는 실행의 그림 주소가 전부 바뀐다** — 그 주소는 심의에서 그대로
+    인용되는 자리다. 안 준 실행의 주소를 종전과 한 글자도 다르지 않게 둔다.
     """
-    return urlencode({
+    fields = {
         "scenario": scenario,
         "arrangement": arrangement,
         "ownership_or_operation_transferred": (
             "true" if ownership_or_operation_transferred else "false"
         ),
         "metering_separated": "true" if metering_separated else "false",
-    })
+    }
+    if household_count:
+        fields["household_count"] = household_count
+    return urlencode(fields)
 
 
 def chart_figures(*, query: str = "") -> tuple[dict[str, Any], ...]:
@@ -208,6 +218,17 @@ def run_result_context(
         # baseline_branch` 의 ⚠ — 이름만 실으면 검토자가 그 이름이 뜻하는
         # 기준선을 저장소 밖에서 찾아야 한다).
         "arrangement": report.baseline_arrangement.value,
+        # ★★ **몇 호로 돌았나** (R64/WP-1 · 착수 47ⓐ). 가구 수를 넣을 수 있게
+        # 해 놓고 결과가 그것을 안 적으면 확인할 방법이 없다 — 위 갈래와 같은
+        # 자리다. ⚠ **안 준 실행도 글자로 적는다**: 빈칸이면 검토자가 아래
+        # 모든 금액을 단지 전체의 것으로 읽고, 40호 단지라면 40배 틀리게
+        # 읽는다(`core/casegrid/household_scale.py::HOUSEHOLD_COUNT_UNSPECIFIED`).
+        "household_count": (
+            f"{report.household_count:,}호"
+            if report.household_count is not None
+            else HOUSEHOLD_COUNT_UNSPECIFIED
+        ),
+        "household_count_raw": report.household_count,
         "branch": {
             "without": report.baseline_branch.without_description,
             "with": report.baseline_branch.with_description,

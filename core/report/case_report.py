@@ -70,6 +70,7 @@ from core.assumption.scenario_overrides import (
     apply_scenario_overrides,
 )
 from core.casegrid.e2e_runner import PV_CAPACITY_FACTOR, run_single_case_e2e
+from core.casegrid.household_scale import HOUSEHOLD_COUNT_FIELD, resolve_household_count
 from core.casegrid.ledger_levels import (
     build_level_map,
     design_variables,
@@ -296,6 +297,19 @@ class CaseReport:
     #: `baseline_arrangement` 필드에서 오며, 필드가 없으면
     #: `DEFAULT_BASELINE_ARRANGEMENT`(ⓑ「자가용 유지」)다.
     baseline_arrangement: BaselineArrangement
+    #: 이 실행이 돈 **단지 규모**(호) — 시나리오 yaml 의 `household_count`
+    #: 필드에서 오며, 필드가 없으면 `None` 이다 (R64/WP-1 · 착수 47ⓐ).
+    #:
+    #: ⚠⚠ **`None` 은 「빈 값」이 아니라 진술이다** — *「가구 수를 적지 않았고,
+    #: 그래서 이 실행은 가구 한 호 기준으로 돌았다」*. 산출물은 그것을
+    #: **글자로** 인쇄해야 한다(`core/casegrid/household_scale.py::
+    #: HOUSEHOLD_COUNT_UNSPECIFIED`) — 빈칸으로 두면 검토자가 「반영됐다」로
+    #: 읽고, 그 오독은 단지 총부하를 40배쯤 틀리게 만든다.
+    #:
+    #: ⚠ **대장에서 오지 않는다.** `load.household.count` 는 `track: blocked` ·
+    #: `value: null` 이며 *「사업 계획이 정하는 사실」* 이다 — 그래서 이 값의
+    #: 통로는 실행 입력(시나리오·화면)이고 대장이 아니다.
+    household_count: int | None
     #: 그 갈래의 **선언 다섯** — Without · With · 성립 조건 · 자가소비 처리 ·
     #: 근거 조항. 붙임 1 의 셋째 표가 이것을 인쇄한다.
     #:
@@ -797,6 +811,17 @@ def build_case_report(
     # 빈 선언으로 바꿔 내지 않는다 — 결과는 같지만 「적지 않았다」와 「둘 다
     # 아니라고 적었다」는 다른 진술이다.
     pool_metering = resolve_pool_metering(scenario.get(POOL_METERING_FIELD))
+    # ★★★ **단지 규모(가구 수)도 시나리오에서 읽는다** (R64/WP-1 · 착수 47ⓐ).
+    # `load.household.annual` 이 **kWh/호·년**(한 호당)이므로 단지 총량을
+    # 내려면 이 수가 있어야 한다. **통로는 이 필드 하나다** — 갈래·ⓒ 선언과
+    # 같은 자리이며, 케이스 그리드 변수축이나 CLI 플래그를 따로 세우지 않는다.
+    # ⚠ **필드가 없으면 `None`(= 적지 않았다)이고 그때 가구 한 호 기준으로
+    # 돈다.** 여기서 기본 가구 수로 메우지 않는다 — 대장의
+    # `load.household.count` 가 `track: blocked` · `value: null` 이고 그 항목의
+    # `derivation_method` 가 *「가정하면 안 된다」* 로 못 박았다.
+    # ⚠ **골든 픽스처에는 이 필드가 없다** — 그래서 골든 회귀의 수는 한 원도
+    # 움직이지 않는다(`tests/golden/test_regression_scenarios.py`).
+    household_count = resolve_household_count(scenario.get(HOUSEHOLD_COUNT_FIELD))
     # ★ ⓒ(자가용 집합자원화)를 **선언 없이** 고르면 여기서 `DV-15` 로 거부된다 —
     # 리포트를 조립하기 전이다. 러너도 같은 거부를 지나므로(그 진입점을 직접
     # 부르는 경로가 있다) 두 자리가 함께 막는다.
@@ -858,6 +883,10 @@ def build_case_report(
         {}, level_map=level_map, horizon_years=horizon_years, scheme=scheme,
         daily_shapes=shapes,
         annual_load_kwh=level_map["household_load_annual_kwh"]["base"],
+        # ★ **단지 규모** (R64/WP-1). 위 `annual_load_kwh` 는 **한 호**의
+        # 값이므로 이 수가 곱해져야 단지 총부하가 된다. `None` 이면 배수가 1 —
+        # 종전과 같다.
+        household_count=household_count,
         rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
         distributed_sub_items=distributed_sub_items,
         baseline_arrangement=baseline_arrangement,
@@ -868,6 +897,12 @@ def build_case_report(
         level_map=level_map, horizon_years=horizon_years, scheme=scheme,
         daily_shapes=shapes, rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
         distributed_sub_items=distributed_sub_items,
+        # ★★ **본 실행과 같은 단지 규모로 스윕한다** (R64/WP-1). 안 넘기면
+        # 본문 4절은 n호 단지로, 5·6절(민감도·용량 검토)은 **한 호**로 계산되어
+        # 두 절이 서로 다른 사업을 그린다 — 바로 아래 갈래가 적어 둔 것과 같은
+        # 함정이며, 이 축은 부하 총량에 비례로 들어오므로 어긋나면
+        # `build_coupled_sweeps` 의 `base_npv` 대조가 통째로 뜻을 잃는다.
+        household_count=household_count,
         # ★ **본 실행과 같은 기준선 갈래로 스윕한다** (`FR-705-AC2`). 안 넘기면
         # 본문 4절은 고른 갈래로, 5·6절(민감도·용량 검토)은 **기본 갈래**로
         # 계산되어 두 절이 서로 다른 사업을 그린다 — 위 `annual_load_kwh`·
@@ -978,6 +1013,10 @@ def build_case_report(
         assumption_set_version=provider.set_version,
         price_basis=provider.price_basis.value,
         baseline_arrangement=baseline_arrangement,
+        # ★ 산출물이 **이 실행이 몇 호로 돌았는지**를 인쇄한다 (R64/WP-1).
+        # `None` 도 그대로 나른다 — 「미지정」을 글자로 적는 것이 붙임의 몫이다
+        # (`core/report/appendix_sections.py::_household_scale_table`).
+        household_count=household_count,
         baseline_branch=baseline_branch,
         metrics=outcome.variants[PLAN_VARIANT],
         baseline_metrics=outcome.variants[BASELINE_VARIANT],

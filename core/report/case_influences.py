@@ -228,8 +228,16 @@ class _Sweeper:
         distributed_sub_items: DistributedSubItems | None,
         baseline_arrangement: BaselineArrangement,
         pool_metering: PoolMeteringDeclaration | None = None,
+        household_count: int | None = None,
     ) -> None:
         self._baseline_arrangement = baseline_arrangement
+        # ★★ **단지 규모** (R64/WP-1 · 착수 47ⓐ). 기본값 `None` 은 *「적지
+        # 않았다」*이며 그때 러너가 가구 한 호 기준으로 돈다 — 위 갈래처럼
+        # 「조용히 다른 사업」이 되는 자리이므로 필수로 두고 싶으나, 이 인자를
+        # 넘기지 않는 호출부(시험)가 있고 그 실행의 본 계산도 미지정이라
+        # **본 실행과 어긋나지 않는다.** 어긋남을 붙드는 것은
+        # `tests/report/test_household_count_wired.py` 다.
+        self._household_count = household_count
         # ★ ⓒ 의 계측 선언 (R60/WP-3). **기본값을 두는 것이 안전한 자리다** —
         # 잊으면 ⓒ 의 스윕이 `DV-15` 로 **거부**되므로 어긋남이 조용히
         # 지나가지 않는다. 위 갈래는 그렇지 않아서(기본값이 조용히 다른
@@ -279,6 +287,11 @@ class _Sweeper:
             # 올라올 때 이 코드가 `case_report.py` 에 살던 시절에 이미 겪은
             # 함정).
             annual_load_kwh=probe["household_load_annual_kwh"]["base"],
+            # ★ **본 실행과 같은 단지 규모로 돈다** (R64/WP-1). 위
+            # `annual_load_kwh` 는 **한 호**의 값이므로 이 수가 빠지면 스윕이
+            # 한 호짜리 사업을 재고, 그 결과를 n호 단지의 `base_npv` 와 견주는
+            # `build_coupled_sweeps` 가 **규모 차이를 인자 기여로 인쇄한다**.
+            household_count=self._household_count,
             # ★ **본 실행과 같은 REC 단가·가중치를 쓴다** (사용자 판정 §4·§5 ·
             # R51/WP-6·R52/WP-6). 안 넘기면 러너의 기본값이 쓰이고, 대장이
             # 값을 얻는 날 **본문과 5.1 이 서로 다른 사업을 그린다** — 위

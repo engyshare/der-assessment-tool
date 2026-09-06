@@ -283,6 +283,100 @@ def test_year_by_year_rows_agree_with_the_proforma(
         )
 
 
+#: ★★ 가구 수를 **준** 실행의 화면 — 아래 갈래 검사 넷이 함께 쓴다.
+#: 값은 「잉여가 남는 규모」이며 사유는
+#: `tests/casegrid/test_household_count.py::_COUNT` 가 갖는다.
+_HOUSEHOLD_COUNT = 2
+
+_FILL_BLOCK = re.compile(r'<section class="verify-fill"(.*?)</section>', re.DOTALL)
+_FILL_TAG = re.compile(r'data-fill="([^"]+)"')
+_FILL_VALUE = re.compile(r'<p class="fill-value">(.*?)</p>', re.DOTALL)
+
+
+@pytest.fixture(scope="module")
+def sized_body(client: TestClient) -> str:
+    """가구 수를 **준** 실행의 화면 — 위 `body` 와 같은 시나리오·다른 갈래."""
+    response = client.get(
+        _VERIFY_PATH,
+        params={"scenario": _SCENARIO, "household_count": _HOUSEHOLD_COUNT},
+    )
+    assert response.status_code == 200, response.text[:400]
+    return response.text
+
+
+def test_without_a_household_count_the_screen_stands_no_number(body: str) -> None:
+    """★★★ **가구 수를 안 준 실행에는 값 칸이 하나도 없다** — 지금까지와 같다.
+
+    이것이 기본 갈래이며 골든 셋이 도는 갈래다. 여기에 값이 서면 그것은
+    저장소가 지어낸 세대 수이고, 그 수가 단지 총부하를 통째로 정한다.
+    """
+    assert not _FILL_BLOCK.findall(body), (
+        "가구 수를 주지 않았는데 값이 선 칸이 있다 — 지어낸 수다"
+    )
+
+
+def test_giving_a_household_count_turns_the_blank_into_a_number(
+    sized_body: str,
+) -> None:
+    """★★★ **47ⓐ — 값이 지정된 실행에서는 칸이 아니라 수를 보인다** (판정 ④).
+
+    ⚠ 수를 리터럴로 대조하지 않는다 — 질의로 보낸 값을 그대로 되찾는다.
+    """
+    blocks = _FILL_BLOCK.findall(sized_body)
+    tags = [_FILL_TAG.search(block).group(1) for block in blocks]
+    assert tags == ["households"], f"값이 선 칸 목록이 다르다: {tags}"
+    value = _FILL_VALUE.search(blocks[0])
+    assert value is not None, "값이 선 칸에 값 문단이 없다"
+    assert f"{_HOUSEHOLD_COUNT:,}호" in _text(value.group(1)), (
+        f"화면이 {_HOUSEHOLD_COUNT}호를 보이지 않는다: {value.group(1)!r}"
+    )
+    assert 'data-filled="true"' in blocks[0], (
+        "값이 선 칸이 「빈 칸」으로 표시됐다"
+    )
+
+
+def test_the_household_type_stays_a_blank_cell_even_with_a_count(
+    sized_body: str,
+) -> None:
+    """★★ **칸이 사라지지 않고 좁아진다** — 가구 유형은 여전히 재료가 없다.
+
+    수가 왔다고 칸을 통째로 지우면 사용자가 요구한 「가구 유형」이 화면에서
+    사라지고, 사라진 것은 아무도 못 본다. 대장의 `load.household.type_mix` 는
+    아직 `track: blocked` 이며 **표현할 자료형조차 정해지지 않았다.**
+    """
+    blocks = _GAP_BLOCK.findall(sized_body)
+    tags = [_GAP_TAG.search(b).group(1) for b in blocks if _GAP_TAG.search(b)]
+    assert sorted(tags) == sorted(GAP_TAGS), (
+        f"가구 수를 준 실행에서 빈 칸 목록이 달라졌다: {tags}"
+    )
+    households = next(
+        b for b in blocks if _GAP_TAG.search(b).group(1) == "households"
+    )
+    assert "가구 유형" in _text(households), (
+        "가구 수를 주었는데 남은 빈 칸이 가구 유형을 가리키지 않는다"
+    )
+    filled = _GAP_FILLED.search(households)
+    assert filled is not None and filled.group(1) == "false"
+
+
+def test_a_household_count_below_one_is_refused_as_a_readable_screen(
+    client: TestClient,
+) -> None:
+    """★★ **0호는 거부고, 그 거부가 사람이 읽는 화면이다** (`NFR-303`).
+
+    ⚠ JSON 으로 내지 않는다 — 이 라우트는 화면이고, JSON 을 받은 브라우저는
+    3요소를 사람이 읽을 모양으로 그리지 못한다.
+    """
+    response = client.get(
+        _VERIFY_PATH, params={"scenario": _SCENARIO, "household_count": 0}
+    )
+    assert response.status_code == 400, response.text[:200]
+    printed = _text(response.text)
+    assert "가구 수" in printed and "조치" in printed, (
+        f"거부 화면이 3요소를 사람이 읽을 모양으로 그리지 않았다: {printed[:300]}"
+    )
+
+
 def test_split_refuses_when_the_stage_count_changes() -> None:
     """⚠⚠ 단계가 9로 갈리지 않으면 **멈춘다** — 조용히 빠뜨리지 않는다.
 

@@ -141,6 +141,13 @@ def run_case(
         default=False,
         description="ⓒ 계측 선언 ② — 발전량·전기사용량의 구분 계측·정산",
     ),
+    household_count: str = Query(
+        default="",
+        description=(
+            "실증단지 참여 가구 수(호). **비우면 시나리오에 적지 않는다** — "
+            "그때 가구 한 호 기준으로 돈다"
+        ),
+    ),
 ) -> HTMLResponse:
     """고른 갈래로 한 번 돌려 결과 화면을 낸다 — `FR-705-AC2` · `UI-7-AC1`.
 
@@ -170,6 +177,7 @@ def run_case(
             arrangement,
             ownership_or_operation_transferred,
             metering_separated,
+            household_count,
         )
     except ValidationError as exc:
         return HTMLResponse(render_run_result(run_error_context(exc)), status_code=400)
@@ -195,6 +203,9 @@ def run_case(
                         ownership_or_operation_transferred
                     ),
                     metering_separated=metering_separated,
+                    # ★ 가구 수도 그림에 함께 간다 — 안 넘기면 화면의 수는
+                    # 40호인데 그림은 1호가 되고, 둘 다 그럴듯해 보인다.
+                    household_count=household_count,
                 ),
             )
         )
@@ -206,6 +217,7 @@ def _run(
     arrangement: str,
     ownership_or_operation_transferred: bool,
     metering_separated: bool,
+    household_count: str = "",
 ) -> UiRun:
     """폼 값으로 한 번 돌린다 — **거부도 「없다」도 그대로 올린다.**
 
@@ -220,6 +232,10 @@ def _run(
         arrangement=arrangement or None,
         ownership_or_operation_transferred=ownership_or_operation_transferred,
         metering_separated=metering_separated,
+        # ★ 빈 문면을 `None` 으로 낮춘다 — 위 `arrangement` 와 같은 규약이며,
+        # 「적지 않았다」가 그대로 내려가야 판정이 한 자리에 남는다
+        # (`core/casegrid/household_scale.py::resolve_household_count`).
+        household_count=household_count or None,
     )
 
 
@@ -244,6 +260,11 @@ def _missing_scenario(exc: KeyError) -> dict[str, object]:
 @router.get("/ui/chart/{tag}.png", response_class=Response)
 def chart_png(
     tag: str,
+    # ⚠ `*` 는 **양식이 아니라 규칙**이다 (R64/WP-1). 가구 수 질의가 붙어
+    # 인자가 여섯이 되자 `PLR0917`(위치 인자 5 초과)이 울었다 — FastAPI 는
+    # 키워드 전용 인자를 그대로 받으므로 라우트의 동작은 한 글자도 바뀌지
+    # 않는다. 상한을 올려 푸는 쪽을 고르지 않았다.
+    *,
     scenario: str = Query(
         default="scenario_unsubsidized",
         description="골든 시나리오 이름 — 목록에 있는 것만 연다",
@@ -259,6 +280,13 @@ def chart_png(
     metering_separated: bool = Query(
         default=False,
         description="ⓒ 계측 선언 ② — 발전량·전기사용량의 구분 계측·정산",
+    ),
+    household_count: str = Query(
+        default="",
+        description=(
+            "실증단지 참여 가구 수(호). **비우면 시나리오에 적지 않는다** — "
+            "그때 가구 한 호 기준으로 돈다"
+        ),
     ),
 ) -> Response:
     """차트 한 장을 **PNG 로** 낸다 — `FR-1004-AC1` · `FR-803-AC2`.
@@ -309,6 +337,7 @@ def chart_png(
             arrangement,
             ownership_or_operation_transferred,
             metering_separated,
+            household_count,
         )
     except ValidationError as exc:
         raise HTTPException(status_code=400, detail=_three_parts(exc)) from exc

@@ -29,6 +29,7 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.services.ui_run import scenario_fields
 from core.assumption.scenario_overrides import ASSUMPTION_OVERRIDES_FIELD
+from core.casegrid.household_scale import HOUSEHOLD_COUNT_UNSPECIFIED
 from core.cba.baseline import BaselineArrangement, get_baseline_branch
 from core.contracts.validation import ValidationError
 from core.report.case_report import REC_PRICE_LEDGER_KEY, build_case_report
@@ -308,3 +309,95 @@ def test_a_scenario_that_carries_overrides_runs_on_the_changed_values(
     assert changed[REC_PRICE_LEDGER_KEY].base_value == 70
     assert changed[REC_PRICE_LEDGER_KEY].override_value == 300.0
     assert changed[REC_PRICE_LEDGER_KEY].reason is not None
+
+
+#: 실증단지 규모를 고르는 화면 칸의 이름 — 폼과 질의가 **같은 글자**를 써야
+#: 사람이 넣은 값이 실행에 닿는다 (R64/WP-1 · 착수 47ⓐ).
+_HOUSEHOLD_FIELD = 'name="household_count"'
+
+#: 잉여가 남는 규모. 사유는 `tests/casegrid/test_household_count.py::_COUNT`.
+_HOUSEHOLD_COUNT = 2
+
+_HOUSEHOLD_ATTRIBUTE = re.compile(r'data-household-count="([^"]*)"')
+
+
+def test_the_dashboard_lets_a_person_type_a_household_count(
+    client: TestClient,
+) -> None:
+    """★★ **사용자 요구 1 — 「가구수를 변경할 수 있어야 함」이 화면에 선다.**
+
+    ⚠⚠ **칸에 기본값이 박혀 있으면 안 된다.** 박으면 저장소가 단지 규모를
+    정한 것이 되고, 그 뒤에 검토자가 보는 것은 우리가 고른 규모로 우리가 돌린
+    계산이다(대장 `load.household.count` 의 `derivation_method`).
+    """
+    body = client.get("/").text
+    assert _HOUSEHOLD_FIELD in body, "대시보드 실행 폼에 가구 수 칸이 없다"
+    field = body[body.index(_HOUSEHOLD_FIELD):]
+    field = field[: field.index(">") + 1]
+    assert "value=" not in field, (
+        f"가구 수 칸에 기본값이 박혀 있다 — 지어낸 세대 수다: {field!r}"
+    )
+
+
+def test_the_result_screen_says_how_many_households_it_ran_on(
+    client: TestClient,
+) -> None:
+    """★★★ 결과 화면이 **몇 호로 돌았는지**를 싣는다 — 안 준 실행도 (판정 ③).
+
+    빈칸으로 두면 검토자가 화면의 모든 금액을 단지 전체의 것으로 읽고, 40호
+    단지라면 40배 틀리게 읽는다. 그 오독은 심의 자료가 나간 뒤에 발견된다.
+
+    ⚠ 수를 리터럴로 박지 않는다 — 날값 속성(`data-household-count`)에서 되찾아
+    질의로 보낸 값과 맞댄다.
+    """
+    unspecified = client.get("/ui/run", params={"scenario": _SCENARIO}).text
+    match = _HOUSEHOLD_ATTRIBUTE.search(unspecified)
+    assert match is not None, "결과 화면이 가구 수를 날값으로 싣지 않았다"
+    assert match.group(1) == "", (
+        f"가구 수를 주지 않았는데 날값이 {match.group(1)!r} 이다 — 지어낸 수다"
+    )
+    assert HOUSEHOLD_COUNT_UNSPECIFIED in unspecified, (
+        f"가구 수를 안 준 실행이 「{HOUSEHOLD_COUNT_UNSPECIFIED}」를 적지 않았다"
+    )
+
+    sized = client.get(
+        "/ui/run",
+        params={"scenario": _SCENARIO, "household_count": _HOUSEHOLD_COUNT},
+    ).text
+    assert _HOUSEHOLD_ATTRIBUTE.search(sized).group(1) == str(_HOUSEHOLD_COUNT)
+    assert f"{_HOUSEHOLD_COUNT:,}호" in sized
+
+
+def test_typing_a_household_count_actually_moves_the_number(
+    client: TestClient,
+) -> None:
+    """★★★ 화면이 넣은 수가 **결론축을 실제로 움직인다** — 표시만이 아니다.
+
+    이 단언이 없으면 위 검사는 *「칸을 그리고 값을 되비추기만 한다」* 로도
+    통과한다. `test_choosing_an_arrangement_actually_moves_the_number` 가 갈래
+    축에서 같은 자리를 지킨다.
+    """
+    one = _npv_on_screen(client.get("/ui/run", params={"scenario": _SCENARIO}).text)
+    many = _npv_on_screen(
+        client.get(
+            "/ui/run",
+            params={"scenario": _SCENARIO, "household_count": _HOUSEHOLD_COUNT},
+        ).text
+    )
+    assert one == pytest.approx(_golden_npv(), abs=1.0), (
+        "가구 수를 안 준 실행이 골든 회귀의 수와 다르다 — 기본 갈래가 움직였다"
+    )
+    assert many != pytest.approx(one, abs=1.0), (
+        f"{_HOUSEHOLD_COUNT}호로 돌렸는데 결론축이 한 호와 같다({one:,.0f}원)"
+    )
+
+
+def test_a_household_count_below_one_is_refused_as_a_readable_screen(
+    client: TestClient,
+) -> None:
+    """★★ **0호는 3요소로 거부한다** — JSON 이 아니라 화면이다 (`NFR-303`)."""
+    response = client.get(
+        "/ui/run", params={"scenario": _SCENARIO, "household_count": 0}
+    )
+    assert response.status_code == 400, response.text[:200]
+    assert "가구 수" in response.text and "조치" in response.text

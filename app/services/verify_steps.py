@@ -102,6 +102,28 @@ class VerifyGap:
 
 
 @dataclass(frozen=True)
+class VerifyFill:
+    """**값이 선 칸** — 재료가 도착해 「빈 칸 + 사유」를 대신한 자리 (R64/WP-1).
+
+    ## ★★ 왜 `VerifyGap` 을 「채운 칸」으로 겸용하지 않는가
+
+    빈 칸은 *「왜 없는가」* 를 싣고 채운 칸은 *「무엇이며 어디서 왔는가」* 를
+    싣는다 — 같은 자료형에 두 뜻을 담으면 화면이 `data-filled` 하나로 갈리고,
+    그때 *「사유가 비었다」* 와 *「값이 비었다」* 를 검사가 구별하지 못한다.
+    ⇒ 자료형을 갈라 두면 빈 칸 검사(`tests/app/test_ui_verify.py::
+    test_blank_cells_print_no_number`)가 **채운 칸을 세지 않는다.**
+
+    ⚠ `note` 는 *「이 수가 어디서 왔는가」* 다. 값만 인쇄하면 검토자가 그 수를
+    저장소가 정한 것으로 읽고, 실제로는 **실행 입력이 정한 것**이다.
+    """
+
+    tag: str
+    title: str
+    value: str
+    note: str
+
+
+@dataclass(frozen=True)
 class NetDemandRow:
     """순수요 표의 한 행 — `DispatchHour` 를 **읽기만** 한 것."""
 
@@ -121,6 +143,9 @@ class VerifyGroup:
     carried_from: str
     stages: tuple[VerifyStage, ...]
     gaps: tuple[VerifyGap, ...]
+    #: 재료가 도착해 **값이 선** 칸 (R64/WP-1). 빈 칸과 같은 걸음에 나란히
+    #: 설 수 있다 — ①의 「가구 수·가구 유형」이 그렇다(수는 서고 유형은 없다).
+    fills: tuple[VerifyFill, ...] = ()
     #: ③ 순수요만 갖는다 — 아래 `net_demand_rows` 참조.
     net_demand: tuple[NetDemandRow, ...] = ()
     net_demand_caption: str = ""
@@ -221,6 +246,14 @@ _NET_DEMAND_CAPTION = (
 )
 
 
+#: ①의 「가구 수·가구 유형」 칸의 이름. **두 갈래가 같은 이름을 쓴다** —
+#: 가구 수를 안 준 실행에서는 「칸 + 사유」이고, 준 실행에서는 수가 서고 사유가
+#: **가구 유형만** 남는다(R64/WP-1 · 착수 47ⓐ).
+#:
+#: ⚠ 이름을 갈래마다 다르게 두면 `GAP_TAGS` 가 실행에 따라 달라지고, 그때
+#: 「빈 칸 목록이 다르다」를 재는 검사가 무엇을 세는지 알 수 없게 된다.
+HOUSEHOLDS_TAG = "households"
+
 #: **값이 서지 않는 다섯 칸** — `.orch/R63/result_P4.md` §7 이 이름으로 못 박은
 #: 것들이다. 여기 적힌 사유가 화면에 그대로 나간다.
 #:
@@ -230,14 +263,19 @@ _GAPS: tuple[tuple[int, VerifyGap], ...] = (
     (
         1,
         VerifyGap(
-            tag="households",
+            tag=HOUSEHOLDS_TAG,
             title="기존 전기사용자 정보 — 가구 수 · 가구 유형",
             reason=(
-                "가구 수와 가구 유형을 적는 자리가 이 저장소에 자료형 수준으로 "
-                "없다. 분석 설정 대장은 부하를 「kWh/호·년」 단위로 갖지만 「호」의 "
-                "개수를 세는 필드가 없고, CaseReport 어디에도 세대 수가 서지 "
-                "않는다. 여기에 「30세대 단지」 같은 수를 적으면 그것은 지어낸 "
-                "값이며 심의 자료가 된다. (착수 순서에 아직 번호가 없는 새 항목)"
+                "이 실행은 가구 수를 받지 않았다. 그래서 아래 모든 수량과 "
+                "금액은 가구 한 호를 계산한 것이며, 단지 전체의 값이 아니다 — "
+                "분석 설정 대장이 부하를 「kWh/호·년」 단위로 갖기 때문이다. "
+                "화면의 「가구 수」 칸에 세대 수를 넣으면 이 자리에 그 수가 "
+                "서고 단지 총부하가 그만큼 커진다. 저장소가 그 수를 스스로 "
+                "채우지 않는 이유는 세대 수가 사업 계획이 정하는 사실이기 "
+                "때문이다 — 여기에 「30세대 단지」 같은 수를 적으면 그것은 "
+                "지어낸 값이며 심의 자료가 된다. 가구 유형(세대원 수·주택 "
+                "형태 등 부하 형상을 가르는 축)은 값도 자료형도 아직 없다. "
+                "(착수 순서 47ⓐ)"
             ),
         ),
     ),
@@ -305,6 +343,47 @@ _GAPS: tuple[tuple[int, VerifyGap], ...] = (
 
 #: 화면이 세우는 빈 칸의 이름 — 검사가 **전건**을 세는 데 쓴다.
 GAP_TAGS: tuple[str, ...] = tuple(gap.tag for _, gap in _GAPS)
+
+#: ★★ **가구 수가 지정된 실행**에서 위 「가구 수·가구 유형」 칸을 대신하는 것.
+#: 수는 `_household_count_fill` 이 값으로 세우고, **유형은 여전히 없다** —
+#: 그래서 칸이 사라지지 않고 **좁아진다**(R64/WP-1 · 착수 47ⓐ).
+#:
+#: ⚠⚠ **칸을 통째로 지우지 않는다.** 지우면 사용자가 요구한 「가구 유형」이
+#: 화면에서 사라지고, 사라진 것은 아무도 못 본다 — 이 파일 머리말의 ⚠ 가
+#: 적은 그대로다. 대장의 `load.household.type_mix` 는 아직 `track: blocked` ·
+#: `value: null` 이며 **표현할 자료형조차 정해지지 않았다**.
+_HOUSEHOLD_TYPE_ONLY = VerifyGap(
+    tag=HOUSEHOLDS_TAG,
+    title="기존 전기사용자 정보 — 가구 유형",
+    reason=(
+        "가구 수는 이 실행이 받았고 위 칸에 서 있다. 남은 것은 가구 "
+        "유형이다 — 세대원 수·주택 형태·난방 방식 중 무엇으로 가를지가 "
+        "아직 정해지지 않아 값도 자료형도 없다. 그래서 이 실행은 모든 "
+        "가구를 같은 한 벌의 소비 형상으로 돌렸고, 「가구별」 소비패턴은 "
+        "가를 재료가 없다. 여기에 유형 구성을 적으면 그것은 지어낸 값이며 "
+        "심의 자료가 된다. (착수 순서 47ⓐ)"
+    ),
+)
+
+
+def _household_count_fill(count: int) -> VerifyFill:
+    """①의 「가구 수」 칸 — **값이 선** 자리 (R64/WP-1 · 착수 47ⓐ).
+
+    ⚠ **수를 여기서 짓지 않는다.** `CaseReport.household_count` 를 서식만
+    입혀 옮긴 것이며, 그 값은 실행 입력(시나리오 yaml 의 `household_count`
+    필드)이 정한 것이다 — 저장소가 고른 수가 아니라는 사실을 `note` 가
+    글자로 적는다.
+    """
+    return VerifyFill(
+        tag=HOUSEHOLDS_TAG,
+        title="기존 전기사용자 정보 — 가구 수",
+        value=f"{count:,}호",
+        note=(
+            "이 수는 실행 입력이 정했다 — 저장소가 가진 값이 아니다. 분석 "
+            "설정 대장은 부하를 「kWh/호·년」 단위로 갖고, 단지 총부하는 이 "
+            "수를 곱한 것이다. 아래 모든 수량과 금액이 그 총부하 위에 선다."
+        ),
+    )
 
 
 #: 사용자의 네 걸음 ↔ 렌더러 9단계. **문면은 사용자 판정 §1 「결과」 그대로다.**
@@ -394,22 +473,44 @@ def build_verify_groups(report: CaseReport) -> tuple[VerifyGroup, ...]:
 
     ⚠ 여기서 수를 하나도 짓지 않는다. 단계 본문은 렌더러 문자열 그대로이고,
     순수요 표는 `dispatch_hours` 필드를 서식만 입혀 옮긴 것이다.
+
+    ★★ **①의 「가구 수」는 갈래가 둘이다** (R64/WP-1 · 착수 47ⓐ).
+    `report.household_count` 가 `None` 이면 지금까지와 같은 「칸 + 사유」이고,
+    수가 있으면 그 수가 **값으로 서고** 사유가 가구 유형만 남는다 — 칸이
+    사라지는 것이 아니라 **좁아진다**.
     """
     stages = {stage.number: stage for stage in split_stages(
         render_verification_markdown(report)
     )}
     columns = net_demand_columns(report)
     rows = net_demand_rows(report)
+    count = report.household_count
     groups: list[VerifyGroup] = []
     for number, title, carried_from, wanted in _GROUP_PLAN:
         is_net_demand = number == 3
+        gaps = tuple(gap for at, gap in _GAPS if at == number)
+        fills: tuple[VerifyFill, ...] = ()
+        if count is not None:
+            # ★ 이름이 같으므로 **자리를 바꿔 끼운다** — 목록에서 빼면
+            # `GAP_TAGS` 와 화면의 칸 목록이 갈리고, 그때 「빈 칸 목록이
+            # 다르다」를 재는 검사가 무엇을 세는지 알 수 없게 된다.
+            gaps = tuple(
+                _HOUSEHOLD_TYPE_ONLY if gap.tag == HOUSEHOLDS_TAG else gap
+                for gap in gaps
+            )
+            fills = tuple(
+                _household_count_fill(count)
+                for gap in gaps
+                if gap.tag == HOUSEHOLDS_TAG
+            )
         groups.append(
             VerifyGroup(
                 number=number,
                 title=title,
                 carried_from=carried_from,
                 stages=tuple(stages[n] for n in wanted),
-                gaps=tuple(gap for at, gap in _GAPS if at == number),
+                gaps=gaps,
+                fills=fills,
                 net_demand=rows if is_net_demand else (),
                 net_demand_caption=_NET_DEMAND_CAPTION if is_net_demand else "",
                 net_demand_columns=columns if is_net_demand else (),

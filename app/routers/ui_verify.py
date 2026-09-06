@@ -57,6 +57,13 @@ def verify_case(
         default=False,
         description="ⓒ 전제 ② — 발전량·전기사용량의 구분 계측·정산",
     ),
+    household_count: str = Query(
+        default="",
+        description=(
+            "실증단지 참여 가구 수(호). **비우면 시나리오에 적지 않는다** — "
+            "그때 가구 한 호 기준으로 돈다"
+        ),
+    ),
 ) -> HTMLResponse:
     """분석 과정의 중간값을 **네 걸음으로 순차적으로** 낸다.
 
@@ -74,6 +81,10 @@ def verify_case(
             arrangement=arrangement or None,
             ownership_or_operation_transferred=ownership_or_operation_transferred,
             metering_separated=metering_separated,
+            # ★ 빈 문면을 `None` 으로 낮춘다 — 위 `arrangement` 와 같은 규약이며,
+            # 「적지 않았다」가 그대로 내려가야 판정이 한 자리에 남는다
+            # (`core/casegrid/household_scale.py::resolve_household_count`).
+            household_count=household_count or None,
         )
     except ValidationError as exc:
         return HTMLResponse(render_verify(run_error_context(exc)), status_code=400)

@@ -16,6 +16,11 @@
 """
 from __future__ import annotations
 
+from core.casegrid.household_scale import (
+    HOUSEHOLD_COUNT_FIELD,
+    HOUSEHOLD_COUNT_LEDGER_KEY,
+    HOUSEHOLD_COUNT_UNSPECIFIED,
+)
 from core.report._format import NO_VALUE, _date, _num, _unit_head, _won
 from core.report.case_report import AssumptionRow, CaseReport, OverrideRow
 
@@ -116,6 +121,12 @@ OVERRIDE_TABLE = "기준 전제 대비 변경 항목"
 #: ⚠ `###` 머리가 아닌 이유는 위 `OVERRIDE_TABLE` 과 **똑같다** — 붙임 1 안의
 #: `###` 는 「주제 머리」로 못 박혀 있다.
 BASELINE_TABLE = "기준선 갈래 선언"
+
+#: 붙임 1 의 **넷째 표** 이름 — 이 실행이 돈 단지 규모 (R64/WP-1 · 착수 47ⓐ).
+#:
+#: ⚠ `###` 머리가 아닌 이유는 위 둘과 **똑같다** — 붙임 1 안의 `###` 는
+#: 「주제 머리」로 못 박혀 있다.
+HOUSEHOLD_SCALE_TABLE = "실증단지 규모 (가구 수)"
 
 #: 갈래 선언 중 **비어 있는 칸**에 서는 문면 (`FR-705-AC2`).
 #:
@@ -381,6 +392,56 @@ def _baseline_branch_table(report: CaseReport) -> list[str]:
     ]
 
 
+def _household_scale_table(report: CaseReport) -> list[str]:
+    """붙임 1 의 **넷째 표** — 이 실행이 **몇 호로** 돌았는가 (R64/WP-1 · 47ⓐ).
+
+    ## ★★★ 왜 「미지정」을 인쇄하는가 — 빈칸으로 두면 거짓이 읽힌다
+
+    대장(`docs/assumptions.yaml::load.household.count`)은 `track: blocked` ·
+    `value: null` 이라 **붙임 1 의 주제별 표에 값 없는 행으로** 실린다. 그
+    행만 보면 검토자는 *「채워지지 않은 전제가 하나 있구나」* 까지만 읽고,
+    **그래서 이 실행이 몇 호를 계산했는가**에는 답을 얻지 못한다.
+
+    답은 「한 호」다. `load.household.annual` 이 **kWh/호·년**이므로 가구 수를
+    주지 않은 실행의 단지 총부하는 **한 호의 총부하**이며, 그 사실이 어디에도
+    적혀 있지 않으면 표의 모든 금액이 *「단지 전체의 금액」* 으로 읽힌다 —
+    40호 단지라면 40배 틀리게 읽는 것이다.
+
+    ⇒ 그래서 값이 없어도 **표를 지우지 않고** 「칸 + 사유」를 세운다. 같은
+    판단을 `_override_table`(「변경 없음」을 인쇄한다)과
+    `app/services/verify_steps.py` 의 `_GAPS` 가 이미 적어 두었다.
+
+    ## ⚠ 이 표는 대장 행의 사본이 아니다
+
+    붙임 1 첫째 표의 `load.household.count` 행은 **대장이 무엇을 갖고
+    있는가**(비어 있다)를 적고, 이 표는 **이 실행이 무엇으로 돌았는가**를
+    적는다. 둘은 다른 진술이며, 값이 도착하는 날에도 그렇다 — 대장에 값이
+    있어도 시나리오가 다른 수를 적으면 실행이 쓴 것은 시나리오의 수다.
+    """
+    count = report.household_count
+    used = f"{count:,}호" if count is not None else HOUSEHOLD_COUNT_UNSPECIFIED
+    return [
+        f"**{HOUSEHOLD_SCALE_TABLE}**",
+        "",
+        "- 이 표가 말하는 것은 **이 실행이 몇 호를 계산했는가**다 — 위 첫째 "
+        f"표의 `{HOUSEHOLD_COUNT_LEDGER_KEY}` 행은 대장이 그 수를 갖지 "
+        "않는다는 사실을 적는 자리이고, 이 표는 실행의 사실을 적는다",
+        "",
+        "| 항목 | 값 |",
+        "|---|---|",
+        f"| 이 실행의 가구 수 | {used} |",
+        # ⚠ `×` 는 곱셈 기호 그대로다. `x` 로 바꾸면 산식이 「가구 수 x …」가
+        # 되어 변수 이름처럼 읽힌다 — `core/report/sizing.py` 의 산식 줄이 같은
+        # 자리에서 같은 `noqa` 를 단다.
+        "| 단지 총부하 | 가구 수 × (가구 한 호의 연간 사용량 + 그 호의 추가 "  # noqa: RUF001
+        "전력사용기기 소비량) |",
+        f"| 대장 자리 | `{HOUSEHOLD_COUNT_LEDGER_KEY}` — `track: blocked` · "
+        "값 없음 (사업 계획이 정하는 사실이므로 가정하지 않는다) |",
+        f"| 실행 입력의 통로 | 시나리오 yaml 의 `{HOUSEHOLD_COUNT_FIELD}` 필드 |",
+        "",
+    ]
+
+
 def appendix_section(report: CaseReport) -> list[str]:
     """붙임 1 — 전 가정 목록. **주제별로 묶고 신뢰도를 열로** (`FR-1002-AC6`).
 
@@ -397,9 +458,10 @@ def appendix_section(report: CaseReport) -> list[str]:
     ⚠ 주제는 **대장 키의 접두어**에서 온다 — 여기서 새 분류를 만들지 않는다
     (`TOPIC_PREFIXES`).
 
-    ⚠ **이 붙임은 표가 셋이다** — 주제별 전건 · **변경 항목**
+    ⚠ **이 붙임은 표가 넷이다** — 주제별 전건 · **변경 항목**
     (`_override_table` · `FR-602-AC2`) · **기준선 갈래 선언**
-    (`_baseline_branch_table` · `FR-705-AC2` · R60/WP-2). 붙임 2 가 표를 둘로
+    (`_baseline_branch_table` · `FR-705-AC2` · R60/WP-2) · **실증단지 규모**
+    (`_household_scale_table` · R64/WP-1 · 착수 47ⓐ). 붙임 2 가 표를 둘로
     가른 것과 같은 갈래이며, 이름만 `###` 머리가 아니다(`OVERRIDE_TABLE` 주석).
     """
     by_topic: dict[str, list[AssumptionRow]] = {}
@@ -442,6 +504,11 @@ def appendix_section(report: CaseReport) -> list[str]:
     # 순서가 맨 뒤인 이유: 위 둘이 「무엇을 썼는가 · 무엇을 바꿨는가」이고
     # 이것은 「**무엇 대비** 재었는가」다 — 값을 다 보인 뒤 견준 상대를 밝힌다.
     lines += _baseline_branch_table(report)
+    # ★ 넷째 표다 — **이 실행이 몇 호로 돌았는가** (R64/WP-1 · 착수 47ⓐ).
+    # 갈래 표 뒤에 두는 이유: 앞 셋이 「무엇을 썼는가 · 무엇을 바꿨는가 ·
+    # 무엇 대비 재었는가」이고 이것은 **그 전부가 몇 호분인가**다 — 규모를
+    # 모르면 앞의 모든 금액이 단지 전체의 금액으로 읽힌다.
+    lines += _household_scale_table(report)
     return lines
 
 
