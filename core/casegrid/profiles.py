@@ -48,12 +48,17 @@ R56 이전에는 대표일 하나를 365번 되풀이하는 것이 전부여서,
 이전과 **원소 하나까지 같다**(`tests/casegrid/test_seasonal_axis.py` 가 손계산과
 대조한다).
 
-⚠⚠⚠ **계절을 채워도 「겨울 하루 < 여름 하루」는 결론에 서지 않는다.** 배포
-실행은 24스텝 하루를 돌려 365배로 연간화하므로, 계절이 여럿인 자산은
-`representative_day()` 가 내는 **몫 가중 평균 하루** 하나로 접혀 들어간다
-(`e2e_runner`). 접지 않고 `spread()` 를 그대로 넘기면 앞 하루가 **첫 계절의
-하루**가 되어 연간 총량이 대장과 어긋난다 — R60/WP-4 가 실측한 자리다. 그래서
-계절 몫이 담는 차이는 **선언돼 있고 운전에는 서지 않으며**, 그 결손은 붙임 8 이
+★★★ **계절을 채우면 「겨울 하루 < 여름 하루」가 결론에 선다** (R64/WP-4 ·
+사용자 요구 3). 배포 실행은 이제 계절마다 하루를 각각 돌려 **계절일수로 가중
+합산한다** — `core/casegrid/seasonal_dispatch.py::_season_inputs` 가 아래
+`representative_day_by_season()` 을 발전·부하 양쪽에서 부른다. 계절 몫이 담는
+차이는 **선언에서 운전으로 넘어왔다.**
+
+⚠ **그래도 접힌 하루가 함께 선다.** 러너는 계절별 하루와 별도로 연간등가 하루
+한 벌(`spread_over_representative_day()`)을 세워 **연간등가 배터리**를 그 위에
+올린다. 접지 않고 `spread()` 를 계절별 자리에 그대로 넘기면 앞 하루가 **첫
+계절의 하루**가 되어 연간 총량이 대장과 어긋난다 — R60/WP-4 가 실측한 자리다.
+⚠ **남은 결손은 요일 변동과 계절 몫·형상의 실측**이며, 그것을 붙임 8 이
 신고한다(`core/report/unreflected.py`).
 """
 from __future__ import annotations
@@ -310,10 +315,12 @@ class DailyShape:
         곧 연중 시간 순서라 앞 하루가 첫 계절의 하루가 되고, R60/WP-4 가
         실측한 *「차례만 바꿔도 연간 발전이 +281kWh 생긴다」* 가 그 자리였다.
 
-        ⚠ **아직 아무도 부르지 않는다.** 계절마다 돌려 계절일수로 가중 합산
-        하는 운전은 **러너의 구조**이며 이 자료형의 몫이 아니다(`e2e_runner`).
-        지금 배포 경로가 쓰는 것은 여전히 접힌 `representative_day()` 뿐이고,
-        그 결손은 붙임 8 이 신고한다(`core/report/unreflected.py`).
+        ★ **배포 경로가 이것을 부른다** (R64/WP-4 · 사용자 요구 3). 계절마다
+        돌려 계절일수로 가중 합산하는 운전은 **러너의 구조**이며 이 자료형의
+        몫이 아니다 — 부르는 자리는 `seasonal_dispatch.py::_season_inputs`(발전)
+        와 `appliance_load.py::ApplianceSeasonShares.load_days`(부하)다.
+        ⚠ 접힌 `representative_day()` 도 여전히 선다 — 연간등가 배터리가 그
+        하루를 따라간다(모듈 머리말 ⚠ 절).
         """
         calendar = self._calendar_days(days)
         by_season: list[tuple[Season, tuple[float, ...], int]] = []
