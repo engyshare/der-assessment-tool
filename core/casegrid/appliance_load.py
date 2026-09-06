@@ -66,21 +66,49 @@ AI 기능이 포함된다고 보면 어떠한가? 냉장고, 세탁기 등 **DR 
 1 이 아니면 **고쳐 주지 않고 거부한다** — 0.9 를 적으면 연간 에너지의 10%가
 조용히 사라진다.
 
-⚠ **여기서 기본 몫을 지어내지 않는다.** 계절별 냉난방 비중의 참값은 아무도
-모른다(`docs/decisions-2026-09-06-R64.md` §2 — 엑셀도 가정값이다). 자산의
-예시 수를 베껴 기본값으로 삼으면 그것이 대장 밖의 값이 된다(`NFR-202`).
+⚠ **이 소스에 기본 몫을 적지 않는다.** 몫을 파이썬 리터럴로 두면 그것이 대장
+밖의 값이 된다(`NFR-202`). 몫이 있다면 그것은 **자산이 갖는다** — 아래 ★★★
+R65 절 참조.
 
-## ⚠⚠⚠ 값을 지어내지 않는다 — 기본이 **미지정**인 이유
+## ⚠⚠⚠ 값을 지어내지 않는다 — 이 소스에 기본값이 없는 이유
 
-`docs/assumptions.yaml` 의 `load.heatpump.annual` · `load.ev.annual` 은
-`track: blocked` · `value: null` 이다. 두 수는 **이 단지의 가구가 그 기기를
-갖는가**에 달려 있고 그것은 사업 계획이 정하는 사실이다 —
+두 수(`load.heatpump.annual` · `load.ev.annual`)는 **이 단지의 가구가 그
+기기를 갖는가**에 달려 있고 그것은 사업 계획이 정하는 사실이다 —
 `load.household.count` 가 같은 자리에서 같은 판정을 적었다
 (`core/casegrid/household_scale.py` 머리말 ⚠⚠⚠).
 
-⇒ 그래서 **기본값이 없다.** 안 주면 `None` 이고 더해지는 값은 0 이며, 러너는
-이 배선이 생기기 전과 **원소 하나까지** 같다. 골든 회귀
-(`tests/golden/test_regression_scenarios.py`)가 그 동일성을 잰다.
+⇒ 그래서 **이 소스에 기본값이 없다.** 값이 있다면 대장이나 실행 입력이
+갖는다. 셋 다 비어 있으면 `None` 이고 더해지는 값은 0 이며, 러너는 이 배선이
+생기기 전과 **원소 하나까지** 같다.
+
+## ★★★ R65 — 값이 왔다. 통로가 **셋**이고 차례가 있다
+
+사용자 요구(2026-09-07)가 *「히트펌프, 전기차 충전 연간 소비전력량 · 계절별
+냉난방 부하 … 조사하거나 … 엑셀 상의 수치를 사용(**조사 권장**)」* 을 정했다.
+조사와 엑셀 판독으로 셋이 섰다:
+
+    ① 시나리오 yaml · 화면이 적은 수                 ← `resolve_appliance_loads`
+    ② 대장 `load.heatpump.annual`(2,675 · `가정`)     ← `with_ledger_defaults`
+      · `load.ev.annual`(2,784 · `추정` — 조사값)
+    ③ 자산의 `appliance_season_shares:` 절            ← `with_ledger_defaults`
+      (봄 .1121 · 여름 .2019 · 가을 .1533 · 겨울 .5327)
+
+**①이 이기고 칸마다 따로 본다.** ①이 `None`(= 적지 않았다)인 칸만 ②·③이
+채운다 — 함수 독스트링이 그 차례와 `0.0` 을 채우지 않는 사유를 갖는다.
+
+⛔ **골든 yaml 에 이 수들을 적지 않았다** — 적으면 같은 수가 대장과 픽스처 두
+곳에 살고, 대장을 고쳐도 골든이 옛 값으로 돈다.
+
+⚠⚠⚠ **골든 3종을 다시 뽑지 못했다 — 실행이 거부된다** (R65/WP-2, 미해결).
+대장의 20호 × (3,600 + 2,675 + 2,784)를 골든의 설계 기본값
+(`pv_capacity_kw` base **3 kW**)에 얹으면 **낮에 태양광 잉여가 남지 않아**
+잉여 충전 ESS 가 `DV` 로 거부한다(`core/der/ess_schedule.py::
+check_pv_surplus_profile`). 실측: 기기 부하만이면 1호까지 성립하고 **2호부터
+거부**되며, 기기 부하 없이 가구 수만이면 3호부터 거부된다. 20호가 성립하려면
+태양광이 **약 32.8 kW** 여야 한다.
+⇒ **부하 값이 틀린 것이 아니라 그 부하에 맞는 설비 용량이 정해지지 않은
+것**이며, 그것은 이 자리(부하)가 아니라 설계 변수의 몫이다. 판정은
+오케스트레이터·사람 몫으로 넘겼다 — `.orch/R65/result_2.md` ③·⑥.
 
 ## ⚠ 「0 이라고 적었다」와 「적지 않았다」를 가른다
 
@@ -102,8 +130,20 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
+from pathlib import Path
 
-from core.casegrid.profiles import SHARE_TOLERANCE, DailyShape, Season
+# ⚠ **스텁이 없는 패키지다** — `core/casegrid/profiles.py:72` 가 같은 자리에서
+# 같은 무시를 단다(저장소 관례). 형 오류를 덮는 것이 아니라 **배포되지 않은
+# 스텁**을 지나는 것이며, `[tool.mypy] strict = true` 는 그대로다.
+import yaml  # type: ignore[import-untyped]
+
+from core.casegrid.profiles import (
+    PROFILE_PATH,
+    SHARE_TOLERANCE,
+    DailyShape,
+    Season,
+)
+from core.contracts.assumptions import AssumptionProvider
 from core.contracts.validation import ValidationError
 
 #: 시나리오 yaml 이 **히트펌프 연간 소비전력량**을 싣는 필드 이름.
@@ -116,11 +156,14 @@ HEATPUMP_LOAD_FIELD = "heatpump_load_annual_kwh"
 #: 시나리오 yaml 이 **전기차 충전 연간 전력량**을 싣는 필드 이름.
 EV_LOAD_FIELD = "ev_load_annual_kwh"
 
-#: 히트펌프 부하의 **대장 자리**. 값은 비어 있고(`track: blocked` ·
-#: `value: null`) 이 코드가 채우지 않는다 — 위 머리말 ⚠⚠⚠ 참조.
+#: 히트펌프 부하의 **대장 자리**. R65 부터 값이 있다(`track: assume` ·
+#: `value: 2675` · `confidence: 가정` — 조사에서 찾지 못해 참고 엑셀을 인용한
+#: 값이다). 이 소스가 채우는 것이 아니라 대장이 갖는다 — 위 머리말 ★★★ 참조.
 HEATPUMP_LOAD_LEDGER_KEY = "load.heatpump.annual"
 
-#: 전기차 충전 부하의 **대장 자리**. 위와 같다.
+#: 전기차 충전 부하의 **대장 자리**. R65 부터 값이 있다(`track: assume` ·
+#: `value: 2784` · `confidence: 추정` — **조사값**이라 히트펌프와 근거 등급이
+#: 다르다).
 EV_LOAD_LEDGER_KEY = "load.ev.annual"
 
 #: 두 칸의 **표시 이름** — 거부 문면과 산출물이 같은 낱말을 쓰게 한다.
@@ -286,11 +329,13 @@ def _rejected(value: object, *, ledger_key: str, title: str) -> ValidationError:
         field=ledger_key,
         reason=(
             f"{title}은 0 이상의 수여야 합니다 (받은 값 {value!r}). "
-            "이 수는 대장이 갖지 않는다 — 그 기기를 가구가 갖는지는 사업 "
-            "계획이 정하는 사실이므로 저장소가 기본값으로 메우지 않습니다"
+            "그 기기를 가구가 갖는지는 사업 계획이 정하는 사실이므로 "
+            "저장소가 소스의 기본값으로 메우지 않습니다 — 값은 대장이나 "
+            "실행 입력이 갖습니다"
         ),
         action=(
-            "칸을 비우거나(그때 그 기기 없이 돕니다) 0 이상의 수를 "
+            f"칸을 비우거나(그때 대장 `{ledger_key}` 의 값으로 돌고, 대장도 "
+            "비어 있으면 그 기기 없이 돕니다) 0 이상의 수를 "
             f"{APPLIANCE_LOAD_UNIT} 단위로 지정하십시오"
         ),
     )
@@ -554,3 +599,123 @@ def _season_share_rejected(reason: str) -> ValidationError:
             "이 되게 하십시오"
         ),
     )
+
+
+# ── 값이 왔다 — 대장과 자산이 「적지 않은 실행」의 기본이 된다 (R65/WP-2) ────
+
+#: 냉난방 계절 몫의 **자산 자리** — 형상 자산 파일의 최상위 절 이름.
+#:
+#: ⚠ **대장이 아니다.** 대장 항목(`core/assumption/item.py::AssumptionItem`)의
+#: `value` 는 `float | int | str` 스칼라 하나이므로 계절 몫 넷을 담으려면
+#: 항목을 넷으로 쪼개야 하고, 그러면 **「합이 1」을 검사할 자리가 사라진다.**
+#: 자산 파일은 계절 이름·일수의 정본이고 읽는 쪽이 이미 합을 검사한다.
+APPLIANCE_SEASON_SHARE_ASSET_SECTION = "appliance_season_shares"
+
+
+def asset_appliance_season_shares(
+    path: Path | None = None,
+) -> ApplianceSeasonShares | None:
+    """형상 자산이 선언한 **냉난방 계절 몫** — 절이 없으면 `None` 이다.
+
+    ## 왜 자산이 이것을 갖는가 (R65/WP-2 · 사용자 요구 「계절별 냉난방 부하」)
+
+    계절 이름·일수의 정본이 그 파일이고, 그 파일이 스스로 *「교체는 이 파일 한
+    곳에서 끝난다」* 고 적었다. 몫을 코드나 대장으로 옮기면 **계절 이름이 두
+    곳에 살고** 한쪽만 고쳐진다 — 그때 같은 인덱스가 서로 다른 날을 가리킨다.
+
+    ## ⚠ 여기서 계절 이름을 대조하지 않는다
+
+    이름·개수가 형상과 맞는가는 `ApplianceSeasonShares._matched` 가 재고,
+    합이 1 인가는 `resolve_appliance_season_shares` 가 잰다 — **판정하는 자리를
+    늘리지 않는다.** 이 함수가 하는 것은 자산의 절을 `{이름: 몫}` 매핑으로
+    읽어 그 관문에 넘기는 것뿐이다.
+
+    ⚠ **절이 없으면 `None` 이고 메우지 않는다.** 그때 냉난방은 기본 부하와
+    같은 계절 몫으로 돌며 출력은 이 절이 서기 전과 원소 하나까지 같다 —
+    모듈 머리말 ⛔ 절이 그 동일성을 적는다.
+    """
+    source = path or PROFILE_PATH
+    data = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
+    section = data.get(APPLIANCE_SEASON_SHARE_ASSET_SECTION)
+    if not isinstance(section, Mapping):
+        return None
+    seasons = section.get("seasons")
+    if not seasons:
+        return None
+    return resolve_appliance_season_shares(
+        {str(entry["name"]): entry["share"] for entry in seasons}
+    )
+
+
+def with_ledger_defaults(
+    loads: ApplianceLoads,
+    provider: AssumptionProvider,
+    *,
+    profile_path: Path | None = None,
+) -> ApplianceLoads:
+    """**적지 않은 칸만** 대장·자산의 값으로 채운 사본 (R65/WP-2).
+
+    ## ⚠⚠ 차례가 있다 — 실행 입력이 이긴다
+
+        ① 시나리오 yaml · 화면이 적은 수      ← `resolve_appliance_loads`
+        ② 대장 `load.heatpump.annual` · `load.ev.annual`   ← 이 함수
+        ③ 자산의 `appliance_season_shares:` 절             ← 이 함수
+
+    ①이 `None`(= **적지 않았다**)인 칸만 ②·③이 채운다. 뒤집으면 사용자가
+    화면에서 적은 수를 대장이 덮어쓰고, 그때 산출물이 인쇄하는 수와 사용자가
+    적은 수가 갈린다.
+
+    ⚠ **칸마다 따로 본다.** 히트펌프만 적은 실행에서 전기차는 대장 값으로
+    돈다 — 「하나라도 적었으면 대장을 통째로 무시한다」로 하면 사용자가 한 칸을
+    고치는 순간 다른 칸이 조용히 0 이 된다.
+
+    ## ⚠ `0.0` 은 채우지 않는다 — 「없다고 적었다」이기 때문이다
+
+    `resolve_appliance_load` 가 `0` 과 빈 칸을 이미 갈라 두었다(모듈 머리말
+    ⚠ 절). `0.0` 인 칸에 대장 값을 얹으면 *「이 단지의 가구에는 히트펌프가
+    없다」* 는 진술이 뒤집힌다. 여기서 보는 것은 **`is None` 하나**다.
+
+    ## ⚠⚠ 대장이 아직 비어 있으면 종전과 같다
+
+    `AssumptionSet.load_from_yaml` 이 `track: blocked` 항목을 **싣지 않으므로**
+    그 상태에서는 `provider.get()` 이 `None` 이고 이 함수는 받은 것을 그대로
+    돌려준다 — 더해지는 값이 0 이고 산출물이 「미지정」을 글자로 인쇄한다.
+    **기본 소비량으로 메우는 자리는 이 저장소에 없다.**
+    """
+    return ApplianceLoads(
+        heatpump_kwh=(
+            loads.heatpump_kwh
+            if loads.heatpump_kwh is not None
+            else _ledger_kwh(provider, HEATPUMP_LOAD_LEDGER_KEY, HEATPUMP_LOAD_TITLE)
+        ),
+        ev_kwh=(
+            loads.ev_kwh
+            if loads.ev_kwh is not None
+            else _ledger_kwh(provider, EV_LOAD_LEDGER_KEY, EV_LOAD_TITLE)
+        ),
+        season_shares=(
+            loads.season_shares
+            if loads.season_shares is not None
+            else asset_appliance_season_shares(profile_path)
+        ),
+    )
+
+
+def _ledger_kwh(
+    provider: AssumptionProvider, ledger_key: str, title: str
+) -> float | None:
+    """대장 항목 하나 → `float` 또는 `None`(대장이 그 값을 갖지 않는다).
+
+    ⚠ **대장 값도 같은 관문(`resolve_appliance_load`)을 지난다.** 대장이 음수나
+    `nan` 을 갖게 되는 날 3요소 거부가 나가야 하고, 그 문면은 화면이 같은 값을
+    적었을 때와 같아야 한다 — 판정하는 자리가 하나라는 이 모듈의 규약이다.
+
+    ⚠ `required_scalar` 를 쓰지 않는 이유: 그 함수는 **없으면 멈춘다.** 여기서
+    멈추면 대장이 이 항목을 갖지 않는 저장소·시험에서 실행이 통째로 죽는다 —
+    「없으면 0 으로 돈다」는 뜻 있는 기본이 이미 있고, 그 뜻을 지우면 「적지
+    않았다」를 표현할 방법이 사라진다.
+    """
+    item = provider.get(ledger_key)
+    if item is None:
+        return None
+    return resolve_appliance_load(item.value, ledger_key=ledger_key, title=title)

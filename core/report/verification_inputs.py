@@ -61,8 +61,10 @@ from core.casegrid.appliance_load import (
     APPLIANCE_SEASON_SHARE_TITLE,
     APPLIANCE_SEASON_SHARE_UNSPECIFIED,
     EV_LOAD_FIELD,
+    EV_LOAD_LEDGER_KEY,
     EV_LOAD_TITLE,
     HEATPUMP_LOAD_FIELD,
+    HEATPUMP_LOAD_LEDGER_KEY,
     HEATPUMP_LOAD_TITLE,
     ApplianceSeasonShares,
 )
@@ -133,8 +135,22 @@ def execution_input_lines(report: CaseReport) -> list[str]:
 
     이 일곱은 계산의 결과가 아니라 **이 실행이 받은 전제**다. 대장 표(위 ⓑ)는
     *「대장이 무엇을 갖고 있는가」*를 적고 이 표는 *「이 실행이 무엇으로
-    돌았는가」*를 적는다 — 둘은 다른 진술이며, 앞의 넷은 대장이 `track:
-    blocked` · 값 없음으로 두어 **애초에 대장에서 올 수 없다.**
+    돌았는가」*를 적는다 — **둘은 다른 진술이며 값이 같아도 그렇다.**
+
+    ## ★★ R65 — 앞의 넷은 이제 대장·자산에서도 온다
+
+    종전에는 앞의 넷이 대장에서 `track: blocked` · 값 없음이라 **애초에
+    대장에서 올 수 없었다.** R65 가 그 셋에 값을 세웠다
+    (`load.household.count` 20 · `load.heatpump.annual` 2,675 ·
+    `load.ev.annual` 2,784)이고, 계절 몫은 형상 자산의
+    `appliance_season_shares:` 절이 갖는다. ⇒ **통로가 둘 이상이 되었고
+    실행 입력이 이긴다** — 시나리오·화면이 적으면 그것이, 적지 않으면
+    대장·자산이 답한다(`core/casegrid/appliance_load.py::
+    with_ledger_defaults` · `household_scale.py::ledger_household_count`).
+
+    ⇒ 그러므로 이 표가 여전히 필요하다. **어느 쪽이 이겼는지**는 산출물이
+    말해 주지 않으면 알 수 없고, 「대장에 20이 있다」와 「이 실행이 20으로
+    돌았다」는 다른 진술이다.
 
     ## ⚠ 화면과 시나리오의 통로가 항목마다 다르다
 
@@ -152,22 +168,25 @@ def execution_input_lines(report: CaseReport) -> list[str]:
     loads = report.appliance_loads
     return [
         "",
-        "**이 실행이 받은 입력 — 대장이 갖지 않는 값** (사용자 요구 1·2·3)",
+        "**이 실행이 받은 입력 — 실행 입력이 정하는 값** (사용자 요구 1·2·3)",
         "",
         "| 항목 | 이 실행의 값 | 실행 입력의 통로 |",
         "|---|---|---|",
         f"| 단지 가구 수 | {_household_cell(report.household_count)} "
-        f"| 시나리오 yaml `{HOUSEHOLD_COUNT_FIELD}` · 화면 `/ui/run` 칸 |",
+        f"| 시나리오 yaml `{HOUSEHOLD_COUNT_FIELD}` · 화면 `/ui/run` 칸 — "
+        f"안 적으면 대장 `{HOUSEHOLD_COUNT_LEDGER_KEY}` |",
         f"| {HEATPUMP_LOAD_TITLE} | {_appliance_cell(loads.heatpump_kwh)} "
-        f"| 시나리오 yaml `{HEATPUMP_LOAD_FIELD}` · 화면 `/ui/run` 칸 |",
+        f"| 시나리오 yaml `{HEATPUMP_LOAD_FIELD}` · 화면 `/ui/run` 칸 — "
+        f"안 적으면 대장 `{HEATPUMP_LOAD_LEDGER_KEY}` |",
         f"| {EV_LOAD_TITLE} | {_appliance_cell(loads.ev_kwh)} "
-        f"| 시나리오 yaml `{EV_LOAD_FIELD}` · 화면 `/ui/run` 칸 |",
+        f"| 시나리오 yaml `{EV_LOAD_FIELD}` · 화면 `/ui/run` 칸 — "
+        f"안 적으면 대장 `{EV_LOAD_LEDGER_KEY}` |",
         f"| 한 호에 더해진 합계 | {loads.total_kwh:,.0f} {APPLIANCE_LOAD_UNIT} "
         "| 위 둘의 합 — 러너의 `extra_appliance_load_kwh` 로 간다 |",
         f"| {APPLIANCE_SEASON_SHARE_TITLE} "
         f"| {_season_share_cell(loads.season_shares)} "
-        f"| 시나리오 yaml `{APPLIANCE_SEASON_SHARE_FIELD}` — "
-        "**화면 칸은 아직 없다** |",
+        f"| 시나리오 yaml `{APPLIANCE_SEASON_SHARE_FIELD}` — **화면 칸은 아직 "
+        "없다.** 안 적으면 형상 자산의 `appliance_season_shares:` 절 |",
         f"| {DR_SHIFTABLE_SHARE_TITLE}(「AI 가전」) "
         f"| {report.dr_shiftable_share_pct:,.1f} {DR_SHIFTABLE_SHARE_UNIT} "
         f"| 대장 `{DR_SHIFTABLE_SHARE_LEDGER_KEY}` — 시나리오 yaml 의 "
@@ -179,10 +198,13 @@ def execution_input_lines(report: CaseReport) -> list[str]:
         "",
         "- 「미지정」은 **빈칸이 아니라 진술**이다 — 가구 수가 미지정이면 이 "
         "보고서의 모든 수량과 금액이 **가구 한 호의 것**이고, 기기 부하가 "
-        "미지정이면 그 기기를 **0으로 얹고** 돌았다는 뜻이다",
-        f"- 위 넷의 대장 자리는 값이 비어 있다(예: `{HOUSEHOLD_COUNT_LEDGER_KEY}` "
-        "— `track: blocked`) — 그 기기를 가구가 갖는지는 **사업 계획이 정하는 "
-        "사실**이므로 저장소가 기본값으로 메우지 않는다",
+        "미지정이면 그 기기를 **0으로 얹고** 돌았다는 뜻이다. **대장에도 값이 "
+        "없을 때만** 그렇게 인쇄된다",
+        "- 위 넷은 **실행 입력이 먼저**이고, 적지 않은 칸만 대장·자산이 "
+        f"답한다(R65) — 예컨대 `{HOUSEHOLD_COUNT_LEDGER_KEY}` 는 사용자 지시로 "
+        "값이 섰다. ⚠ 저장소가 **소스의 기본값으로 메우는 자리는 없다**: 그 "
+        "기기를 가구가 갖는지는 사업 계획이 정하는 사실이므로, 값은 대장이나 "
+        "실행 입력이 갖는다",
         "- 단지 총부하 = 가구 수 × (가구 한 호의 연간 사용량 + 그 호의 추가 "  # noqa: RUF001
         "전력사용기기 소비량) — **더한 뒤에 곱한다**",
         "- ⚠ **부하이지 설비가 아니다.** 히트펌프·전기차의 설치비·유지보수비와 "

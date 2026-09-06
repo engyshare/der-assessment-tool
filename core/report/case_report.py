@@ -86,9 +86,14 @@ from core.assumption.scenario_overrides import (
 from core.casegrid.appliance_load import (
     ApplianceLoads,
     resolve_appliance_loads,
+    with_ledger_defaults,
 )
 from core.casegrid.e2e_runner import PV_CAPACITY_FACTOR, run_single_case_e2e
-from core.casegrid.household_scale import HOUSEHOLD_COUNT_FIELD, resolve_household_count
+from core.casegrid.household_scale import (
+    HOUSEHOLD_COUNT_FIELD,
+    ledger_household_count,
+    resolve_household_count,
+)
 from core.casegrid.ledger_levels import (
     build_level_map,
     design_variables,
@@ -766,26 +771,41 @@ def build_case_report(
     # `load.household.annual` 이 **kWh/호·년**(한 호당)이므로 단지 총량을
     # 내려면 이 수가 있어야 한다. **통로는 이 필드 하나다** — 갈래·ⓒ 선언과
     # 같은 자리이며, 케이스 그리드 변수축이나 CLI 플래그를 따로 세우지 않는다.
-    # ⚠ **필드가 없으면 `None`(= 적지 않았다)이고 그때 가구 한 호 기준으로
-    # 돈다.** 여기서 기본 가구 수로 메우지 않는다 — 대장의
-    # `load.household.count` 가 `track: blocked` · `value: null` 이고 그 항목의
-    # `derivation_method` 가 *「가정하면 안 된다」* 로 못 박았다.
-    # ⚠ **골든 픽스처에는 이 필드가 없다** — 그래서 골든 회귀의 수는 한 원도
-    # 움직이지 않는다(`tests/golden/test_regression_scenarios.py`).
+    # ★★★ **통로가 둘이고 시나리오가 이긴다** (R65/WP-2). 종전에는 대장의
+    # `load.household.count` 가 `track: blocked` · `value: null` 이라 통로가
+    # 실행 입력 하나였고, 필드가 없으면 **가구 한 호** 기준으로 돌았다.
+    # 사용자가 *「가구수를 20가구로 설정」*(2026-09-07)이라 정해 그 항목이
+    # `track: fixed` · `value: 20` 으로 섰다 — **저장소가 고른 수가 아니므로**
+    # 그 항목의 `derivation_method` 가 금지한 자기충족(§13.0.2)이 아니다.
+    # ⚠ **차례를 뒤집지 마라.** 시나리오·화면이 적은 수가 먼저이고, 적지
+    # 않았을 때만 대장이 답한다 — 뒤집으면 사용자가 화면에서 적은 수를 대장이
+    # 덮어쓴다. 둘 다 없으면 여전히 `None`(가구 한 호)이다.
+    # ⚠⚠⚠ **골든 픽스처에는 이 필드가 없다** — 그래서 골든 셋이 **대장의
+    # 20호**로 돌려다가 `DV` 로 **거부된다**(태양광 3kW 에 20호 부하를 얹으면
+    # 낮에 잉여가 남지 않는다). R65/WP-2 는 그래서 골든을 다시 뽑지 못했고,
+    # 판정을 오케스트레이터에게 넘겼다 — `.orch/R65/result_2.md` ③·⑥ ·
+    # `core/casegrid/household_scale.py` 머리말 ⚠⚠⚠.
     household_count = resolve_household_count(scenario.get(HOUSEHOLD_COUNT_FIELD))
+    if household_count is None:
+        household_count = ledger_household_count(provider)
     # ★★★ **가구의 추가 전력사용기기 부하도 시나리오에서 읽는다** (R64/WP-2 ·
     # 사용자 요구 2). 대장의 `load.household.annual` 은 *「추가 전력사용기기가
     # 없는 가구 기준」*이고, 그 `applicable_scope` 가 히트펌프 등이 들어오면
     # **그 기기의 연간 소비전력량을 이 값에 더해** 총량이 비례 증가해야 한다고
     # 정했다(R48 판정 §5). 규칙은 그때 섰으나 **값을 담을 자리도 통로도 없어**
     # 러너의 `extra_appliance_load_kwh` 를 배포 경로에서 아무도 채우지 않았다.
-    # ⚠ **필드가 없으면 `None`(= 적지 않았다)이고 그때 더해지는 값은 0 이다.**
-    # 여기서 기본 소비량으로 메우지 않는다 — 두 대장 항목이 `track: blocked` ·
-    # `value: null` 이고 *「가정하면 안 된다」* 가 그 항목의 `derivation_method`
-    # 다. 판정과 거부는 `core/casegrid/appliance_load.py` 하나가 진다.
-    # ⚠ **골든 픽스처에는 두 필드가 없다** — 그래서 골든 회귀의 수는 한 원도
-    # 움직이지 않는다(`tests/golden/test_regression_scenarios.py`).
-    appliance_loads = resolve_appliance_loads(scenario)
+    # ★★★ **여기도 통로가 셋이고 시나리오가 이긴다** (R65/WP-2). 사용자 요구
+    # (*「히트펌프, 전기차 충전 연간 소비전력량 · 계절별 냉난방 부하 …
+    # 조사하거나 … 엑셀 상의 수치를 사용(조사 권장)」*)에 따라 대장 두 항목이
+    # `assume`(히트펌프 2,675 `가정` · 전기차 2,784 **조사값** `추정`)으로,
+    # 계절 몫이 형상 자산의 `appliance_season_shares:` 절로 섰다.
+    # `with_ledger_defaults` 가 **적지 않은 칸만** 그 값으로 채운다 — 칸마다
+    # 따로 보며 `0.0`(= 「그 기기가 없다고 적었다」)은 채우지 않는다.
+    # ⚠ 판정과 거부는 `core/casegrid/appliance_load.py` 하나가 지고, 대장 값도
+    # 같은 관문을 지난다.
+    # ⚠ **골든 픽스처에는 세 필드가 다 없다** — 그래서 골든 셋은 대장·자산의
+    # 값으로 돌려 한다. 다만 가구 수와 함께 얹히면 위 ⚠⚠⚠ 의 거부에 걸린다.
+    appliance_loads = with_ledger_defaults(resolve_appliance_loads(scenario), provider)
     # ★ ⓒ(자가용 집합자원화)를 **선언 없이** 고르면 여기서 `DV-15` 로 거부된다 —
     # 리포트를 조립하기 전이다. 러너도 같은 거부를 지나므로(그 진입점을 직접
     # 부르는 경로가 있다) 두 자리가 함께 막는다.
