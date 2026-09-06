@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import dataclasses
 import tempfile
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -36,8 +37,16 @@ from typing import Any
 import yaml
 
 from core.assumption.scenario_overrides import ASSUMPTION_OVERRIDES_FIELD
-from core.casegrid.appliance_load import EV_LOAD_FIELD, HEATPUMP_LOAD_FIELD
+from core.casegrid.appliance_load import (
+    APPLIANCE_SEASON_SHARE_FIELD,
+    EV_LOAD_FIELD,
+    HEATPUMP_LOAD_FIELD,
+)
 from core.casegrid.household_scale import HOUSEHOLD_COUNT_FIELD
+from core.casegrid.load_shift import (
+    DR_SHIFTABLE_SHARE_LEDGER_KEY,
+    resolve_shiftable_share,
+)
 from core.cba.baseline import POOL_METERING_FIELD, PoolMeteringDeclaration
 from core.report.case_report import CaseReport, build_case_report
 
@@ -69,6 +78,13 @@ _ARRANGEMENT_FIELD = "baseline_arrangement"
 #: same_scenario_as_the_run_screen` 이다 — 두 라우트의 `openapi()` 질의 기본값을
 #: 맞댄다. 갈리면 「오버라이드 안 건 실행의 결론축」이 화면마다 다른 수가 된다.
 DEFAULT_UI_SCENARIO = "scenario_unsubsidized"
+
+#: ⓐ 비율을 화면에서 바꿨을 때 오버라이드 줄이 싣는 **사유**(`FR-602-AC3`).
+#:
+#: ⚠ 비워 두지 않는다. 붙임 1 의 「기준 전제 대비 변경 항목」이 이 줄을
+#: 인쇄하는데, 사유가 없으면 검토자는 *「누가 왜 10을 20으로 바꿨나」* 를
+#: 산출물에서 알 수 없다 — 그 표가 생긴 이유가 그것이다.
+SHIFTABLE_SHARE_OVERRIDE_REASON = "분석 실행 화면에서 지정한 값 (대장 값은 가정이다)"
 
 
 def assumptions_path() -> Path:
@@ -118,6 +134,8 @@ def scenario_fields(
     household_count: str | int | None = None,
     heatpump_load_annual_kwh: str | float | None = None,
     ev_load_annual_kwh: str | float | None = None,
+    appliance_load_season_shares: Mapping[str, str] | None = None,
+    dr_shiftable_share_pct: str | float | None = None,
 ) -> dict[str, Any]:
     """골든 시나리오 + 화면이 고른 것 → 넘길 매핑.
 
@@ -171,6 +189,19 @@ def scenario_fields(
 
     ⚠ **둘을 하나로 합치지 않는다.** 러너가 받는 것은 합계 하나지만 화면과
     산출물은 기기별로 갈라야 한다 — 합치면 사용자가 따로 바꾸지 못한다.
+
+    ## ★★ 부하의 **형상** 둘 — 통로가 서로 다르다 (R64/WP-WEB ⓐⓑ)
+
+    ⓑ **계절 몫**(`appliance_load_season_shares`)은 위 기기 부하와 **같은
+    규약**이다: 안 주면 필드를 넣지 않고, 그때 냉난방이 기본 부하와 같은 계절
+    몫으로 돌아 출력이 이 통로가 생기기 전과 원소 하나까지 같다. ⚠ **빈 칸을
+    버리지 않고 그대로 싣는다** — 전부 빈 것과 일부만 적은 것을 가르는 자리는
+    `resolve_appliance_season_shares` 하나다.
+
+    ⓐ **옮길 비율**(`dr_shiftable_share_pct`)은 다르다 — **대장이 값을 갖는
+    항목**이므로 시나리오 필드를 새로 세우지 않고 **오버라이드 한 줄**로
+    얹는다(`_overrides_with_shift`). 그 판단의 정본은
+    `core/report/case_report.py` 의 ★★★ 절과 `.orch/R64/result_7.md` 판정 ㉳ 다.
     """
     available = golden_scenario_names()
     if name not in available:
@@ -189,8 +220,11 @@ def scenario_fields(
                 metering_separated=metering_separated,
             )
         )
-    if assumption_overrides is not None:
-        fields[ASSUMPTION_OVERRIDES_FIELD] = assumption_overrides
+    overrides = _overrides_with_shift(assumption_overrides, dr_shiftable_share_pct)
+    if overrides is not None:
+        fields[ASSUMPTION_OVERRIDES_FIELD] = overrides
+    if appliance_load_season_shares is not None:
+        fields[APPLIANCE_SEASON_SHARE_FIELD] = dict(appliance_load_season_shares)
     if household_count is not None and household_count != "":
         fields[HOUSEHOLD_COUNT_FIELD] = household_count
     for field, given in (
@@ -200,6 +234,57 @@ def scenario_fields(
         if given is not None and given != "":
             fields[field] = given
     return fields
+
+
+def _overrides_with_shift(
+    given: object | None, share_pct: str | float | None
+) -> object | None:
+    """ⓐ 비율을 **오버라이드 한 줄로** 얹는다 — 없으면 받은 것을 그대로.
+
+    ## ⚠⚠ 왜 여기서 수로 낮추는가 — **오버라이드 통로가 형을 맞대기 때문이다**
+
+    `resolve_assumption_overrides` 는 **키가 아니라 「키 → 값」**을 보고 대장
+    값의 형 갈래와 맞댄다(그 함수의 ⚠⚠ 절 · R1 D-4). 대장은 이 항목을 수
+    (`10`)로 갖는데 폼이 보내는 것은 글자(`"20"`)이므로, 글자를 그대로 실으면
+    **정당한 입력이 「형이 다르다」로 거부된다.**
+
+    ⚠ **그래도 판정은 한 자리다** — 여기서 형을 판정하지 않고
+    `resolve_shiftable_share`(0~100 · `nan`·`bool` 거부 · 빈 칸은 미지정)를
+    **부른다.** 그 함수가 이 비율의 유일한 판정자이며, 3요소 거부도 그 함수가
+    짓는다(`core/casegrid/load_shift.py::_rejected`).
+
+    ## ⚠ 빈 칸은 **0 이 아니다**
+
+    `None` 을 돌려받으면 줄을 얹지 않고, 그러면 대장 값(지금 10)이 쓰인다.
+    0 을 밀어 넣으면 *「옮기지 않는다」* 라는 **다른 실행**이 되어 결론축이
+    움직인다 — 그 구별을 `tests/app/test_ui_load_shape.py` 가 잰다.
+
+    ## ⚠ 같은 키가 두 번 실리면 **거부된다** (조용하지 않다)
+
+    받은 오버라이드 목록에 이미 `load.dr_shiftable_share` 가 있으면 줄이 둘이
+    되고, `resolve_assumption_overrides` 가 *「같은 대장 키를 두 번
+    적었습니다」* 로 거부한다 — 뒤가 이기며 앞이 사라지는 것을 그 함수가
+    막는다. 그래서 여기서 겹침을 판정하지 않는다(같은 사실을 두 곳에서 보면
+    한쪽만 고쳐지는 날이 온다).
+
+    ⚠ 받은 것이 **목록이 아니면 얹지 않고 그대로 보낸다.** 그 모양은
+    `resolve_assumption_overrides` 가 *「목록이 아닙니다」* 로 거부하므로
+    실행이 조용히 성공하는 일은 없다 — 여기서 모양을 고쳐 주면 거부가 사라지고
+    사용자는 자기가 적은 오버라이드가 어디로 갔는지 알 수 없게 된다.
+    """
+    share = resolve_shiftable_share(share_pct)
+    if share is None:
+        return given
+    row = {
+        "key": DR_SHIFTABLE_SHARE_LEDGER_KEY,
+        "value": share,
+        "reason": SHIFTABLE_SHARE_OVERRIDE_REASON,
+    }
+    if given is None:
+        return [row]
+    if isinstance(given, Sequence) and not isinstance(given, (str, bytes)):
+        return [*given, row]
+    return given
 
 
 def run_ui_case(
@@ -212,6 +297,8 @@ def run_ui_case(
     household_count: str | int | None = None,
     heatpump_load_annual_kwh: str | float | None = None,
     ev_load_annual_kwh: str | float | None = None,
+    appliance_load_season_shares: Mapping[str, str] | None = None,
+    dr_shiftable_share_pct: str | float | None = None,
 ) -> UiRun:
     """화면이 고른 것으로 **한 번 돌린다.**
 
@@ -235,6 +322,8 @@ def run_ui_case(
         household_count=household_count,
         heatpump_load_annual_kwh=heatpump_load_annual_kwh,
         ev_load_annual_kwh=ev_load_annual_kwh,
+        appliance_load_season_shares=appliance_load_season_shares,
+        dr_shiftable_share_pct=dr_shiftable_share_pct,
     )
     text = yaml.safe_dump(fields, allow_unicode=True, sort_keys=False)
     with tempfile.TemporaryDirectory() as workspace:

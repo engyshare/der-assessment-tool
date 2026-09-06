@@ -207,6 +207,77 @@
                 data-unit-for="run-ev-load">kWh/호·년</span>
         </fieldset>
 
+        {# ★★★ 부하의 **형상** (R64/WP-WEB ⓐⓑ · 사용자 요구 2 「AI 가전」 ·
+           요구 3 「계절별 냉난방」).
+           ⚠⚠ **위 묶음과 성질이 다르다.** 위는 부하를 **더 얹는** 칸이고 이
+           둘은 같은 총량을 **언제 쓰는가**만 바꾼다 — 연간 부하 총량은 한
+           kWh 도 움직이지 않는다(대장 `load.dr_shiftable_share` 의
+           `applicable_scope` ⚠⚠ · `.orch/R64/result_3b1.md` ④). 한 묶음에
+           섞으면 사용자가 이 칸을 「부하를 더한다」로 읽는다.
+           ⚠⚠ **기본값을 칸에 박지 않는다.** 비율의 기본값은 **대장**이 갖고
+           (`value: 10` · 신뢰도 「가정」) 계절 몫의 기본값은 **자산**이 갖는다
+           — 칸에 박으면 그 둘을 고쳐도 화면만 옛 수를 적는다.
+           ⚠ 계절 이름을 여기 열거하지 않는다 —
+           `web/render_load_shape.py::appliance_season_share_fields` 가 자산
+           (`fixtures/profiles/representative-day.yaml`)을 읽어 낸 것이다.
+           박으면 자산이 달력을 고치는 날 화면만 옛 이름을 그리고, 그때
+           사용자가 받는 것은 「달력이 다르다」는 거부다. #}
+        <fieldset>
+          <legend>부하의 형상 — 총량은 그대로 두고 «언제 쓰는가»만 바꾼다</legend>
+          <p class="field-note">아래 둘은 연간 소비전력량을 <strong>바꾸지
+            않는다</strong> — 같은 총량을 하루 안에서(가전) 또는 계절 사이에서
+            (냉난방) 옮긴다. 둘 다 <strong>가정값이며 실측이 아니다.</strong></p>
+
+          <label for="{{ dr_shiftable_share.id }}">{{ dr_shiftable_share.title }}</label>
+          {# ⚠ `max="100"` 은 브라우저가 주는 편의일 뿐 판정이 아니다 — 판정은
+             `core/casegrid/load_shift.py::resolve_shiftable_share` 하나가 하고,
+             500 을 보내면 3요소 거부가 화면으로 온다(위 「가구 수」 칸과 같은
+             규약). #}
+          <input type="number" id="{{ dr_shiftable_share.id }}"
+                 name="{{ dr_shiftable_share.name }}"
+                 min="0" max="100" step="0.1"
+                 placeholder="비우면 분석 설정 대장의 값({{ dr_shiftable_share.ledger_value }})으로 돕니다"
+                 aria-describedby="{{ dr_shiftable_share.unit_id }}">
+          <span id="{{ dr_shiftable_share.unit_id }}" class="unit"
+                data-unit-for="{{ dr_shiftable_share.id }}">{{ dr_shiftable_share.unit }}</span>
+          <p class="field-note">옮긴 몫은 <strong>그 계절 대표일의 태양광 잉여가
+            있는 시각</strong>으로 가며, 옮기는 총량은 그 날 잉여의 합을 넘지
+            않는다. 분석 설정 대장(<code>{{ dr_shiftable_share.ledger_key }}</code>)이
+            {# ⚠ 표지의 글자를 **대장의 신뢰도에서** 가져온다(「가정」). 여기
+               「가정」을 박으면 대장이 그 값을 실측으로 승격하는 날 화면만
+               옛 등급을 인쇄한다. ⚠ 표지의 꼴(`! ` + 등급 · `aria-label`)은
+               아래 「가정 영향도」 절과 **같아야** 한다 — 색만으로 말하지
+               않게 하는 규약이며 `tests/web/test_dashboard.py::
+               test_assumption_badge_has_text_not_color_alone` 가 그것을 잰다.
+               그 검사는 표지가 「가정」이라고 말하기를 요구하므로, 이 항목이
+               가정이 아니게 되는 날 **표지 자체를 걷어내라**고 빨간불로
+               말한다(그것이 옳다 — 승격된 값에 가정 표지를 달면 거짓이다). #}
+            <span class="assumption-badge" aria-label="가정 값">!
+              {{ dr_shiftable_share.confidence }}</span>
+            {{ dr_shiftable_share.ledger_value }}{{ dr_shiftable_share.unit }}로 갖는
+            값이고 <strong>실측이 아니다</strong> — 「가전 부하의 몇 %를 하루 안에서
+            옮길 수 있는가」를 주는 자료를 찾지 못해 근거가 닿는 띠의 낮은 쪽을
+            골랐다(그 경위는 대장 항목의 산출근거가 전문으로 적는다).
+            ⚠ <strong>비우는 것과 0 을 적는 것은 다르다</strong> — 비우면 대장
+            값으로 돌고, 0 은 「하나도 옮기지 않는다」라는 다른 실행이다.</p>
+
+          <p class="field-note">냉난방(히트펌프) 부하의 <strong>계절별 몫</strong> —
+            비우면 냉난방이 기본 부하와 <strong>같은 계절 몫</strong>으로 돈다.
+            적으려면 <strong>계절 전부에 적고 합이 1</strong> 이어야 한다(일부만
+            적거나 합이 1 이 아니면 거부한다 — 정규화해 주지 않는다).
+            계절 이름·일수·기본 몫은 형상 자산이 정한 <strong>가정값</strong>이다.</p>
+          {% for field in appliance_season_shares %}
+          <label for="{{ field.id }}">{{ field.season }}
+            ({{ field.days }}일 · 기본 부하의 몫 {{ field.base_share }})</label>
+          <input type="number" id="{{ field.id }}" name="{{ field.name }}"
+                 min="0" max="1" step="0.01"
+                 placeholder="비우면 {{ field.base_share }} 와 같은 몫으로 돕니다"
+                 aria-describedby="{{ field.unit_id }}">
+          <span id="{{ field.unit_id }}" class="unit"
+                data-unit-for="{{ field.id }}">{{ field.unit }}</span>
+          {% endfor %}
+        </fieldset>
+
         <fieldset>
           <legend>「자가용 집합자원화」의 계측 선언</legend>
           {# 둘 다 서야 그 갈래가 성립한다. 적지 않으면 DV-15 로 거부되며,

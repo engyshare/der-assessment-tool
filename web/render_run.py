@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
 from urllib.parse import urlencode
@@ -24,10 +25,12 @@ from app.services.ui_charts import chart_description, chart_source, unwired_reas
 from core.casegrid.appliance_load import (
     APPLIANCE_LOAD_UNIT,
     APPLIANCE_LOAD_UNSPECIFIED,
+    APPLIANCE_SEASON_SHARE_UNSPECIFIED,
     EV_LOAD_TITLE,
     HEATPUMP_LOAD_TITLE,
 )
 from core.casegrid.household_scale import HOUSEHOLD_COUNT_UNSPECIFIED
+from core.casegrid.load_shift import DR_SHIFTABLE_SHARE_UNIT
 from core.cba.baseline import (
     POOL_PREREQUISITE_METERING,
     POOL_PREREQUISITE_TRANSFER,
@@ -39,6 +42,7 @@ from core.report._format import NO_VALUE, _won, _years
 from core.report.case_influences import CONCLUSION_METRIC, HEADLINE_METRIC
 from core.report.case_report import CaseReport
 from core.report.charts import chart_registry
+from web.render_load_shape import SEASON_SHARE_PREFIX, SHIFTABLE_SHARE_FIELD
 
 #: 영향도 인자에 **이을 대장 줄이 없을 때** 출처 칸이 인쇄하는 것.
 #:
@@ -101,6 +105,8 @@ def chart_query(
     household_count: str = "",
     heatpump_load_annual_kwh: str = "",
     ev_load_annual_kwh: str = "",
+    dr_shiftable_share_pct: str = "",
+    appliance_season_shares: Mapping[str, str] | None = None,
 ) -> str:
     """그림 주소에 붙일 질의 문자열 — **결과 화면과 같은 실행을 그리게 한다.**
 
@@ -133,6 +139,15 @@ def chart_query(
         fields["heatpump_load_annual_kwh"] = heatpump_load_annual_kwh
     if ev_load_annual_kwh:
         fields["ev_load_annual_kwh"] = ev_load_annual_kwh
+    # ★★ 부하의 **형상** 둘도 같은 규약이다 (R64/WP-WEB ⓐⓑ) — 안 준 실행의
+    # 그림 주소를 종전과 한 글자도 다르지 않게 둔다.
+    # ⚠ 계절 몫은 **빈 칸까지 실어 보낸다.** 여기서 버리면 「일부만 적었다」가
+    # 그림 주소에서만 「그 계절을 안 적었다」로 바뀌고, 그때 화면은 거부인데
+    # 그림은 그려진다 — 사용자는 어느 쪽을 믿어야 하는지 알 수 없다.
+    if dr_shiftable_share_pct:
+        fields[SHIFTABLE_SHARE_FIELD] = dr_shiftable_share_pct
+    for season, share in (appliance_season_shares or {}).items():
+        fields[f"{SEASON_SHARE_PREFIX}{season}"] = share
     return urlencode(fields)
 
 
@@ -162,6 +177,28 @@ def _appliance_rows(report: CaseReport) -> tuple[dict[str, Any], ...]:
             (HEATPUMP_LOAD_TITLE, loads.heatpump_kwh, "heatpump"),
             (EV_LOAD_TITLE, loads.ev_kwh, "ev"),
         )
+    )
+
+
+def _season_share_rows(report: CaseReport) -> tuple[dict[str, Any], ...]:
+    """ⓑ 계절 몫 줄 — **안 준 실행도 줄을 지우지 않는다.**
+
+    ⚠ 안 줬다고 줄을 빼면 「계절 몫을 겨울에 몰아 돌렸다」와 「그 축이 아예
+    없다」가 화면에서 같아진다 — `_appliance_rows` 가 같은 판단을 적었다.
+    그때 서는 줄 하나가 **왜 비었는지**를 글자로 갖는다
+    (`APPLIANCE_SEASON_SHARE_UNSPECIFIED` — 「미지정 — 기본 부하와 같은 계절
+    몫으로 돌았다」).
+
+    ⚠ **자산의 차례 그대로** 싣는다. 사전 순회 순서로 그리면 같은 실행이
+    판마다 다른 순서로 인쇄되고, 눈으로 견주는 사람이 그 차이를 변경으로
+    읽는다(`ApplianceSeasonShares.by_season` 이 그 차례를 지킨다).
+    """
+    shares = report.appliance_loads.season_shares
+    if shares is None:
+        return ({"season": APPLIANCE_SEASON_SHARE_UNSPECIFIED, "share": "", "raw": ""},)
+    return tuple(
+        {"season": name, "share": f"{share:g}", "raw": share}
+        for name, share in shares.by_season
     )
 
 
@@ -281,6 +318,17 @@ def run_result_context(
         "appliance_total": (
             f"{report.appliance_loads.total_kwh:,.0f} {APPLIANCE_LOAD_UNIT}"
         ),
+        # ★★★ **부하의 형상을 무엇으로 돌았나** (R64/WP-WEB ⓐⓑ). 위 기기
+        # 부하와 같은 자리이며 사유도 같다 — 화면에서 바꿀 수 있게 해 놓고
+        # 결과가 그것을 안 적으면 확인할 방법이 없다.
+        # ⚠⚠ 이 둘은 **총량을 안 바꾸고 시각·계절만 바꾼다.** 그래서 위
+        # 「기기 부하 합계」와 같은 줄에 두지 않는다 — 같이 두면 검토자가
+        # 「부하가 늘었다」로 읽는다.
+        "dr_shiftable_share": (
+            f"{report.dr_shiftable_share_pct:g} {DR_SHIFTABLE_SHARE_UNIT}"
+        ),
+        "dr_shiftable_share_raw": report.dr_shiftable_share_pct,
+        "appliance_season_shares": _season_share_rows(report),
         "branch": {
             "without": report.baseline_branch.without_description,
             "with": report.baseline_branch.with_description,

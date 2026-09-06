@@ -250,6 +250,17 @@ def test_net_demand_stands_step_by_step_from_the_report(
 
     ⚠ 「대표일 하루」임이 캡션에 글자로 있어야 한다. 없으면 그 표가
     「계절 변동이 없다」를 결과로 주장한다(착수 순서 41번이 만난 함정).
+
+    ## ★ 캡션이 말해야 하는 것 **셋을 각각** 잰다 (R64/WP-WEB ⓓ)
+
+    같은 취지를 브라우저에서 재는 것이
+    `tests_e2e/test_e2e_r63_flows.py::test_the_verify_screen_carries_four_
+    steps_nine_stages_and_reasoned_gaps` 이고 **그 파일은 로컬 전건에 들어가지
+    않는다**(`testpaths = ["tests"]`). 이 라운드가 그것을 몰라 e2e 회귀 둘을
+    여섯 커밋 동안 안고 갔다 — 그래서 **같은 셋을 여기서도** 잰다.
+
+    ⚠ 뭉뚱그리지 않는다. 실패 문면이 *무엇이 없어서* 실패했는지 말해야 한다.
+    ⚠ 캡션 전문을 박지 않는다 — 문면이 다듬어져도 취지가 남으면 통과한다.
     """
     section = _group_slice(body, 3)
     rows = _NET_ROW.findall(section)
@@ -259,7 +270,29 @@ def test_net_demand_stands_step_by_step_from_the_report(
         assert _num(hour.grid_import) in cells, (
             f"{hour.step}스텝의 순수요가 리포트 값과 다르다"
         )
-    assert "대표일" in _text(section)
+    caption = _text(section)
+    assert "대표일" in caption
+    silent = [
+        f"{phrase!r} 가 없다: {why}"
+        for phrase, why in (
+            (
+                "연간등가 하루",
+                "24행이 접힌 한 벌이라는 것을 말하지 않는다",
+            ),
+            (
+                "「계절 변동이 없다」로 읽으면",
+                "그 오독을 막는 경고가 없다",
+            ),
+            (
+                "① 걸음의 계절별 표",
+                "계절이 갈린 것을 어디서 보는지 가리키지 않는다",
+            ),
+        )
+        if phrase not in caption
+    ]
+    assert not silent, (
+        "③ 순수요 표의 캡션이 그 표의 오독을 막지 못한다:\n  " + "\n  ".join(silent)
+    )
 
 
 def test_year_by_year_rows_agree_with_the_proforma(

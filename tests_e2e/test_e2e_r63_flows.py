@@ -427,15 +427,74 @@ def test_the_verify_screen_carries_four_steps_nine_stages_and_reasoned_gaps(
             silent.append(f"{tag}: 사유가 글자로 있어야 하는데 {text!r} 뿐이다")
     assert not silent, "\n  ".join(silent)
 
-    # 순수요 표 — 24행(대표일 24스텝)과 「대표일 하루」 캡션(착수 순서 36번 인용).
+    # 순수요 표 — 24행(대표일 24스텝)과 그 표를 오독하지 못하게 하는 캡션 넷.
     rows = page.locator('[data-net-demand] tbody tr, .net-demand tbody tr')
     assert rows.count() == 24, (
         f"순수요 표가 24행이 아니다: {rows.count()}행 — 대표일 해상도가 바뀌었다"
     )
-    caption = page.evaluate("() => document.body.innerText")
-    assert "대표일 하루" in caption and "착수 순서 36" in caption, (
-        "순수요 표의 캡션이 「대표일 하루」임과 착수 순서 36번을 말하지 않는다 — "
-        "24행짜리 표가 「계절 변동이 없다」를 결과로 주장하게 된다"
+    _the_net_demand_caption_cannot_be_misread(page)
+
+
+#: ★★★ 순수요 표의 캡션이 **말해야 하는 것** — R64/WP-WEB ⓓ · WP-5-fix 판정 ②.
+#: 판정이 이름으로 못 박은 **셋**과, 종전 단언이 이미 재고 있던 **하나**다.
+#:
+#: ## ⚠⚠ 이 목록이 종전에 무엇이었나 — **시험이 낡았고, 약화하지 않고 다시 썼다**
+#:
+#: 종전 단언은 `"대표일 하루" in body and "착수 순서 36" in body` 하나였다.
+#: 뒤쪽은 **화면에서 사라졌고 그것이 옳다**: 종전 캡션은 *「계절·요일 변동을
+#: 반영하지 않으므로 …(착수 순서 36번이 선행이다)」* 였는데 R64/WP-4 가 계절
+#: 운전을 실제로 세워 **그 앞 절이 거짓**이 됐고, 그 항목은 이 라운드가 닫는다
+#: (`app/services/verify_steps.py::_NET_DEMAND_CAPTION` 위의 ⚠⚠ 셋이 경위의
+#: 정본이다). ⛔ 번호를 화면에 되살리면 **거짓을 다시 쓰는 것**이다.
+#:
+#: 시험이 지키려던 것은 *「24행짜리 표가 「계절 변동이 없다」를 결과로 주장하게
+#: 하지 않는다」* 이고, **그 취지는 지금 캡션이 더 정확히 만족한다.** 그래서
+#: 검사를 지우지 않고 **취지를 셋으로 갈라** 각각 잰다 — 뭉뚱그리면 실패
+#: 문면이 *무엇이 없어서* 실패했는지 말하지 않는다.
+#:
+#: ⚠ **캡션 전문을 박지 않는다.** 문면이 한 글자 다듬어져도 깨지는 단언은
+#: 「고칠 수 없는 검사」이고, 그때 다음 사람이 고르는 것은 문면을 되돌리는
+#: 쪽이다. 재는 것은 **각 취지를 지고 있는 최소 구절**이다.
+_NET_DEMAND_CAPTION_MUST_SAY: tuple[tuple[str, str], ...] = (
+    (
+        "연간등가 하루",
+        "24행이 **접힌 한 벌**(계절을 일수로 가중 평균한 하루)이라는 것을 "
+        "글자로 말하지 않는다 — 그러면 이 표가 어느 날의 운전인지 알 수 없다",
+    ),
+    (
+        "「계절 변동이 없다」로 읽으면",
+        "이 표를 **「계절 변동이 없다」로 읽지 말라**는 경고가 글자로 없다 — "
+        "24행짜리 표가 계절 무변동을 결과로 주장하게 된다",
+    ),
+    (
+        "① 걸음의 계절별 표",
+        "**계절이 갈린 것을 어디서 보는지** 가리키지 않는다 — 「이 표는 "
+        "계절을 안 보인다」만 적고 볼 곳을 안 적으면 사용자는 없다고 읽는다",
+    ),
+    (
+        "대표일 하루",
+        "계절별 표가 그 하루가 **대표일**임을 적지 않는다 — 계절마다 24행이 "
+        "서면 그것이 실측 소비패턴으로 읽힌다",
+    ),
+)
+
+
+def _the_net_demand_caption_cannot_be_misread(page: Page) -> None:
+    """캡션이 말해야 하는 것 **넷을 각각** 잰다 — 실패 문면이 무엇이 없는지 말한다.
+
+    ⚠ `innerText` 를 본다(`textContent` 가 아니다) — 숨은 요소의 글자로
+    통과하면 화면에서 읽을 수 없는 경고가 「있다」로 세어진다.
+    """
+    body = page.evaluate("() => document.body.innerText")
+    silent = [
+        f"{phrase!r} 가 화면에 없다: {why}"
+        for phrase, why in _NET_DEMAND_CAPTION_MUST_SAY
+        if phrase not in body
+    ]
+    assert not silent, (
+        "순수요 표의 캡션이 그 표의 오독을 막지 못한다 "
+        f"({len(silent)}/{len(_NET_DEMAND_CAPTION_MUST_SAY)}건):\n  "
+        + "\n  ".join(silent)
     )
 
 

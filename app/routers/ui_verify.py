@@ -27,13 +27,14 @@ render_verification_markdown`)는 **R52 부터 있었다.** 그런데 저장소 
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
 
 from app.services.ui_run import run_ui_case
 from app.services.verify_steps import VerificationStageError
 from core.contracts.validation import ValidationError
 from web.render import error_context, run_error_context
+from web.render_load_shape import SHIFTABLE_SHARE_FIELD, appliance_season_shares
 from web.render_verify import render_verify, verify_context
 
 router = APIRouter(tags=["ui"])
@@ -84,6 +85,21 @@ def verify_case(
             "**비우면 시나리오에 적지 않는다** — 그때 0으로 돈다"
         ),
     ),
+    dr_shiftable_share_pct: str = Query(
+        default="",
+        alias=SHIFTABLE_SHARE_FIELD,
+        description=(
+            "하루 안에서 옮길 수 있는 가전 부하 비율(%). "
+            "**비우면 오버라이드를 걸지 않는다** — 그때 분석 설정 대장의 "
+            "가정값으로 돈다(0 을 적으면 「옮기지 않는다」라는 다른 실행이다)"
+        ),
+    ),
+    # ★★ 계절 몫은 `Query(...)` 가 아니다 — 계절을 **자산**이 정하므로 칸
+    # 이름이 자산과 함께 변한다(`app/routers/ui.py::run_case` 의 같은 주석).
+    # ⚠ 이 라우트가 그것을 안 받으면 **결과 화면의 주소를 그대로 붙여도**
+    # 중간값은 계절 몫 없이 돈 것이 되고, 이 파일 머리말이 적은 *「화면의
+    # 수는 ⓒ 인데 중간값은 ⓑ」* 가 형상 축에서 다시 선다.
+    request: Request,
 ) -> HTMLResponse:
     """분석 과정의 중간값을 **네 걸음으로 순차적으로** 낸다.
 
@@ -109,6 +125,14 @@ def verify_case(
             # `core/casegrid/appliance_load.py::resolve_appliance_load` 하나다.
             heatpump_load_annual_kwh=heatpump_load_annual_kwh or None,
             ev_load_annual_kwh=ev_load_annual_kwh or None,
+            # ★ 부하의 형상 둘도 같은 규약이다 (R64/WP-WEB ⓐⓑ) — 판정은
+            # `resolve_shiftable_share` ·
+            # `resolve_appliance_season_shares` 하나씩이다. ⚠ 계절 몫은
+            # 빈 칸까지 실어 보낸다(거두는 함수의 ⚠⚠ 절).
+            dr_shiftable_share_pct=dr_shiftable_share_pct or None,
+            appliance_load_season_shares=appliance_season_shares(
+                request.query_params
+            ),
         )
     except ValidationError as exc:
         return HTMLResponse(render_verify(run_error_context(exc)), status_code=400)
