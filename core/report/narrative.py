@@ -79,6 +79,7 @@ from core.report.dispatch_sections import (
     dispatch_profile_section,
     dispatch_rule_section,
 )
+from core.report.ess_sizing_section import ess_daily_sizing_section
 from core.report.method_sections import (
     PERSPECTIVE_QUALIFIER,
     cost_benefit_section,
@@ -853,6 +854,10 @@ def render_markdown(report: CaseReport) -> str:
     lines += ["---", ""]
     lines += capacity_appendix(report.capacity_review)
     lines += self_sufficiency_section(report.self_sufficiency)
+    # ★ ESS 역산은 **PV 역산과 같은 붙임, 같은 층**에 선다 (R64/WP-8b · 요구 4).
+    # ⛔ 새 붙임을 만들지 않는다 — 붙임 10 이 이미 설계 변수마다 역산 결과를
+    # 적는 자리이고 PV 가 거기 있다(`ess_daily_sizing_section` 독스트링).
+    lines += ess_daily_sizing_section(report.ess_sizing)
     return "\n".join(lines)
 
 

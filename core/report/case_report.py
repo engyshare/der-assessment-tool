@@ -133,6 +133,7 @@ from core.report.dispatch_notes import (
     build_dispatch_notes,
     build_hourly_profile,
 )
+from core.report.ess_sizing_section import ESSSizingReview, build_ess_sizing_review
 from core.report.manifest import create_manifest
 from core.report.sizing import (
     MONTHS_PER_YEAR,
@@ -395,6 +396,11 @@ class CaseReport:
     #: **진단이지 결론이 아니다** — `capacity_review` 의 탐색 구간·기준 구성을
     #: 여기서 바꾸지 않는다(검토서 §1-⑥).
     self_sufficiency: SelfSufficiencySizing
+    #: 경우 「ESS」(하루 결손) 역산 — 붙임 10 의 같은 자리 (R64/WP-8b · 요구 4).
+    #: **PV 역산과 같이 진단이지 결론이 아니다** — 역산 결과를 실행에 되먹이지
+    #: 않으므로 결론축은 이 수에 움직이지 않는다
+    #: (`core/report/ess_sizing_section.py` 머리말 ★★★).
+    ess_sizing: ESSSizingReview
     #: ★ 엔진이 만든 현금흐름 행 — **5.3 이 결손을 가르는 재료** (판정 §3 ⓐ).
     #:
     #: ⚠ 여기서 요약하지 않는다. `metrics` 는 합계 하나이고 5.3 이 묻는 것은
@@ -934,6 +940,24 @@ def build_case_report(
         ],
     )
 
+    # ★ 경우 「ESS」(하루 결손) 역산 — 붙임 10 의 같은 자리 (R64/WP-8b · 요구 4).
+    # `ess_capacity_kwh` 탐색 구간은 위 PV 와 **같은 자리**(`design_variables()`)
+    # 에서 읽는다 — 2.0·30.0 을 여기 리터럴로 적으면 `_DESIGN_VARS` 가 바뀌어도
+    # 이 소절만 낡는다.
+    # ⚠ **연차는 분석기간 말이다** — 그 사유는 `ess_sizing_section` 머리말 ★★ 이며,
+    # 여기서 1 을 적으면 20년차에 미달인 용량을 「적정」이라 인쇄하게 된다.
+    ess_design_variable = next(
+        v for v in design_variables() if v.name == "ess_capacity_kwh"
+    )
+    ess_sizing = build_ess_sizing_review(
+        hours=build_hourly_profile(outcome.dispatch),
+        seasons=outcome.seasons,
+        resources=outcome.resources,
+        year=outcome.basis.horizon_years,
+        search_low_kwh=ess_design_variable.low,
+        search_high_kwh=ess_design_variable.high,
+    )
+
     manifest = create_manifest({
         "scenario": scenario.get("scenario", scenario_path.stem),
         "subsidy_rate": subsidy_rate,
@@ -1010,6 +1034,7 @@ def build_case_report(
         seasons=outcome.seasons,
         capacity_review=capacity_review,
         self_sufficiency=self_sufficiency,
+        ess_sizing=ess_sizing,
         # ★ 러너가 **가른 채로** 낸 현금흐름 행을 그대로 받는다 (판정 §3 ⓐ).
         # 여기서 다시 묶거나 태그로 분류하지 않는다 — 그 순간 5.3 의 분해가
         # 러너의 사본이 된다(`CashflowSplit` 독스트링).

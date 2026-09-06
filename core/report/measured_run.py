@@ -28,7 +28,11 @@ from dataclasses import dataclass
 
 from core.casegrid.models import SeasonRun
 from core.casegrid.operating_lines import DAYS_PER_YEAR
-from core.report.dispatch_notes import DispatchHour, build_hourly_profile
+from core.report.dispatch_notes import (
+    DispatchHour,
+    build_hourly_profile,
+    split_by_direction,
+)
 
 __all__ = (
     "DischargeCoverage",
@@ -66,29 +70,21 @@ def _measured_quantities(
 ) -> MeasuredQuantities | None:
     """본 실행의 운전에서 자가소비·부하·수전·송전을 잰다.
 
-    **자가소비 = 스텝마다 min(발전, 부하)** 다. 발전 자원은 전 스텝이 0 이상,
-    부하 자원은 전 스텝이 0 이하인 것으로 가른다 — 이름으로 가르면 자원이
-    늘 때마다 여기를 고쳐야 하고, 고치지 않으면 조용히 0 이 된다. 충·방전을
-    함께 하는 자원(ESS)은 어느 쪽도 아니므로 빠진다.
+    **자가소비 = 스텝마다 min(발전, 부하)** 다. 발전 쪽과 부하 쪽을 가르는 것은
+    `core/report/dispatch_notes.py::split_by_direction` 이며 **부호로** 가른다 —
+    이름으로 가르면 자원이 늘 때마다 그곳을 고쳐야 하고, 고치지 않으면 조용히
+    0 이 된다. 충·방전을 함께 하는 자원(ESS)은 어느 쪽도 아니므로 빠진다.
+
+    ⚠ **가르는 규칙을 여기 적지 않는다** (R64/WP-8b). 붙임 10 의 결손 측정
+    (`core/report/ess_sizing_section.py`)이 **같은 발전·같은 부하**를 봐야 하고,
+    각자 적으면 한쪽만 고쳐지는 날 두 붙임이 서로 다른 하루를 잰다.
 
     ⚠ **이 함수는 「창 하나」를 잰다.** 계절이 선 실행에서 배포 경로가 부르는
     것은 아래 `measured_over_seasons` 이며, 그 이유는 그쪽 독스트링에 있다.
     """
     if not hours:
         return None
-    names = tuple(hours[0].per_resource)
-    generation = [
-        name
-        for name in names
-        if all(hour.per_resource.get(name, 0.0) >= 0.0 for hour in hours)
-        and any(hour.per_resource.get(name, 0.0) > 0.0 for hour in hours)
-    ]
-    load = [
-        name
-        for name in names
-        if all(hour.per_resource.get(name, 0.0) <= 0.0 for hour in hours)
-        and any(hour.per_resource.get(name, 0.0) < 0.0 for hour in hours)
-    ]
+    generation, load = split_by_direction(hours)
     if not load:
         return None
     matched = sum(

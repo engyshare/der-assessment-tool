@@ -19,7 +19,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from core.contracts.der import DER
@@ -117,3 +117,44 @@ def build_hourly_profile(dispatch: SystemDispatch) -> tuple[DispatchHour, ...]:
         )
         for step in range(steps)
     )
+
+
+def split_by_direction(
+    hours: Sequence[DispatchHour],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """자원 이름을 **부호로** 발전 쪽과 부하 쪽으로 가른다 — (발전, 부하).
+
+    발전 자원은 전 스텝이 0 이상이고 한 스텝이라도 양수인 것, 부하 자원은 전
+    스텝이 0 이하이고 한 스텝이라도 음수인 것이다. **이름으로 가르지 않는다** —
+    이름으로 가르면 자원이 늘 때마다 여기를 고쳐야 하고, 고치지 않으면 조용히
+    0 이 된다. 충·방전을 함께 하는 자원(ESS)은 어느 쪽도 아니므로 둘에서 다
+    빠진다.
+
+    ## ⚠ 왜 이 규칙이 **한 곳**에 있어야 하는가
+
+    붙임 8 의 자가소비 측정(`core/report/measured_run.py`)과 붙임 10 의 결손
+    측정(`core/report/ess_sizing_section.py`)이 **같은 「발전」·같은 「부하」**를
+    봐야 한다. 규칙을 각자 적으면 한쪽만 고쳐지는 날 두 붙임이 서로 다른 하루를
+    재고, 둘 다 그럴듯해 보인다 — 이 저장소가 R64/WP-4 에서 실제로 만난 형태다
+    (자가소비율과 자가소비량이 갈려 8.856 대 8.9415kWh/일 이었다).
+
+    ⚠ **이름 목록은 첫 스텝이 정한다** — 스텝마다 자원이 다른 운전은 이 저장소의
+    모형에 없고(엔진이 자원 목록을 한 번 받는다), 있다면 그것은 여기서 조용히
+    고를 일이 아니다.
+    """
+    if not hours:
+        return (), ()
+    names = tuple(hours[0].per_resource)
+    generation = tuple(
+        name
+        for name in names
+        if all(hour.per_resource.get(name, 0.0) >= 0.0 for hour in hours)
+        and any(hour.per_resource.get(name, 0.0) > 0.0 for hour in hours)
+    )
+    load = tuple(
+        name
+        for name in names
+        if all(hour.per_resource.get(name, 0.0) <= 0.0 for hour in hours)
+        and any(hour.per_resource.get(name, 0.0) < 0.0 for hour in hours)
+    )
+    return generation, load

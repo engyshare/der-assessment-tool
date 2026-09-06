@@ -14,7 +14,11 @@ from core.der.ess import ESS, ESSOperatingMode
 from core.der.pv import PV
 from core.der.pv import OperatingMode as PVOperatingMode
 from core.engine.rule_based import DEFAULT_RULE_ORDER, DispatchRule
-from core.report.dispatch_notes import build_dispatch_notes
+from core.report.dispatch_notes import (
+    DispatchHour,
+    build_dispatch_notes,
+    split_by_direction,
+)
 
 
 def make_pv() -> PV:
@@ -120,3 +124,53 @@ def test_pv_is_never_price_linked_regardless_of_mode() -> None:
         pv = PV(name="검증PV", capacity_kw=1.0, capacity_factor=0.15, operating_mode=mode)
         note = build_dispatch_notes([pv])[0]
         assert note.price_linked is False
+
+
+# ── 부호로 가르기 (`split_by_direction`) — R64/WP-8b ──────────────────
+#
+# 그 규칙의 소유자가 이 모듈인 이유는 그쪽 독스트링이 갖는다: 붙임 8 의 자가소비
+# 측정(`core/report/measured_run.py`)과 붙임 10 의 결손 측정
+# (`core/report/ess_sizing_section.py`)이 **같은 발전·같은 부하**를 봐야 한다.
+
+
+def _hour(step: int, **per_resource: float) -> DispatchHour:
+    return DispatchHour(
+        step=step, per_resource=dict(per_resource), grid_export=0.0, grid_import=0.0
+    )
+
+
+def test_the_split_is_by_sign_not_by_name() -> None:
+    """★★ **이름으로 가르지 않는다** — 이름이 무엇이든 부호가 갈래를 정한다.
+
+    이름으로 가르면 자원이 늘 때마다 그 자리를 고쳐야 하고, 고치지 않으면
+    조용히 0 이 된다.
+    """
+    hours = [
+        _hour(0, 이름없는발전=1.0, 이름없는부하=-2.0),
+        _hour(1, 이름없는발전=3.0, 이름없는부하=-1.0),
+    ]
+    assert split_by_direction(hours) == (("이름없는발전",), ("이름없는부하",))
+
+
+def test_a_resource_that_does_both_is_in_neither_side() -> None:
+    """★★ 충·방전을 함께 하는 자원(ESS)은 **어느 쪽도 아니다.**
+
+    한쪽에 넣으면 `min(발전, 부하)` 의 분자·분모에 방전이나 충전이 섞이고, 그
+    섞임은 총량이 맞으므로 수지 검사를 지난다.
+    """
+    hours = [_hour(0, ess=2.0, load=-1.0), _hour(1, ess=-2.0, load=-1.0)]
+    generation, load = split_by_direction(hours)
+    assert generation == ()
+    assert load == ("load",)
+
+
+def test_a_resource_that_is_flat_zero_is_in_neither_side() -> None:
+    """★ 전 스텝 0 인 자원은 발전도 부하도 아니다 — 그 자원은 **아무것도 하지
+    않았고**, 발전으로 세면 「발전이 있었다」가 거짓이 된다."""
+    hours = [_hour(0, idle=0.0, load=-1.0), _hour(1, idle=0.0, load=-1.0)]
+    assert split_by_direction(hours) == ((), ("load",))
+
+
+def test_an_empty_day_splits_into_nothing() -> None:
+    """★ 잴 하루가 없으면 **빈 짝**이다 — 부르는 쪽이 「없다」를 판정한다."""
+    assert split_by_direction([]) == ((), ())

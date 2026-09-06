@@ -218,7 +218,19 @@ def check_pv_surplus_profile(
     if profile is None or not any(v > 0.0 for v in profile):
         _reject_pv_surplus_profile(
             f"{name}: 충전원이 태양광 잉여인데 잉여 시계열이 없거나 전부 0입니다",
-            "pv_surplus_profile_kwh 에 시각별(0~23) PV 잉여 kWh 를 지정하십시오",
+            # ★★★ 판정 (R64/WP-8b) — **조치는 이 거부를 받은 사람이 할 수 있는
+            # 일이어야 한다.** 종전 문면은 *「pv_surplus_profile_kwh 에 시각별
+            # PV 잉여 kWh 를 지정하십시오」* 였는데, 그 시계열은 러너가
+            # `max(0, 발전 − 부하)` 로 **만들어 넣는 것**이라 화면·시나리오에
+            # 그것을 적는 칸이 없다 — 조치를 읽은 사람이 할 수 있는 일이 0개인
+            # 3요소는 `NFR-303` 이 요구한 「조치」가 아니다.
+            # ⛔ **거부 자체를 느슨하게 하지 않는다** — 한 해 내내 PV 잉여가 없는
+            # 단지에 태양광 연계 ESS 를 놓는 것은 사업 설계의 오류일 수 있고,
+            # 조용히 통과시키면 **없는 충전으로 편익이 난다**.
+            "낮에 발전이 부하를 넘도록 부하를 줄이거나(가구 수 · 히트펌프 · "
+            "전기차 부하) 태양광 용량을 키우십시오 — 잉여로 충전할 수 없는 "
+            "구성이면 ESS 충전원을 「계통」으로 바꿔 그 사실을 산출물에 "
+            "드러내십시오",
         )
     if len(profile) != HOURS_PER_DAY:
         _reject_pv_surplus_profile(
