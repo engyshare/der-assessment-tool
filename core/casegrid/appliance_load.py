@@ -37,8 +37,38 @@ AI 기능이 포함된다고 보면 어떠한가? 냉장고, 세탁기 등 **DR 
 기능**이다. 여기에 `ai_appliance` 항목을 세워 총량에 더하면 냉장고·세탁기의
 소비가 `load.household.annual`(일반가전 포함)과 **두 번 세어진다.** 그
 기능의 값어치는 kWh 를 더하는 데 있지 않고 **그 kWh 를 언제 쓸지 옮길 수
-있다**는 데 있다 — 즉 **부하 형상**의 문제이고, 이 모듈은 형상을 만지지
-않는다(총량만 다룬다. 형상은 계절 축의 몫이다).
+있다**는 데 있다 — 즉 **하루 안의 형상**의 문제이고, 이 모듈은 하루 안의
+형상을 만지지 않는다(`core/casegrid/load_shift.py` 가 그것을 한다).
+
+## ★★★ 계절 몫 — **이 모듈이 다루는 「형상」은 계절 축 하나다** (R64/WP-3b-1)
+
+사용자 요구 3 은 *「계절별로 냉난방수요를 차등하여 설정할 수 있어야 함」*
+이다. 종전에는 그럴 자리가 없었다 — 히트펌프·전기차 부하는 위 두 필드를
+지나 **합계 하나**로 러너에 들어갔고, 러너는 그 합계를 기본 부하와 **먼저
+합친 뒤** 자산이 선언한 **기본 부하의 계절 몫**으로 나눴다
+(`core/casegrid/seasonal_dispatch.py::_season_inputs`). 그러므로 계절 `i` 의
+부하 총량은
+
+    ( 기본부하총량 + 냉난방총량 ) × 기본부하_몫[i]
+
+였고, 냉난방 몫이 기본부하 몫과 **강제로 같았다** — 그것이 「차등할 수 없다」
+의 정체다. `ApplianceSeasonShares` 가 여는 것은 그 강제를 푸는 것 하나다:
+
+    기본부하총량 × 기본부하_몫[i]  +  냉난방총량 × 냉난방_몫[i]
+
+⛔ **비우면 종전과 동치다.** 몫을 하나도 주지 않으면 이 자료형이 서지 않고
+러너는 **손대지 않은 종전 식**(`DailyShape.representative_day_by_season`)을
+그대로 지난다 — 새 식으로 「같은 값이 나오도록」 다시 계산하지 않는다. 두
+식은 부동소수 마지막 자리에서 갈릴 수 있고, 그러면 골든 회귀가 움직인다.
+
+⚠⚠ **총량은 한 kWh 도 변하지 않는다.** 몫의 합이 1 이므로 계절 사이에서
+**옮겨갈 뿐**이며, 그 성질은 자산 머리말의 `share` 규약과 같다. 그래서 합이
+1 이 아니면 **고쳐 주지 않고 거부한다** — 0.9 를 적으면 연간 에너지의 10%가
+조용히 사라진다.
+
+⚠ **여기서 기본 몫을 지어내지 않는다.** 계절별 냉난방 비중의 참값은 아무도
+모른다(`docs/decisions-2026-09-06-R64.md` §2 — 엑셀도 가정값이다). 자산의
+예시 수를 베껴 기본값으로 삼으면 그것이 대장 밖의 값이 된다(`NFR-202`).
 
 ## ⚠⚠⚠ 값을 지어내지 않는다 — 기본이 **미지정**인 이유
 
@@ -70,9 +100,10 @@ resolve_pool_metering` 이 같은 구별을 적는다.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, replace
 
+from core.casegrid.profiles import SHARE_TOLERANCE, DailyShape, Season
 from core.contracts.validation import ValidationError
 
 #: 시나리오 yaml 이 **히트펌프 연간 소비전력량**을 싣는 필드 이름.
@@ -108,6 +139,28 @@ APPLIANCE_LOAD_UNSPECIFIED = "미지정 — 0으로 돌았다"
 #: 갈리면 화면이 적는 단위와 대장이 적는 단위가 다른 값이 된다.
 APPLIANCE_LOAD_UNIT = "kWh/호·년"
 
+#: 시나리오 yaml·화면이 **냉난방(추가 기기) 부하의 계절별 몫**을 싣는 필드 이름.
+#:
+#: ⚠ **통로는 이 필드 하나다** — 위 두 필드와 같은 규약이다. 값의 꼴은
+#: `{계절 이름: 몫}` 매핑이며, 계절 이름은 **자산이 선언한 것**이어야 한다
+#: (`fixtures/profiles/representative-day.yaml` 의 `seasons[].name`).
+#: ★ **계절 수를 4로 못 박지 않는다** — 자산이 적은 개수를 그대로 쓴다.
+APPLIANCE_SEASON_SHARE_FIELD = "appliance_load_season_shares"
+
+#: 계절 몫의 **거부 문면이 지목하는 자리**. 대장 항목이 아니라 **형상 자산**
+#: 이므로 `load.*` 가 아니다 — 이 몫은 총량이 아니라 총량의 분해다.
+APPLIANCE_SEASON_SHARE_FIELD_KEY = "load.appliance.season_share"
+
+#: 계절 몫 칸의 **표시 이름** — 거부 문면과 산출물이 같은 낱말을 쓰게 한다.
+APPLIANCE_SEASON_SHARE_TITLE = "냉난방 부하의 계절별 몫"
+
+#: 계절 몫을 적지 않은 실행이 산출물에 **글자로** 남기는 문면.
+#:
+#: ⚠⚠ **빈칸으로 두지 않는다** — `APPLIANCE_LOAD_UNSPECIFIED` 와 같은 사유다.
+#: 「반영했다」와 「기본 부하와 같은 몫으로 돌았다」는 다른 진술이고, 뒤의 것이
+#: 바로 사용자 요구 3 이 지적한 상태다.
+APPLIANCE_SEASON_SHARE_UNSPECIFIED = "미지정 — 기본 부하와 같은 계절 몫으로 돌았다"
+
 
 @dataclass(frozen=True)
 class ApplianceLoads:
@@ -130,6 +183,14 @@ class ApplianceLoads:
     heatpump_kwh: float | None
     #: 전기차 충전 연간 전력량. `None` 이 미지정이다.
     ev_kwh: float | None
+    #: 위 합계가 **계절마다 어떻게 갈리는가** (R64/WP-3b-1 · 사용자 요구 3).
+    #: `None` 이 미지정이며 그때 기본 부하와 **같은 계절 몫**으로 돈다 —
+    #: 그것이 이 라운드 전의 유일한 갈래였다(모듈 머리말 ★★★ 절).
+    #:
+    #: ⚠ **`total_kwh` 를 나누지 않는다.** 이 몫은 히트펌프·전기차를 가르지
+    #: 않고 **둘의 합계**에 걸린다 — 러너의 인자가 합계 하나이고(위 ⚠ 절)
+    #: 기기별 계절 몫을 따로 받으면 화면 칸이 기기 수 × 계절 수로 늘어난다.
+    season_shares: ApplianceSeasonShares | None = None
 
     @property
     def total_kwh(self) -> float:
@@ -175,6 +236,25 @@ def resolve_appliance_load(
     **`nan`·`inf`** — 총량에 더해지면 리포트의 모든 수가 조용히 `nan` 이 된다.
     **`bool`** — 파이썬에서 `True` 는 `int` 의 하위형이라 그냥 두면
     `히트펌프 = 참` 이 **1kWh** 로 조용히 통과한다.
+
+    ⚠ **판정 자체는 `_non_negative` 하나가 진다** (R64/WP-3b-1). 계절 몫도
+    「0 이상의 유한한 수 또는 미지정」이라는 **같은 엄격함**을 쓰는데, 그것을
+    여기에 두면 두 번째 호출부가 갈래를 베껴 가고 그때 한쪽만 고쳐진다.
+    갈리는 것은 **거부 문면**뿐이므로 그것만 인자로 받는다.
+    """
+    return _non_negative(
+        value, reject=lambda bad: _rejected(bad, ledger_key=ledger_key, title=title)
+    )
+
+
+def _non_negative(
+    value: object | None, *, reject: Callable[[object], ValidationError]
+) -> float | None:
+    """`None`·빈 문자열은 **「적지 않았다」**. 그 밖은 0 이상의 유한한 수여야 한다.
+
+    거부 사유는 부르는 쪽이 짓는다(`reject`) — 이 함수가 문면을 갖고 있으면
+    기기 부하와 계절 몫이 **같은 문장으로 거부**되고, 사용자는 어느 칸을
+    고쳐야 하는지 알 수 없다.
     """
     if value is None:
         return None
@@ -185,13 +265,13 @@ def resolve_appliance_load(
         try:
             number = float(text)
         except ValueError:
-            raise _rejected(value, ledger_key=ledger_key, title=title) from None
-        return resolve_appliance_load(number, ledger_key=ledger_key, title=title)
+            raise reject(value) from None
+        return _non_negative(number, reject=reject)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise _rejected(value, ledger_key=ledger_key, title=title)
+        raise reject(value)
     number = float(value)
     if not math.isfinite(number) or number < 0:
-        raise _rejected(value, ledger_key=ledger_key, title=title)
+        raise reject(value)
     return number
 
 
@@ -234,5 +314,243 @@ def resolve_appliance_loads(scenario: Mapping[str, object]) -> ApplianceLoads:
             scenario.get(EV_LOAD_FIELD),
             ledger_key=EV_LOAD_LEDGER_KEY,
             title=EV_LOAD_TITLE,
+        ),
+        season_shares=resolve_appliance_season_shares(
+            scenario.get(APPLIANCE_SEASON_SHARE_FIELD)
+        ),
+    )
+
+
+# ── 계절 몫 — 냉난방 부하가 「자기」 계절 몫을 갖고 다닌다 (R64/WP-3b-1) ────
+
+
+@dataclass(frozen=True)
+class ApplianceSeasonShares:
+    """냉난방(추가 기기) 부하의 **계절별 몫**과, 그것이 걸릴 총부하 안의 비중.
+
+    ## 왜 몫과 비중을 한 자료형이 갖는가
+
+    러너가 계절마다 갖는 수는 **단지 총부하 하나**(`load_total_kwh`)이고, 그
+    안에서 기본 부하와 추가 기기 부하는 이미 합쳐져 있다. 계절을 가르려면 그
+    합계를 **다시 갈라야** 하는데, 그 비중은
+
+        기본 = 가구 연간사용량 / (가구 연간사용량 + 추가 기기)
+        기기 = 추가 기기      / (가구 연간사용량 + 추가 기기)
+
+    이며 **가구 수는 약분된다**(총량과 증분에 같은 배수가 곱해진다) —
+    `core/casegrid/seasonal_dispatch.py::_appliance_ratio` 가 「AI 가전」축에서
+    이미 같은 판단을 적었다. 그래서 러너는 가구 수를 다시 곱하지 않고, 이
+    자료형은 **비중 둘만** 갖고 다닌다.
+
+    ⚠ 비중은 `of()` 가 채운다. 사용자가 적은 것은 `by_season` 뿐이고, 그것을
+    읽는 자리(`core/report/case_report.py`)는 총량을 아직 모른다.
+
+    ⚠⚠ **`by_season` 의 차례는 결론을 만들지 않는다** — 자산의 달력과 **이름
+    으로** 맞추기 때문이다(`_matched`). 차례로 맞추면 사용자가 계절을 적는
+    순서만 바꿔도 겨울 몫이 봄에 걸리고, 그 어긋남은 아무 예외도 내지 않는다.
+    """
+
+    #: (계절 이름, 그 계절의 몫). 합이 1 이며 **정규화하지 않는다**(머리말 ⚠⚠).
+    by_season: tuple[tuple[str, float], ...]
+    #: 단지 총부하 중 **기본 부하**의 비중. `of()` 가 채우기 전에는 1.0 이다.
+    base_ratio: float = 1.0
+    #: 단지 총부하 중 **추가 기기 부하**의 비중. 채우기 전에는 0.0 이며, 그때
+    #: 이 자료형은 어떤 수도 움직이지 않는다.
+    appliance_ratio: float = 0.0
+
+    @staticmethod
+    def of(
+        shares: ApplianceSeasonShares | None,
+        annual_load_kwh: float | None,
+        extra_appliance_load_kwh: float,
+    ) -> ApplianceSeasonShares | None:
+        """비중 둘을 채운 사본. **몫을 주지 않았으면 `None` 그대로다.**
+
+        ⚠ 부하를 세우지 않는 실행(`annual_load_kwh is None`)과 총량이 0 인
+        실행에서는 기기 비중이 0 이다 — 그때 옮길 에너지 자체가 없어 어떤
+        몫을 적어도 결과가 같다. `_appliance_ratio` 가 같은 자리에서 같은
+        판단을 적었다.
+        """
+        if shares is None:
+            return None
+        base = annual_load_kwh or 0.0
+        total = base + extra_appliance_load_kwh
+        if total <= 0.0:
+            return replace(shares, base_ratio=1.0, appliance_ratio=0.0)
+        return replace(
+            shares, base_ratio=base / total,
+            appliance_ratio=extra_appliance_load_kwh / total,
+        )
+
+    @staticmethod
+    def load_days(
+        shape: DailyShape,
+        total_kwh: float,
+        shares: ApplianceSeasonShares | None,
+        *,
+        days: int,
+    ) -> tuple[tuple[Season, tuple[float, ...], int], ...]:
+        """계절마다 (계절, **그 계절의 부하 대표일**, 그 계절의 일수).
+
+        ⛔ **몫이 없으면 자산의 메서드를 그대로 부른다** — 아래 갈래로 「같은
+        값이 나오도록」 다시 계산하지 않는다. 두 식은 부동소수 마지막 자리에서
+        갈릴 수 있고, 그러면 몫을 주지 않은 실행(골든 셋)이 움직인다.
+
+        몫이 있으면 총부하를 비중으로 갈라 **각각 자기 계절 몫으로** 편 뒤
+        더한다. 연산 차례는 자산 쪽과 같다(`per_day` 를 먼저 짓고 가중치를
+        곱한다 — `DailyShape.representative_day_by_season` 의 ⚠ 절).
+        """
+        if shares is None:
+            return shape.representative_day_by_season(total_kwh, days=days)
+        matched = shares._matched(shape)
+        base = shape.representative_day_by_season(
+            total_kwh * shares.base_ratio, days=days
+        )
+        extra_total = total_kwh * shares.appliance_ratio
+        built: list[tuple[Season, tuple[float, ...], int]] = []
+        for (season, day, season_days), (weights, share) in zip(base, matched, strict=True):
+            per_day = extra_total * share / season_days
+            built.append((
+                season,
+                tuple(v + per_day * w for v, w in zip(day, weights, strict=True)),
+                season_days,
+            ))
+        return tuple(built)
+
+    @staticmethod
+    def folded_year(
+        shape: DailyShape,
+        total_kwh: float,
+        shares: ApplianceSeasonShares | None,
+        *,
+        days: int,
+    ) -> list[float]:
+        """**연간등가 하루**를 `days` 일 되풀이한 시계열 — 위 메서드의 형제.
+
+        러너는 계절별 하루와 별도로 「일수 가중 평균 하루」한 벌을 세운다
+        (`core/casegrid/seasonal_dispatch.py` 머리말 ★★★). 그 하루가 계절별
+        하루와 다른 식으로 서면 **인쇄하는 하루와 배터리가 따라가는 하루가
+        갈린다** — 그래서 여기서도 같은 분해를 쓴다.
+
+        ⛔ 몫이 없으면 자산의 `spread_over_representative_day` 를 그대로
+        부른다(위와 같은 사유).
+        """
+        if shares is None:
+            return shape.spread_over_representative_day(total_kwh, days=days)
+        matched = shares._matched(shape)
+        base = shape.representative_day(total_kwh * shares.base_ratio, days=days)
+        extra_total = total_kwh * shares.appliance_ratio
+        day = tuple(
+            value + math.fsum(
+                extra_total * share / days * weights[step]
+                for weights, share in matched
+            )
+            for step, value in enumerate(base)
+        )
+        return [value for _day in range(days) for value in day]
+
+    def _matched(self, shape: DailyShape) -> tuple[tuple[tuple[float, ...], float], ...]:
+        """자산의 계절 차례대로 (그 계절 가중치, **사용자가 적은 몫**).
+
+        ⚠⚠ **달력이 다르면 여기서 거부한다.** 자산 머리말이 *「부하와 발전이
+        같은 달력을 적어야 한다 … 읽는 쪽이 거부한다」* 로 못 박은 것과 같은
+        규칙이며, 계절 이름이 다르면 **같은 인덱스가 서로 다른 날을 가리킨다.**
+        고쳐 주지 않는다 — 이름을 짐작해 붙이면 겨울 몫이 봄에 걸린다.
+        """
+        given = dict(self.by_season)
+        names = [season.name for season in shape.seasons]
+        if len(given) != len(self.by_season) or sorted(given) != sorted(names):
+            raise ValidationError(
+                field=APPLIANCE_SEASON_SHARE_FIELD_KEY,
+                reason=(
+                    f"{APPLIANCE_SEASON_SHARE_TITLE}에 적은 계절 "
+                    f"{[name for name, _s in self.by_season]} 이(가) 형상 자산의 "
+                    f"달력 {names} 과 다릅니다 — 이름이 다르면 같은 몫이 다른 "
+                    "날에 걸리므로 짐작해 맞추지 않습니다"
+                ),
+                action=(
+                    f"계절 {names} 을(를) 그대로 적거나, 칸을 모두 비우십시오 "
+                    "(비우면 냉난방이 기본 부하와 같은 계절 몫으로 돕니다)"
+                ),
+            )
+        return tuple((weights, given[season.name]) for season, weights in shape.by_season)
+
+
+def resolve_appliance_season_shares(
+    value: object | None,
+) -> ApplianceSeasonShares | None:
+    """화면·시나리오가 적은 `{계절: 몫}` → `ApplianceSeasonShares` 또는 `None`.
+
+    ## 무엇이 「미지정」인가
+
+    필드가 없거나, 매핑이 비었거나, **칸이 전부 비었을 때**다. 그때 냉난방은
+    기본 부하와 같은 계절 몫으로 돌고 출력은 이 배선이 생기기 전과 원소
+    하나까지 같다(모듈 머리말 ⛔ 절).
+
+    ## ⚠ 무엇을 거부하는가 — **고쳐 주지 않는다**
+
+    **일부만 적은 것** — 빈 칸을 0 으로 읽으면 그 계절의 냉난방이 통째로
+    사라지는데 사용자는 *「아직 안 적었다」* 를 뜻했을 수 있다. 둘을 가를 수
+    없으므로 묻는다.
+    **합이 1 이 아닌 것** — 자산 머리말의 `share` 규약 그대로다. 0.9 면 연간
+    에너지의 10%가 사라지고 1.1 이면 없던 것이 생긴다. 정규화하면 「자산이
+    틀렸다」와 「이렇게 쓰기로 했다」가 구별되지 않는다.
+    **매핑이 아닌 것** — 계절 이름이 붙지 않은 값의 나열은 어느 계절의 몫인지
+    말하지 않은 것이고, 차례로 맞추면 위 `_matched` 가 막으려는 어긋남이
+    검사 없이 통과한다.
+
+    ⚠ 계절 **이름·개수**가 자산과 맞는가는 여기서 재지 않는다 — 이 함수는
+    자산을 읽지 않으며, 그 대조는 형상이 손에 있는 `_matched` 가 한다.
+    """
+    if value is None:
+        return None
+    if isinstance(value, ApplianceSeasonShares):
+        return value
+    if not isinstance(value, Mapping):
+        raise _season_share_rejected(
+            f"계절 이름이 붙은 매핑이어야 합니다 (받은 값 {value!r})"
+        )
+    parsed = [
+        (str(name), _non_negative(raw, reject=_season_share_value_rejected))
+        for name, raw in value.items()
+    ]
+    if all(share is None for _name, share in parsed):
+        return None
+    blank = [name for name, share in parsed if share is None]
+    if blank:
+        raise _season_share_rejected(
+            f"계절 {blank} 의 몫이 비어 있습니다 — 일부만 적으면 그 계절의 "
+            "냉난방이 사라지는지 아직 안 적었는지 구별할 수 없습니다"
+        )
+    total = math.fsum(share for _name, share in parsed if share is not None)
+    if abs(total - 1.0) > SHARE_TOLERANCE:
+        raise _season_share_rejected(
+            f"몫의 합이 {total!r} 입니다 — 1 이어야 합니다. 1 이 아니면 연간 "
+            "에너지가 조용히 사라지거나 없던 것이 생기므로 정규화하지 않습니다"
+        )
+    return ApplianceSeasonShares(
+        by_season=tuple((name, share) for name, share in parsed if share is not None)
+    )
+
+
+def _season_share_value_rejected(value: object) -> ValidationError:
+    """칸 하나가 수가 아닐 때 — `_non_negative` 가 부른다."""
+    return _season_share_rejected(
+        f"각 계절의 몫은 0 이상의 수여야 합니다 (받은 값 {value!r})"
+    )
+
+
+def _season_share_rejected(reason: str) -> ValidationError:
+    """계절 몫 거부 하나 — **3요소를 갖춘다** (`NFR-303`).
+
+    ⚠ 조치 문면을 한 곳에만 둔다 — `_rejected` 가 같은 판단을 적는다.
+    """
+    return ValidationError(
+        field=APPLIANCE_SEASON_SHARE_FIELD_KEY,
+        reason=f"{APPLIANCE_SEASON_SHARE_TITLE}: {reason}",
+        action=(
+            "계절 칸을 모두 비우거나(그때 냉난방이 기본 부하와 같은 계절 몫으로 "
+            "돕니다), 형상 자산이 선언한 계절마다 0 이상의 몫을 적어 **합이 1** "
+            "이 되게 하십시오"
         ),
     )

@@ -56,6 +56,7 @@ from datetime import date
 from typing import Any
 
 from core.assumption.provider import AssumptionSet
+from core.casegrid.appliance_load import ApplianceSeasonShares
 from core.casegrid.e2e_runner import run_single_case_e2e
 from core.casegrid.ledger_levels import (
     design_variables,
@@ -230,6 +231,7 @@ class _Sweeper:
         pool_metering: PoolMeteringDeclaration | None = None,
         household_count: int | None = None,
         extra_appliance_load_kwh: float = 0.0,
+        appliance_season_shares: ApplianceSeasonShares | None = None,
         dr_shiftable_share_pct: float = 0.0,
     ) -> None:
         self._baseline_arrangement = baseline_arrangement
@@ -245,6 +247,11 @@ class _Sweeper:
         # 기본값과 같다 — 위 가구 수와 같은 자리이고, 어긋남을 붙드는 것은
         # `tests/report/test_appliance_load_wired.py` 다.
         self._extra_appliance_load_kwh = extra_appliance_load_kwh
+        # ★★ **그 합계의 계절별 몫** (R64/WP-3b-1 · 사용자 요구 3). 기본값
+        # `None` 은 *「계절 몫을 적지 않았다」*이며 그때 러너 인자의 기본값과
+        # 같다 — 바로 위 기기 부하와 같은 자리이고, 안 넘기면 스윕이 **냉난방을
+        # 기본 부하와 같은 계절 몫으로** 돌려 본문과 다른 사업을 그린다.
+        self._appliance_season_shares = appliance_season_shares
         # ★★ **「AI 가전」이 하루 안에서 옮기는 비율** (R64/WP-7 · 사용자 요구
         # 2). 기본값 `0.0` 은 *「옮기지 않는다」*이며 그때 러너 인자의 기본값과
         # 같다 — 위 둘과 같은 자리이고, 어긋남을 붙드는 것은
@@ -309,6 +316,11 @@ class _Sweeper:
             # `base_npv` 와 견주는 `build_coupled_sweeps` 가 **부하 차이를
             # 인자 기여로 인쇄한다** — 위 가구 수가 적어 둔 것과 같은 함정이다.
             extra_appliance_load_kwh=self._extra_appliance_load_kwh,
+            # ★ **본 실행과 같은 계절 몫으로 냉난방을 나눈다** (R64/WP-3b-1).
+            # 안 넘기면 스윕이 계절 차등 없는 하루를 재고, 그 결과를 차등한
+            # 본문의 `base_npv` 와 견주는 `build_coupled_sweeps` 가 **계절
+            # 차이를 인자 기여로 인쇄한다** — 위 셋과 같은 함정이다.
+            appliance_season_shares=self._appliance_season_shares,
             # ★ **본 실행과 같은 비율로 부하를 옮긴다** (R64/WP-7 · 사용자 요구
             # 2). 안 넘기면 스윕이 **부하를 옮기지 않는 하루**를 재고, 그 결과를
             # 옮긴 하루 위에 선 본문의 `base_npv` 와 견주는 `build_coupled_sweeps`

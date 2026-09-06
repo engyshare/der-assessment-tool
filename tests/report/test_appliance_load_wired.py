@@ -39,9 +39,11 @@ import yaml
 
 from core.casegrid.appliance_load import (
     APPLIANCE_LOAD_UNSPECIFIED,
+    APPLIANCE_SEASON_SHARE_FIELD,
     EV_LOAD_FIELD,
     HEATPUMP_LOAD_FIELD,
 )
+from core.casegrid.profiles import load_daily_shapes
 from core.contracts.validation import ValidationError
 from core.report.appendix_sections import APPLIANCE_LOAD_TABLE, appendix_section
 from core.report.case_influences import CONCLUSION_METRIC
@@ -201,3 +203,74 @@ def test_a_scenario_that_asks_for_a_negative_load_is_refused() -> None:
     """
     with pytest.raises(ValidationError, match="히트펌프"):
         _report(**{HEATPUMP_LOAD_FIELD: -1})
+
+
+# ── 계절 몫 — 냉난방이 자기 계절 몫을 갖는다 (R64/WP-3b-1 · 사용자 요구 3) ──
+
+
+def _season_heavy() -> dict[str, float]:
+    """자산이 선언한 **마지막 계절**에 몰아 준 몫 — 합이 1 이다.
+
+    ⚠ 계절 이름·개수를 박지 않는다(자산 머리말 ★). 사유는
+    `tests/casegrid/test_appliance_season_shares.py::_winter_heavy` 가 갖는다.
+    """
+    names = [season.name for season in load_daily_shapes().load.seasons]
+    rest = (1.0 - 0.7) / (len(names) - 1)
+    return {name: (0.7 if name == names[-1] else rest) for name in names}
+
+
+def test_the_season_shares_reach_the_body_and_move_the_conclusion() -> None:
+    """★★★ **시나리오의 계절 몫이 본 실행의 결론축을 실제로 움직인다.**
+
+    이 단언이 없으면 아래 검사가 *「필드를 나르기만 하고 계산에 안 쓴다」* 로도
+    통과한다 — `test_the_body_runs_on_the_bigger_load` 와 같은 사유다.
+    ⚠ 총량은 한 kWh 도 변하지 않는다. 움직이는 것은 **계절 사이의 배분**이며,
+    그것이 태양광 잉여와 겹치는 시각을 바꾸므로 결론축이 따라 움직인다.
+    """
+    fields: dict[str, Any] = {HEATPUMP_LOAD_FIELD: 3000.0}
+    plain = float(_report(**fields).metrics[CONCLUSION_METRIC])
+    moved = float(
+        _report(
+            **fields, **{APPLIANCE_SEASON_SHARE_FIELD: _season_heavy()}
+        ).metrics[CONCLUSION_METRIC]
+    )
+    assert moved != pytest.approx(plain, abs=1.0), (
+        f"냉난방을 계절마다 차등했는데 결론축이 그대로다({plain:,.0f}원) — "
+        "계절 몫이 계산에 들어가지 않았다"
+    )
+
+
+def test_the_sweep_runs_on_the_same_season_shares_as_the_body() -> None:
+    """★★★ **5·6절의 스윕도 같은 계절 몫으로 돈다.**
+
+    안 넘기면 본문 4절은 차등한 부하로, 5·6절은 차등하지 않은 부하로 계산되어
+    두 절이 서로 다른 사업을 그린다 — 재는 법은 위
+    `test_the_sweep_runs_on_the_same_load_as_the_body` 와 같다(읽지 않는 인자의
+    스윕 기준선이 곧 스윕이 선 사업이다).
+    """
+    report = _report(
+        **{HEATPUMP_LOAD_FIELD: 3000.0, APPLIANCE_SEASON_SHARE_FIELD: _season_heavy()}
+    )
+    conclusion = float(report.metrics[CONCLUSION_METRIC])
+    unread = [entry for entry in report.influences if entry.unread_by_pipeline]
+    assert unread, (
+        "파이프라인이 읽지 않는 인자가 0건이다 — 이 검사가 0회 순회로 통과한다"
+    )
+    for entry in unread:
+        assert entry.npv_low == pytest.approx(conclusion, abs=1.0), (
+            f"`{entry.variable}` 의 스윕 기준선이 {entry.npv_low:,.0f}원인데 "
+            f"본문 결론은 {conclusion:,.0f}원이다 — 스윕이 계절 몫 없이 돌고 있다"
+        )
+        assert entry.npv_high == pytest.approx(conclusion, abs=1.0)
+
+
+def test_a_scenario_whose_season_shares_do_not_sum_to_one_is_refused() -> None:
+    """★★ 시나리오가 적은 계절 몫도 **같은 자리에서** 판정된다 (`NFR-303`).
+
+    거부 문면이 층마다 생기지 않게 `resolve_appliance_season_shares` 하나가
+    진다 — 위 `test_a_scenario_that_asks_for_a_negative_load_is_refused` 와
+    같은 규약이다.
+    """
+    short = {name: share * 0.9 for name, share in _season_heavy().items()}
+    with pytest.raises(ValidationError, match="1 이어야 합니다"):
+        _report(**{HEATPUMP_LOAD_FIELD: 3000.0, APPLIANCE_SEASON_SHARE_FIELD: short})

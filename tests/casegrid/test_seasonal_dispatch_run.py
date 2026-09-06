@@ -27,6 +27,7 @@ from typing import Any
 
 import pytest
 
+from core.casegrid.appliance_load import ApplianceSeasonShares
 from core.casegrid.e2e_runner import (
     DAYS_PER_YEAR,
     HOURS_PER_YEAR,
@@ -600,3 +601,77 @@ def test_the_dispatch_note_says_what_the_run_actually_did(tmp_path: Path) -> Non
     assert dispatch_note((), steps_per_day=STEPS_PER_DAY) == plain, (
         "형상 자산이 없는 실행이 계절 하나짜리와 다른 문면을 인쇄한다"
     )
+
+
+# ── 「마」 냉난방이 자기 계절 몫을 갖는다 (R64/WP-3b-1 · 사용자 요구 3) ──────
+
+
+def test_the_appliance_load_can_carry_its_own_season_shares() -> None:
+    """★★★★ **냉난방 부하가 기본 부하와 다른 계절 몫으로 갈린다.**
+
+    ## 왜 이 파일에서 재는가 — **정면(러너)이 아니라 직접 부른다**
+
+    러너만 지나면 *「거부되지 않는다」* 는 재이지만 *「그 계절의 부하 하루가
+    실제로 커진다」* 는 재이지 않는다(이 파일 머리말 ★★★ 절 · `NFR-105`
+    게이트 ②). 계절 몫의 판정·거부·통로는
+    `tests/casegrid/test_appliance_season_shares.py` 가 재고, 여기서는
+    **이 모듈이 그 몫을 실제로 부하 하루에 태우는가** 하나를 본다.
+
+    ## 재는 것 셋
+
+        ⓐ 몰아 준 계절의 대표일 부하가 **늘어난다**
+        ⓑ 그 밖의 계절은 **줄어든다** ← 대조군. 없으면 ⓐ 는 「부하를 더
+          얹었다」(총량이 변했다)와 구별되지 않는다
+        ⓒ `None` 을 주면 **원소 하나까지** 종전과 같다
+
+    ⚠⚠ 계절 이름을 박지 않는다 — 자산이 선언한 **마지막 계절**에 몰아 준다.
+    """
+    shape = load_daily_shapes().load
+    names = [season.name for season in shape.seasons]
+    declared = {season.name: season.share for season in shape.seasons}
+    moved = names[-1]
+    heavy = 0.7
+    assert declared[moved] < heavy, (
+        f"자산이 {moved!r} 에 적은 몫이 {declared[moved]!r} 라 차등의 방향이 "
+        "정해지지 않는다"
+    )
+    rest = (1.0 - heavy) / (len(names) - 1)
+    extra = 3000.0
+
+    plain = _deployed_case(extra_appliance_load_kwh=extra)
+    after = _deployed_case(
+        extra_appliance_load_kwh=extra,
+        appliance_shares=ApplianceSeasonShares(
+            by_season=tuple(
+                (name, heavy if name == moved else rest) for name in names
+            )
+        ),
+    )
+    before_day = {
+        run.name: -_daily(run.dispatch, "e2e-load") for run in plain.seasons
+    }
+    after_day = {
+        run.name: -_daily(run.dispatch, "e2e-load") for run in after.seasons
+    }
+    table = "\n".join(
+        f"  {name:<6} {before_day[name]:>12,.4f} → {after_day[name]:>12,.4f} kWh/일"
+        for name in before_day
+    )
+    assert after_day[moved] > before_day[moved], (
+        f"{moved!r} 에 몫 {heavy} 를 몰아 줬는데 그 계절 대표일의 부하가 "
+        f"늘지 않았다\n{table}"
+    )
+    for name, before in before_day.items():
+        if name == moved:
+            continue
+        assert after_day[name] < before, (
+            f"{moved!r} 로 옮겼는데 {name!r} 의 대표일 부하가 줄지 않았다 — "
+            f"총량이 보존되지 않았다는 뜻이다\n{table}"
+        )
+
+    # ⓒ **`None` 은 종전 갈래 그대로다** — 새 식으로 다시 계산하지 않는다.
+    untouched = _deployed_case(extra_appliance_load_kwh=extra, appliance_shares=None)
+    for run, want in zip(untouched.seasons, plain.seasons, strict=True):
+        assert run.dispatch.per_resource["e2e-load"].electric == (
+            want.dispatch.per_resource["e2e-load"].electric
+        ), f"몫을 주지 않았는데 {run.name!r} 의 부하 하루가 움직였다"

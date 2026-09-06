@@ -874,6 +874,12 @@ def build_case_report(
         # 러너 시그니처가 늘어난다(`ApplianceLoads.total_kwh` 가 정본).
         # ⚠ 안 준 실행은 `0.0` 이며 그때 인자의 기본값과 같다 — 종전과 같다.
         extra_appliance_load_kwh=appliance_loads.total_kwh,
+        # ★★★ **그 합계를 계절마다 갈라 준다** (R64/WP-3b-1 · 사용자 요구 3).
+        # 시나리오의 `appliance_load_season_shares` 가 같은 자리
+        # (`resolve_appliance_loads`)를 지나 여기 온다. ⛔ 안 준 실행은 `None`
+        # 이고 그때 러너가 **종전 식을 그대로** 지난다 — 골든 픽스처에는 이
+        # 필드가 없으므로 회귀의 수는 한 원도 움직이지 않는다.
+        appliance_season_shares=appliance_loads.season_shares,
         # ★★ **「AI 가전」이 하루 안에서 옮기는 몫** (R64/WP-7 · 사용자 요구 2).
         # 총량은 한 kWh 도 변하지 않고 **하루의 모양만** 바뀐다 — 바로 위
         # 두 인자(가구 수·기기 부하)와 성질이 다르다.
@@ -900,6 +906,10 @@ def build_case_report(
         # 이 축도 부하 총량에 더해지므로 어긋나면 `build_coupled_sweeps` 의
         # `base_npv` 대조가 뜻을 잃는다.
         extra_appliance_load_kwh=appliance_loads.total_kwh,
+        # ★★ **본 실행과 같은 계절 몫으로 스윕한다** (R64/WP-3b-1). 안 넘기면
+        # 본문 4절은 계절을 차등한 부하로, 5·6절은 차등하지 않은 부하로
+        # 계산되어 두 절이 서로 다른 사업을 그린다 — 바로 위 셋과 같은 함정이다.
+        appliance_season_shares=appliance_loads.season_shares,
         # ★★ **본 실행과 같은 비율로 부하를 옮겨 스윕한다** (R64/WP-7). 안
         # 넘기면 본문 4절은 옮긴 하루로, 5·6절은 옮기지 않은 하루로 계산되어
         # 두 절이 서로 다른 사업을 그린다 — 바로 위 둘과 같은 함정이며, 이

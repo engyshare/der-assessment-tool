@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
+from core.casegrid.appliance_load import ApplianceSeasonShares
 from core.casegrid.attribution import attribute_benefits
 
 # ★ **지표 조립도 이 파일 것이었다** — 코드 496/500(여유 4줄)에서 R57/WP-9 가
@@ -349,6 +350,7 @@ def run_single_case_e2e(
     daily_shapes: DailyShapes | None = None,
     annual_load_kwh: float | None = None,
     extra_appliance_load_kwh: float = 0.0,
+    appliance_season_shares: ApplianceSeasonShares | None = None,
     household_count: int | None = None,
     dr_shiftable_share_pct: float = 0.0,
     rec_price_won_per_unit: float = 0.0,
@@ -505,6 +507,18 @@ def run_single_case_e2e(
     ⚠ **인자를 기기별로 쪼개지 않았다** — 쪼개면 러너가 기기 목록을 알게 되고
     셋째 기기가 오는 날 시그니처가 늘어난다. 갈래는 산출물에서만 갈린다
     (`core/report/appendix_sections.py::_appliance_load_table`).
+    ★★★ **`appliance_season_shares` — 그 합계가 계절마다 갈린다**
+    (R64/WP-3b-1 · 사용자 요구 3 *「계절별로 냉난방수요를 차등하여 설정할 수
+    있어야 함」*). 종전에는 위 합계가 `annual_load_kwh` 와 **먼저 합쳐진 뒤**
+    자산이 선언한 **기본 부하의 계절 몫**으로 나뉘어, 냉난방 몫이 기본 몫과
+    강제로 같았다. 이 인자를 주면 계절 `i` 의 부하 총량이
+    `기본×기본몫[i] + 냉난방×냉난방몫[i]` 가 된다.
+    ⛔ **`None` 이면 종전 식을 원소 하나까지 그대로 지난다** — 새 식으로 「같은
+    값이 나오도록」 다시 계산하지 않는다(`core/casegrid/appliance_load.py::
+    ApplianceSeasonShares` 머리말 ⛔ 절). 골든 셋이 그 동일성을 잰다.
+    ⚠ 합이 1 이 아니거나 자산의 계절 달력과 이름이 다르면 **거부한다** —
+    고쳐 주지 않는다.
+
     ⚠⚠ **여기 세워지는 것은 부하뿐이다.** 히트펌프·전기차를 **자원**으로
     세우는 것(설치비·유지보수비·편익 갈래가 함께 서는 것)은 이 인자가 하는
     일이 아니며, 부하에 편익을 붙이면 그 절감을 일으킨 자원과 이중 계상된다
@@ -740,6 +754,7 @@ def run_single_case_e2e(
         replacement_escalation_rate=replacement_escalation_rate,
         annual_load_kwh=annual_load_kwh,
         extra_appliance_load_kwh=extra_appliance_load_kwh,
+        appliance_shares=appliance_season_shares,
         household_count=household_count,
         dr_shiftable_share_pct=dr_shiftable_share_pct,
         ess_shares=ess_shares, ess_capacity_kwh=ess_capacity_kwh, ess_capex=ess_capex,

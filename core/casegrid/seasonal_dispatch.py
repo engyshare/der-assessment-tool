@@ -106,6 +106,7 @@ import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 
+from core.casegrid.appliance_load import ApplianceSeasonShares
 from core.casegrid.ess_build import build_case_ess_fleet
 from core.casegrid.ess_share import ESSShare, ESSSharePlan
 from core.casegrid.household_scale import household_scale
@@ -233,6 +234,10 @@ def build_and_dispatch_case(
     annual_load_kwh: float | None,
     extra_appliance_load_kwh: float,
     household_count: int | None,
+    # ★★ **냉난방(추가 기기) 부하의 계절별 몫** (R64/WP-3b-1 · 사용자 요구 3).
+    # `None` 이 미지정이며 그때 아래 두 호출이 **종전 식을 그대로** 지난다 —
+    # `core/casegrid/appliance_load.py::ApplianceSeasonShares` 머리말 ⛔ 절.
+    appliance_shares: ApplianceSeasonShares | None = None,
     dr_shiftable_share_pct: float,
     ess_shares: Sequence[ESSShare] | None,
     ess_capacity_kwh: float,
@@ -281,9 +286,13 @@ def build_and_dispatch_case(
     # 자리가 이 생성자 하나이기 때문이다(`tests/casegrid/test_household_load_gate.py`).
     # 계절 목록을 먼저 만들면 형상 없는 실행에서 계절이 하나로 떨어지면서 그
     # 실수가 **조용히** 「부하 없는 실행」이 된다.
+    # ★★ **냉난방 몫에 「총부하 안의 비중」을 채워 둔다** (R64/WP-3b-1). 아래
+    # 두 자리가 같은 분해를 써야 **인쇄하는 하루와 배터리가 따라가는 하루**가
+    # 갈리지 않는다(`ApplianceSeasonShares.folded_year` 독스트링).
+    shares = ApplianceSeasonShares.of(appliance_shares, annual_load_kwh, extra_appliance_load_kwh)
     household = _household_load_if_total_given(
         daily_shapes, annual_load_kwh, extra_appliance_load_kwh, household_count,
-        escalation_rate=price_escalation_rate,
+        escalation_rate=price_escalation_rate, appliance_shares=shares,
     )
     load_total_kwh = _load_total_kwh(
         annual_load_kwh, extra_appliance_load_kwh, household_count
@@ -301,7 +310,7 @@ def build_and_dispatch_case(
         escalation_rate=price_escalation_rate,
         replacement_escalation=replacement_escalation_rate,
     )
-    inputs = _season_inputs(daily_shapes, generation_total_kwh, load_total_kwh)
+    inputs = _season_inputs(daily_shapes, generation_total_kwh, load_total_kwh, shares)
     weights = tuple(season.days / DAYS_PER_YEAR for season in inputs)
     # ★★★ **「AI 가전」이 계절마다 부하를 옮긴다** (R64/WP-7 · 사용자 요구 2).
     # 모듈 머리말의 ★★★ 절이 정본이다. 총량은 그대로이고 옮겨 가는 곳은 **그
@@ -447,6 +456,7 @@ def _season_inputs(
     daily_shapes: DailyShapes | None,
     generation_total_kwh: float,
     load_total_kwh: float | None,
+    appliance_shares: ApplianceSeasonShares | None = None,
 ) -> tuple[_SeasonInput, ...]:
     """계절마다 (이름 · 일수 · 발전 하루 · 부하 하루). **일수를 여기서 세지 않는다.**
 
@@ -458,6 +468,12 @@ def _season_inputs(
     ⚠ **형상 자산이 없는 실행은 계절 하나짜리다.** 그때 PV 는 이용률 하나로
     균등 배분하고 부하는 서지 않으므로 계절이 가를 것이 없다 — 종전 실행과
     원소 하나까지 같아야 한다(성질 「라」).
+
+    ★★ **`appliance_shares` 가 냉난방을 기본 부하에서 떼어 낸다** (R64/WP-3b-1 ·
+    사용자 요구 3). 종전에는 둘이 합쳐진 뒤 **기본 부하의 계절 몫 하나**로
+    나뉘어 냉난방 몫이 기본 몫과 강제로 같았다. `None` 이면 그 종전 식을
+    그대로 지난다 — 새 식으로 다시 계산하지 않는다(`ApplianceSeasonShares`
+    머리말 ⛔ 절).
     """
     if daily_shapes is None:
         return (_SeasonInput("연중", DAYS_PER_YEAR, None, None),)
@@ -469,8 +485,8 @@ def _season_inputs(
             _SeasonInput(season.name, days, day, None)
             for season, day, days in generation
         )
-    load = daily_shapes.load.representative_day_by_season(
-        load_total_kwh, days=DAYS_PER_YEAR
+    load = ApplianceSeasonShares.load_days(
+        daily_shapes.load, load_total_kwh, appliance_shares, days=DAYS_PER_YEAR
     )
     if [(s.name, d) for s, _w, d in generation] != [(s.name, d) for s, _w, d in load]:
         raise ValueError(
@@ -677,6 +693,7 @@ def _household_load_if_total_given(
     household_count: int | None = None,
     *,
     escalation_rate: float,
+    appliance_shares: ApplianceSeasonShares | None = None,
 ) -> Load | None:
     """가구 부하 자원 — **부하 총량(`annual_load_kwh`)이 왔을 때만** 세운다.
 
@@ -726,6 +743,11 @@ def _household_load_if_total_given(
     *「부하를 반영했다」* 는 진술이 성립하는데 **그 부하는 실제로 아무 시간대도
     갖지 않는다.**
 
+    ★★ **`appliance_shares` 는 위 `_season_inputs` 와 같은 분해를 쓴다**
+    (R64/WP-3b-1). 두 자리가 다른 식으로 서면 리포트가 인쇄하는 하루와
+    연간등가 배터리가 따라가는 하루가 갈린다 —
+    `ApplianceSeasonShares.folded_year` 독스트링이 그 판단을 갖는다.
+
     ## ★★ 이것이 내는 하루는 **연간등가 하루**다
 
     `spread_over_representative_day()` 는 `representative_day()`(몫 가중 평균
@@ -745,7 +767,9 @@ def _household_load_if_total_given(
     total = _load_total_kwh(annual_load_kwh, extra_appliance_load_kwh, household_count)
     assert total is not None  # 위 분기가 보장한다 (타입 좁히기)
     return _build_load(
-        daily_shapes.load.spread_over_representative_day(total, days=DAYS_PER_YEAR),
+        ApplianceSeasonShares.folded_year(
+            daily_shapes.load, total, appliance_shares, days=DAYS_PER_YEAR
+        ),
         escalation_rate,
     )
 
