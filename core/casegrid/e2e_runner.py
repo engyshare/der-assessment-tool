@@ -96,6 +96,7 @@ from core.casegrid.profiles import DailyShapes
 # 인정한다).
 from core.casegrid.pv_allocation import (
     ESS_CHARGE_SOURCE_DEFAULT,  # noqa: F401
+    ESS_DISCHARGE_ALLOCATION_DEFAULT,  # noqa: F401
     ESS_OPERATING_MODE_DEFAULT,  # noqa: F401
     FORFEITED_SELF_CONSUMPTION_TAG,
     PV_ALLOCATION_PRIORITY_DEFAULT,  # noqa: F401
@@ -129,6 +130,7 @@ from core.contracts.engine import SystemDispatch
 from core.contracts.units import Money
 from core.contracts.valuestream import ValueStream
 from core.der.ess import ESS, ESSChargeSource, ESSOperatingMode
+from core.der.ess_schedule import ESSDischargeAllocation
 from core.der.load import Load
 from core.der.pv import PV, PVAllocationPriority
 from core.engine.rule_based import RuleBasedEngine
@@ -359,6 +361,7 @@ def run_single_case_e2e(
     viewpoint: Viewpoint = "OWNER",
     ess_operating_mode: ESSOperatingMode | str | None = None,
     ess_charge_source: ESSChargeSource | str | None = None,
+    ess_discharge_allocation: ESSDischargeAllocation | str | None = None,
     pv_allocation_priority: PVAllocationPriority | str | None = None,
     ess_shares: Sequence[ESSShare] | None = None,
     baseline_arrangement: BaselineArrangement | str | None = None,
@@ -474,6 +477,17 @@ def run_single_case_e2e(
     배포 기본값은 **`HOUSEHOLD_FIRST`(집 우선)** 다 — R51/WP-6 이 판정 §1
     (*「지산지소 모델의 경우에는 집에서 우선 사용하는 것이 취지에 맞음」*)에
     따라 뒤집었고, 근거는 그 상수 옆 주석에 있다.
+
+    ★ **`ess_discharge_allocation` — 하루 방전량을 방전창 안에서 어떻게 나누는가**
+    (사용자 요구 5 · R64/WP-6a·6b). 같은 사슬(인자 → `case_values` → 모듈 상수
+    `ESS_DISCHARGE_ALLOCATION_DEFAULT`)을 따르며, 승격·거부는 `ESS` 자신이
+    한다(`ess_operating_mode`·`ess_charge_source` 와 같은 처리). 배포 기본값은
+    **「부하 추종」**이다 — 그 시각의 가구 부하에 비례해 나눈다.
+    ⚠ **부하를 세우지 않는 실행은 「고정 창」으로 선다** — 따라갈 수요가 없기
+    때문이며, 그 떨어짐의 판정문은 `pv_allocation.resolve_ess_discharge_inputs`
+    가 갖는다. ⚠⚠ **방전 「창」 자체는 운전 방법이 정하는 그대로다** — 창 밖의
+    수요는 여전히 대응하지 못하며, 붙임 8 의 「방전창 밖 가구 수요」 항목이 그
+    크기를 매 실행 재어 신고한다(`core/report/unreflected.py`).
 
     ★ **`extra_appliance_load_kwh` — 「추가 기기 비례 증가」** (판정 §5·B-2,
     `docs/decisions-2026-08-31-R48.md`). 히트펌프 등 추가 전력사용기기가
@@ -709,6 +723,7 @@ def run_single_case_e2e(
         ess_shares=ess_shares, ess_capacity_kwh=ess_capacity_kwh, ess_capex=ess_capex,
         ess_fixed_om=ess_fixed_om, ess_replacement_price=ess_replacement_price,
         ess_operating_mode=ess_operating_mode, ess_charge_source=ess_charge_source,
+        ess_discharge_allocation=ess_discharge_allocation,
         pv_allocation_priority=pv_allocation_priority,
         baseline_arrangement=baseline_arrangement, pool_metering=pool_metering,
     )
@@ -1125,6 +1140,25 @@ def _with_model_generation(
     return replace(inputs, annual_generation_kwh=generation)
 
 
+def _hours_text(hours: Sequence[int]) -> str:
+    """방전창을 **연속 구간**으로 접어 적는다 — `(18, 19, 20, 21)` → `18~21시`.
+
+    ⚠ 시각을 스물넷 다 나열하면 표 칸이 넘치고, 첫·끝만 적으면 창이 끊긴
+    운전 방법에서 거짓이 된다. 그래서 **끊긴 자리마다 구간을 나눈다.**
+    """
+    if not hours:
+        return "없음"
+    spans: list[list[int]] = [[hours[0], hours[0]]]
+    for hour in hours[1:]:
+        if hour == spans[-1][1] + 1:
+            spans[-1][1] = hour
+        else:
+            spans.append([hour, hour])
+    return "·".join(
+        f"{lo}시" if lo == hi else f"{lo}~{hi}시" for lo, hi in spans
+    )
+
+
 def _resource_lines(
     pv: PV,
     pv_capex: float,
@@ -1199,7 +1233,22 @@ def _resource_lines(
                     f"{ESS_SOC_MAX_PCT:g}% · 수명종료 SOH {ESS_EOL_SOH_PCT:g}% · "
                     f"연 {ESS_CYCLES_PER_YEAR:g}사이클"
                 ),
-                operating_mode=str(ess.operating_mode),
+                # ★★ **방전 배분을 함께 적는다** (R64/WP-6b · 사용자 요구 5).
+                # ⚠ **모듈 상수(`ESS_DISCHARGE_ALLOCATION_DEFAULT`)를 다시 읽어
+                # 재현하지 않는다** — 세운 자원이 실제로 든 값을 읽는다. 상수를
+                # 읽으면 부하를 세우지 않는 실행(그 실행은 「고정 창」으로 선다)
+                # 에서도 「부하 추종」이 인쇄되고, 그 거짓은 아무 예외도 내지
+                # 않는다. 위 `capacity` 칸의 ★ 와 같은 판단이다.
+                # ⚠⚠ **방전창을 함께 적는다** — 「부하 추종」만 적으면 *하루
+                # 종일 수요를 따라간다* 로 읽힌다. 실제로는 운전 방법이 정한
+                # 창 **안에서만** 나눈다(창을 부하로 정하면 충전 계획과
+                # 순환한다 — `ess_schedule.pv_surplus_charge_kwh_by_hour`).
+                # 창 밖 수요의 크기는 붙임 8 이 재어 신고한다.
+                operating_mode=(
+                    f"{ess.operating_mode} · 방전 배분: "
+                    f"{ess.discharge_allocation} (방전창 "
+                    f"{_hours_text(ess.discharge_hours)} 안)"
+                ),
                 lifetime_years=int(ess.lifetime),
                 unit_capex=f"{ess_capex:,.0f}원/kWh",
                 capex_won=int(ess.capex(year=1)),

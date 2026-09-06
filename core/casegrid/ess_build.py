@@ -46,6 +46,7 @@ from core.casegrid.grid_support import _resolve_nwas_cp, peak_shaving_enabled
 from core.contracts.validation import ValidationError
 from core.contracts.valuestream import ValueStream
 from core.der.ess import ESS, ESSChargeSource, ESSOperatingMode
+from core.der.ess_schedule import ESSDischargeAllocation
 from core.valuestream import PeakShaving, TouArbitrage
 
 #: ESS **정격출력**(kW). 용량과 달리 설계 변수로 올리지 않았다 — 이 값이
@@ -70,6 +71,8 @@ def _case_ess_spec(
     operating_mode: ESSOperatingMode | str,
     charge_source: ESSChargeSource | str,
     pv_surplus_profile_kwh: Sequence[float] | None,
+    discharge_allocation: ESSDischargeAllocation | str,
+    load_profile_kwh: Sequence[float] | None,
     capex_unit_won_per_kwh: float,
     fixed_om_won_per_year: float,
     replacement_unit_won_per_kwh: float,
@@ -118,6 +121,16 @@ def _case_ess_spec(
             if charge_source == ESSChargeSource.PV_SURPLUS
             else None
         ),
+        # ★ **방전 배분과 그 부하는 짝으로 온다** (R64/WP-6b · 사용자 요구 5).
+        # `core/casegrid/pv_allocation.py::resolve_ess_discharge_inputs` 가 이미
+        # 고른 짝이며 **여기서 다시 판단하지 않는다** — 「고정 창」이면 부하가
+        # `None` 이고 그 조합만 `ESS` 가 받는다(위 ⚠ 「받은 값을 다시 판단하지
+        # 않는다」와 같은 자리다). ⚠ 몫으로 가를 때도 이 둘은 **나뉘지 않는다** —
+        # 부하 시계열은 비례 배분의 **가중치 벡터**라 몫 비율로 나누어도 같은
+        # 배분이 나오고, 나눈 척만 하게 된다(`ess_share.PRORATED_FIELDS` 밖에
+        # 두는 사유다).
+        discharge_allocation=discharge_allocation,
+        load_profile_kwh=load_profile_kwh,
         capex_unit_won_per_kwh=capex_unit_won_per_kwh,
         fixed_om_won_per_year=fixed_om_won_per_year,
         # ★★ **명목 기준을 ESS 에도 물린다 (R39-E · R38 판정 ②나).** 이 인자가
@@ -147,6 +160,8 @@ def build_case_ess(
     operating_mode: ESSOperatingMode | str,
     charge_source: ESSChargeSource | str,
     pv_surplus_profile_kwh: Sequence[float] | None,
+    discharge_allocation: ESSDischargeAllocation | str,
+    load_profile_kwh: Sequence[float] | None,
     capex_unit_won_per_kwh: float,
     fixed_om_won_per_year: float,
     replacement_unit_won_per_kwh: float,
@@ -164,6 +179,8 @@ def build_case_ess(
         operating_mode=operating_mode,
         charge_source=charge_source,
         pv_surplus_profile_kwh=pv_surplus_profile_kwh,
+        discharge_allocation=discharge_allocation,
+        load_profile_kwh=load_profile_kwh,
         capex_unit_won_per_kwh=capex_unit_won_per_kwh,
         fixed_om_won_per_year=fixed_om_won_per_year,
         replacement_unit_won_per_kwh=replacement_unit_won_per_kwh,
@@ -179,6 +196,8 @@ def build_case_ess_fleet(
     operating_mode: ESSOperatingMode | str,
     charge_source: ESSChargeSource | str,
     pv_surplus_profile_kwh: Sequence[float] | None,
+    discharge_allocation: ESSDischargeAllocation | str,
+    load_profile_kwh: Sequence[float] | None,
     capex_unit_won_per_kwh: float,
     fixed_om_won_per_year: float,
     replacement_unit_won_per_kwh: float,
@@ -217,6 +236,8 @@ def build_case_ess_fleet(
         operating_mode=operating_mode,
         charge_source=charge_source,
         pv_surplus_profile_kwh=pv_surplus_profile_kwh,
+        discharge_allocation=discharge_allocation,
+        load_profile_kwh=load_profile_kwh,
         capex_unit_won_per_kwh=capex_unit_won_per_kwh,
         fixed_om_won_per_year=fixed_om_won_per_year,
         replacement_unit_won_per_kwh=replacement_unit_won_per_kwh,

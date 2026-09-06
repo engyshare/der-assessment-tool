@@ -31,7 +31,10 @@ from core.casegrid.operating_lines import DAYS_PER_YEAR
 from core.report.dispatch_notes import DispatchHour, build_hourly_profile
 
 __all__ = (
+    "DischargeCoverage",
     "MeasuredQuantities",
+    "discharge_coverage",
+    "discharge_coverage_over_seasons",
     "measured_over_seasons",
 )
 
@@ -157,4 +160,118 @@ def measured_over_seasons(
         grid_export=math.fsum(
             part.grid_export * days / DAYS_PER_YEAR for part, days in measured
         ),
+    )
+
+
+@dataclass(frozen=True)
+class DischargeCoverage:
+    """**방전이 난 시각과 그 밖에 남는 가구 수요** (대표일, kWh · R64/WP-6b).
+
+    사용자 요구 5(*「ESS는 가구의 전력 수요를 최우선적으로 대응할 수 있도록
+    운전되야 함」*)를 배선하면서 남은 결손을 재는 자리다. 방전 **배분**은
+    수요를 따라가게 됐지만 방전 **창**은 여전히 운전 방법이 정하므로, 창 밖의
+    수요(예: 아침 피크)는 대응되지 않는다. 그 크기를 재지 않고 두면 산출물이
+    *「수요에 최우선 대응한다」* 로만 읽힌다 — 창 안에서만 참인 문장이다.
+
+    ⛔ **창을 넓혀 푸는 길은 순환한다** —
+    `core/der/ess_schedule.py::pv_surplus_charge_kwh_by_hour` 가 **「방전창을
+    뺀 시각」**에 충전하므로, 창을 부하로 정하면 충전 계획이 방전 계획에 매이고
+    방전 계획이 다시 충전량(=하루 방전량)에 매인다.
+    """
+
+    #: 대표일 가구 부하 합(양수).
+    load_total: float
+    #: 그중 **방전이 하나도 없던 스텝**에 있던 몫(양수).
+    load_outside: float
+    #: 그 스텝들의 계통 수전 합 — 창 밖 수요 중 **실제로 사 온** 몫이다.
+    #: (창 밖 수요 전부가 구매는 아니다 — 낮에는 태양광이 직접 덮는다.)
+    grid_import_outside: float
+    #: 방전이 난 스텝 수. 계절 가중 평균이라 정수가 아닐 수 있다.
+    steps_discharging: float
+    #: 대표일 스텝 수 — 위 값의 분모다.
+    steps: float
+
+
+def discharge_coverage(hours: tuple[DispatchHour, ...]) -> DischargeCoverage | None:
+    """창 하나에서 위 넷을 잰다. **이름이 아니라 부호 모양으로 자원을 가른다.**
+
+    부하는 전 스텝이 0 이하이고 한 스텝이라도 음수인 자원, 저장장치는 **양수
+    스텝과 음수 스텝을 함께 갖는** 자원이다 — `_measured_quantities` 가 자가소비를
+    재려고 쓰는 것과 같은 규칙이며(그쪽은 저장장치를 그래서 **뺀다**), 이름으로
+    가르면 자원이 늘 때마다 여기를 고쳐야 하고 고치지 않으면 조용히 0 이 된다.
+
+    ⚠ **「방전창」이 아니라 「방전이 난 스텝」을 잰다.** 창은 자원의 선언이고
+    이 파일이 받는 것은 운전 결과다 — 잉여가 없어 배터리가 쉰 계절에서는 창이
+    있어도 방전이 없고, 그때 창을 읽으면 **하지 않은 대응을 했다고 세게 된다.**
+
+    부하 자원이나 저장장치가 없으면 `None` 이다 — 잴 것이 없다.
+    """
+    if not hours:
+        return None
+    names = tuple(hours[0].per_resource)
+    load = [
+        name
+        for name in names
+        if all(hour.per_resource.get(name, 0.0) <= 0.0 for hour in hours)
+        and any(hour.per_resource.get(name, 0.0) < 0.0 for hour in hours)
+    ]
+    storage = [
+        name
+        for name in names
+        if any(hour.per_resource.get(name, 0.0) > 0.0 for hour in hours)
+        and any(hour.per_resource.get(name, 0.0) < 0.0 for hour in hours)
+    ]
+    if not load or not storage:
+        return None
+    outside = [
+        hour
+        for hour in hours
+        if math.fsum(hour.per_resource.get(name, 0.0) for name in storage) <= 0.0
+    ]
+    return DischargeCoverage(
+        load_total=-math.fsum(
+            hour.per_resource.get(name, 0.0) for hour in hours for name in load
+        ),
+        load_outside=-math.fsum(
+            hour.per_resource.get(name, 0.0) for hour in outside for name in load
+        ),
+        grid_import_outside=math.fsum(hour.grid_import for hour in outside),
+        steps_discharging=float(len(hours) - len(outside)),
+        steps=float(len(hours)),
+    )
+
+
+def discharge_coverage_over_seasons(
+    hours: tuple[DispatchHour, ...], seasons: Sequence[SeasonRun] = ()
+) -> DischargeCoverage | None:
+    """위 넷을 **계절마다 재어 계절일수로 가중 평균**한다.
+
+    `measured_over_seasons` 와 같은 사유다 — 접힌 하루에서 재면 *어느 계절엔가
+    방전이 있었던* 시각이 전 계절에서 방전이 있었던 것처럼 세어져 **창 밖
+    수요를 과소 계상한다.** 잉여가 없어 배터리가 쉬는 겨울이 정확히 그 자리다.
+
+    ⚠ **잴 운전이 없으면 계절을 보지 않는다** — `measured_over_seasons` 의
+    같은 ⚠⚠ 절과 같은 이유다.
+    """
+    if not hours or not seasons:
+        return discharge_coverage(hours)
+    parts = [
+        (discharge_coverage(build_hourly_profile(season.dispatch)), season.days)
+        for season in seasons
+    ]
+    measured = [(part, days) for part, days in parts if part is not None]
+    if len(measured) != len(parts):
+        return None
+
+    def blend(pick: str) -> float:
+        return math.fsum(
+            float(getattr(part, pick)) * days / DAYS_PER_YEAR for part, days in measured
+        )
+
+    return DischargeCoverage(
+        load_total=blend("load_total"),
+        load_outside=blend("load_outside"),
+        grid_import_outside=blend("grid_import_outside"),
+        steps_discharging=blend("steps_discharging"),
+        steps=blend("steps"),
     )

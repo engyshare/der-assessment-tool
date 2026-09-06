@@ -44,6 +44,7 @@ from core.casegrid.models import (
     ONE_OFF_SALVAGE,
     CaseBasis,
 )
+from core.casegrid.operating_lines import DAYS_PER_YEAR
 from core.casegrid.profiles import PROFILE_PATH, Season, load_daily_shapes
 from core.cba.baseline import BaselineArrangement
 from core.report.case_report import CaseReport
@@ -60,6 +61,7 @@ from core.report.measured_run import (
 )
 from core.report.measured_run import (
     _measured_quantities,  # noqa: F401
+    discharge_coverage_over_seasons,
     measured_over_seasons,
 )
 
@@ -846,6 +848,59 @@ def _season_item(
     ]
 
 
+def _discharge_window_item(report: CaseReport) -> list[UnreflectedItem]:
+    """**방전창 밖의 가구 수요** — 재어 판정한다 (R64/WP-6b · 사용자 요구 5).
+
+    ## 왜 이 행이 붙임 8 에 서는가 (판정 ④)
+
+    R64/WP-6b 가 방전 배분의 배포 기본값을 「부하 추종」으로 바꿨다 — 그러면
+    리포트 0절의 「운전 방식」 칸이 *「방전 배분: 부하 추종」* 을 인쇄한다.
+    그 문면만 두면 **하루 종일 수요를 최우선으로 따라간다**로 읽히는데, 실제로
+    따라가는 것은 **방전창 안**뿐이다. 창을 넓히면 충전 계획과 순환하므로
+    (`core/report/measured_run.py::DischargeCoverage` 의 ⛔ 절) 그 결손은 이
+    라운드가 고칠 수 있는 것이 아니다 — **고칠 수 없는 것은 재어서 드러낸다**
+    는 것이 이 파일이 하는 일이다.
+
+    ⛔ **문장으로 박지 않는다.** *「저녁 18~21시에만 방전한다」* 로 적으면 운전
+    방법을 바꾼 실행에서 리포트가 틀린 창을 계속 인쇄한다(모듈 머리말 ★).
+    **매 실행 운전 결과에서 재고**, 잴 것이 없으면 이 행이 스스로 빠진다 —
+    저장장치나 가구 부하가 없는 실행이 그렇다.
+
+    ⚠ **방향을 지어내지 않는다.** 창을 넓히면 계통 수전(비용)이 줄지만 그
+    에너지는 잉여 판매(편익)에서 온 것이라 송전도 함께 준다 — 두 단가의 차와
+    저장 여유가 정하는 값이며 이 자리는 그것을 재지 않았다.
+    """
+    coverage = discharge_coverage_over_seasons(report.dispatch_hours, report.seasons)
+    if coverage is None or coverage.load_total <= 0.0:
+        return []
+    share = coverage.load_outside / coverage.load_total
+    return [
+        UnreflectedItem(
+            label="방전창 밖 가구 수요",
+            direction=DIRECTION_UNKNOWN,
+            magnitude=(
+                f"수량 측정 · 대표일 가구 부하 {coverage.load_total:,.4f}kWh 중 "
+                f"방전이 난 스텝({coverage.steps_discharging:,.1f}/"
+                f"{coverage.steps:,.0f}스텝) **밖** "
+                f"{coverage.load_outside:,.4f}kWh ({share:.1%}) · "
+                f"그 스텝의 계통 수전 {coverage.grid_import_outside:,.4f}kWh/일 "
+                f"(연간화 {coverage.grid_import_outside * DAYS_PER_YEAR:,.0f}kWh)"
+            ),
+            reason=(
+                "방전 시간대(`ESS.discharge_hours`)를 운전 방법이 정하고 방전 "
+                "배분은 그 안에서만 나눈다 · 창을 부하로 정하면 충전 계획"
+                "(`ess_schedule.pv_surplus_charge_kwh_by_hour` — 방전창을 뺀 "
+                "시각에 충전)과 서로를 참조해 계획이 순환한다"
+            ),
+            resolves_when=(
+                "충전·방전 계획을 한 번에 세우는 최적화 배선 (창을 넓히는 것으로는 "
+                "닫히지 않는다) · 또는 방전창이 가구 수요와 겹치는 운전 방법 선택"
+            ),
+            measured=True,
+        )
+    ]
+
+
 #: 방법 자체의 한계 — **값과 무관하게 성립**하므로 재지 않는다.
 _METHOD_LIMITS: tuple[UnreflectedItem, ...] = (
     UnreflectedItem(
@@ -888,6 +943,9 @@ def build_unreflected(report: CaseReport) -> tuple[UnreflectedItem, ...]:
         # 검토자가 「빠진 비용 행」을 한 자리에서 읽게 한다.
         *_variable_om_item(basis),
         *_flat_generation_item(basis, report.dispatch_hours),
+        # ★ **운전이 무엇을 못 덮었는가** — 위 두 행(발전 형상 · 비용 행)과 달리
+        # 이 행은 **배선이 끝난 뒤에도 남는** 결손이다 (R64/WP-6b · 요구 5).
+        *_discharge_window_item(report),
         *_season_item(report.dispatch_hours),
         *_METHOD_LIMITS,
     )

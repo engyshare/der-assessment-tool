@@ -91,13 +91,17 @@ from core.casegrid.household_scale import household_scale
 from core.casegrid.models import SeasonRun
 from core.casegrid.operating_lines import DAYS_PER_YEAR
 from core.casegrid.profiles import DailyShapes
-from core.casegrid.pv_allocation import _dispatch_inputs_under_baseline
+from core.casegrid.pv_allocation import (
+    _dispatch_inputs_under_baseline,
+    resolve_ess_discharge_inputs,
+)
 from core.cba.baseline import BaselineArrangement, PoolMeteringDeclaration
 from core.cba.proforma import check_analysis_period
 from core.contracts.der import DER, DispatchContext, DispatchResult
 from core.contracts.engine import DispatchEngine, SystemDispatch
 from core.contracts.units import Year
 from core.der.ess import ESS, ESSChargeSource, ESSOperatingMode
+from core.der.ess_schedule import ESSDischargeAllocation
 from core.der.load import Load
 from core.der.pv import PV, OperatingMode, PVAllocationPriority
 
@@ -213,6 +217,7 @@ def build_and_dispatch_case(
     ess_replacement_price: float,
     ess_operating_mode: ESSOperatingMode | str | None,
     ess_charge_source: ESSChargeSource | str | None,
+    ess_discharge_allocation: ESSDischargeAllocation | str | None,
     pv_allocation_priority: PVAllocationPriority | str | None,
     baseline_arrangement: BaselineArrangement | str | None,
     pool_metering: PoolMeteringDeclaration | None,
@@ -270,6 +275,15 @@ def build_and_dispatch_case(
         escalation_rate=price_escalation_rate,
         replacement_escalation=replacement_escalation_rate,
     )
+    # ★★ **방전 배분 축은 계절이 갈리기 전에 한 번만 고른다** (R64/WP-6b).
+    # *「이 실행에 따라갈 수요가 있는가」* 는 연간 수준의 사실이라 계절마다 다시
+    # 내리면 부하가 어느 계절에만 0 인 자산에서 갈래가 계절마다 갈리고,
+    # `_resolved_once` 가 그것을 거부한다. 여기서 고른 갈래를 계절마다 **인자로
+    # 되먹이고**, 계절이 새로 짓는 것은 **그 계절의 부하 시계열 하나**다.
+    # 짝으로 나오는 `load_whole` 은 연간등가 배터리가 설 하루다 — 아래 ★★ 참조.
+    discharge_allocation, load_whole = resolve_ess_discharge_inputs(
+        ess_discharge_allocation, case_values, ctx, household=household,
+    )
     inputs = _season_inputs(daily_shapes, generation_total_kwh, load_total_kwh)
     weights = tuple(season.days / DAYS_PER_YEAR for season in inputs)
     setups = [
@@ -278,6 +292,7 @@ def build_and_dispatch_case(
             escalation_rate=price_escalation_rate, case_values=case_values,
             ess_operating_mode=ess_operating_mode, ess_charge_source=ess_charge_source,
             pv_allocation_priority=pv_allocation_priority,
+            ess_discharge_allocation=discharge_allocation,
             baseline_arrangement=baseline_arrangement, pool_metering=pool_metering,
         )
         for season in inputs
@@ -298,9 +313,16 @@ def build_and_dispatch_case(
         )
     )
     surplus = _blend_series([s.surplus for s in setups], weights)
-    mode, source, priority = _resolved_once(setups)
+    mode, source, priority, allocation = _resolved_once(setups)
+    # ★★ **연간등가 배터리에는 연간등가 하루의 부하를 넘긴다** (R64/WP-6b).
+    # 이 한 대는 **설정 오류를 잡는 자리**이고(위 ⚠⚠ 절) 리포트 0절이 「운전
+    # 방식」 칸에 그 대의 `discharge_allocation` 을 인쇄한다 — 그러므로 그 대가
+    # 서는 하루도 리포트가 인쇄하는 하루(`CaseDispatch.dispatch` 의 연간등가
+    # 하루)와 같아야 한다. 계절 하나의 부하를 여기 넣으면 **어느 계절의 것인지**
+    # 말할 수 없고, 그 대가 받는 설정 판정도 그 계절의 것이 된다.
     ess_fleet, ess_plans, ess_whole = ess_spec.build(
         operating_mode=mode, charge_source=source, pv_surplus_profile_kwh=surplus,
+        discharge_allocation=allocation, load_profile_kwh=load_whole,
     )
     runs = [
         _dispatch_one_season(
@@ -590,13 +612,24 @@ class _ESSSpec:
         operating_mode: ESSOperatingMode | str,
         charge_source: ESSChargeSource | str,
         pv_surplus_profile_kwh: Sequence[float] | None,
+        discharge_allocation: ESSDischargeAllocation | str,
+        load_profile_kwh: Sequence[float] | None,
     ) -> tuple[tuple[ESS, ...], tuple[ESSSharePlan, ...], ESS]:
+        """★ **계절마다 바뀌는 시계열이 이제 둘이다** (R64/WP-6b · 사용자 요구 5).
+
+        충전 쪽 `pv_surplus_profile_kwh` 옆에 방전 쪽 `load_profile_kwh` 가
+        섰다. 둘 다 **제원이 아니라 그 하루의 사실**이므로 이 데이터클래스의
+        칸이 아니라 인자로 받는다 — 칸으로 두면 계절마다 `_ESSSpec` 을 다시
+        세워야 하고, 그러면 제원이 계절마다 갈릴 수 있다.
+        """
         return build_case_ess_fleet(
             shares=self.shares,
             capacity_kwh=self.capacity_kwh,
             operating_mode=operating_mode,
             charge_source=charge_source,
             pv_surplus_profile_kwh=pv_surplus_profile_kwh,
+            discharge_allocation=discharge_allocation,
+            load_profile_kwh=load_profile_kwh,
             capex_unit_won_per_kwh=self.capex,
             fixed_om_won_per_year=self.fixed_om,
             replacement_unit_won_per_kwh=self.replacement_price,
@@ -626,6 +659,11 @@ class _SeasonSetup:
     operating_mode: ESSOperatingMode | str
     charge_source: ESSChargeSource | str
     priority: PVAllocationPriority
+    #: 이 계절이 고른 방전 배분과 **그 계절의** 부하 시계열 (R64/WP-6b · 요구 5).
+    #: ⚠ 짝으로 든다 — 「고정 창」이면 부하가 `None` 이고 그 조합만 `ESS` 가
+    #: 받는다(`pv_allocation.resolve_ess_discharge_inputs`).
+    discharge_allocation: ESSDischargeAllocation | str
+    load_profile: list[float] | None
 
     @property
     def has_pv_surplus(self) -> bool:
@@ -657,6 +695,7 @@ def _setup_one_season(
     ess_operating_mode: ESSOperatingMode | str | None,
     ess_charge_source: ESSChargeSource | str | None,
     pv_allocation_priority: PVAllocationPriority | str | None,
+    ess_discharge_allocation: ESSDischargeAllocation | str | None,
     baseline_arrangement: BaselineArrangement | str | None,
     pool_metering: PoolMeteringDeclaration | None,
 ) -> _SeasonSetup:
@@ -670,7 +709,19 @@ def _setup_one_season(
     ⚠ **운전 방법·충전원·배분 순서는 계절과 무관하다** — 셋 다 인자·`case_values`·
     모듈 상수에서 오며 형상을 보지 않는다. 계절마다 다시 고르는 것은 그 사실을
     이 자리에서 확인하기 위해서이고(갈리면 `_resolved_once` 가 거부한다),
-    실제로 갈리는 것은 **PV 잉여 시계열 하나**다.
+    실제로 갈리는 것은 **시계열 둘**이다.
+
+    ## ★★ 시계열이 둘이 됐다 — **그 계절의 부하를 그 계절의 ESS 에 넘긴다**
+
+    R64/WP-6b(사용자 요구 5)가 방전 쪽 시계열을 세웠다. 방전 배분 **갈래**는
+    위 셋과 같이 계절과 무관하지만(`_resolved_once` 가 넷째로 함께 잰다),
+    **그 갈래가 따라갈 부하는 계절마다 다르다** — 겨울 저녁의 봉우리와 여름
+    저녁의 봉우리는 같은 하루가 아니다.
+
+    ⛔ **연간등가 하루의 부하 한 벌을 네 계절에 돌려쓰지 않는다.** 그러면
+    「부하 추종」이 계절을 안 보는 추종이 되고, R64/WP-4 가 푼 계절 상쇄가
+    **방전 쪽에서 다시 접힌다** — 충전 쪽 PV 잉여를 계절별로 넘기면서 방전
+    쪽만 접는 것은 같은 하루를 두 해상도로 읽는 것이다.
     """
     pv = pv_spec.build(
         None if season.generation_day is None else _year_of(season.generation_day)
@@ -685,9 +736,13 @@ def _setup_one_season(
         baseline_arrangement=baseline_arrangement,
         pool_metering=pool_metering,
     )
+    allocation, load_profile = resolve_ess_discharge_inputs(
+        ess_discharge_allocation, case_values, ctx, household=household,
+    )
     return _SeasonSetup(
         name=season.name, days=season.days, pv=pv, household=household,
         surplus=surplus, operating_mode=mode, charge_source=source, priority=priority,
+        discharge_allocation=allocation, load_profile=load_profile,
     )
 
 
@@ -728,6 +783,11 @@ def _dispatch_one_season(
         fleet, _plans, _whole = ess_spec.build(
             operating_mode=setup.operating_mode, charge_source=setup.charge_source,
             pv_surplus_profile_kwh=setup.surplus,
+            # ★ **그 계절의 부하다** (R64/WP-6b). 연간등가 하루의 부하를 여기
+            # 넣으면 네 계절이 같은 저녁 봉우리를 따라가고, WP-4 가 푼 상쇄가
+            # 방전 쪽에서 다시 접힌다(`_setup_one_season` 의 ★★ 절).
+            discharge_allocation=setup.discharge_allocation,
+            load_profile_kwh=setup.load_profile,
         )
     else:
         fleet = ()
@@ -750,26 +810,39 @@ def _dispatch_one_season(
 
 def _resolved_once(
     setups: Sequence[_SeasonSetup],
-) -> tuple[ESSOperatingMode | str, ESSChargeSource | str, PVAllocationPriority]:
-    """운전 방법·충전원·배분 순서 — **계절마다 같아야 한다.** 다르면 거부한다.
+) -> tuple[
+    ESSOperatingMode | str, ESSChargeSource | str, PVAllocationPriority,
+    ESSDischargeAllocation | str,
+]:
+    """운전 방법·충전원·배분 순서·**방전 배분** — 계절마다 같아야 한다. 다르면 거부한다.
 
-    셋은 인자·`case_values`·모듈 상수에서 오며 **형상을 보지 않으므로** 계절이
+    넷은 인자·`case_values`·모듈 상수에서 오며 **형상을 보지 않으므로** 계절이
     갈라도 같은 값이 나온다. 그 사실 위에서 호출부가 「한 벌」의 ESS 를 세우고
     산출물에 배분 순서 하나를 적는데, 만약 갈리면 **어느 계절의 것이 실렸는지
     말할 수 없는 채로** 그 하나가 인쇄된다.
+
+    ⚠ **방전 배분의 짝인 부하 시계열은 여기서 재지 않는다** — 그것은 계절마다
+    **달라야 하는** 값이다(`_setup_one_season` 의 ★★ 절). 갈래만 같으면 된다.
 
     ⚠ **첫 계절 것을 조용히 쓰지 않는다.** 조용히 쓰면 계절 차례가 산출물을
     정하게 되고, 그것이 성질 「다」(차례 무감)를 깨는 자리가 된다 — 이 함수가
     없으면 그 깨짐은 아무 예외도 내지 않는다.
     """
-    picked = {(s.operating_mode, s.charge_source, s.priority) for s in setups}
+    picked = {
+        (s.operating_mode, s.charge_source, s.priority, s.discharge_allocation)
+        for s in setups
+    }
     if len(picked) != 1:
         raise ValueError(
-            "계절마다 ESS 운전 방법·충전원·PV 배분 순서가 다르게 해석됐습니다: "
-            f"{sorted(str(item) for item in picked)} — 이 셋은 형상이 아니라 "
-            "입력이 정하므로 계절이 갈라도 같아야 합니다"
+            "계절마다 ESS 운전 방법·충전원·PV 배분 순서·방전 배분이 다르게 "
+            f"해석됐습니다: {sorted(str(item) for item in picked)} — 이 넷은 "
+            "형상이 아니라 입력이 정하므로 계절이 갈라도 같아야 합니다"
         )
-    return setups[0].operating_mode, setups[0].charge_source, setups[0].priority
+    first = setups[0]
+    return (
+        first.operating_mode, first.charge_source, first.priority,
+        first.discharge_allocation,
+    )
 
 
 def _season_run(run: _OneSeason) -> SeasonRun:

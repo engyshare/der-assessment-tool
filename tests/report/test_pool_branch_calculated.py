@@ -349,7 +349,8 @@ def test_the_pool_branch_adds_exactly_three_body_lines(
 
     ## ★ 골든 쪽이 합격 조건이다 — 그리고 움직이지 않았다
 
-    양식의 본문 부피 상한(219줄)을 재는 검사는 **골든 시나리오**로 잰다
+    양식의 본문 부피 상한(220줄 · R64/WP-6b 가 219 → 220 으로 올렸다)을 재는
+    검사는 **골든 시나리오**로 잰다
     (`tests/report/test_overview_sections.py::
     test_body_stays_within_the_form_length_budget`). 이 WP 가 세운 것은 ⓒ 를
     고른 실행에서만 서므로 그 수는 **218 그대로**여야 하고, 여기가 그것을
@@ -377,7 +378,13 @@ def test_the_pool_branch_adds_exactly_three_body_lines(
     maintain_body = _body_lines(_maintain(reports))
     pool_body = _body_lines(_pool(reports))
 
-    assert len(maintain_body) <= 219, (
+    # ⚠ **상한을 219 → 220 으로 따라 올렸다 (R64/WP-6b).** 붙임 8 에 미반영 항목
+    # 「방전창 밖 가구 수요」가 늘면서 **ⓑ·ⓒ 양쪽**의 3.4 표에 같은 한 줄이 섰다
+    # — 갈래가 만든 줄이 아니므로 아래 **증분** 단언은 그대로 셋이다. 상한을
+    # 올린 근거 전문은 `test_overview_sections.py::
+    # test_body_stays_within_the_form_length_budget` 독스트링이 진다(이 파일이
+    # 사본을 두지 않는다 — 위 `_body_lines` 의 ⚠ 와 같은 이유다).
+    assert len(maintain_body) <= 220, (
         f"ⓑ 의 본문이 {len(maintain_body)}줄이다 — 이 WP 는 ⓒ 경로만 열었으므로 "
         "ⓑ 는 움직이지 않아야 한다. 상한을 올리지 말고 무엇이 늘었는지 보라"
     )

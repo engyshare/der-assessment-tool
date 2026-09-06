@@ -459,6 +459,10 @@ def _deployed_case(**overrides: object) -> object:
         "ess_replacement_price": levels["ess_replacement"]["base"],
         "ess_operating_mode": None,
         "ess_charge_source": None,
+        # `None` 이 「고르지 않았다」이며 모듈 상수
+        # (`ESS_DISCHARGE_ALLOCATION_DEFAULT` = 「부하 추종」)가 이긴다
+        # (R64/WP-6b · 사용자 요구 5).
+        "ess_discharge_allocation": None,
         "pv_allocation_priority": None,
         "baseline_arrangement": None,
         "pool_metering": None,
