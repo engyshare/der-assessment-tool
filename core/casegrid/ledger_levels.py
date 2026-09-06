@@ -229,6 +229,20 @@ _MODELLING_VARS: tuple[tuple[str, tuple[tuple[str, float], ...]], ...] = (
 #: 범위는 **탐색 구간**이지 불확실성이 아니다. 대장의 `sensitivity` 와 같은
 #: 이름(low·base·high)을 쓰되 뜻이 다르므로, 리포트가 이 변수를 5.1 의
 #: 불확실 인자와 **같은 표에 싣지 않는다** (`design_variables()` 로 가른다).
+#:
+#: ★★★ **아래 수는 「한 호가 갖는 설비」다 — 러너가 가구 수를 곱한다**
+#: (R65/WP-2b). `core/casegrid/e2e_runner.py` 가 이 둘을 `_resolve` 로 얻은
+#: 직후 `household_scale(household_count)` 를 곱하므로, **20호 단지의 실행이
+#: 실제로 쓰는 것은 60 kW · 200 kWh** 다. 부하 쪽
+#: (`core/casegrid/seasonal_dispatch.py:789`)이 쓰는 배수와 같은 것이며,
+#: 한쪽만 곱하면 부하와 설비가 서로 다른 사업을 그린다.
+#: ⛔ **그러니 이 수를 「작다」고 키우지 마라** — 키우면 한 호가 60 kW 를 갖는
+#: 사업이 되고 배수가 두 번 곱해진다. 여기 적는 것은 **한 호분**이다.
+#: ⚠ **탐색 구간(1.0~9.0 · 2.0~30.0)도 한 호분이다** — `design_variables()`
+#: 를 읽어 4.4(적정 용량)와 역산 소절을 인쇄하는 자리
+#: (`core/report/case_report.py`·`sizing.py`·`ess_sizing.py`)는 그 수를 **곱하지
+#: 않는다.** 그래서 20호 실행에서 그 절들은 여전히 **한 호**를 말한다 — 본문과
+#: 다른 규모다. 자리는 `.orch/R65/result_2b.md` ⑧ 이 넘긴다.
 #: (변수, 단위, 사람이 읽는 이름, 탐색 구간)
 _DESIGN_VARS: tuple[tuple[str, str, str, tuple[tuple[str, float], ...]], ...] = (
     (

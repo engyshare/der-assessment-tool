@@ -54,11 +54,16 @@ from core.casegrid.ess_build import (
 # 래칫이 거짓을 참으로 인쇄한다.
 from core.casegrid.ess_share import ESSShare
 
-# ★ **가구 수 배수는 이 파일 것이 아니다** (R64/WP-1) — 아래 `ess_build` ·
+# ★ **가구 수 배수의 판정은 이 파일 것이 아니다** (R64/WP-1) — 아래 `ess_build` ·
 # `pv_allocation` 과 같은 사유로 `core/casegrid/household_scale.py` 에 있고
-# 판정(1 이상의 정수인가)도 그 모듈이 진다. ⚠ **R64/WP-4 뒤로 이 파일은 그
-# 배수를 직접 읽지 않는다** — 총량에 곱하는 자리가 부하 생성자와 함께
-# `core/casegrid/seasonal_dispatch.py` 로 갔다(아래 import 옆 ⚠).
+# 판정(1 이상의 정수인가)도 그 모듈이 진다.
+#
+# ⚠ **R64/WP-4 뒤로 「부하」 쪽 곱은 이 파일에 없다** — 총량에 곱하는 자리가
+# 부하 생성자와 함께 `core/casegrid/seasonal_dispatch.py` 로 갔다(아래 import 옆 ⚠).
+# ★★★ **R65/WP-2b 에 「설비」 쪽 곱이 이 파일로 왔다** — `pv_capacity_kw` ·
+# `ess_capacity_kwh` 는 러너가 `_resolve` 로 직접 얻는 값이라 그 자리가 여기밖에
+# 없다. 그래서 이 파일이 배수를 **다시** 읽는다. 사유는 아래 두 `_resolve` 옆 ★★★.
+from core.casegrid.household_scale import household_scale
 from core.casegrid.incentive_cases import (
     Viewpoint,
     build_capex_cashflows_for_all_cases,
@@ -637,10 +642,32 @@ def run_single_case_e2e(
     discount_rate = _resolve(
         case_values.get("discount_rate", "base"), "discount_rate", level_map
     )
-    pv_capacity_kw = _resolve(
+    # ★★★ **설계 변수는 「한 호가 갖는 설비」다 — 단지 규모를 곱한다** (R65/WP-2b).
+    #
+    # `ledger_levels.py::_DESIGN_VARS` 의 `pv_capacity_kw` base **3.0** ·
+    # `ess_capacity_kwh` base **10.0** 은 **한 호 규모**이고 그 모듈과
+    # `household_scale.py`·`appliance_load.py` 가 셋 다 그렇게 적어 두었다.
+    #
+    # ⚠⚠ **부하와 설비가 같은 배수를 쓰지 않으면 두 절이 다른 사업을 그린다.**
+    # 부하 쪽은 `core/casegrid/seasonal_dispatch.py:789` 의
+    # `(annual_load_kwh + extra_appliance_load_kwh) * household_scale(household_count)`
+    # 이며 **여기가 그것과 같은 함수를 부르는 자리**다. 곱하지 않으면 20호 단지가
+    # 부하만 20배가 되고 설비는 1호분이라 낮에도 태양광 잉여가 0 이 되고, 잉여로
+    # 충전하는 ESS 가 `DV` 로 실행을 **거부**한다(R65/WP-2 실측: 기기 부하까지
+    # 얹으면 **2호부터** 거부되고, 20호가 성립하려면 태양광이 약 32.8 kW 여야 했다).
+    # R64 가 `_Sweeper` 에서 고친 어긋남과 **같은 형태**다.
+    #
+    # ⚠ **`household_count or 1` 을 적지 않는다** — 그 표현은 `0` 도 조용히 `1` 로
+    # 바꾼다. `household_scale()` 이 그 함정을 막으려고 있는 함수다.
+    # ⚠ **`capex` 는 곱하지 않는다** — 단가(원/kW·원/kWh)이고 총액은 자원 안에서
+    # `용량 × 단가` 로 나온다(`seasonal_dispatch.py` 의 `unit_capex_won_per_kw` ·
+    # `capex_unit_won_per_kwh`). 여기서 함께 곱하면 **두 번 곱해진다.**
+    # ⚠ **미지정(`None`)이면 배수가 `1`** 이라 이 곱이 생기기 전과 원소 하나까지 같다.
+    scale = household_scale(household_count)
+    pv_capacity_kw = scale * _resolve(
         case_values.get("pv_capacity_kw", "base"), "pv_capacity_kw", level_map
     )
-    ess_capacity_kwh = _resolve(
+    ess_capacity_kwh = scale * _resolve(
         case_values.get("ess_capacity_kwh", "base"), "ess_capacity_kwh", level_map
     )
     # ★ **계통에서 산 전력의 한계단가** (`tariff.hv_single_contract.energy_only`).

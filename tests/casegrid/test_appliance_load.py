@@ -312,15 +312,35 @@ def test_the_ledger_has_no_ai_appliance_row() -> None:
     assert EV_LOAD_LEDGER_KEY in keys
 
 
-def test_the_two_ledger_rows_hold_no_value() -> None:
-    """★★★ **값을 지어내지 않았다** — 두 항목은 `blocked` · `value: null` 이다.
+def test_the_two_ledger_rows_hold_a_value_with_its_notes_and_source() -> None:
+    """★★★ **두 항목은 이제 값을 갖는다 — 그리고 그 값이 «어디서 왔는지»도 갖는다.**
 
-    참고자료(사용자 제공 엑셀)의 수(2,675·2,412)를 이 칸에 올리면 그 순간
-    **우리가 고른 구성으로 우리가 돌린 계산**이 된다(§13.0.2 자기충족). 사용자가
-    *「해당 자료도 참값은 아님. 가정한 값임을 유의해줘」* 라고 명시했다.
+    ## ⚠⚠ 이 검사는 R65 에 **재는 대상이 뒤집혔다.** 옛 사실을 지우지 않는다
 
-    ⚠ 그 수는 `derivation_method` 에 **참고선**으로 적혀 있고 계산에 들어가지
-    않는다 — 이 검사가 그 구별을 붙든다.
+    R64/WP-2 에 이 자리는 `test_the_two_ledger_rows_hold_no_value` 였고
+    *「두 항목은 `blocked` · `value: null` 이다」* 를 쟀다. 그 판단은 **틀리지
+    않았다** — 근거는 사용자 문면 *「해당 자료도 참값은 아님. 가정한 값임을
+    유의해줘」* 였고, 참고 엑셀의 수를 그냥 올리면 **우리가 고른 구성으로 우리가
+    돌린 계산**이 되기 때문이었다(§13.0.2 자기충족).
+
+    **R65 요구가 그 전제를 바꿨다** — *「히트펌프, 전기차 충전 연간 소비전력량 …
+    조사하거나, 앞서 예시로 제시한 엑셀 파일 상의 수치를 사용(**조사 권장**)」*
+    (2026-09-07). 값을 세우라고 **사실을 정하는 쪽이 지시했다.** 그래서 두 항목이
+    `track: assume` · `value` 있음으로 섰다(R65/WP-2).
+
+    ## 그러면 자기충족은 무엇이 막는가 — **부기다. 그것을 이 검사가 잰다**
+
+    값이 선 뒤의 방어선은 *「값이 없다」*가 아니라 *「이 값이 무엇이고 어디서
+    왔는지가 함께 실린다」*이다. 그래서 이 검사는 **값 · 민감도 · 단위 ·
+    유도 · 출처 · 이용조건 · 신뢰도 · 공개등급**을 함께 요구한다 — 하나라도
+    비면 산출물이 그 수를 **근거 없이** 인쇄하게 된다.
+
+    ⚠ **수를 여기 리터럴로 적지 않는다.** 2,675·2,784 를 박으면 대장이 갱신되는
+    날 이 검사가 조용히 낡는다(모듈 머리말 ⚠ 절과 같은 판단). 재는 것은
+    *「값이 있는가 · 부기가 붙었는가 · 민감도의 `base` 가 그 값인가」*다.
+
+    ⚠ `value_unit` 만은 옛 검사에서 **그대로 가져왔다** — 「호당」이 아니면
+    곱셈 순서가 뜻을 잃는다는 사실은 값이 서도 바뀌지 않는다.
     """
     ledger = yaml.safe_load(_ASSUMPTIONS.read_text(encoding="utf-8"))
     rows = {
@@ -330,12 +350,33 @@ def test_the_two_ledger_rows_hold_no_value() -> None:
     }
     assert set(rows) == {HEATPUMP_LOAD_LEDGER_KEY, EV_LOAD_LEDGER_KEY}
     for key, row in rows.items():
-        assert row["track"] == "blocked", f"{key} 의 갈래가 blocked 가 아니다"
-        assert row["value"] is None, f"{key} 에 값이 채워졌다 — 지어낸 수다"
-        assert row["sensitivity"] is None, (
-            f"{key} 에 민감도가 섰다 — 참고자료가 범위를 주지 않으므로 "
-            "그 3수준은 지어낸 것이다"
+        assert row["track"] != "blocked", (
+            f"{key} 가 다시 blocked 로 돌아갔다 — R65 요구가 값을 세우라고 했다"
+        )
+        assert isinstance(row["value"], (int, float)), (
+            f"{key} 에 값이 없다 — R65 요구 *「엑셀 파일 상의 수치를 사용」* 이 "
+            "이 칸을 채우라고 했다"
+        )
+        sensitivity = row["sensitivity"]
+        assert isinstance(sensitivity, dict), (
+            f"{key} 에 민감도 3수준이 없다 — 값이 가정·추정이므로 "
+            "「얼마나 틀릴 수 있는가」가 함께 실려야 한다"
+        )
+        assert sensitivity["base"] == row["value"], (
+            f"{key} 의 민감도 base 가 값과 다르다 — 두 수가 갈리면 "
+            "스윕이 본문과 다른 기준점을 잰다"
+        )
+        assert sensitivity["low"] <= row["value"] <= sensitivity["high"], (
+            f"{key} 의 값이 민감도 띠 밖에 있다"
         )
         assert row["value_unit"] == "kWh/호·년", (
             f"{key} 의 단위가 「호당」이 아니다 — 곱셈 순서가 뜻을 잃는다"
         )
+        # ★ 값이 선 뒤의 방어선은 **부기**다 (독스트링 둘째 절).
+        for field in (
+            "derivation_method", "source", "usage_terms", "confidence", "disclosure"
+        ):
+            assert str(row.get(field) or "").strip(), (
+                f"{key} 에 `{field}` 가 비어 있다 — 값만 있고 근거가 없으면 "
+                "산출물이 그 수를 근거 없이 인쇄한다"
+            )
