@@ -55,6 +55,12 @@ from core.report.case_report import (
     MAX_SUBSIDY_RATE,
     CaseReport,
 )
+from core.report.verification_inputs import (
+    capacity_review_lines,
+    execution_input_lines,
+    season_lines,
+    unreflected_lines,
+)
 
 
 def _row_year1(row: CashFlowRow) -> int:
@@ -99,6 +105,7 @@ def _stage1_ledger(report: CaseReport) -> list[str]:
         "",
         f"항목 {len(report.assumptions)}건 — 값·단위·기준연도·출처·신뢰도·"
         "최종확인일을 각 행이 함께 나른다.",
+        *execution_input_lines(report),  # ★ 요구 1·2·3 — 대장 밖에서 온 실행 입력
     ]
     b = [
         "| 키 | 값 | 단위 | 기준연도 | 출처 | 신뢰도 | 최종확인일 |",
@@ -129,7 +136,8 @@ def _stage1_ledger(report: CaseReport) -> list[str]:
     return _stage(1, "전제 대장에서 읽은 값", a=a, b=b, c=c, d=d)
 
 
-def _stage2_resources(basis: CaseBasis) -> list[str]:
+def _stage2_resources(report: CaseReport) -> list[str]:
+    basis = report.basis
     total_capex = sum(r.capex_won for r in basis.resources)
     a = [
         "| 자원 | 용량 | 단가 문면 |",
@@ -146,6 +154,7 @@ def _stage2_resources(basis: CaseBasis) -> list[str]:
         f"| **자원별 취득비 합** | **{_won(total_capex)}** | — |",
         f"| **초기투자(`initial_investment_won`)** | "
         f"**{_won(basis.initial_investment_won)}** | — |",
+        *capacity_review_lines(report),  # ★ 요구 4 — 진단이며 위 구성을 바꾸지 않는다
     ]
     c = [
         "자원 목록(용량·운전방식)은 3단계 디스패치가 그대로 받는다.",
@@ -183,6 +192,7 @@ def _stage3_dispatch(report: CaseReport) -> list[str]:
     b = [
         f"대표일 {len(hours)}스텝 운전 — 계통 송전 합계 {_num(total_export)}kWh · "
         f"계통 수전 합계 {_num(total_import)}kWh (붙임 7 이 스텝별 표를 싣는다).",
+        *season_lines(report),  # ★ 요구 3·6 — 대표일은 연간등가 하루라 이것을 못 대신한다
     ]
     c = [
         "이 운전 결과의 스텝별 자가소비·송전·수전 수량이 4단계 편익 계산과 "
@@ -470,7 +480,7 @@ def render_verification_markdown(report: CaseReport) -> str:
     ]
     lines += _stage1_ledger(report)
     lines += ["---", ""]
-    lines += _stage2_resources(report.basis)
+    lines += _stage2_resources(report)
     lines += ["---", ""]
     lines += _stage3_dispatch(report)
     lines += ["---", ""]
@@ -485,4 +495,6 @@ def render_verification_markdown(report: CaseReport) -> str:
     lines += _stage8_metrics(report)
     lines += ["---", ""]
     lines += _stage9_variants(report)
+    # ★ 미반영 항목 — 새 단계가 아니라 9단계 뒤의 `###` 절이다(단계 정규식 밖).
+    lines += ["---", "", *unreflected_lines(report)]
     return "\n".join(lines)
