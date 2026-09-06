@@ -98,11 +98,51 @@ netstat -ano | grep ":8000 .*LISTENING"          # → PID
 `core/der/temp_acceptance2_bad_import.py` 를 `ruff` 가 잡아 `rc=1` 이 나는데,
 그것은 **위반이 아니라 남의 임시 파일을 본 것**이다.
 
+### 시험을 돌리는 법 — **전건은 마지막 수단이다** (2026-09-06 실측)
+
+**먼저 「무엇을 확인하려는가」를 정한다.** 목적이 무엇이든 전건을 도는 것이 이 저장소가
+반복해 밟은 낭비다 — 전건은 **직렬 약 13분 · 병렬 약 6분**이다.
+
+| 확인하려는 것 | 도는 것 |
+|---|---|
+| **결론축(골든값)이 움직였나** | `pytest tests/golden` |
+| 내가 고친 모듈이 깨졌나 | **파일을 지목한** 표적 시험 |
+| 저장소 규약을 어겼나 | 정적 게이트 (`ruff`·`mypy`·`lint-imports`·`scripts/check_*`) |
+| 아무것도 안 깨졌나 | **CI 가 돈다.** 로컬 전건은 그 중복이다 |
+
+⚠⚠ **넓게 돌아야 하면 맨손 `pytest` 가 아니라 `bash .orch/R64/fast_pytest.sh` 다**
+(병렬 · 워커 = 코어−4 · `--dist loadfile`). ⛔ **`-n auto` 를 맨손으로 붙이지 마라** —
+12코어를 다 먹어 **사람의 터미널이 밀린다**(이 저장소는 사람과 에이전트가 같은 기계를 쓴다).
+⛔ `pytest tests/report tests/casegrid tests/web tests/app` 를 **직렬로 돌리지 마라** —
+사실상 전건이며 실측 **40분**이었다.
+
+⚠ **`pytest` 에 `-q` 를 겹쳐 주지 마라.** `addopts` 가 이미 `-q` 라 `-qq` 가 되어
+**`N passed` 요약 줄이 사라진다.** `rc` 는 옳으므로 **조용히** 판정할 근거를 잃는다.
+⚠ **명령에 `| tail` 을 붙이지 마라** — `rc` 가 `tail` 의 것이 된다.
+
+### ⚠⚠ `tests_e2e/` 는 **로컬 전건에 들어가지 않는다**
+
+`[tool.pytest.ini_options]` 의 `testpaths = ["tests"]` 가 그것을 수집하지 않는다.
+⇒ **화면(`web/` · `app/`)을 만졌으면 로컬이 초록불이어도 CI 가 빨간불일 수 있다.**
+2026-09-06 실측: 그래서 e2e 회귀 둘을 **여섯 커밋 동안 아무도 몰랐다.**
+
+```bash
+export PYTHONUTF8=1
+./.venv/Scripts/python.exe -m pytest tests_e2e        # 약 169초
+```
+
 ## 하지 말 것
 
 - ⛔ **`pyproject.toml` 을 편집하지 마라.** 명세 §16.4 가 그 파일을 **WP-15 단독 소유·
   append-only** 로 못 박았다. 의존성이 빠져 있다고 판단되면 고치지 말고 **요청**한다.
-- ⛔ `docs/traceability.md` 는 **CI 자동 생성**이다. 수동 편집 금지 (NFR-107).
+- ⛔ `docs/traceability.md` 를 **손으로 고치지 마라** (NFR-107). ⚠ 다만 **시험을 더했으면
+  생성기를 돌려 그 결과를 커밋해야 한다** — 그 파일은 **시험 목록을 훑어 만들어지므로
+  시험이 늘면 낡고, 그러면 CI 의 `source-rules` 가 빨간불이 된다**(2026-09-06 실측:
+  여섯 커밋 동안 빨간불이었다). 손편집 금지와 어긋나지 않는다 — CI 오류 문면이 이 조치를
+  그대로 지시한다:
+  ```bash
+  ./.venv/Scripts/python.exe scripts/gen_traceability.py   # 그리고 결과를 커밋한다
+  ```
 - ⛔ `.venv/` · `.orch/` 는 `.gitignore` 안이다. 커밋에 끌어들이지 않는다.
 
 ---
