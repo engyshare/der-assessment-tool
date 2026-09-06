@@ -22,6 +22,7 @@
 """
 from __future__ import annotations
 
+import dataclasses
 import re
 
 import pytest
@@ -30,6 +31,7 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.services.ui_charts import chart_data, unwired_reason
 from app.services.ui_run import run_ui_case
+from core.contracts.validation import ValidationError
 from core.report.charts import chart_registry
 
 #: PNG 파일 서명. **이것으로 「그렸다」와 「200 을 냈다」가 갈린다** —
@@ -228,3 +230,83 @@ def test_the_picture_follows_the_arrangement_the_screen_chose(
         answer = client.get(source.replace("&amp;", "&"))
         assert answer.status_code == 200, f"{source}: {answer.text}"
         assert answer.content.startswith(PNG_MAGIC), f"{source}: PNG 가 아니다"
+
+
+# ── ★ R64/WP-5: 계절별 그림 (사용자 요구 6) ────────────────────────────────
+#
+# 위 두 검사가 레지스트리를 **열거**하므로 새 차트는 자동으로 「200 인가 · 진짜
+# PNG 인가」에 걸린다. 여기서 따로 재는 것은 그 열거가 말하지 못하는 둘이다:
+# **그림이 리포트의 계절을 그대로 그리는가**, 그리고 **계절이 없는 실행에서
+# 조용히 빈 그림을 내지 않는가**.
+
+_SEASONAL_TAG = "seasonal_operation"
+
+
+@pytest.mark.req("FR-1004-AC1")
+def test_the_seasonal_picture_draws_the_seasons_the_report_ran() -> None:
+    """★★★ **그림의 계절이 리포트의 계절과 같다** — 이름·일수·스텝까지.
+
+    화면이 계절을 다시 나누거나 연간등가 하루를 넷으로 복제하면 인쇄된 계절과
+    결론이 선 계절이 갈리고, **갈려도 둘 다 그럴듯해 보인다**
+    (`core/report/case_report.py::CaseReport.seasons` 가 같은 사유를 적는다).
+
+    ⚠ 계절 이름·일수를 소스에 박지 않는다 — 자산이 정본이고 리포트가 나른다.
+    """
+    report = run_ui_case(_SCENARIO).report
+    assert report.seasons, "이 시나리오가 계절을 하나도 돌지 않았다"
+
+    drawn = chart_data(report, _SEASONAL_TAG)["seasons"]
+
+    assert [season["name"] for season in drawn] == [s.name for s in report.seasons]
+    assert [season["days"] for season in drawn] == [s.days for s in report.seasons]
+    for season, ran in zip(drawn, report.seasons, strict=True):
+        assert len(season["load"]) == len(ran.dispatch.grid_export), (
+            f"계절 {ran.name}: 그림의 하루가 실행의 하루와 스텝 수가 다르다"
+        )
+        for name, series in season["resource_dispatch"].items():
+            assert series == list(ran.dispatch.per_resource[name].electric), (
+                f"계절 {ran.name} 의 자원 {name} 이 실행 값과 다르다 — 표시 층이 "
+                "수를 고쳤다"
+            )
+
+
+def test_the_seasonal_picture_refuses_a_run_without_seasons() -> None:
+    """★★ **계절이 없으면 빈 그림이 아니라 3요소 거부다** (`NFR-303`).
+
+    형상 자산 없이 도는 경로(케이스 그리드·성능 측정)에서는 `seasons` 가 비어
+    있다. 그때 연간등가 하루를 넷으로 복제해 그리면 네 계절이 전부 같은 그림이
+    되고 **그 그림은 「계절 변동이 없다」를 결과로 주장한다** — 착수 순서 41번이
+    `energy_balance` 에서 만난 바로 그 함정이다.
+    """
+    report = dataclasses.replace(run_ui_case(_SCENARIO).report, seasons=())
+
+    with pytest.raises(ValidationError) as caught:
+        chart_data(report, _SEASONAL_TAG)
+
+    err = caught.value
+    assert err.field == f"chart.{_SEASONAL_TAG}"
+    assert err.reason, "사유가 비어 있다"
+    assert err.action, "조치가 비어 있다"
+
+
+def test_the_month_chart_stays_unwired_and_says_why_in_the_new_words() -> None:
+    """★★★ **계절 넷이 섰다고 월 열둘이 선 것이 아니다** (판정 ①).
+
+    `energy_balance` 는 축에 **월**을 적는다. 계절 넷을 그 축에 얹으면 그림이
+    「1월~4월」을 주장하므로 이 차트는 `501` 로 남는다. 다만 옛 사유
+    (*「운전 해상도는 대표일 24스텝 하나」*)는 계절 축이 서면서 **거짓**이 됐다.
+
+    ⚠ 여기서 재는 것은 「501 인가」가 아니라 **사유가 지금 참인가**다 —
+    거짓이 된 사유를 그대로 두면 다음 사람이 없는 결손을 고치러 간다.
+    """
+    reason = unwired_reason("energy_balance")
+
+    assert reason is not None, "월별 차트가 배선됐다고 답한다 — 재료가 있는가"
+    assert "월" in reason, f"사유가 월 축을 말하지 않는다: {reason}"
+    assert "24스텝 하나" not in reason, (
+        "계절 넷이 선 지금도 「운전 해상도는 대표일 24스텝 하나」라고 적혀 있다 "
+        f"— 그 문면은 거짓이다: {reason}"
+    )
+    assert unwired_reason(_SEASONAL_TAG) is None, (
+        "계절별 그림이 배선되지 않았다고 답한다"
+    )

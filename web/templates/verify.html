@@ -111,6 +111,36 @@
       </details>
       {% endfor %}
 
+      {% if group.seasons %}
+      {# ★★ 계절별 시간대별 운전 (R64/WP-5 · 사용자 요구 6). 순수요 표와 **같은
+         열**을 쓴다 — `app/services/verify_steps.py::season_tables` 참조.
+         ⚠ 행에 `data-step` 을 쓰지 않는다. ③ 순수요 표의 행을 세는 검사가
+         그 이름으로 세고 있고, 같은 이름을 쓰면 두 표가 한 표로 세어진다. #}
+      <figure class="season-operation" tabindex="0">
+        {% for season in group.seasons %}
+        <table data-season="{{ season.name }}" data-season-days="{{ season.days }}">
+          <caption>{{ season.name }} 대표일 — 연 {{ season.days }}일</caption>
+          <thead>
+            <tr>
+              <th scope="col">스텝</th>
+              {% for name in group.season_columns %}
+              <th scope="col">{{ name }} (kWh)</th>
+              {% endfor %}
+              <th scope="col">계통 송전 (kWh)</th>
+              <th scope="col">계통 수전 (kWh)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in season.rows %}
+            <tr data-season-step="{{ row.step }}"><td>{{ row.step }}</td>{% for cell in row.per_resource %}<td>{{ cell }}</td>{% endfor %}<td>{{ row.grid_export }}</td><td>{{ row.grid_import }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endfor %}
+        <figcaption>{{ group.season_caption }}</figcaption>
+      </figure>
+      {% endif %}
+
       {% if group.net_demand %}
       <figure class="net-demand" tabindex="0">
         <table>

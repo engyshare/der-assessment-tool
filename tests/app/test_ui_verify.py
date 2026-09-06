@@ -393,3 +393,140 @@ def test_split_keeps_the_renderer_titles(report: CaseReport) -> None:
     stages = split_stages(render_verification_markdown(report))
     assert [s.number for s in stages] == list(range(1, STAGE_COUNT + 1))
     assert all(s.title and s.body.strip() for s in stages)
+
+
+# ── ★★★ R64/WP-5: ① 걸음의 **계절별 표** (사용자 요구 6) ──────────────────
+#
+# 사용자 문면: *「계절별로 가구의 전력 수요, 발전, ESS 운전 등을 시간대별로
+# 수치와 도표를 확인할 수 있어야 함」*. WP-4 가 계산을 세우고
+# `seasonal_operation` 빈 칸의 사유를 *「아직 없는 것은 화면이다」* 로 갈아
+# 끼웠다. 아래가 그 화면이며, 그 사유가 **거짓이 됐는지**를 함께 잰다.
+
+_SEASON_TABLE = re.compile(
+    r'<table data-season="([^"]+)" data-season-days="(\d+)">(.*?)</table>', re.DOTALL
+)
+_SEASON_ROW = re.compile(r'<tr data-season-step="(\d+)">(.*?)</tr>', re.DOTALL)
+_SEASON_CAPTION = re.compile(r'<figcaption>(.*?)</figcaption>', re.DOTALL)
+
+_SEASONAL_GAP = "seasonal_operation"
+
+
+def test_the_screen_splits_the_run_by_season(body: str, report: CaseReport) -> None:
+    """★★★ **화면이 계절을 갈라 보인다** — 이름·일수·스텝이 리포트 그대로다.
+
+    ⚠ 「봄 92일」 같은 수를 소스에 박지 않는다. 계절 달력은 자산
+    (`fixtures/profiles/representative-day.yaml`)이 정하고 `CaseReport.seasons`
+    가 나른다 — 박으면 자산이 달력을 바꾸는 날 이 검사가 「화면이 틀렸다」로
+    빨간불이 된다.
+
+    ⚠⚠ **화면이 계절을 다시 나누지 않는가**를 함께 잰다. 값 한 칸까지
+    `SeasonRun.dispatch` 와 맞대므로, 화면이 연간등가 하루를 계절 몫으로 되짚어
+    지으면 여기서 갈린다.
+    """
+    assert report.seasons, "이 시나리오가 계절을 하나도 돌지 않았다"
+
+    section = _group_slice(body, 1)
+    tables = _SEASON_TABLE.findall(section)
+    assert [name for name, _, _ in tables] == [s.name for s in report.seasons], (
+        f"화면의 계절 목록이 실행과 다르다: {[n for n, _, _ in tables]}"
+    )
+    assert [int(days) for _, days, _ in tables] == [s.days for s in report.seasons]
+
+    for (name, _, table), season in zip(tables, report.seasons, strict=True):
+        rows = _SEASON_ROW.findall(table)
+        assert len(rows) == len(season.dispatch.grid_export), (
+            f"계절 {name}: 스텝 {len(season.dispatch.grid_export)}개 중 "
+            f"{len(rows)}개만 실렸다"
+        )
+        for step, cells in rows:
+            index = int(step)
+            assert _num(season.dispatch.grid_import[index]) in cells, (
+                f"계절 {name} {index}스텝의 계통 수전이 실행 값과 다르다"
+            )
+            assert _num(season.dispatch.grid_export[index]) in cells, (
+                f"계절 {name} {index}스텝의 계통 송전이 실행 값과 다르다"
+            )
+
+
+def test_the_seasonal_tables_carry_the_same_columns_as_the_net_demand_one(
+    body: str,
+) -> None:
+    """★★ **계절 표와 순수요 표의 자원 열이 같다** — 두 표를 맞대 볼 수 있어야 한다.
+
+    갈라 두면 한쪽만 자원이 늘거나 이름이 바뀌고, 그때 화면은 멀쩡해 보인다
+    (`app/services/verify_steps.py::net_demand_columns` 의 ⚠).
+
+    ⚠ **머리글 전체를 맞대지 않는다.** ③ 순수요 표의 마지막 열은 「순수요 =
+    계통 수전」이고 그것이 그 표의 요지다(*「화면이 부하에서 자가공급을 다시
+    빼지 않는다」*). 같아야 하는 것은 **자원 열**이며, 첫 칸(스텝)과 뒤 두
+    칸(계통 송·수전)을 걷어 낸 나머지다.
+    """
+    heads = re.findall(r"<thead>(.*?)</thead>", body, re.DOTALL)
+    columns = [
+        tuple(re.findall(r'<th scope="col">([^<]*)</th>', head))[1:-2]
+        for head in heads
+    ]
+    assert len(columns) >= 2, f"화면에 표가 {len(columns)}개뿐이다"
+    assert all(columns), "자원 열이 없는 표가 있다"
+    assert len(set(columns)) == 1, (
+        f"표마다 자원 열이 다르다 — 표를 두 벌로 그리고 있다: {set(columns)}"
+    )
+
+
+def test_the_seasonal_caption_says_the_calendar_is_an_assumption(body: str) -> None:
+    """★★★ **계절 몫·형상이 「가정값」이라고 화면이 말한다** (사용자 판정 §2).
+
+    사용자 문면: *「해당 자료도 참값은 아님. 가정한 값임을 유의해줘」*. 24행짜리
+    표 넷만 세우면 그것이 **실측 소비패턴**으로 읽히고, 그 오독이 심의 자료에
+    실린다 — 이 화면에서 가장 비싼 오독이다.
+    """
+    section = _group_slice(body, 1)
+    captions = [_text(found) for found in _SEASON_CAPTION.findall(section)]
+    assert captions, "계절 표에 캡션이 없다"
+    said = [
+        caption
+        for caption in captions
+        if "가정값" in caption and "실측이 아니다" in caption
+    ]
+    assert len(said) == 1, (
+        f"계절 달력이 가정값이라고 말하는 캡션이 {len(said)}개다: {captions}"
+    )
+
+
+def test_the_seasonal_blank_cell_narrowed_instead_of_disappearing(
+    body: str,
+) -> None:
+    """★★★ **`seasonal_operation` 칸이 좁아졌다 — 사라지지 않았다** (판정 ④).
+
+    ## 무엇이 닫혔나
+
+    WP-4 가 남긴 사유는 *「아직 없는 것은 화면이다 — 이 검증 절차가 계절별
+    소비·발전·수전을 갈라 그리지 않는다」* 였고, 위 검사가 그 화면이 섰음을
+    잰다. 그러므로 **그 문면은 거짓이 됐고 남아 있으면 안 된다.**
+
+    ## 무엇이 남았나
+
+    계절 몫·형상은 여전히 자산의 **가정값**이고 「가구별」 분해는 재료가 없다.
+    칸을 통째로 지우면 화면이 *「계절별 소비패턴을 실측으로 안다」* 를 주장하게
+    되므로 지우지 않는다 — `_HOUSEHOLD_TYPE_ONLY` 가 이미 밟은 형태다.
+
+    ⚠ 「화면에 무언가 있다」가 아니라 **그 태그의 상태**를 잰다.
+    """
+    assert _SEASONAL_GAP in GAP_TAGS, "칸이 목록에서 사라졌다"
+
+    block = next(
+        found
+        for found in _GAP_BLOCK.findall(body)
+        if _GAP_TAG.search(found).group(1) == _SEASONAL_GAP
+    )
+    reason = _text(_GAP_REASON.search(block).group(1))
+
+    assert "아직 없는 것은 화면이다" not in reason, (
+        "화면이 계절을 갈라 보이는데도 「아직 없는 것은 화면이다」가 남아 있다"
+    )
+    assert "가정값" in reason, (
+        f"남은 결손이 「계절 몫·형상이 가정값」임을 말하지 않는다: {reason}"
+    )
+    assert "가구별" in reason, (
+        f"남은 결손이 「가구별 분해가 없다」임을 말하지 않는다: {reason}"
+    )

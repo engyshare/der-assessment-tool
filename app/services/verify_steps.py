@@ -60,6 +60,7 @@ from dataclasses import dataclass
 
 from core.report._format import _num
 from core.report.case_report import CaseReport
+from core.report.dispatch_notes import DispatchHour, build_hourly_profile
 from core.report.verification import render_verification_markdown
 
 #: 렌더러가 내는 단계 수. **여기서 정하는 값이 아니라 렌더러와 맞춰야 하는
@@ -134,6 +135,26 @@ class NetDemandRow:
 
 
 @dataclass(frozen=True)
+class SeasonTable:
+    """계절 하나의 시간대별 운전 — 사용자 요구 6 (R64/WP-5).
+
+    ## ⚠ `NetDemandRow` 를 **그대로** 쓴다
+
+    행 자료형을 따로 만들면 계절 표와 순수요 표의 열이 갈릴 수 있고, 갈려도
+    화면은 멀쩡해 보인다. 열을 늘리려면 한 곳만 고치면 두 표가 함께 움직인다 —
+    `core/report/dispatch_sections.py::_hour_table` 이 리포트 쪽에서 같은
+    판단을 적었다.
+
+    ⚠ **일수를 화면이 짓지 않는다.** `SeasonRun.days` 가 자산에서 온 값이며,
+    여기에 90·92 를 적으면 그것은 지어낸 값이고 심의 자료가 된다.
+    """
+
+    name: str
+    days: int
+    rows: tuple[NetDemandRow, ...]
+
+
+@dataclass(frozen=True)
 class VerifyGroup:
     """사용자가 든 걸음 하나 — 그 안에 실린 렌더러 단계와 빈 칸."""
 
@@ -150,6 +171,13 @@ class VerifyGroup:
     net_demand: tuple[NetDemandRow, ...] = ()
     net_demand_caption: str = ""
     net_demand_columns: tuple[str, ...] = ()
+    #: ① 계절별 시간대별 운전 (R64/WP-5 · 사용자 요구 6). 순수요와 **같은 열**을
+    #: 쓰므로 열 이름은 `net_demand_columns` 를 함께 본다.
+    seasons: tuple[SeasonTable, ...] = ()
+    season_caption: str = ""
+    #: 계절 표의 자원 열. ⚠ `net_demand_columns` 와 **같은 함수**가 짓는다 —
+    #: 두 표가 같은 실행의 같은 자원을 싣는데 열이 갈리면 맞대 볼 수 없다.
+    season_columns: tuple[str, ...] = ()
 
 
 def split_stages(markdown: str) -> tuple[VerifyStage, ...]:
@@ -207,8 +235,18 @@ def net_demand_rows(report: CaseReport) -> tuple[NetDemandRow, ...]:
     ⚠ 자원 열 이름을 손으로 적지 않는다 — `per_resource` 의 키에서 얻는다.
     적으면 자원이 늘어도 화면이 영영 둘만 그린다.
     """
-    hours = report.dispatch_hours
-    columns = net_demand_columns(report)
+    return _rows_from_hours(report.dispatch_hours, net_demand_columns(report))
+
+
+def _rows_from_hours(
+    hours: tuple[DispatchHour, ...], columns: tuple[str, ...]
+) -> tuple[NetDemandRow, ...]:
+    """스텝 목록을 표 행으로 — **순수요 표와 계절 표가 같이 쓴다** (R64/WP-5).
+
+    ⚠ 갈라 두면 한쪽만 열이 바뀌거나 서식이 갈리고, 그때 화면은 멀쩡해 보인다.
+    ⚠ 없는 자원 칸은 `—` 다 — 0 으로 메우면 「그 자원이 그 스텝에 아무것도 안
+    했다」와 「그 실행에 그 자원이 없다」가 화면에서 같아진다.
+    """
     return tuple(
         NetDemandRow(
             step=hour.step,
@@ -224,11 +262,48 @@ def net_demand_rows(report: CaseReport) -> tuple[NetDemandRow, ...]:
 
 
 def net_demand_columns(report: CaseReport) -> tuple[str, ...]:
-    """순수요 표의 자원 열 — 모든 스텝의 키 합집합을 정렬한 것."""
+    """순수요·계절 표의 자원 열 — 모든 스텝의 키 합집합을 정렬한 것.
+
+    ⚠ 계절 표도 이 열을 쓴다. 계절마다 키를 다시 모으면 잉여가 0 이라 배터리가
+    쉰 계절에서 열이 하나 사라질 수 있고, 그러면 계절끼리도 맞대 볼 수 없다.
+    """
     names: set[str] = set()
     for hour in report.dispatch_hours:
         names.update(hour.per_resource)
     return tuple(sorted(names))
+
+
+def season_tables(report: CaseReport) -> tuple[SeasonTable, ...]:
+    """① 계절별 시간대별 운전 — 사용자 요구 6 (R64/WP-5).
+
+    사용자 문면: *「계절별로 가구의 전력 수요, 발전, ESS 운전 등을 시간대별로
+    수치와 도표를 확인할 수 있어야 함」*. 이 화면이 그 **수치**의 자리다.
+
+    ## ⚠⚠ 여기서 계절을 다시 세우지 않는다
+
+    `CaseReport.seasons` 가 **러너가 실제로 돌린** 계절별 하루를 실어 온다
+    (`core/casegrid/seasonal_dispatch.py`). 화면이 연간등가 하루를 계절 몫으로
+    나눠 되짚으면 통로가 둘이 되고, 그때 인쇄된 계절과 결론이 선 계절이 갈릴 수
+    있다 — 갈려도 둘 다 그럴듯해 보인다.
+
+    ## ⚠ 계절 하루를 스텝으로 펴는 것도 **같은 함수**다
+
+    `build_hourly_profile()` 은 붙임 7 의 계절별 표와 새 차트가 함께 쓰는
+    함수다. 여기서 `SystemDispatch` 를 손으로 펴면 세 자리가 각각 펴게 되고,
+    부호 규약이 바뀌는 날 한 자리만 낡는다.
+
+    ⚠ 계절이 없는 실행에서는 **빈 튜플**이다 — 화면이 그 자리에 표를 세우지
+    않고, 같은 걸음의 빈 칸이 왜 없는지를 글자로 갖는다.
+    """
+    columns = net_demand_columns(report)
+    return tuple(
+        SeasonTable(
+            name=season.name,
+            days=season.days,
+            rows=_rows_from_hours(build_hourly_profile(season.dispatch), columns),
+        )
+        for season in report.seasons
+    )
 
 
 #: ③ 순수요 표의 캡션.
@@ -244,14 +319,34 @@ def net_demand_columns(report: CaseReport) -> tuple[str, ...]:
 #: 안 된다」*)은 **여전히 참이고 여전히 중요하다**: 이 표가 그리는 24행은
 #: 계절을 일수로 가중 평균한 한 벌이라 화면에서 계절이 보이지 않는다.
 #: 그래서 경고는 남기고 근거만 바꾼다.
+#: ⚠⚠ **R64/WP-5 가 뒤 절을 다시 고쳤다.** WP-4 가 남긴 문면은 *「계절별 화면은
+#: 아직 없다」* 였는데, ① 걸음에 계절별 표가 서면서 **그 절이 거짓**이 됐다.
+#: 앞 절(*「이 표는 계절을 갈라 보여주지 않는다」*)은 여전히 참이다 — 이 표
+#: 자신은 접힌 하루 한 벌이다. 그래서 경고는 남기고 **어디를 보면 되는지**를
+#: 가리키게 바꾼다.
 _NET_DEMAND_CAPTION = (
     "계절 넷의 대표일을 각각 24스텝(1시간 간격)으로 모의해 계절일수로 가중 "
     "합산한 결과이며, 이 표에 그리는 24행은 그것을 일수로 가중 평균한 "
-    "「연간등가 하루」다 — 운전은 계절을 반영하지만 **이 표는 계절을 갈라 "
-    "보여주지 않으므로** 「계절 변동이 없다」로 읽으면 안 된다(계절별 화면은 "
-    "아직 없다 · 요일 변동은 운전에서도 미반영이다). 값의 출처는 "
-    "CaseReport.dispatch_hours[] 이며 순수요는 grid_import 필드 그 자체다 "
-    "— 화면이 부하에서 자가공급을 다시 빼지 않는다."
+    "「연간등가 하루」다 — 운전은 계절을 반영하지만 이 표 자신은 계절을 갈라 "
+    "보이지 않으므로 「계절 변동이 없다」로 읽으면 안 된다. 계절이 가른 같은 "
+    "운전은 ① 걸음의 계절별 표에 서 있다(요일 변동은 운전에서도 미반영이다). "
+    "값의 출처는 CaseReport.dispatch_hours[] 이며 순수요는 grid_import 필드 "
+    "그 자체다 — 화면이 부하에서 자가공급을 다시 빼지 않는다."
+)
+
+#: ① 계절별 표의 캡션.
+#:
+#: ⚠⚠ **「가정값」이라는 사실을 여기서 말한다.** 계절 이름·일수·계절 몫과 하루
+#: 안의 형상은 전부 자산이 정한 가정이며(사용자 판정 2026-09-06 §2 —
+#: *「해당 자료도 참값은 아님. 가정한 값임을 유의해줘」*), 표만 세우면 24행 넷이
+#: **실측 소비패턴**으로 읽힌다. 그 오독이 이 화면에서 가장 비싼 오독이다.
+_SEASON_CAPTION = (
+    "계절마다 그 계절 대표일 하루를 따로 실은 것이다. 값의 출처는 "
+    "CaseReport.seasons[].dispatch 이며 위 ③ 순수요 표와 같은 함수"
+    "(build_hourly_profile)로 폈다 — 화면이 계절을 다시 나누지 않는다. "
+    "계절 이름·일수·계절 몫과 하루 안의 형상은 자산 "
+    "fixtures/profiles/representative-day.yaml 이 정한 가정값이며 실측이 "
+    "아니다. 부호 규약은 위 표와 같다: 양수는 내보냄, 음수는 받아들임이다."
 )
 
 
@@ -292,26 +387,37 @@ _GAPS: tuple[tuple[int, VerifyGap], ...] = (
         1,
         VerifyGap(
             tag="seasonal_operation",
-            title="가구별 전력소비패턴(계절별) — 계절이 가른 운전 결과",
-            # ★★ **R64/WP-4 가 사유를 갈아 끼웠다 — 칸은 닫지 않았다.**
-            # 종전 사유는 *「배포 실행이 몫 가중 평균 대표일 한 벌로 접어 쓴다 …
-            # 계절별 결과는 존재하지 않는 수다」* 였고, 러너가 계절 넷을 각각
-            # 돌리게 된 지금 **그 문면은 통째로 거짓**이다. 그런데 칸을 닫으면
-            # 화면이 *「계절별 결과를 보여준다」* 를 주장하게 되는데 **아직 못
-            # 보여준다** — 계산이 선 것과 화면이 그리는 것은 다른 일이고,
-            # 그리는 것은 다음 자리의 몫이다. 그래서 **칸은 남고 사유가 바뀐다**
-            # (위 `_HOUSEHOLD_TYPE_ONLY` 가 「지우지 않고 좁힌」 것과 같은 태도다).
+            title=(
+                "가구별 전력소비패턴(계절별) — 계절 몫·형상의 실측값 · "
+                "가구별 분해"
+            ),
+            # ★★★ **R64/WP-5 가 칸을 좁혔다 — 지우지는 않았다.**
+            #
+            # WP-4 가 계산을 세우고 사유를 *「아직 없는 것은 화면이다」* 로 갈아
+            # 끼웠다. 이 WP 가 그 화면을 세웠으므로(위 `season_tables` · 이 걸음의
+            # 계절별 표 · 붙임 7 의 계절별 표 · 차트 `seasonal_operation`) 그
+            # 문면은 이제 **거짓**이다.
+            #
+            # ⛔ 그렇다고 칸을 지우지 않는다. 지우면 화면이 *「계절별 소비패턴을
+            # 실측으로 안다」* 를 주장하게 되는데 **모른다** — 계절 이름·일수·
+            # 계절 몫과 하루 안의 형상은 전부 자산이 정한 **가정**이고(사용자
+            # 판정 2026-09-06 §2), 「가구별」 분해는 재료 자체가 없다. 값이
+            # 도착해 **칸이 좁아지는** 것은 위 `_HOUSEHOLD_TYPE_ONLY` 가 이미
+            # 밟은 형태이며, 이 파일 머리말의 ⚠(*「하나라도 지우지 마라 … 재료가
+            # 생기면 그때 이 칸을 값으로 바꾼다」*)가 정한 태도 그대로다.
             reason=(
-                "계절 넷의 대표일을 각각 돌려 계절일수로 가중 합산하는 운전은 "
-                "이제 선다(착수 순서 36번 · 계절 간 하루 차이가 결론에 반영된다). "
-                "**아직 없는 것은 화면이다** — 이 검증 절차가 계절별 소비·발전·"
-                "수전을 갈라 그리지 않으므로, 여기 서 있는 표와 수는 전부 "
-                "계절을 일수로 가중 평균한 「연간등가 하루」의 것이다. 계절별 "
-                "수치·도표를 세우는 것이 남은 일이며, 재료는 이미 산출물에 "
-                "실려 있다(`CaseReport.seasons` — 계절마다 이름·일수·그 하루의 "
-                "운전·그 계절 연간 기여). ⚠ 계절 몫·형상 자체는 여전히 자산의 "
-                "**가정값**이라 실측이 오면 결론이 다시 움직인다. 「가구별」 "
-                "분해는 위 가구 수 칸과 같은 사유로 따로 없다."
+                "계절이 가른 운전은 이제 이 걸음의 계절별 표에 선다 — 계절마다 "
+                "그 대표일 24스텝의 자원별 전력과 계통 송·수전이 그대로 있고, "
+                "심의용 리포트 붙임 7 과 「계절별 시간대별 운전」 그림이 같은 "
+                "값을 인쇄한다. 남은 빈 칸은 둘이다. 첫째, 계절 이름·일수·계절 "
+                "몫과 하루 안의 형상은 자산 "
+                "fixtures/profiles/representative-day.yaml 이 정한 가정값이며 "
+                "실측이 아니다 — 실측 소비패턴이 오면 결론이 다시 움직인다"
+                "(사용자 판정 2026-09-06 §2: 참고 자료의 계절 몫도 참값이 "
+                "아니라 가정이다). 둘째, 「가구별」 분해는 없다 — 위 가구 유형 "
+                "칸과 같은 사유로 가구를 가를 재료가 없어 이 실행은 모든 가구를 "
+                "같은 한 벌의 소비 형상으로 돌렸다. 요일 변동은 운전에서도 "
+                "미반영이다(주중·주말 대표일을 가르지 않는다)."
             ),
         ),
     ),
@@ -494,6 +600,11 @@ def build_verify_groups(report: CaseReport) -> tuple[VerifyGroup, ...]:
     ⚠ 여기서 수를 하나도 짓지 않는다. 단계 본문은 렌더러 문자열 그대로이고,
     순수요 표는 `dispatch_hours` 필드를 서식만 입혀 옮긴 것이다.
 
+    ★★ **① 이 계절별 표를 든다** (R64/WP-5 · 사용자 요구 6). 그 걸음의 제목이
+    「가구별 전력소비패턴(계절별)」이고 `seasonal_operation` 빈 칸이 거기 서
+    있었다. 표가 서면서 그 칸은 **지워지지 않고 좁아진다** — 남은 것은 계절
+    몫·형상이 자산의 가정값이라는 사실과 「가구별」 분해가 없다는 사실이다.
+
     ★★ **①의 「가구 수」는 갈래가 둘이다** (R64/WP-1 · 착수 47ⓐ).
     `report.household_count` 가 `None` 이면 지금까지와 같은 「칸 + 사유」이고,
     수가 있으면 그 수가 **값으로 서고** 사유가 가구 유형만 남는다 — 칸이
@@ -504,10 +615,14 @@ def build_verify_groups(report: CaseReport) -> tuple[VerifyGroup, ...]:
     )}
     columns = net_demand_columns(report)
     rows = net_demand_rows(report)
+    seasons = season_tables(report)
     count = report.household_count
     groups: list[VerifyGroup] = []
     for number, title, carried_from, wanted in _GROUP_PLAN:
         is_net_demand = number == 3
+        # ★ 계절별 표는 ① 이다 — 그 걸음의 제목이 「가구별 전력소비패턴
+        # (계절별)」이고 `seasonal_operation` 빈 칸도 거기 서 있다.
+        is_seasonal = number == 1
         gaps = tuple(gap for at, gap in _GAPS if at == number)
         fills: tuple[VerifyFill, ...] = ()
         if count is not None:
@@ -534,6 +649,9 @@ def build_verify_groups(report: CaseReport) -> tuple[VerifyGroup, ...]:
                 net_demand=rows if is_net_demand else (),
                 net_demand_caption=_NET_DEMAND_CAPTION if is_net_demand else "",
                 net_demand_columns=columns if is_net_demand else (),
+                seasons=seasons if is_seasonal else (),
+                season_caption=_SEASON_CAPTION if is_seasonal and seasons else "",
+                season_columns=columns if is_seasonal and seasons else (),
             )
         )
     return tuple(groups)

@@ -31,7 +31,11 @@ from types import MappingProxyType
 
 from core.engine.rule_based import DispatchRule
 from core.report.case_report import CaseReport
-from core.report.dispatch_notes import DispatchHour, DispatchNote
+from core.report.dispatch_notes import (
+    DispatchHour,
+    DispatchNote,
+    build_hourly_profile,
+)
 
 #: 규칙 → 문면. **`FR-302-AC1` 의 일곱 줄을 그대로 옮긴 것**이며 여기서 새로
 #: 쓴 말이 아니다 — 조항과 다른 말로 적으면 검토자가 읽는 규칙과 심의 대상
@@ -128,7 +132,17 @@ def _hour_label(step: int, steps: int) -> str:
 
 
 def dispatch_profile_section(report: CaseReport) -> list[str]:
-    """붙임 7 — **시간대별 운전 결과** (의견 3). 표는 **하나**다.
+    """붙임 7 — **시간대별 운전 결과** (의견 3).
+
+    ## ★★ R64/WP-5 — 연간등가 하루 표 **하나 + 계절마다 하나**
+
+    사용자 요구 6 이 *「계절별로 가구의 전력 수요, 발전, ESS 운전 등을 시간대별로
+    수치와 도표로 확인할 수 있어야 함」* 이다. 이 절이 그 **수치**이며, 도표는
+    `core/report/charts/seasonal_operation.py` 가 그린다.
+
+    ⚠ **접힌 하루 표를 대신하지 않는다 — 옆에 선다.** 그 표는 연간 총량과 붙임 4
+    의 산식에 이어져 있고, 계절별 표는 운전이 계절마다 어떻게 달랐는지를 보인다.
+    ⚠ **모든 표를 `_hour_table()` 하나로 그린다** — 아래 그 함수의 ⚠ 참조.
 
     ## ★ 표가 둘이던 자리다 — R49/★A 가 하나로 줄였다
 
@@ -191,17 +205,136 @@ def dispatch_profile_section(report: CaseReport) -> list[str]:
         "`load.household.annual` 이 정하고, 형상은 자산 "
         "`fixtures/profiles/` 가 정한다",
         "- 스택 차트(`FR-1004-AC1`) — 미산출 (실측 부하 곡선 `Q-3` 부재 · 붙임 8)",
+        # ★★ **R64/WP-5** — 아래 계절별 표가 이 표의 「옆에」 선다. 어느 쪽이
+        # 틀린 것이 아니라 둘이 다른 것을 보인다는 사실을 여기서 한 줄로 적는다.
+        "- 아래 계절별 표와의 차이 — 이 표의 하루는 계절을 평균한 하루라 한 "
+        "스텝이 두 방향을 함께 가질 수 있고, 계절별 하루에는 그런 스텝이 없다. "
+        "두 표는 서로 다른 것을 보이며 둘 다 이 실행의 결과다",
+        "",
+    ]
+    lines += _season_sections(report)
+    return lines
+
+
+def _season_sections(report: CaseReport) -> list[str]:
+    """붙임 7 의 **계절별 표** — 사용자 요구 6 (R64/WP-5 · 판정 ②③).
+
+    ## ⚠⚠ 표를 그리는 코드를 두 벌 만들지 않는다
+
+    계절별 표도 `_hour_table()` 로 그린다. 갈라 두면 한쪽만 열이 바뀌어 검토자가
+    둘을 견줄 수 없고, 그 어긋남은 아무 예외도 내지 않는다 — 그 함수의
+    독스트링이 같은 사유를 이미 적었다. 계절 하루를 스텝으로 펴는 것도
+    `build_hourly_profile()` 이며, 연간등가 하루가 쓰는 **바로 그 함수**다.
+
+    ## ⚠ 접힌 하루 표를 대신하지 않는다 — **옆에** 선다
+
+    위 표는 연간 총량과 붙임 4 의 산식에 이어져 있고, 이 표들은 운전이 계절마다
+    어떻게 달랐는지를 보인다. **둘 다 참이며 서로 다른 물음에 답한다.**
+
+    ## 계절이 둘 미만이면 표를 세우지 않고 **그렇게 적는다**
+
+    계절 하나짜리 자산(또는 형상 없는 실행)에서 계절별 표는 위 표를 그대로 한 번
+    더 인쇄한 것이 된다. 조용히 건너뛰면 「계절이 없다」와 「계절 절이 빠졌다」가
+    산출물에서 같아지므로 사유를 글자로 남긴다.
+    """
+    seasons = report.seasons
+    lines = ["### 계절별 시간대별 운전", ""]
+    if len(seasons) < 2:
+        return [
+            *lines,
+            f"- 계절 갈래 없음 — 이 실행의 형상 자산이 계절을 {len(seasons)}개 "
+            "선언했다. 위 표의 하루가 이 실행의 유일한 하루이므로 같은 표를 한 "
+            "번 더 싣지 않는다",
+            "",
+        ]
+
+    profiles = [build_hourly_profile(season.dispatch) for season in seasons]
+    if not all(profiles):
+        empty = [s.name for s, hours in zip(seasons, profiles, strict=True) if not hours]
+        return [
+            *lines,
+            f"- 계절별 표 미산출 — 스텝이 0인 계절이 있다 ({' · '.join(empty)}). "
+            "빈 표를 세우면 「그 계절은 아무 일도 하지 않았다」로 인쇄된다",
+            "",
+        ]
+
+    total_days = sum(season.days for season in seasons)
+    lines += [
+        "- 계절 이름·일수·계절 몫 — 자산 "
+        "`fixtures/profiles/representative-day.yaml` 이 정한 **가정값**이며 "
+        "실측이 아니다 (붙임 8 의 「계절·요일 변동」 항목이 그 결손을 신고한다)",
+        f"- 계절 {len(seasons)}개 · 일수 합계 {total_days}일",
+        "",
+    ]
+    for season, hours in zip(seasons, profiles, strict=True):
+        lines += [f"#### {season.name} — 대표일 (연 {season.days}일)", ""]
+        lines += _hour_table(hours)
+
+    lines += _season_annual_table(report, tuple(profiles[0][0].per_resource))
+    return lines
+
+
+def _season_annual_table(
+    report: CaseReport, names: tuple[str, ...]
+) -> list[str]:
+    """계절별 **연간 기여** — 하루 합에 그 계절 일수를 곱한 것.
+
+    ⚠ **여기서 `365` 를 곱하지 않는다.** 계절마다 다른 일수를 곱하는 것이 계절
+    축이 여는 것 그 자체이고, 그 곱은 러너가 이미 해 `SeasonRun` 에 실어 왔다
+    (`core/casegrid/models.py::SeasonRun`). 표시 층이 다시 곱하면 계절을 모르는
+    종전 연간화로 조용히 되돌아간다.
+
+    ⚠⚠ **열 차례를 여기서 정하지 않는다.** 스텝 표의 열 차례
+    (`build_hourly_profile` 이 정렬한 것)를 그대로 받는다 — 두 표가 같은 절에
+    서는데 열이 갈리면 검토자가 위아래를 맞대 볼 수 없고, `SeasonRun.
+    per_resource_annual_kwh` 의 차례는 운전 결과의 삽입 차례라 그것과 다르다.
+
+    ⚠ 합계 행은 **위 연간등가 하루 표 합계의 일수 합계배**와 같다 — 두 표가 같은
+    실행을 보고 있다는 증거이며, 갈리면 한쪽이 거짓이다.
+    """
+    seasons = report.seasons
+    lines = [
+        "#### 계절별 연간 기여 (kWh/년)",
+        "",
+        "| 계절 | 일수 | " + " | ".join(f"`{name}`" for name in names)
+        + " | 계통 송전 | 계통 수전 |",
+        "|---|---|" + "---|" * (len(names) + 2),
+    ]
+    for season in seasons:
+        cells = " | ".join(
+            f"{season.per_resource_annual_kwh[name]:,.2f}" for name in names
+        )
+        lines.append(
+            f"| {season.name} | {season.days} | {cells} | "
+            f"{season.grid_export_annual_kwh:,.2f} | "
+            f"{season.grid_import_annual_kwh:,.2f} |"
+        )
+    totals = " | ".join(
+        f"**{sum(s.per_resource_annual_kwh[name] for s in seasons):,.2f}**"
+        for name in names
+    )
+    lines += [
+        f"| **합계** | **{sum(s.days for s in seasons)}** | {totals} | "
+        f"**{sum(s.grid_export_annual_kwh for s in seasons):,.2f}** | "
+        f"**{sum(s.grid_import_annual_kwh for s in seasons):,.2f}** |",
+        "",
+        "- 이 합계는 위 연간등가 하루 표의 합계에 일수 합계를 곱한 값과 같다 — "
+        "두 표가 같은 실행을 보고 있다는 뜻이다",
         "",
     ]
     return lines
 
 
 def _hour_table(hours: tuple[DispatchHour, ...]) -> list[str]:
-    """스텝별 표 하나 — 이 절의 **유일한** 표다.
+    """스텝별 표 하나 — 이 절의 **모든** 스텝 표가 이 함수로 그려진다.
 
     ⚠ 함수로 갈라 둔 것은 표가 둘이던 시절의 흔적이 아니다. `Q-3` 실측이 오면
     둘째 표가 돌아오고(위 독스트링), 그때 **두 표가 같은 기계로 그려져야**
     한다 — 갈라 두지 않으면 한쪽만 열이 바뀌어 검토자가 둘을 견줄 수 없다.
+
+    ⚠⚠ **R64/WP-5 가 그날을 앞당겼다.** 계절별 표가 이 함수를 그대로 부르므로
+    이 절에는 이제 `1 + 계절 수` 개의 스텝 표가 선다. 열을 바꾸려면 여기서
+    바꾸면 전부 함께 바뀐다 — 계절 쪽에 사본을 만들지 마라.
     """
     names = tuple(hours[0].per_resource)
     steps = len(hours)

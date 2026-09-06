@@ -18,6 +18,7 @@
 """
 from __future__ import annotations
 
+import dataclasses
 import re
 from pathlib import Path
 
@@ -123,12 +124,14 @@ def test_hourly_table_carries_every_step_of_the_run() -> None:
     구성에서는 심야 여섯 스텝만 다른 모양이므로, 표본을 실었다면 그 여섯이
     사라졌을 것이다.
 
-    ⚠ **표는 하나다** (R49/★A). 2026-08-15~R48 사이에는 둘이었고(파이프라인
-    운전과 형상 가정 운전) 이 검사가 **표마다 따로** 세었다 — 절 전체에서 행을
-    세면 둘이 뭉쳐 *「한 표가 절반만 실려도 합이 맞는」* 상태가 통과하기
-    때문이다. 둘째 표가 사라졌어도 **표마다 세는 방식은 그대로 둔다**: 표가
-    다시 둘이 되는 날(`Q-3` 실측 · 붙임 7 독스트링) 이 검사가 저절로 그 상태를
-    붙들고, 지금은 *「표가 하나인가」* 까지 함께 잰다.
+    ⚠ **표마다 따로 센다.** 2026-08-15~R48 사이에도 표가 둘이었고 이 검사가
+    표마다 세었다 — 절 전체에서 행을 세면 표들이 뭉쳐 *「한 표가 절반만 실려도
+    합이 맞는」* 상태가 통과하기 때문이다.
+
+    ★★ **R64/WP-5 뒤로 표는 `1 + 계절 수` 개다** (사용자 요구 6). 연간등가 하루
+    하나와 계절마다 하나이며, 전부 `_hour_table()` 이 그린다. ⚠ 기대 개수를
+    리터럴로 박지 않는다 — `report.seasons` 에서 얻는다. 박으면 자산이 계절을
+    다섯으로 늘리는 날 이 검사가 「표가 틀렸다」로 빨간불이 된다.
     """
     report = _report()
     lines = dispatch_profile_section(report)
@@ -139,9 +142,12 @@ def test_hourly_table_carries_every_step_of_the_run() -> None:
         elif tables and line.startswith("| ") and "시 |" in line:
             tables[-1].append(line)
 
-    expected = [len(report.dispatch_hours)]
+    expected = [len(report.dispatch_hours)] + [
+        len(season.dispatch.grid_export) for season in report.seasons
+    ]
     assert len(tables) == len(expected), (
         f"스텝 표가 {len(tables)}개다 — 기대 {len(expected)}개"
+        f"(연간등가 하루 1 + 계절 {len(report.seasons)})"
     )
     for index, (rows, steps) in enumerate(zip(tables, expected, strict=True)):
         assert len(rows) == steps, (
@@ -382,3 +388,155 @@ def test_the_profile_section_warns_that_one_step_can_hold_both_directions() -> N
         f"스텝 {both} 에 송전과 수전이 함께 서 있는데 붙임 7 이 그 사실을 미리 "
         f"말하는 줄이 {len(warned)}개다 — 정확히 1개여야 한다: {bullets}"
     )
+
+
+# ── ★ 붙임 7 의 **계절별 표** (R64/WP-5 · 사용자 요구 6) ────────────────────
+#
+# 사용자 문면: *「계절별로 가구의 전력 수요, 발전, ESS 운전 등을 시간대별로 수치와
+# 도표를 확인할 수 있어야 함」*. WP-4 가 계절 넷을 각각 돌려 `CaseReport.seasons`
+# 에 실었고 **인쇄하는 자리가 하나도 없었다.** 아래 넷이 그 자리를 붙든다.
+
+
+def _season_tables(report) -> list[list[str]]:
+    """계절별 스텝 표만 — 첫 표(연간등가 하루)를 뗀 나머지."""
+    tables: list[list[str]] = []
+    for line in dispatch_profile_section(report):
+        if line.startswith("| 스텝 |"):
+            tables.append([])
+        elif tables and line.startswith("| ") and "시 |" in line:
+            tables[-1].append(line)
+    return tables[1:]
+
+
+def _annual_row(report, label: str) -> list[str]:
+    """계절별 연간 기여 표에서 한 행을 꺼낸다 — 칸을 문자열로."""
+    lines = dispatch_profile_section(report)
+    start = lines.index("#### 계절별 연간 기여 (kWh/년)")
+    for line in lines[start:]:
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        if cells and cells[0].replace("*", "") == label:
+            return cells
+    raise AssertionError(f"계절별 연간 기여 표에 {label!r} 행이 없다: {lines[start:]}")
+
+
+def test_the_seasonal_tables_use_the_same_columns_as_the_folded_one() -> None:
+    """★★★ **계절별 표가 접힌 하루 표와 같은 기계로 그려진다** (판정 ②).
+
+    갈라 두면 한쪽만 열이 바뀌고 검토자가 둘을 견줄 수 없다 —
+    `core/report/dispatch_sections.py::_hour_table` 독스트링이 그 사유를 진다.
+    여기서 재는 것은 **머리글이 글자까지 같은가**이며, 사본을 만들면 (자원
+    차례든 열 이름이든) 언젠가 여기서 갈린다.
+
+    ⚠ 표 개수를 리터럴로 박지 않는다 — `report.seasons` 가 정본이다.
+    """
+    report = _report()
+    assert len(report.seasons) >= 2, "이 시나리오가 계절을 갈라 돌지 않았다"
+
+    headers = [
+        line
+        for line in dispatch_profile_section(report)
+        if line.startswith("| 스텝 |")
+    ]
+    assert len(headers) == 1 + len(report.seasons), (
+        f"스텝 표 머리글이 {len(headers)}개다 — 접힌 하루 1 + 계절 "
+        f"{len(report.seasons)} 이어야 한다"
+    )
+    assert len(set(headers)) == 1, (
+        f"스텝 표의 머리글이 서로 다르다 — 표를 두 벌로 그리고 있다: {set(headers)}"
+    )
+
+
+def test_the_seasonal_annual_totals_close_on_the_folded_day() -> None:
+    """★★★ **계절별 연간 기여의 합이 접힌 하루의 연간 총량과 같다** (성질 나).
+
+    접힌 하루는 계절별 하루를 일수로 가중 평균한 것이므로
+    `Σ(계절 하루 합 · 그 계절 일수)` 와 `접힌 하루 합 · Σ일수` 는 **같은 수**다.
+    다르면 두 표가 서로 다른 실행을 보고 있다는 뜻이고, 그때 어느 쪽이 옳은지
+    산출물만으로는 말할 수 없다.
+
+    ⚠ **인쇄된 표에서 읽는다.** 자료형끼리 견주면 인쇄가 다른 수를 실어도 이
+    검사는 초록불이다 — 붙임은 인쇄물이므로 인쇄된 것을 재야 한다.
+    """
+    report = _report()
+    days = sum(season.days for season in report.seasons)
+    assert days > 0, "계절 일수 합이 0 이다"
+
+    printed = _annual_row(report, "합계")
+    folded_export = sum(hour.grid_export for hour in report.dispatch_hours)
+    folded_import = sum(hour.grid_import for hour in report.dispatch_hours)
+
+    for column, folded in ((-2, folded_export), (-1, folded_import)):
+        got = float(printed[column].replace("*", "").replace(",", ""))
+        assert got == pytest.approx(folded * days, abs=0.01), (
+            f"계절별 연간 합계 {got:,.2f} 가 접힌 하루의 {days}배 "
+            f"({folded * days:,.2f}) 와 다르다 — 두 표가 다른 실행을 보고 있다"
+        )
+
+
+def test_the_seasonal_calendar_is_printed_as_the_asset_wrote_it() -> None:
+    """★★ **계절 이름과 일수가 자산이 적은 그대로 인쇄된다** (성질 라 · 판정 ⑤).
+
+    이름·일수를 인쇄 층이 지어내면 그것은 대장 밖의 값이 되고, 자산이 계절을
+    다섯으로 늘리거나 이름을 바꾸는 날 붙임만 옛 달력을 계속 인쇄한다.
+
+    ⚠ 「봄 92일」 같은 수를 여기 박지 않는다 — `report.seasons` 에서 읽는다.
+    """
+    report = _report()
+    lines = dispatch_profile_section(report)
+    text = "\n".join(lines)
+
+    for season in report.seasons:
+        assert f"#### {season.name} — 대표일 (연 {season.days}일)" in lines, (
+            f"계절 `{season.name}` 의 표 머리가 자산이 적은 이름·일수로 서지 않았다"
+        )
+        assert _annual_row(report, season.name)[1] == str(season.days)
+
+    total = sum(season.days for season in report.seasons)
+    assert f"일수 합계 {total}일" in text, f"일수 합계 {total}일 이 인쇄되지 않았다"
+    assert _annual_row(report, "합계")[1].replace("*", "") == str(total)
+
+
+def test_the_seasonal_shape_is_printed_as_an_assumption_not_a_measurement() -> None:
+    """★★ **계절 몫·형상이 「가정값」이라고 적힌다** (판정 ⑤ · 사용자 판정 §2).
+
+    사용자 문면: *「해당 자료도 참값은 아님. 가정한 값임을 유의해줘」*. 표만
+    세우면 계절 넷의 24행이 **실측 소비패턴**으로 읽히고, 그 오독이 심의 자료에
+    실린다.
+
+    ⚠ 문면을 통째로 박지 않는다 — 그 줄이 **주장하는 사실**(자산이 정한 값이며
+    실측이 아니다)을 건다.
+    """
+    report = _report()
+    said = [
+        line
+        for line in dispatch_profile_section(report)
+        if line.startswith("- ") and "가정값" in line and "실측이 아니다" in line
+    ]
+    assert len(said) == 1, (
+        f"계절 몫·형상이 가정값이라는 것을 말하는 줄이 {len(said)}개다 — "
+        f"정확히 1개여야 한다: {said}"
+    )
+
+
+@pytest.mark.parametrize("kept", [0, 1])
+def test_a_run_without_seasons_still_prints_and_says_why(kept: int) -> None:
+    """★★★ **계절이 없거나 하나뿐인 실행에서도 인쇄가 서고 깨지지 않는다** (성질 다).
+
+    계절 축이 서기 전 자산(형상 없는 실행 · `연중` 하나짜리 자산)과의 연속성을
+    잰다. 그때 계절별 표는 접힌 하루 표를 한 번 더 인쇄한 것이 되므로 세우지
+    않되, **조용히 건너뛰지 않는다** — 건너뛰면 「계절이 없다」와 「계절 절이
+    빠졌다」가 산출물에서 같아진다(`app/services/ui_charts.py` 머리말이 차트
+    쪽에서 같은 판단을 적었다).
+    """
+    report = dataclasses.replace(_report(), seasons=_report().seasons[:kept])
+
+    lines = dispatch_profile_section(report)
+    assert "### 계절별 시간대별 운전" in lines, "계절 절 자체가 사라졌다"
+    assert [line for line in lines if line.startswith("| 스텝 |")] != [], (
+        "접힌 하루 표까지 사라졌다"
+    )
+    assert len([line for line in lines if line.startswith("| 스텝 |")]) == 1, (
+        "계절이 하나 이하인데 계절별 표가 섰다 — 같은 표를 두 번 인쇄한 것이다"
+    )
+    said = [line for line in lines if line.startswith("- ") and "계절 갈래 없음" in line]
+    assert len(said) == 1, f"계절이 없는 사유가 글자로 서지 않았다: {lines}"
