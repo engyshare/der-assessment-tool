@@ -125,6 +125,12 @@ def regulation_admin(
 
 @router.get("/ui/run", response_class=HTMLResponse)
 def run_case(
+    # ⚠ `*` 는 **양식이 아니라 규칙**이다 (R64/WP-2 — R64/WP-1 이 그림
+    # 라우트에서 세운 것과 같다). 기기 부하 질의 둘이 붙어 인자가 일곱이 되자
+    # `PLR0917`(위치 인자 5 초과)이 울었다. FastAPI 는 키워드 전용 인자를
+    # 그대로 받으므로 라우트의 동작은 한 글자도 바뀌지 않는다. **상한을 올려
+    # 푸는 쪽을 고르지 않았다.**
+    *,
     scenario: str = Query(
         default="scenario_unsubsidized",
         description="골든 시나리오 이름 — 목록에 있는 것만 연다",
@@ -146,6 +152,20 @@ def run_case(
         description=(
             "실증단지 참여 가구 수(호). **비우면 시나리오에 적지 않는다** — "
             "그때 가구 한 호 기준으로 돈다"
+        ),
+    ),
+    heatpump_load_annual_kwh: str = Query(
+        default="",
+        description=(
+            "가구 한 호의 히트펌프 연간 소비전력량(kWh/호·년). "
+            "**비우면 시나리오에 적지 않는다** — 그때 0으로 돈다"
+        ),
+    ),
+    ev_load_annual_kwh: str = Query(
+        default="",
+        description=(
+            "가구 한 호의 전기차 충전 연간 전력량(kWh/호·년). "
+            "**비우면 시나리오에 적지 않는다** — 그때 0으로 돈다"
         ),
     ),
 ) -> HTMLResponse:
@@ -173,11 +193,13 @@ def run_case(
     """
     try:
         run = _run(
-            scenario,
-            arrangement,
-            ownership_or_operation_transferred,
-            metering_separated,
-            household_count,
+            scenario=scenario,
+            arrangement=arrangement,
+            ownership_or_operation_transferred=ownership_or_operation_transferred,
+            metering_separated=metering_separated,
+            household_count=household_count,
+            heatpump_load_annual_kwh=heatpump_load_annual_kwh,
+            ev_load_annual_kwh=ev_load_annual_kwh,
         )
     except ValidationError as exc:
         return HTMLResponse(render_run_result(run_error_context(exc)), status_code=400)
@@ -206,6 +228,11 @@ def run_case(
                     # ★ 가구 수도 그림에 함께 간다 — 안 넘기면 화면의 수는
                     # 40호인데 그림은 1호가 되고, 둘 다 그럴듯해 보인다.
                     household_count=household_count,
+                    # ★ 기기 부하도 그림에 함께 간다 — 안 넘기면 화면의 부하는
+                    # 히트펌프를 얹은 것인데 그림은 안 얹은 것이 되고, 둘 다
+                    # 그럴듯해 보인다.
+                    heatpump_load_annual_kwh=heatpump_load_annual_kwh,
+                    ev_load_annual_kwh=ev_load_annual_kwh,
                 ),
             )
         )
@@ -213,11 +240,16 @@ def run_case(
 
 
 def _run(
+    # ⚠ `*` 의 사유는 위 `run_case` 와 같다 (R64/WP-2 · `PLR0917`). 부르는
+    # 자리 둘이 이름으로 넘기므로 어느 값이 어느 칸인지 호출부에서 읽힌다.
+    *,
     scenario: str,
     arrangement: str,
     ownership_or_operation_transferred: bool,
     metering_separated: bool,
     household_count: str = "",
+    heatpump_load_annual_kwh: str = "",
+    ev_load_annual_kwh: str = "",
 ) -> UiRun:
     """폼 값으로 한 번 돌린다 — **거부도 「없다」도 그대로 올린다.**
 
@@ -236,6 +268,12 @@ def _run(
         # 「적지 않았다」가 그대로 내려가야 판정이 한 자리에 남는다
         # (`core/casegrid/household_scale.py::resolve_household_count`).
         household_count=household_count or None,
+        # ★ 기기 부하 둘도 같은 규약이다 (R64/WP-2) — 빈 문면이 「적지
+        # 않았다」로 그대로 내려가야 판정이
+        # `core/casegrid/appliance_load.py::resolve_appliance_load` 한 자리에
+        # 남는다.
+        heatpump_load_annual_kwh=heatpump_load_annual_kwh or None,
+        ev_load_annual_kwh=ev_load_annual_kwh or None,
     )
 
 
@@ -288,6 +326,20 @@ def chart_png(
             "그때 가구 한 호 기준으로 돈다"
         ),
     ),
+    heatpump_load_annual_kwh: str = Query(
+        default="",
+        description=(
+            "가구 한 호의 히트펌프 연간 소비전력량(kWh/호·년). "
+            "**비우면 시나리오에 적지 않는다** — 그때 0으로 돈다"
+        ),
+    ),
+    ev_load_annual_kwh: str = Query(
+        default="",
+        description=(
+            "가구 한 호의 전기차 충전 연간 전력량(kWh/호·년). "
+            "**비우면 시나리오에 적지 않는다** — 그때 0으로 돈다"
+        ),
+    ),
 ) -> Response:
     """차트 한 장을 **PNG 로** 낸다 — `FR-1004-AC1` · `FR-803-AC2`.
 
@@ -333,11 +385,13 @@ def chart_png(
         )
     try:
         run = _run(
-            scenario,
-            arrangement,
-            ownership_or_operation_transferred,
-            metering_separated,
-            household_count,
+            scenario=scenario,
+            arrangement=arrangement,
+            ownership_or_operation_transferred=ownership_or_operation_transferred,
+            metering_separated=metering_separated,
+            household_count=household_count,
+            heatpump_load_annual_kwh=heatpump_load_annual_kwh,
+            ev_load_annual_kwh=ev_load_annual_kwh,
         )
     except ValidationError as exc:
         raise HTTPException(status_code=400, detail=_three_parts(exc)) from exc

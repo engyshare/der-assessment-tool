@@ -169,6 +169,44 @@
             비워 두면 한 호를 계산하며, 결과 화면이 그 사실을 글자로 적는다.</p>
         </fieldset>
 
+        {# ★★ 가구의 추가 전력사용기기 부하 (R64/WP-2 · 사용자 요구 2 —
+           *「가구의 전기 부하 설정을 변경할 수 있어야 함 (EV, heatpump,
+           AI 가전)」*).
+           ⚠⚠ **기본 소비량을 여기 적지 않는다.** 빈 칸이면 시나리오에 필드를
+           넣지 않고 그때 0으로 돈다. 대장의 `load.heatpump.annual`·
+           `load.ev.annual` 은 `track: blocked` · `value: null` 이며 *「가정하면
+           안 된다」* 가 그 항목의 `derivation_method` 다 — 여기에 수를 미리
+           넣으면 저장소가 가구 구성을 정한 것이 된다.
+           ⚠ **「AI 가전」 칸이 없다.** 사용자 판정(2026-09-06)에 따라 AI 가전은
+           기존 가전에 붙는 **기능**이지 더 쓰는 새 기기가 아니며, 부하 칸으로
+           세우면 냉장고·세탁기의 소비가 두 번 세어진다
+           (`core/casegrid/appliance_load.py` 머리말).
+           ⚠ 여기 넣는 것은 **부하**이지 설비가 아니다 — 설치비·편익은 서지
+           않는다. #}
+        <fieldset>
+          <legend>가구의 추가 전력사용기기</legend>
+          <p class="field-note">분석 설정 대장의 가구 부하는 「추가 전력사용기기가
+            없는 가구」 기준이다 — 히트펌프·전기차가 있으면 그 기기의 연간
+            소비전력량을 한 호의 총량에 더해야 한다. 비워 두면 그 기기 없이
+            계산하며, 결과 화면이 그 사실을 글자로 적는다.</p>
+
+          <label for="run-heatpump-load">히트펌프 연간 소비전력량 (난방+냉방)</label>
+          {# ⚠ **단위를 라벨에 적지 않고 자기 `-unit` 칸에 결속한다** —
+             사유는 위 「가구 수」 칸과 같다(`UI-2-AC1`·`NFR-302-M1`). #}
+          <input type="number" id="run-heatpump-load" name="heatpump_load_annual_kwh"
+                 min="0" step="1" placeholder="비우면 히트펌프 없이 돕니다"
+                 aria-describedby="run-heatpump-load-unit">
+          <span id="run-heatpump-load-unit" class="unit"
+                data-unit-for="run-heatpump-load">kWh/호·년</span>
+
+          <label for="run-ev-load">전기차 충전 연간 전력량</label>
+          <input type="number" id="run-ev-load" name="ev_load_annual_kwh"
+                 min="0" step="1" placeholder="비우면 전기차 없이 돕니다"
+                 aria-describedby="run-ev-load-unit">
+          <span id="run-ev-load-unit" class="unit"
+                data-unit-for="run-ev-load">kWh/호·년</span>
+        </fieldset>
+
         <fieldset>
           <legend>「자가용 집합자원화」의 계측 선언</legend>
           {# 둘 다 서야 그 갈래가 성립한다. 적지 않으면 DV-15 로 거부되며,

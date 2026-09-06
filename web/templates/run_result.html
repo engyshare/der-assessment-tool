@@ -103,6 +103,28 @@
         가구 수를 바꾸려면 실행 화면의 「실증단지 규모」 칸에 세대 수를 넣으십시오.</p>
     </section>
 
+    {# ★★ **무엇을 얼마나 얹고 돌았나** (R64/WP-2 · 사용자 요구 2). 가구 수
+       바로 뒤에 두는 이유: 단지 총부하는 이 값들이 한 호에 더해진 뒤에 위
+       가구 수가 곱해진 것이다.
+       ⚠ **안 준 기기도 줄을 지우지 않는다** — 빈칸이면 「0으로 돌렸다」와
+       「그 축이 없다」가 화면에서 같아진다. `data-appliance-load` 는 서식
+       이전의 날값(안 줬으면 비어 있다)이며 검사가 그것을 리포트와 대조한다. #}
+    <section id="appliance-load" class="band" aria-labelledby="appliance-load-title">
+      <h2 id="appliance-load-title">한 호에 무엇을 얹었나</h2>
+      <dl class="appliance-loads">
+        {% for item in appliance_loads %}
+        <dt>{{ item.label }}</dt>
+        <dd class="appliance-load" data-appliance="{{ item.key }}"
+            data-appliance-load="{{ item.raw }}">{{ item.value }}</dd>
+        {% endfor %}
+        <dt>합계 (한 호에 더해진 값)</dt>
+        <dd class="appliance-total">{{ appliance_total }}</dd>
+      </dl>
+      <p>여기 서는 것은 <strong>부하</strong>뿐이다 — 그 설비의 설치비·유지보수비와
+        편익(난방비 절감·V2G 방전 수익)은 이 수에 들어 있지 않다. 값을 바꾸려면
+        실행 화면의 「가구의 추가 전력사용기기」 칸에 연간 소비전력량을 넣으십시오.</p>
+    </section>
+
     {# ⚠ 이 수는 `CaseReport` 가 준 값이다. 화면이 다시 계산하지 않는다 —
        `data-npv` 는 서식 이전의 날값이며 검사가 그것을 리포트와 대조한다. #}
     <section id="conclusion" class="band" aria-labelledby="conclusion-title">

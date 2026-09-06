@@ -41,6 +41,12 @@ router = APIRouter(tags=["ui"])
 
 @router.get("/ui/verify", response_class=HTMLResponse)
 def verify_case(
+    # ⚠ `*` 는 **양식이 아니라 규칙**이다 (R64/WP-2 — R64/WP-1 이 그림
+    # 라우트에서 세운 것과 같다). 기기 부하 질의 둘이 붙어 인자가 일곱이 되자
+    # `PLR0917`(위치 인자 5 초과)이 울었다. FastAPI 는 키워드 전용 인자를
+    # 그대로 받으므로 라우트의 동작은 한 글자도 바뀌지 않는다. **상한을 올려
+    # 푸는 쪽을 고르지 않았다.**
+    *,
     scenario: str = Query(
         default="scenario_unsubsidized",
         description="골든 시나리오 이름 — 목록에 있는 것만 연다",
@@ -64,6 +70,20 @@ def verify_case(
             "그때 가구 한 호 기준으로 돈다"
         ),
     ),
+    heatpump_load_annual_kwh: str = Query(
+        default="",
+        description=(
+            "가구 한 호의 히트펌프 연간 소비전력량(kWh/호·년). "
+            "**비우면 시나리오에 적지 않는다** — 그때 0으로 돈다"
+        ),
+    ),
+    ev_load_annual_kwh: str = Query(
+        default="",
+        description=(
+            "가구 한 호의 전기차 충전 연간 전력량(kWh/호·년). "
+            "**비우면 시나리오에 적지 않는다** — 그때 0으로 돈다"
+        ),
+    ),
 ) -> HTMLResponse:
     """분석 과정의 중간값을 **네 걸음으로 순차적으로** 낸다.
 
@@ -85,6 +105,10 @@ def verify_case(
             # 「적지 않았다」가 그대로 내려가야 판정이 한 자리에 남는다
             # (`core/casegrid/household_scale.py::resolve_household_count`).
             household_count=household_count or None,
+            # ★ 기기 부하 둘도 같은 규약이다 (R64/WP-2) — 판정은
+            # `core/casegrid/appliance_load.py::resolve_appliance_load` 하나다.
+            heatpump_load_annual_kwh=heatpump_load_annual_kwh or None,
+            ev_load_annual_kwh=ev_load_annual_kwh or None,
         )
     except ValidationError as exc:
         return HTMLResponse(render_verify(run_error_context(exc)), status_code=400)

@@ -29,6 +29,7 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.services.ui_run import scenario_fields
 from core.assumption.scenario_overrides import ASSUMPTION_OVERRIDES_FIELD
+from core.casegrid.appliance_load import APPLIANCE_LOAD_UNSPECIFIED
 from core.casegrid.household_scale import HOUSEHOLD_COUNT_UNSPECIFIED
 from core.cba.baseline import BaselineArrangement, get_baseline_branch
 from core.contracts.validation import ValidationError
@@ -401,3 +402,118 @@ def test_a_household_count_below_one_is_refused_as_a_readable_screen(
     )
     assert response.status_code == 400, response.text[:200]
     assert "가구 수" in response.text and "조치" in response.text
+
+
+#: 기기 부하를 넣는 화면 칸의 이름들 — 폼과 질의가 **같은 글자**를 써야 사람이
+#: 넣은 값이 실행에 닿는다 (R64/WP-2 · 사용자 요구 2).
+_APPLIANCE_FIELDS = ('name="heatpump_load_annual_kwh"', 'name="ev_load_annual_kwh"')
+
+#: 시험용 기기 부하. **참고자료의 값(2,675·2,412)을 박지 않는다** — 사유는
+#: `tests/casegrid/test_appliance_load.py::_HEATPUMP` 가 갖는다.
+_HEATPUMP_LOAD = 900
+
+_APPLIANCE_ATTRIBUTE = re.compile(
+    r'data-appliance="heatpump"\s+data-appliance-load="([^"]*)"'
+)
+
+
+def test_the_dashboard_lets_a_person_type_the_appliance_loads(
+    client: TestClient,
+) -> None:
+    """★★ **사용자 요구 2 가 화면에 선다** — 기기마다 자기 칸을 갖는다.
+
+    ⚠⚠ **칸에 기본값이 박혀 있으면 안 된다.** 박으면 저장소가 가구 구성을
+    정한 것이 되고, 그 뒤에 검토자가 보는 것은 우리가 고른 구성으로 우리가
+    돌린 계산이다(대장 `load.heatpump.annual` 의 `derivation_method`).
+
+    ⚠ **칸이 둘이어야 한다.** 하나로 합치면 사용자가 히트펌프와 전기차를 따로
+    바꾸지 못하고, 요구가 기기를 나열한 이유가 사라진다(판정 ③).
+    """
+    body = client.get("/").text
+    for marker in _APPLIANCE_FIELDS:
+        assert marker in body, f"대시보드 실행 폼에 {marker} 칸이 없다"
+        field = body[body.index(marker):]
+        field = field[: field.index(">") + 1]
+        assert "value=" not in field, (
+            f"기기 부하 칸에 기본값이 박혀 있다 — 지어낸 소비량이다: {field!r}"
+        )
+
+
+def test_the_dashboard_has_no_ai_appliance_field(client: TestClient) -> None:
+    """★★★ **「AI 가전」 칸을 세우지 않았다** (사용자 판정 2026-09-06).
+
+    AI 가전은 전기를 더 쓰는 새 기기가 아니라 이미 있는 가전에 붙는 기능이며,
+    더하는 부하 칸으로 세우면 냉장고·세탁기의 소비가 두 번 세어진다. 사유의
+    정본은 `core/casegrid/appliance_load.py` 머리말이다.
+    """
+    body = client.get("/").text
+    assert "ai_appliance" not in body, (
+        "대시보드에 AI 가전 부하 칸이 섰다 — 그 소비는 이미 "
+        "`load.household.annual` 안에 있다"
+    )
+
+
+def test_the_result_screen_says_what_it_loaded_the_household_with(
+    client: TestClient,
+) -> None:
+    """★★★ 결과 화면이 **무엇을 얼마나 얹었는지**를 싣는다 — 안 얹은 실행도.
+
+    빈칸으로 두면 검토자가 화면의 모든 금액을 「기기를 반영한 수」로 읽는다.
+
+    ⚠ 수를 리터럴로 박지 않는다 — 날값 속성(`data-appliance-load`)에서 되찾아
+    질의로 보낸 값과 맞댄다.
+    """
+    unspecified = client.get("/ui/run", params={"scenario": _SCENARIO}).text
+    match = _APPLIANCE_ATTRIBUTE.search(unspecified)
+    assert match is not None, "결과 화면이 기기 부하를 날값으로 싣지 않았다"
+    assert match.group(1) == "", (
+        f"기기 부하를 주지 않았는데 날값이 {match.group(1)!r} 이다 — 지어낸 수다"
+    )
+    assert APPLIANCE_LOAD_UNSPECIFIED in unspecified, (
+        f"기기를 안 준 실행이 「{APPLIANCE_LOAD_UNSPECIFIED}」를 적지 않았다"
+    )
+
+    loaded = client.get(
+        "/ui/run",
+        params={"scenario": _SCENARIO, "heatpump_load_annual_kwh": _HEATPUMP_LOAD},
+    ).text
+    assert _APPLIANCE_ATTRIBUTE.search(loaded).group(1) == f"{float(_HEATPUMP_LOAD)}"
+
+
+def test_typing_an_appliance_load_actually_moves_the_number(
+    client: TestClient,
+) -> None:
+    """★★★ 화면이 넣은 값이 **결론축을 실제로 움직인다** — 표시만이 아니다.
+
+    이 단언이 없으면 위 검사는 *「칸을 그리고 값을 되비추기만 한다」* 로도
+    통과한다. 가구 수 축이 바로 위에서 같은 자리를 지킨다.
+    """
+    plain = _npv_on_screen(client.get("/ui/run", params={"scenario": _SCENARIO}).text)
+    loaded = _npv_on_screen(
+        client.get(
+            "/ui/run",
+            params={"scenario": _SCENARIO, "heatpump_load_annual_kwh": _HEATPUMP_LOAD},
+        ).text
+    )
+    assert plain == pytest.approx(_golden_npv(), abs=1.0), (
+        "기기를 안 준 실행이 골든 회귀의 수와 다르다 — 기본 갈래가 움직였다"
+    )
+    assert loaded != pytest.approx(plain, abs=1.0), (
+        f"히트펌프 {_HEATPUMP_LOAD}kWh/호·년을 얹었는데 결론축이 그대로다"
+        f"({plain:,.0f}원)"
+    )
+
+
+def test_a_negative_appliance_load_is_refused_as_a_readable_screen(
+    client: TestClient,
+) -> None:
+    """★★ **음수 부하는 3요소로 거부한다** — JSON 이 아니라 화면이다 (`NFR-303`).
+
+    「부하가 마이너스」는 발전이며, 그것을 부하 칸으로 적으면 아무 설비도
+    편익도 없는 발전이 선다.
+    """
+    response = client.get(
+        "/ui/run", params={"scenario": _SCENARIO, "ev_load_annual_kwh": -1}
+    )
+    assert response.status_code == 400, response.text[:200]
+    assert "전기차" in response.text and "조치" in response.text

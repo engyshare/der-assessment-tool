@@ -16,6 +16,16 @@
 """
 from __future__ import annotations
 
+from core.casegrid.appliance_load import (
+    APPLIANCE_LOAD_UNIT,
+    APPLIANCE_LOAD_UNSPECIFIED,
+    EV_LOAD_FIELD,
+    EV_LOAD_LEDGER_KEY,
+    EV_LOAD_TITLE,
+    HEATPUMP_LOAD_FIELD,
+    HEATPUMP_LOAD_LEDGER_KEY,
+    HEATPUMP_LOAD_TITLE,
+)
 from core.casegrid.household_scale import (
     HOUSEHOLD_COUNT_FIELD,
     HOUSEHOLD_COUNT_LEDGER_KEY,
@@ -127,6 +137,13 @@ BASELINE_TABLE = "기준선 갈래 선언"
 #: ⚠ `###` 머리가 아닌 이유는 위 둘과 **똑같다** — 붙임 1 안의 `###` 는
 #: 「주제 머리」로 못 박혀 있다.
 HOUSEHOLD_SCALE_TABLE = "실증단지 규모 (가구 수)"
+
+#: 붙임 1 의 **다섯째 표** 이름 — 이 실행이 한 호에 얹은 추가 전력사용기기
+#: 부하 (R64/WP-2 · 사용자 요구 2).
+#:
+#: ⚠ `###` 머리가 아닌 이유는 위 셋과 **똑같다** — 붙임 1 안의 `###` 는
+#: 「주제 머리」로 못 박혀 있다.
+APPLIANCE_LOAD_TABLE = "가구의 추가 전력사용기기 부하"
 
 #: 갈래 선언 중 **비어 있는 칸**에 서는 문면 (`FR-705-AC2`).
 #:
@@ -442,6 +459,89 @@ def _household_scale_table(report: CaseReport) -> list[str]:
     ]
 
 
+def _appliance_load_row(
+    label: str, value: float | None, ledger_key: str, field: str
+) -> str:
+    """한 기기의 표 한 줄 — **값이든 「미지정」이든 줄을 지우지 않는다.**
+
+    ⚠ 값이 없다고 줄을 빼면 「히트펌프를 0으로 돌렸다」와 「히트펌프라는 축이
+    없다」가 산출물에서 같아진다 — `_override_table` 이 「변경 없음」을
+    인쇄하고 표를 지우지 않는 것과 같은 판단이다.
+    """
+    used = (
+        f"{value:,.0f} {APPLIANCE_LOAD_UNIT}"
+        if value is not None
+        else APPLIANCE_LOAD_UNSPECIFIED
+    )
+    return f"| {label} | {used} | `{ledger_key}` | `{field}` |"
+
+
+def _appliance_load_table(report: CaseReport) -> list[str]:
+    """붙임 1 의 **다섯째 표** — 한 호에 **무엇을 얼마나 얹었는가** (R64/WP-2).
+
+    ## ★★★ 왜 「미지정」을 인쇄하는가 — 빈칸으로 두면 거짓이 읽힌다
+
+    대장(`docs/assumptions.yaml` 의 `load.heatpump.annual`·`load.ev.annual`)은
+    `track: blocked` · `value: null` 이라 위 주제별 표에 **값 없는 행**으로
+    실린다. 그 행만 보면 검토자는 *「채워지지 않은 전제가 둘 있구나」* 까지만
+    읽고, **그래서 이 실행이 무엇을 얹고 돌았는가**에는 답을 얻지 못한다.
+
+    답은 「아무것도 안 얹었다」다. 그 사실이 어디에도 적혀 있지 않으면 검토자는
+    아래 모든 수량과 금액을 *「히트펌프·전기차가 있는 가구의 것」* 으로 읽을
+    수 있고, 참고자료의 표준 모델대로라면 한 호의 총부하가 실제의 **절반
+    남짓**이다(9,252 중 5,087이 그 둘이다).
+
+    ⇒ 그래서 값이 없어도 **표를 지우지 않고** 「칸 + 사유」를 세운다.
+    `_household_scale_table` 이 가구 수에서 같은 판단을 적었다.
+
+    ## ⚠ 「0」과 「미지정」이 다르게 인쇄된다
+
+    `0 kWh/호·년` 은 *「그 기기가 없다고 적었다」*이고 「미지정」은 *「있는지
+    아직 모른다」*다. 더해지는 값은 둘 다 0 이지만 진술이 다르므로 글자도
+    달라야 한다 — 같은 글자로 덮으면 검토자가 그 둘을 가릴 수 없다.
+
+    ## ⚠ 이 표는 「설비를 놓았다」가 아니다
+
+    여기 서는 것은 **부하**뿐이다. 히트펌프·전기차의 설치비·유지보수비와 그
+    설비가 만드는 편익(난방비 절감·V2G 방전 수익)은 이 표가 다루지 않으며,
+    부하에 편익을 붙이면 그 절감을 일으킨 자원과 이중 계상된다
+    (`RC-LD-B0` · `FR-402-AC2.C`).
+    """
+    loads = report.appliance_loads
+    return [
+        f"**{APPLIANCE_LOAD_TABLE}**",
+        "",
+        "- 이 표가 말하는 것은 **이 실행이 한 호에 무엇을 얼마나 얹었는가**다 "
+        "— 위 넷째 표의 가구 수가 여기 합계에 곱해져 단지 총부하가 된다",
+        "- ⚠ **부하만이다.** 그 설비의 설치비·유지보수비와 편익(난방비 절감·"
+        "V2G 방전 수익)은 이 표에 없다 — 부하는 편익을 만들지 않는다",
+        "",
+        "| 기기 | 이 실행의 값 | 대장 자리 | 실행 입력의 통로 |",
+        "|---|---|---|---|",
+        _appliance_load_row(
+            HEATPUMP_LOAD_TITLE,
+            loads.heatpump_kwh,
+            HEATPUMP_LOAD_LEDGER_KEY,
+            HEATPUMP_LOAD_FIELD,
+        ),
+        _appliance_load_row(
+            EV_LOAD_TITLE,
+            loads.ev_kwh,
+            EV_LOAD_LEDGER_KEY,
+            EV_LOAD_FIELD,
+        ),
+        f"| 합계 (한 호에 더해진 값) | {loads.total_kwh:,.0f} "
+        f"{APPLIANCE_LOAD_UNIT} | — | — |",
+        "",
+        "- 대장 두 항목은 `track: blocked` · 값 없음 — 그 기기를 가구가 갖는지는 "
+        "**사업 계획이 정하는 사실**이므로 저장소가 가정하지 않는다",
+        "- 「AI 가전」은 항목으로 서지 않는다 — 전기를 더 쓰는 새 기기가 아니라 "
+        "이미 있는 가전에 붙는 기능이며, 더하는 부하로 세우면 그 가전의 소비가 "
+        "두 번 세어진다 (사용자 판정 2026-09-06)",
+        "",
+    ]
+
+
 def appendix_section(report: CaseReport) -> list[str]:
     """붙임 1 — 전 가정 목록. **주제별로 묶고 신뢰도를 열로** (`FR-1002-AC6`).
 
@@ -458,10 +558,12 @@ def appendix_section(report: CaseReport) -> list[str]:
     ⚠ 주제는 **대장 키의 접두어**에서 온다 — 여기서 새 분류를 만들지 않는다
     (`TOPIC_PREFIXES`).
 
-    ⚠ **이 붙임은 표가 넷이다** — 주제별 전건 · **변경 항목**
+    ⚠ **이 붙임은 표가 다섯이다** — 주제별 전건 · **변경 항목**
     (`_override_table` · `FR-602-AC2`) · **기준선 갈래 선언**
     (`_baseline_branch_table` · `FR-705-AC2` · R60/WP-2) · **실증단지 규모**
-    (`_household_scale_table` · R64/WP-1 · 착수 47ⓐ). 붙임 2 가 표를 둘로
+    (`_household_scale_table` · R64/WP-1 · 착수 47ⓐ) · **가구의 추가
+    전력사용기기 부하** (`_appliance_load_table` · R64/WP-2 · 사용자 요구 2).
+    붙임 2 가 표를 둘로
     가른 것과 같은 갈래이며, 이름만 `###` 머리가 아니다(`OVERRIDE_TABLE` 주석).
     """
     by_topic: dict[str, list[AssumptionRow]] = {}
@@ -509,6 +611,11 @@ def appendix_section(report: CaseReport) -> list[str]:
     # 무엇 대비 재었는가」이고 이것은 **그 전부가 몇 호분인가**다 — 규모를
     # 모르면 앞의 모든 금액이 단지 전체의 금액으로 읽힌다.
     lines += _household_scale_table(report)
+    # ★ 다섯째 표다 — **한 호에 무엇을 얼마나 얹었는가** (R64/WP-2 · 사용자
+    # 요구 2). 가구 수 표 바로 뒤인 이유: 단지 총부하는 이 표의 합계가
+    # 더해진 뒤에 그 수가 곱해진 것이며, 순서가 뒤집히면 검토자가 곱한 뒤에
+    # 더하는 것으로 읽는다 — 그 오독은 「단지에 히트펌프가 딱 한 대」다.
+    lines += _appliance_load_table(report)
     return lines
 
 

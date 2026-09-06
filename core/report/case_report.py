@@ -53,6 +53,20 @@
 `core/report/case_influences.py` 로 옮겼다(그 독스트링이 경위를 갖는다).
 이 파일은 그것을 import 해 그대로 쓴다 — 밖에서 `case_report` 의
 `CONCLUSION_METRIC`·`InfluenceEntry` 를 읽던 경로는 재수출로 그대로 산다.
+
+## R64/WP-2 — **3중 표기 산식** 한 덩어리를 또 뗐다
+
+사용자 요구 2(가구의 추가 전력사용기기 부하)를 배선하니 이 파일이 **코드
+508/500** 이 되었다. `Formula` 와 `_formulas()`(새 이름 `build_formulas()`)를
+`core/report/case_formulas.py` 로 옮겼다 — 그 독스트링이 경위를 갖는다.
+⛔ **상한을 올려 풀지 않았다**(NFR-206 · spec §16.5).
+
+⚠ **위 R54/WP-2 와 달리 `__all__` 에 올리지 않았다.** 저장소를 훑어 보니 밖에서
+`case_report` 경로로 `Formula` 를 읽는 곳이 **하나도 없었다** — 재수출로 살려
+둘 옛 경로가 없다. 그리고 이 모듈의 `__all__` 은 *「재수출의 정본은
+`case_influences` 다」* 를 재는 검사(`tests/report/test_case_influences.py::
+test_the_reexports_are_the_same_objects`)가 읽으므로, 다른 모듈의 이름을 거기
+얹으면 그 검사가 뜻을 잃는다. **읽을 자리는 `case_formulas` 하나다.**
 """
 from __future__ import annotations
 
@@ -68,6 +82,10 @@ from core.assumption.provider import AssumptionSet
 from core.assumption.scenario_overrides import (
     ASSUMPTION_OVERRIDES_FIELD,
     apply_scenario_overrides,
+)
+from core.casegrid.appliance_load import (
+    ApplianceLoads,
+    resolve_appliance_loads,
 )
 from core.casegrid.e2e_runner import PV_CAPACITY_FACTOR, run_single_case_e2e
 from core.casegrid.household_scale import HOUSEHOLD_COUNT_FIELD, resolve_household_count
@@ -95,6 +113,7 @@ from core.contracts.validation import ValidationError
 from core.engine.rule_based import DispatchRule
 from core.incentive.schemas import IncentiveScheme
 from core.report.capacity import CapacityFinding, build_capacity_review
+from core.report.case_formulas import Formula, build_formulas
 from core.report.case_influences import (
     BASELINE_VARIANT,
     CONCLUSION_METRIC,
@@ -225,16 +244,6 @@ def _read_distributed_sub_items(provider: AssumptionProvider) -> DistributedSubI
 
 
 @dataclass(frozen=True)
-class Formula:
-    """3중 표기 한 건 — 자연어 + 수식 + 대입값 (`FR-1001-AC3`)."""
-
-    label: str
-    natural: str
-    expression: str
-    substituted: str
-
-
-@dataclass(frozen=True)
 class AssumptionRow:
     """가정 부록 한 줄 (`FR-1002-AC6`)."""
 
@@ -310,6 +319,23 @@ class CaseReport:
     #: `value: null` 이며 *「사업 계획이 정하는 사실」* 이다 — 그래서 이 값의
     #: 통로는 실행 입력(시나리오·화면)이고 대장이 아니다.
     household_count: int | None
+    #: 이 실행이 **한 호에 얹은 추가 전력사용기기 부하** — 히트펌프 · 전기차
+    #: (R64/WP-2 · 사용자 요구 2). 시나리오 yaml 의 `heatpump_load_annual_kwh`·
+    #: `ev_load_annual_kwh` 필드에서 오며, 없으면 둘 다 `None` 이다.
+    #:
+    #: ⚠⚠ **`None` 은 「빈 값」이 아니라 진술이다** — *「그 기기를 적지 않았고,
+    #: 그래서 이 실행은 0으로 돌았다」*. 산출물은 그것을 **글자로** 인쇄해야
+    #: 한다(`core/casegrid/appliance_load.py::APPLIANCE_LOAD_UNSPECIFIED`) —
+    #: 빈칸으로 두면 검토자가 「반영됐다」로 읽고, 히트펌프를 놓는 사업이라면
+    #: 한 호의 총부하를 절반 가까이 틀리게 읽는다.
+    #:
+    #: ⚠ **`0.0` 과 `None` 을 같게 다루지 않는다.** 더해지는 값은 둘 다 0
+    #: 이지만 앞의 것은 *「그 기기가 없다고 적었다」*이고 뒤의 것은 *「있는지
+    #: 아직 모른다」*다.
+    #:
+    #: ⚠ **대장에서 오지 않는다.** `load.heatpump.annual`·`load.ev.annual` 은
+    #: `track: blocked` · `value: null` 이며 *「사업 계획이 정하는 사실」* 이다.
+    appliance_loads: ApplianceLoads
     #: 그 갈래의 **선언 다섯** — Without · With · 성립 조건 · 자가소비 처리 ·
     #: 근거 조항. 붙임 1 의 셋째 표가 이것을 인쇄한다.
     #:
@@ -558,125 +584,6 @@ def _provenance(value: AssumptionValue | None) -> dict[str, Any]:
     }
 
 
-def _formulas(
-    basis: CaseBasis,
-    metrics: Mapping[str, float],
-    *,
-    subsidy_rate: float,
-    total_project_cost_won: float,
-) -> tuple[Formula, ...]:
-    """주 지표와 결론 축의 3중 표기 (`FR-1001-AC2`·`AC3`).
-
-    ⚠ `I₀` 는 `CaseBasis` 의 총사업비가 아니라 **그 변형이 실제로 낸 초기지출**
-    이다. 총사업비를 적으면 지원을 받은 사업의 산식이 지원 전 금액으로 서고,
-    검토자가 대입값을 따라가면 리포트의 결론과 다른 수가 나온다.
-    """
-    payback = metrics[HEADLINE_METRIC]
-    payback_text = (
-        f"{payback:.2f}년" if payback != float("inf") else "분석기간 내 미회수"
-    )
-    outlay = int(metrics["initial_outlay_won"])
-    flip_rate = break_even_subsidy_rate(
-        subsidy_rate=subsidy_rate,
-        npv_won=float(metrics[CONCLUSION_METRIC]),
-        total_project_cost_won=total_project_cost_won,
-    )
-    net = basis.annual_benefit_won - basis.annual_cost_won
-    # ★ **환산이 지원 상한을 넘으면 붙임 3 이 그것을 함께 진다** (판정 §2).
-    # 산식은 **지우지 않는다** — 본문의 그 수가 어디서 왔는지 대입값으로 말하는
-    # 자리가 사라지면 검토자가 따라갈 통로가 없어진다(`MC-1` 의 첫 물음).
-    # 대신 그 결과가 **답으로 성립하지 않는다**는 것을 대입값 줄이 함께 적고,
-    # *「그러면 얼마가 모자라는가」* 는 아래 「전액 지원 시 잔여 결손」 산식이
-    # 답한다 — 요구된 수가 **감사 가능해야** 하기 때문이다.
-    over_ceiling = flip_rate > MAX_SUBSIDY_RATE
-    residual = residual_gap_at_full_support_won(
-        subsidy_rate=subsidy_rate,
-        npv_won=float(metrics[CONCLUSION_METRIC]),
-        total_project_cost_won=total_project_cost_won,
-    )
-    ceiling_note = (
-        f" — ⚠ 지원 상한 {MAX_SUBSIDY_RATE:.0%}(사업비 전액)를 넘어 "
-        "지원율로는 답이 성립하지 않는다"
-        if over_ceiling
-        else ""
-    )
-    formulas = (
-        Formula(
-            label="연 순현금흐름",
-            natural="연 순현금흐름 = 연 편익 - 연 운영비",
-            expression="CF = B - C",
-            substituted=(
-                f"{net:,}원 = {basis.annual_benefit_won:,}원 "
-                f"- {basis.annual_cost_won:,}원"
-            ),
-        ),
-        Formula(
-            label="순현재가치",
-            natural=(
-                "순현재가치 = 분석기간 동안의 순현금흐름을 할인해 더한 뒤 "
-                "초기투자를 뺀 값"
-            ),
-            expression="NPV = Σ(t=1..T) CF_t / (1+r)^t - I₀",
-            substituted=(
-                f"{metrics[CONCLUSION_METRIC]:,.0f}원 = Σ(t=1..{basis.horizon_years}) "
-                f"CF_t / (1+{basis.discount_rate:.3f})^t - {outlay:,}원"
-            ),
-        ),
-        Formula(
-            label="할인 회수기간",
-            natural=(
-                "할인 회수기간 = 누적 할인 현금흐름이 초기투자에 도달하는 시점. "
-                "분석기간 안에 도달하지 못하면 「미회수」"
-            ),
-            expression="min{ T' : Σ(t=1..T') CF_t / (1+r)^t ≥ I₀ }",
-            substituted=(
-                f"{payback_text} — I₀ = {outlay:,}원 · "
-                f"r = {basis.discount_rate:.1%} · T = {basis.horizon_years}년"
-            ),
-        ),
-        # ★ **본문 5.1 의 「전환 지원율」이 여기서 감사된다.** 본문은 환산값만
-        # 싣고, 그 값이 어디서 왔는지는 이 산식이 대입값으로 말한다 — 붙임 없이
-        # 본문에만 두면 검토자가 52.6% 를 따라갈 자리가 없다(`MC-1` 의 첫 물음).
-        Formula(
-            label="결론 전환 지원율",
-            natural=(
-                "결론 전환 지원율 = 현 지원율 - 순현재가치 ÷ 총사업비. "
-                "지원은 t=0 초기지출 감액이고 순현재가치 산식은 초기투자를 "
-                "할인하지 않으므로, 지원 1원이 결론 축을 정확히 1원 올린다"
-            ),
-            expression="s* = s - NPV / I_total",
-            substituted=(
-                f"{flip_rate:.1%} = {subsidy_rate:.1%} - "
-                f"({metrics[CONCLUSION_METRIC]:,.0f}원) "
-                f"÷ {total_project_cost_won:,.0f}원{ceiling_note}"
-            ),
-        ),
-    )
-    if not over_ceiling:
-        return formulas
-    # RUF001: 「×」는 검토자가 읽는 **산식 문면**이다. `x` 로 바꾸면 곱셈이
-    # 변수 이름처럼 읽힌다 — `core/casegrid/operating_lines.py` 가 같은 자리에
-    # 같은 판정을 적어 두었다.
-    return (
-        *formulas,
-        Formula(
-            label="전액 지원 시 잔여 결손",
-            natural=(
-                "전액 지원 시 잔여 결손 = 순현재가치 + (지원 상한 - 현 지원율) "
-                "× 총사업비. 지원은 t=0 초기지출 감액이므로 지원율을 상한"  # noqa: RUF001
-                f"({MAX_SUBSIDY_RATE:.0%})까지 올려도 결론 축은 남은 지원분"
-                "만큼만 오르고, 그 위로는 올릴 곳이 없다"
-            ),
-            expression="R = NPV + (1 - s) × I_total",  # noqa: RUF001
-            substituted=(
-                f"{residual:,.0f}원 = {metrics[CONCLUSION_METRIC]:,.0f}원 + "
-                f"({MAX_SUBSIDY_RATE:.1%} - {subsidy_rate:.1%}) "
-                f"× {total_project_cost_won:,.0f}원"  # noqa: RUF001
-            ),
-        ),
-    )
-
-
 def _appendix(provider: AssumptionSet) -> tuple[AssumptionRow, ...]:
     """전 가정 목록 — 영향도 순위와 **별개로** 제공한다 (`FR-1002-AC6`).
 
@@ -822,6 +729,19 @@ def build_case_report(
     # ⚠ **골든 픽스처에는 이 필드가 없다** — 그래서 골든 회귀의 수는 한 원도
     # 움직이지 않는다(`tests/golden/test_regression_scenarios.py`).
     household_count = resolve_household_count(scenario.get(HOUSEHOLD_COUNT_FIELD))
+    # ★★★ **가구의 추가 전력사용기기 부하도 시나리오에서 읽는다** (R64/WP-2 ·
+    # 사용자 요구 2). 대장의 `load.household.annual` 은 *「추가 전력사용기기가
+    # 없는 가구 기준」*이고, 그 `applicable_scope` 가 히트펌프 등이 들어오면
+    # **그 기기의 연간 소비전력량을 이 값에 더해** 총량이 비례 증가해야 한다고
+    # 정했다(R48 판정 §5). 규칙은 그때 섰으나 **값을 담을 자리도 통로도 없어**
+    # 러너의 `extra_appliance_load_kwh` 를 배포 경로에서 아무도 채우지 않았다.
+    # ⚠ **필드가 없으면 `None`(= 적지 않았다)이고 그때 더해지는 값은 0 이다.**
+    # 여기서 기본 소비량으로 메우지 않는다 — 두 대장 항목이 `track: blocked` ·
+    # `value: null` 이고 *「가정하면 안 된다」* 가 그 항목의 `derivation_method`
+    # 다. 판정과 거부는 `core/casegrid/appliance_load.py` 하나가 진다.
+    # ⚠ **골든 픽스처에는 두 필드가 없다** — 그래서 골든 회귀의 수는 한 원도
+    # 움직이지 않는다(`tests/golden/test_regression_scenarios.py`).
+    appliance_loads = resolve_appliance_loads(scenario)
     # ★ ⓒ(자가용 집합자원화)를 **선언 없이** 고르면 여기서 `DV-15` 로 거부된다 —
     # 리포트를 조립하기 전이다. 러너도 같은 거부를 지나므로(그 진입점을 직접
     # 부르는 경로가 있다) 두 자리가 함께 막는다.
@@ -887,6 +807,12 @@ def build_case_report(
         # 값이므로 이 수가 곱해져야 단지 총부하가 된다. `None` 이면 배수가 1 —
         # 종전과 같다.
         household_count=household_count,
+        # ★★ **한 호에 얹는 추가 기기 부하** (R64/WP-2 · 사용자 요구 2).
+        # 러너 인자는 **합계 하나**이고 갈래는 산출물에서만 갈린다 — 그 인자를
+        # 기기별로 쪼개면 러너가 기기 목록을 알게 되고, 셋째 기기가 오는 날
+        # 러너 시그니처가 늘어난다(`ApplianceLoads.total_kwh` 가 정본).
+        # ⚠ 안 준 실행은 `0.0` 이며 그때 인자의 기본값과 같다 — 종전과 같다.
+        extra_appliance_load_kwh=appliance_loads.total_kwh,
         rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
         distributed_sub_items=distributed_sub_items,
         baseline_arrangement=baseline_arrangement,
@@ -903,6 +829,12 @@ def build_case_report(
         # 함정이며, 이 축은 부하 총량에 비례로 들어오므로 어긋나면
         # `build_coupled_sweeps` 의 `base_npv` 대조가 통째로 뜻을 잃는다.
         household_count=household_count,
+        # ★★ **본 실행과 같은 기기 부하로 스윕한다** (R64/WP-2). 안 넘기면
+        # 본문 4절은 히트펌프가 있는 가구로, 5·6절은 없는 가구로 계산되어
+        # 두 절이 서로 다른 사업을 그린다 — 바로 위 가구 수와 같은 함정이며,
+        # 이 축도 부하 총량에 더해지므로 어긋나면 `build_coupled_sweeps` 의
+        # `base_npv` 대조가 뜻을 잃는다.
+        extra_appliance_load_kwh=appliance_loads.total_kwh,
         # ★ **본 실행과 같은 기준선 갈래로 스윕한다** (`FR-705-AC2`). 안 넘기면
         # 본문 4절은 고른 갈래로, 5·6절(민감도·용량 검토)은 **기본 갈래**로
         # 계산되어 두 절이 서로 다른 사업을 그린다 — 위 `annual_load_kwh`·
@@ -1017,6 +949,10 @@ def build_case_report(
         # `None` 도 그대로 나른다 — 「미지정」을 글자로 적는 것이 붙임의 몫이다
         # (`core/report/appendix_sections.py::_household_scale_table`).
         household_count=household_count,
+        # ★ 산출물이 **어떤 기기를 얼마로 얹었는지**를 인쇄한다 (R64/WP-2).
+        # `None` 도 그대로 나른다 — 「미지정」을 글자로 적는 것이 붙임의 몫이다
+        # (`core/report/appendix_sections.py::_appliance_load_table`).
+        appliance_loads=appliance_loads,
         baseline_branch=baseline_branch,
         metrics=outcome.variants[PLAN_VARIANT],
         baseline_metrics=outcome.variants[BASELINE_VARIANT],
@@ -1027,7 +963,7 @@ def build_case_report(
         basis=outcome.basis,
         influences=influences,
         coupled_sweeps=coupled_sweeps,
-        formulas=_formulas(
+        formulas=build_formulas(
             outcome.basis,
             outcome.variants[PLAN_VARIANT],
             subsidy_rate=subsidy_rate,

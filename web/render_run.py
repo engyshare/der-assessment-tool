@@ -21,6 +21,12 @@ from typing import Any
 from urllib.parse import urlencode
 
 from app.services.ui_charts import chart_description, chart_source, unwired_reason
+from core.casegrid.appliance_load import (
+    APPLIANCE_LOAD_UNIT,
+    APPLIANCE_LOAD_UNSPECIFIED,
+    EV_LOAD_TITLE,
+    HEATPUMP_LOAD_TITLE,
+)
 from core.casegrid.household_scale import HOUSEHOLD_COUNT_UNSPECIFIED
 from core.cba.baseline import (
     POOL_PREREQUISITE_METERING,
@@ -93,6 +99,8 @@ def chart_query(
     ownership_or_operation_transferred: bool,
     metering_separated: bool,
     household_count: str = "",
+    heatpump_load_annual_kwh: str = "",
+    ev_load_annual_kwh: str = "",
 ) -> str:
     """그림 주소에 붙일 질의 문자열 — **결과 화면과 같은 실행을 그리게 한다.**
 
@@ -118,7 +126,43 @@ def chart_query(
     }
     if household_count:
         fields["household_count"] = household_count
+    # ★★ 기기 부하 둘도 **빈 칸이면 아예 붙이지 않는다** (R64/WP-2). 사유는 위
+    # 가구 수와 같다 — 안 준 실행의 그림 주소를 종전과 한 글자도 다르지 않게
+    # 둔다.
+    if heatpump_load_annual_kwh:
+        fields["heatpump_load_annual_kwh"] = heatpump_load_annual_kwh
+    if ev_load_annual_kwh:
+        fields["ev_load_annual_kwh"] = ev_load_annual_kwh
     return urlencode(fields)
+
+
+def _appliance_rows(report: CaseReport) -> tuple[dict[str, Any], ...]:
+    """결과 화면의 기기 부하 줄 둘 — **값이든 「미지정」이든 줄을 지우지 않는다.**
+
+    ⚠ 값이 없다고 줄을 빼면 「0으로 돌렸다」와 「히트펌프라는 축이 없다」가
+    화면에서 같아진다 — 붙임 1 의 `core/report/appendix_sections.py::
+    _appliance_load_row` 가 같은 판단을 적는다.
+
+    `data-*` 는 서식 이전의 **날값**(안 줬으면 비어 있다)이며 검사가 그것을
+    리포트와 대조한다 — 가구 수 칸이 이미 같은 규약을 따른다.
+    """
+    loads = report.appliance_loads
+    return tuple(
+        {
+            "label": label,
+            "value": (
+                f"{value:,.0f} {APPLIANCE_LOAD_UNIT}"
+                if value is not None
+                else APPLIANCE_LOAD_UNSPECIFIED
+            ),
+            "raw": "" if value is None else value,
+            "key": key,
+        }
+        for label, value, key in (
+            (HEATPUMP_LOAD_TITLE, loads.heatpump_kwh, "heatpump"),
+            (EV_LOAD_TITLE, loads.ev_kwh, "ev"),
+        )
+    )
 
 
 def chart_figures(*, query: str = "") -> tuple[dict[str, Any], ...]:
@@ -229,6 +273,14 @@ def run_result_context(
             else HOUSEHOLD_COUNT_UNSPECIFIED
         ),
         "household_count_raw": report.household_count,
+        # ★★ **무엇을 얼마나 얹고 돌았나** (R64/WP-2 · 사용자 요구 2). 위
+        # 가구 수와 같은 자리이며 ⚠ **안 준 기기도 글자로 적는다** — 빈칸이면
+        # 검토자가 「히트펌프를 반영한 수」로 읽을 수 있고, 참고 표준 모델대로면
+        # 한 호의 총부하가 실제의 절반 남짓이 된다.
+        "appliance_loads": _appliance_rows(report),
+        "appliance_total": (
+            f"{report.appliance_loads.total_kwh:,.0f} {APPLIANCE_LOAD_UNIT}"
+        ),
         "branch": {
             "without": report.baseline_branch.without_description,
             "with": report.baseline_branch.with_description,

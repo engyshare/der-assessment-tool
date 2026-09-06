@@ -489,8 +489,10 @@ def test_the_flipping_branch_still_leads_with_the_support_rate(
     문장은 그때 **거짓**이다.
 
     ⚠ 붙임 3 은 여기서 보지 않는다. 그쪽 갈래는 프로퍼티가 아니라
-    `case_report._formulas()` 가 환산값에서 직접 판정하므로, 이 뒤집기로는
-    함께 움직이지 않는다.
+    `case_formulas.build_formulas()` 가 환산값에서 직접 판정하므로, 이
+    뒤집기로는 함께 움직이지 않는다 (R64/WP-2 가 그 함수를 `case_report` 에서
+    `core/report/case_formulas.py` 로 옮기며 이름을 밖으로 냈다 —
+    `NFR-206` 코드 스프롤 상한).
     """
     report = _report()
     monkeypatch.setattr(

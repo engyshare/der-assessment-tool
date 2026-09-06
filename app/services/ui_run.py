@@ -36,6 +36,7 @@ from typing import Any
 import yaml
 
 from core.assumption.scenario_overrides import ASSUMPTION_OVERRIDES_FIELD
+from core.casegrid.appliance_load import EV_LOAD_FIELD, HEATPUMP_LOAD_FIELD
 from core.casegrid.household_scale import HOUSEHOLD_COUNT_FIELD
 from core.cba.baseline import POOL_METERING_FIELD, PoolMeteringDeclaration
 from core.report.case_report import CaseReport, build_case_report
@@ -115,6 +116,8 @@ def scenario_fields(
     metering_separated: bool = False,
     assumption_overrides: object | None = None,
     household_count: str | int | None = None,
+    heatpump_load_annual_kwh: str | float | None = None,
+    ev_load_annual_kwh: str | float | None = None,
 ) -> dict[str, Any]:
     """골든 시나리오 + 화면이 고른 것 → 넘길 매핑.
 
@@ -157,6 +160,17 @@ def scenario_fields(
     `core/casegrid/household_scale.py::resolve_household_count` 하나가 한다 —
     위 갈래·오버라이드와 같은 자리이며, 여기서 미리 바꾸면 「40.5호」 같은
     입력의 거부 문면이 두 곳에 생긴다.
+
+    ## ★★ 기기 부하 둘 — **빈 칸이면 필드를 넣지 않는다** (R64/WP-2)
+
+    히트펌프·전기차 연간 소비전력량도 같은 규약이다. 빈 칸(`""`)과 `None` 이
+    *「그 기기를 적지 않았다」*이고, 그때 필드가 시나리오에 실리지 않아
+    `build_case_report` 가 `None` 으로 읽는다 — 더해지는 값은 0 이고 결과는
+    이 통로가 생기기 전과 같다. 판정은
+    `core/casegrid/appliance_load.py::resolve_appliance_load` 하나가 한다.
+
+    ⚠ **둘을 하나로 합치지 않는다.** 러너가 받는 것은 합계 하나지만 화면과
+    산출물은 기기별로 갈라야 한다 — 합치면 사용자가 따로 바꾸지 못한다.
     """
     available = golden_scenario_names()
     if name not in available:
@@ -179,6 +193,12 @@ def scenario_fields(
         fields[ASSUMPTION_OVERRIDES_FIELD] = assumption_overrides
     if household_count is not None and household_count != "":
         fields[HOUSEHOLD_COUNT_FIELD] = household_count
+    for field, given in (
+        (HEATPUMP_LOAD_FIELD, heatpump_load_annual_kwh),
+        (EV_LOAD_FIELD, ev_load_annual_kwh),
+    ):
+        if given is not None and given != "":
+            fields[field] = given
     return fields
 
 
@@ -190,6 +210,8 @@ def run_ui_case(
     metering_separated: bool = False,
     assumption_overrides: object | None = None,
     household_count: str | int | None = None,
+    heatpump_load_annual_kwh: str | float | None = None,
+    ev_load_annual_kwh: str | float | None = None,
 ) -> UiRun:
     """화면이 고른 것으로 **한 번 돌린다.**
 
@@ -211,6 +233,8 @@ def run_ui_case(
         metering_separated=metering_separated,
         assumption_overrides=assumption_overrides,
         household_count=household_count,
+        heatpump_load_annual_kwh=heatpump_load_annual_kwh,
+        ev_load_annual_kwh=ev_load_annual_kwh,
     )
     text = yaml.safe_dump(fields, allow_unicode=True, sort_keys=False)
     with tempfile.TemporaryDirectory() as workspace:
