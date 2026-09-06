@@ -35,6 +35,7 @@ from core.report.dispatch_notes import (
     DispatchHour,
     DispatchNote,
     build_hourly_profile,
+    resolved_operating_mode,
 )
 
 #: 규칙 → 문면. **`FR-302-AC1` 의 일곱 줄을 그대로 옮긴 것**이며 여기서 새로
@@ -105,14 +106,22 @@ def dispatch_rule_section(report: CaseReport) -> list[str]:
         "| 자원 | 선택한 운전 방법 | 묶인 규칙 | 순위 | 가격 신호 연동 |",
         "|---|---|---|---|---|",
     ]
+    # ★★ **칸 이름이 「선택한 운전 방법」이므로 「이 실행이 무엇을 우선했나」까지
+    # 실어야 한다** (R64 · WP-VERIFY 결함 2 의 나머지 절반). 종전에는
+    # `note.operating_mode`(자원이 **선언한** 짧은 라벨)만 실어서, 같은 리포트의
+    # 본문 2.1 「운전 방식」 칸(`core/report/method_sections.py` — 긴 문면)과
+    # **같은 물음에 다른 답**을 적고 있었다. 정본은 하나여야 한다.
+    modes = {line.name: line.operating_mode for line in report.basis.resources}
     for note in report.dispatch_notes:
         lines.append(
-            f"| `{note.resource_name}` | {note.operating_mode} | "
+            f"| `{note.resource_name}` | {resolved_operating_mode(note, modes)} | "
             f"`{note.dispatch_rule.value}` | {note.dispatch_priority + 1} | "
             f"{'예' if note.price_linked else '아니오'} |"
         )
     lines += [
         "",
+        "- 「선택한 운전 방법」 — 자원이 **선언한** 방법과 이 실행의 **배분**"
+        "(`ResourceLine.operating_mode`)",
         "- 「가격 신호 연동」 — 운전 방법이 요금·가격 신호를 입력으로 받는가 "
         "(`needs_price_signal`)",
         "",

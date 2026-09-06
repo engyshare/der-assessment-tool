@@ -28,7 +28,7 @@ from core.casegrid.e2e_runner import run_single_case_e2e
 from core.casegrid.ledger_levels import build_level_map
 from core.engine.rule_based import DEFAULT_RULE_ORDER, DispatchRule
 from core.report.case_report import build_case_report
-from core.report.dispatch_notes import build_hourly_profile
+from core.report.dispatch_notes import NO_OPERATING_MODE, build_hourly_profile
 from core.report.dispatch_sections import (
     RULE_TEXT,
     dispatch_profile_section,
@@ -545,3 +545,82 @@ def test_a_run_without_seasons_still_prints_and_says_why(kept: int) -> None:
     )
     said = [line for line in lines if line.startswith("- ") and "계절 갈래 없음" in line]
     assert len(said) == 1, f"계절이 없는 사유가 글자로 서지 않았다: {lines}"
+
+
+@pytest.mark.req("FR-105-AC4")
+def test_the_assignment_table_says_what_this_run_actually_preferred() -> None:
+    """「선택한 운전 방법」 칸이 **선언 라벨이 아니라 이 실행의 배분**까지 싣는다.
+
+    R64 에서 다른 에이전트가 산출물을 대조해 찾은 결함이다(결함 2). 이 표는
+    `DispatchNote.operating_mode` — 자원이 **선언한** 짧은 라벨 — 만 실었고,
+    이 실행이 실제로 무엇을 우선했는지는 `CaseBasis.resources` 의 긴 문면에만
+    있었다. 그래서 **사용자 요구 5**(ESS 가 가구 부하를 보고 방전한다)를 이
+    표에서 가릴 수 없었다.
+
+    ⚠ **낱말을 여기 박지 않는다** — 「부하 추종」·「집 우선」은 실행마다
+    달라지므로 `basis` 가 적은 것을 그대로 읽어 견준다.
+    """
+    report = _report()
+    modes = {line.name: line.operating_mode for line in report.basis.resources}
+    lines = dispatch_rule_section(report)
+    assert modes, "자원 목록이 비어 있다"
+    for note in report.dispatch_notes:
+        row = next(
+            line for line in lines if line.startswith(f"| `{note.resource_name}` |")
+        )
+        long = modes.get(note.resource_name)
+        if long:
+            assert long in row, (
+                f"{note.resource_name}: 「선택한 운전 방법」 칸이 이 실행의 배분을 "
+                f"싣지 않는다 — 실물은 {long!r} 인데 행은 {row!r} 다"
+            )
+
+
+@pytest.mark.req("FR-105-AC4")
+def test_a_resource_without_an_operating_mode_gets_a_sentence_not_a_blank() -> None:
+    """운전 방법이 없는 자원의 칸은 **빈칸이 아니라 문장**이다.
+
+    `DER._check_operating_mode` 는 `OPERATING_MODES` 가 빈 자원(부하)에 `""` 를
+    돌려준다. 그 빈 문자열을 그대로 인쇄하면 표에서 **「아직 안 적었다」와
+    구별되지 않는다** — 이 저장소의 ★★ 규약(「`None` 은 빈칸이 아니라 «진술»
+    이다」)이 금지하는 자리다.
+    """
+    report = _report()
+    modes = {line.name: line.operating_mode for line in report.basis.resources}
+    blank = [
+        n
+        for n in report.dispatch_notes
+        if not (modes.get(n.resource_name) or n.operating_mode)
+    ]
+    assert blank, "운전 방법 없는 자원이 없어 이 시험이 재는 것이 없다"
+    lines = dispatch_rule_section(report)
+    for note in blank:
+        row = next(
+            line for line in lines if line.startswith(f"| `{note.resource_name}` |")
+        )
+        assert NO_OPERATING_MODE in row, (
+            f"{note.resource_name}: 운전 방법 칸이 비어 있다 — {row!r}"
+        )
+
+
+@pytest.mark.req("FR-105-AC4")
+def test_the_appendix_and_the_body_do_not_disagree_about_the_operating_mode() -> None:
+    """붙임의 「선택한 운전 방법」과 본문의 「운전 방식」이 **같은 말을 한다.**
+
+    한 문서가 같은 물음에 두 답을 적으면 검토자는 어느 쪽이 정본인지 물어야
+    한다. R64 전에는 본문(`core/report/method_sections.py`)이 긴 문면을 싣고
+    붙임이 짧은 라벨을 실어 **그 상태였다.**
+    """
+    report = _report()
+    body = render_markdown(report)
+    appendix = "\n".join(dispatch_rule_section(report))
+    for line in report.basis.resources:
+        if not line.operating_mode:
+            continue
+        assert line.operating_mode in body, (
+            f"{line.name}: 본문이 운전 방식을 싣지 않는다"
+        )
+        assert line.operating_mode in appendix, (
+            f"{line.name}: 붙임이 본문과 다른 말을 한다 — 본문은 "
+            f"{line.operating_mode!r} 를 싣는데 붙임에는 없다"
+        )

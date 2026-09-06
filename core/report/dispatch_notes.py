@@ -37,10 +37,47 @@ class DispatchNote:
     """자원 하나의 「운전 방법 × FR-302 우선순위」 결합 표기."""
 
     resource_name: str
+    #: 자원이 **선언한** 짧은 라벨(「전량 판매」). ⚠ 이 실행이 실제로 무엇을
+    #: 우선했는지는 여기 없다 — `resolved_operating_mode()` 를 지나야 온다.
     operating_mode: str
     dispatch_rule: DispatchRule
     dispatch_priority: int
     price_linked: bool
+
+
+#: 운전 방법을 고르지 않는 자원 유형(부하 등)의 칸 문면.
+#:
+#: ⚠⚠ **빈 문자열을 인쇄하지 않는다.** `DER._check_operating_mode` 는
+#: `OPERATING_MODES` 가 빈 자원에 `""` 를 돌려주는데, 그 빈칸은 표에서
+#: 「아직 안 적었다」와 구별되지 않는다 — 이 저장소의 ★★ 규약
+#: (「`None` 은 빈칸이 아니라 «진술»이다」)이 그것을 금지한다.
+NO_OPERATING_MODE = "운전 방법 없음 — 이 자원 유형은 운전 방법을 고르지 않는다"
+
+
+def resolved_operating_mode(note: DispatchNote, modes: Mapping[str, str]) -> str:
+    """이 실행이 **실제로 우선한 것까지** 담은 운전 방법 문면.
+
+    ## 왜 짧은 라벨을 그대로 쓰면 안 되는가 (R64/WP-FIX 결함 2)
+
+    `DispatchNote.operating_mode` 는 자원이 **선언한** 라벨이고, 이 실행의
+    배분은 `CaseBasis.resources` 의 긴 문면에만 있다 — 「전량 판매 (선언) ·
+    **본 실행 배분: 집 우선**」 · 「자가소비 우선 · **방전 배분: 부하 추종
+    (방전창 …)**」(`core/casegrid/e2e_runner.py` 가 짓는다). 짧은 라벨만 실으면
+    **사용자 요구 5**(ESS 가 가구 부하를 보고 방전한다 · R64/WP-6b)를 그 문서
+    어디에서도 가릴 수 없고, 같은 문서의 「자가소비율」과 **모순으로 읽힌다.**
+
+    ⚠ **이름으로 맞춘다 — 차례로 맞추지 않는다.** 두 목록의 길이가 다르다
+    (부하는 `dispatch_notes` 에만 있다). 못 찾으면 **종전 값**으로 떨어지고,
+    그마저 비면 `NO_OPERATING_MODE` 가 문장을 적는다.
+
+    Args:
+        note: 그 자원의 디스패치 표기.
+        modes: 자원 이름 → `ResourceLine.operating_mode`(긴 문면).
+
+    Returns:
+        표의 「운전 방법」 칸에 그대로 넣을 문면. **빈 문자열이 아니다.**
+    """
+    return modes.get(note.resource_name) or note.operating_mode or NO_OPERATING_MODE
 
 
 def build_dispatch_notes(

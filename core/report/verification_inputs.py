@@ -82,6 +82,7 @@ from core.casegrid.models import SeasonRun
 from core.report._format import NO_VALUE, _num, _won
 from core.report.capacity import UNBOUNDED_NOTE, CapacityFinding
 from core.report.case_report import CaseReport
+from core.report.dispatch_notes import resolved_operating_mode
 from core.report.ess_sizing_section import ESSSizingReview
 from core.report.sizing import SelfSufficiencySizing
 from core.report.unreflected import build_unreflected, unreflected_direction_tally
@@ -330,10 +331,11 @@ def capacity_review_lines(report: CaseReport) -> list[str]:
 
 # ── 3단계 — 자원 표와 계절별 운전 (사용자 요구 3·5·6) ───────────────────────
 
-#: 운전 방법을 **갖지 않는** 자원의 칸 — `DER._check_operating_mode` 는
-#: `OPERATING_MODES` 가 빈 자원(부하)에 `""` 를 돌려주고, 그 빈 문자열을 그대로
-#: 인쇄하면 「아직 안 적었다」와 구별되지 않는다(이 모듈 머리말 ★★).
-_NO_OPERATING_MODE = "운전 방법 없음 — 이 자원 유형은 운전 방법을 고르지 않는다"
+# ⚠ 운전 방법 없는 자원의 칸 문면과 그 판정은 **여기 있었다가 옮겨졌다**(R64) —
+# 정본은 `core/report/dispatch_notes.py` 의 `NO_OPERATING_MODE` ·
+# `resolved_operating_mode()` 다. 붙임의 「자원별 배정」 표가 **같은 판정**을
+# 필요로 했고, 문면을 두 곳에 두면 **한쪽만 고쳐진다** — 이 저장소가 형상·
+# 기준선·REC·가구 수에서 이미 네 번 밟은 형태다.
 
 
 def dispatch_note_rows(report: CaseReport) -> list[str]:
@@ -352,8 +354,7 @@ def dispatch_note_rows(report: CaseReport) -> list[str]:
     """
     modes = {line.name: line.operating_mode for line in report.basis.resources}
     return [
-        f"| {n.resource_name} "
-        f"| {modes.get(n.resource_name) or n.operating_mode or _NO_OPERATING_MODE} "
+        f"| {n.resource_name} | {resolved_operating_mode(n, modes)} "
         f"| `{n.dispatch_rule.value}` | {n.dispatch_priority} "
         f"| {'예' if n.price_linked else '아니오'} |"
         for n in report.dispatch_notes

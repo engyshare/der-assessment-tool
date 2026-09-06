@@ -50,8 +50,9 @@ from core.casegrid.household_scale import (
 )
 from core.casegrid.profiles import load_daily_shapes
 from core.report.case_report import CaseReport, build_case_report
+from core.report.dispatch_notes import NO_OPERATING_MODE
 from core.report.verification import render_verification_markdown
-from core.report.verification_inputs import _NO_OPERATING_MODE, dispatch_note_rows
+from core.report.verification_inputs import dispatch_note_rows
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -376,7 +377,7 @@ def test_a_resource_only_in_the_notes_falls_back_instead_of_going_blank() -> Non
         row = next(r for r in rows if r.startswith(f"| {note.resource_name} |"))
         cell = row.split("|")[2].strip()
         assert cell, f"{note.resource_name} 의 운전방식 칸이 빈칸이다 — 「{row}」"
-        assert cell == (str(note.operating_mode) or _NO_OPERATING_MODE), (
+        assert cell == (str(note.operating_mode) or NO_OPERATING_MODE), (
             f"{note.resource_name} 이 종전 값으로 떨어지지 않았다 — 「{cell}」"
         )
 
