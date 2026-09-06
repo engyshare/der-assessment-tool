@@ -296,3 +296,89 @@ def test_appendix_eight_self_consumption_stands_on_the_run_in_appendix_seven() -
         f"밖에 있다 (발전 합계 {generation:,.2f} · 부하 합계 {load:,.2f}) — "
         "두 붙임이 서로 다른 운전 위에 서 있다"
     )
+
+
+# ── ★ 붙임 7 이 **자기가 인쇄한 하루의 성질**을 말하는가 (R64/WP-4) ─────────
+#
+# 러너가 계절 넷의 대표일을 각각 돌려 계절일수로 가중 합산하게 되면서, 이 절이
+# 싣는 24행은 **계절별 하루를 일수로 가중 평균한 「연간등가 하루」**가 됐다.
+# 그 사실을 절이 말하지 않으면 검토자는 이 표를 *「어느 하루의 운전」* 으로 읽고,
+# 한 스텝에 송전과 수전이 함께 선 것을 **표의 결함**으로 읽는다.
+
+
+def _profile_bullets(report) -> list[str]:
+    """붙임 7 의 「항목 — 값」 줄 중 **이 절이 스스로 쓴 것**만.
+
+    ⚠ 「시간 해상도」 줄은 이 절이 쓴 것이 아니라 **러너가 낸 문면**
+    (`CaseBasis.dispatch_note` · `core/casegrid/seasonal_dispatch.py::dispatch_note`)
+    을 그대로 나르는 자리다. 그것을 함께 세면 이 검사가 `dispatch_sections` 를
+    재는 것이 아니라 **다른 모듈의 문면을 재게 된다** — 그쪽은
+    `tests/casegrid/test_seasonal_dispatch_run.py` 가 따로 붙든다.
+    """
+    return [
+        line
+        for line in dispatch_profile_section(report)
+        if line.startswith("- ") and report.basis.dispatch_note not in line
+    ]
+
+
+def test_the_profile_section_says_the_printed_day_is_the_annual_equivalent_one() -> None:
+    """★★★ 붙임 7 이 **이 표의 하루가 무엇인지** 말한다 (R64/WP-4 · 판정 ⑤ 후단).
+
+    ⚠ **문면을 통째로 리터럴로 박지 않는다** — 오탈자 하나에 깨지는 시험이 되면
+    다음 사람이 문장을 다듬을 수 없다. 걸리는 것은 **그 줄이 주장하는 사실**이다:
+    이 하루가 계절별 하루를 **일수로 가중 평균**한 것이라는 진술.
+
+    ★ 그리고 그 진술이 **참인 상태에서만** 재도록 두 사실을 함께 건다 —
+    이 실행이 실제로 계절 여럿을 돌았고(`report.seasons`), 인쇄된 하루가 계절
+    하나의 하루와 **같은 스텝 수**다(이어 붙이지 않았다).
+    """
+    report = _report()
+    assert len(report.seasons) >= 2, (
+        f"이 시나리오가 계절을 {len(report.seasons)}개만 돌았다 — 「연간등가 하루」"
+        "라는 진술을 잴 자리가 없다"
+    )
+    for season in report.seasons:
+        assert len(season.dispatch.grid_export) == len(report.dispatch_hours), (
+            f"계절 `{season.name}` 의 하루가 인쇄된 하루와 스텝 수가 다르다 — "
+            "계절을 이어 붙였다면 이 절의 진술이 거짓이다"
+        )
+
+    bullets = _profile_bullets(report)
+    said = [line for line in bullets if "연간등가" in line and "가중 평균" in line]
+    assert len(said) == 1, (
+        "붙임 7 이 **이 표의 하루가 계절을 일수로 가중 평균한 연간등가 하루라는 "
+        f"것**을 스스로 말하는 줄이 {len(said)}개다 — 정확히 1개여야 한다: {bullets}"
+    )
+
+
+def test_the_profile_section_warns_that_one_step_can_hold_both_directions() -> None:
+    """★★★ 붙임 7 이 **한 스텝에 송전과 수전이 함께 설 수 있다**를 미리 말한다.
+
+    연간등가 하루는 평균이므로 *「어떤 계절은 그 시각에 내보내고 어떤 계절은
+    받아들인다」* 가 한 행에 둘 다 남는다. 적어 두지 않으면 검토자는 그것을
+    **수지가 깨진 표**로 읽는다 — 실제로는 깨지지 않는다(스텝별 수지는 그대로다).
+
+    ★ **경고만 재지 않는다** — 이 실행에 그런 스텝이 **실제로 있는지**를 먼저
+    본다. 없는데 경고만 있으면 그 문장이 무엇을 가리키는지 아무도 확인할 수 없고,
+    있는데 경고가 없으면 검토자가 표를 결함으로 읽는다.
+    """
+    report = _report()
+    both = [
+        hour.step
+        for hour in report.dispatch_hours
+        if hour.grid_export > 0.0 and hour.grid_import > 0.0
+    ]
+    assert both, (
+        "송전과 수전이 함께 선 스텝이 하나도 없다 — 이 경고가 가리키는 상태가 "
+        "이 실행에 없으므로 검사가 무엇을 확인하는지 말할 수 없다"
+    )
+
+    bullets = _profile_bullets(report)
+    warned = [
+        line for line in bullets if "송전" in line and "수전" in line and "함께" in line
+    ]
+    assert len(warned) == 1, (
+        f"스텝 {both} 에 송전과 수전이 함께 서 있는데 붙임 7 이 그 사실을 미리 "
+        f"말하는 줄이 {len(warned)}개다 — 정확히 1개여야 한다: {bullets}"
+    )

@@ -42,6 +42,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml  # type: ignore[import-untyped]
 
 from core.casegrid.profiles import (
@@ -50,6 +51,12 @@ from core.casegrid.profiles import (
     load_daily_shapes,
 )
 from core.report.case_report import build_case_report
+
+# ★★★ **재는 층을 정면(재수출)이 아니라 직접 부른다** (R64/WP-4-fix2 ·
+# `NFR-105` 게이트 ②). 이 파일이 `core.report.unreflected` 만 import 하는 동안
+# `core/report/measured_run.py` 는 **동반 시험이 없는 구현**으로 세어졌다 —
+# 재수출을 통해서만 닿으면 「어느 층이 막았는가」를 말할 수 없다.
+from core.report.measured_run import measured_over_seasons
 from core.report.narrative import render_markdown
 from core.report.unreflected import _season_item, build_unreflected
 
@@ -391,3 +398,60 @@ def test_the_season_item_count_did_not_grow(tmp_path: Path) -> None:
         "계절 하나인 자산에서 항목이 1건이 아니다 — 상태에 따라 항목 수가 갈리면 "
         "본문 줄 수가 자산을 따라 움직인다"
     )
+
+
+# ── ★ **재는 층**을 직접 부르는 자리 (R64/WP-4-fix2 · `NFR-105` 게이트 ②) ───
+#
+# 위 시험들은 `core.report.unreflected`(판정 층)를 통과시켜 잰다. 수량을 **재는**
+# 것은 `core/report/measured_run.py` 이고, 그 층을 정면으로만 재면 *「어느 층이
+# 막았는가」* 를 말할 수 없다 — 아래가 그 층을 직접 잰다.
+
+
+def test_the_measuring_layer_reads_the_seasons_and_stops_without_a_run() -> None:
+    """★★★★ **재는 층 둘** — ⓐ 계절을 실제로 읽는다 ⓑ 잴 운전이 없으면 멈춘다.
+
+    ## ⓐ 왜 접힌 하루로는 안 되는가
+
+    자가소비는 스텝마다 `min(발전, 부하)` 이고 **그 min 은 비선형**이다. 계절을
+    일수로 가중 평균한 하루에서 재면 `min(평균, 평균)` 이 나오는데 한 해의 실제
+    자가소비는 `Σ min(그 계절 발전, 그 계절 부하) × 계절일수` 다 — 옌센에 따라
+    **접힌 하루 쪽이 더 크다.** R64/WP-4 가 러너에 계절 합산을 세우자 리포트
+    0절(계절을 안다)과 붙임 8(계절을 몰랐다)이 실제로 갈렸다
+    (`.orch/R64/result_4.md` ⑩ 의 (나) 둘).
+    ⚠ **부등호로 건다** — 두 수를 손으로 적으면 자산·대장이 움직일 때 이 시험만
+    옛 사업을 붙들고, 어느 쪽이 옳은지도 말하지 못한다.
+
+    ## ⓑ 잴 운전이 없으면 **계절을 보지 않는다**
+
+    `dispatch_hours` 를 비우는 것이 *「잴 본 실행이 없다」* 의 통로다(같은 파일
+    `tests/report/test_unreflected.py` 가 그 통로로 *「방향을 지어내지 않는가」*
+    를 잰다). 계절이 남아 있다고 그것으로 대신 재면 **비운 통로가 비워지지
+    않는다** — R64/WP-4 가 고치는 도중 실제로 그 구멍을 냈다
+    (`.orch/R64/result_4.md` ⑩ 의 열여덟 번째).
+    """
+    report = _report()
+    assert len(report.seasons) >= 2, (
+        f"배포 자산이 계절을 {len(report.seasons)}개만 낸다 — 아래 대조가 공허해진다"
+    )
+
+    folded = measured_over_seasons(report.dispatch_hours)
+    seasonal = measured_over_seasons(report.dispatch_hours, report.seasons)
+    assert folded is not None and seasonal is not None, "본 실행에서 재지 못했다"
+
+    # ⓐ — 계절을 주면 **다른 수**가 나오고, 그 방향은 옌센이 정한다.
+    assert seasonal.self_consumption < folded.self_consumption, (
+        f"계절을 주어도 자가소비가 그대로다(접힌 {folded.self_consumption:,.6f} · "
+        f"계절 {seasonal.self_consumption:,.6f}) — 재는 층이 계절을 읽지 않는다"
+    )
+    # ⚠ 총량은 그대로여야 한다 — 계절 가중 평균은 **선형**인 항에서는 접힌
+    #    하루와 같다(부하·수전·송전). 여기가 갈리면 가중이 틀린 것이다.
+    assert seasonal.load == pytest.approx(folded.load, rel=1e-9), (
+        f"부하 총량이 갈렸다(접힌 {folded.load} · 계절 {seasonal.load})"
+    )
+
+    # ⓑ — 잴 운전이 없으면 계절이 남아 있어도 **재지 않는다**.
+    assert measured_over_seasons((), report.seasons) is None, (
+        "본 실행이 비었는데 계절로 대신 쟀다 — 「잴 운전이 없다」를 비우는 통로가 "
+        "막혀 붙임 8 이 없는 운전 위에 방향을 인쇄한다"
+    )
+    assert measured_over_seasons(()) is None, "계절 없이도 빈 운전은 재이면 안 된다"
