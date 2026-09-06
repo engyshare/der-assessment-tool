@@ -253,7 +253,9 @@ class DailyShape:
         ⚠⚠ **이 하루는 계절 간 차이를 담지 못한다** — 담는 것이 목적이 아니다.
         「겨울 하루 < 여름 하루」를 운전에 세우려면 계절마다 대표일을 돌려 합산해야
         하고, 그것은 이 자료형이 아니라 **러너의 구조**다. 그 결손은 붙임 8 이
-        신고한다(`core/report/unreflected.py::_season_reason`).
+        신고한다(`core/report/unreflected.py::_season_reason`). ★ 그 운전이
+        필요로 하는 자료는 아래 `representative_day_by_season()` 이 낸다 —
+        **자료는 섰고 운전은 아직 서지 않았다.**
         """
         # ⚠ **연산 차례가 `spread()` 와 같아야 한다.** `total × share ÷ days` 를
         # 먼저 짓고 가중치를 곱한다 — `spread()` 의 `per_day` 와 **같은 식**이며,
@@ -268,6 +270,62 @@ class DailyShape:
             )
             for j in range(steps)
         )
+
+    def representative_day_by_season(
+        self, total: float, *, days: int
+    ) -> tuple[tuple[Season, tuple[float, ...], int], ...]:
+        """계절마다 (계절, **그 계절의 대표일 한 벌**, 그 계절의 일수).
+
+        `representative_day()` 의 형제이며 **접기 전 해상도**다. 그쪽은 계절을
+        몫 가중 평균으로 접어 하루 하나를 내고, 이쪽은 접지 않고 계절 수만큼
+        낸다 — 같은 자산의 다른 해상도이지 다른 자산이 아니다.
+
+        ## 산식
+
+            day_계절[j] = total × share_계절 / 계절일수 × weight_계절[j]
+
+        `spread()` 의 `per_day` 와 **같은 식이며 연산 차례도 같다** —
+        그래서 이 하루는 `spread()` 가 그 계절에 펴는 하루하루와 부동소수
+        마지막 자리까지 같다. 두 곳이 다른 하루를 뜻하게 되면 「계절별로 돌린
+        결과」와 「이어 붙인 결과」가 조용히 어긋난다.
+
+        ## 성립하는 항등식
+
+            Σ_계절 ( Σ_j day_계절[j] × 계절일수 ) == total       연간 총량 보존
+            Σ_계절 계절일수 == days                              달력이 닫힌다
+
+        앞의 것은 계절마다 `Σ_j weight == 1`(`_normalised()` 가 강제한다)이므로
+        `Σ_j day_계절[j] × 계절일수 == total × share_계절` 이고, 몫의 합이 1
+        (`__post_init__` 이 강제한다)이기 때문에 성립한다. 뒤의 것은 일수를
+        새로 세지 않고 **`spread()` 와 같은 `_calendar_days()`** 에서 받기
+        때문에 성립한다 — 두 곳에서 따로 세면 한쪽만 고쳐진다.
+
+        ⚠ **계절 하나(`연중`)면 그 대표일이 `representative_day()` 와 원소
+        하나까지 같다.** 몫이 1 이고 그때 `_calendar_days()` 가 주는 일수가
+        `days` 전부이므로 위 식이 그쪽 식과 글자 그대로 같아진다.
+
+        ⚠⚠ **차례에 무감하다.** 이 메서드는 계절을 적은 차례대로 내놓을 뿐
+        이어 붙이지 않으므로, 차례를 바꾸면 **묶음의 차례만** 바뀌고 어느
+        계절의 하루도 달라지지 않는다. `spread()` 는 다르다 — 그쪽은 차례가
+        곧 연중 시간 순서라 앞 하루가 첫 계절의 하루가 되고, R60/WP-4 가
+        실측한 *「차례만 바꿔도 연간 발전이 +281kWh 생긴다」* 가 그 자리였다.
+
+        ⚠ **아직 아무도 부르지 않는다.** 계절마다 돌려 계절일수로 가중 합산
+        하는 운전은 **러너의 구조**이며 이 자료형의 몫이 아니다(`e2e_runner`).
+        지금 배포 경로가 쓰는 것은 여전히 접힌 `representative_day()` 뿐이고,
+        그 결손은 붙임 8 이 신고한다(`core/report/unreflected.py`).
+        """
+        calendar = self._calendar_days(days)
+        by_season: list[tuple[Season, tuple[float, ...], int]] = []
+        for (season, weights), season_days in zip(self.by_season, calendar, strict=True):
+            # ⚠ `spread()` 와 **같은 차례로** 짓는다 — `per_day` 를 먼저 세우고
+            # 가중치를 곱한다. 묶는 차례를 바꾸면 값이 1 ULP 어긋나고, 그러면
+            # 위 ⚠ 의 「원소 하나까지 같다」가 거짓이 된다.
+            per_day = total * season.share / season_days
+            by_season.append(
+                (season, tuple(per_day * weight for weight in weights), season_days)
+            )
+        return tuple(by_season)
 
     def spread_over_representative_day(self, total: float, *, days: int) -> list[float]:
         """`representative_day()` 를 `days` 일 되풀이한 연간 시계열.
