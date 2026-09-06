@@ -51,6 +51,7 @@ from core.casegrid.household_scale import (
 from core.casegrid.profiles import load_daily_shapes
 from core.report.case_report import CaseReport, build_case_report
 from core.report.verification import render_verification_markdown
+from core.report.verification_inputs import _NO_OPERATING_MODE, dispatch_note_rows
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -307,7 +308,106 @@ def test_the_seasonal_table_does_not_replace_the_representative_day(
     assert "계절별 운전" in body
 
 
-# ── ⑤ CLI — 인자를 주면 파일이 실제로 생긴다 ────────────────────────────────
+# ── ⑤ 검증이 찾은 결함 셋 — 각각 «따로» 잰다 (R64/WP-FIX) ───────────────────
+
+
+def test_the_discount_rate_is_in_stage_one_where_stage_eight_points(
+    tmp_path: Path,
+) -> None:
+    """★★ 결함 1 — 8단계의 **「1단계 할인율」이 실제로 1단계에 있다.**
+
+    종전에는 그 교차참조가 거짓이었다: 할인율은 대장 항목이 아니라 케이스
+    수준표의 모형 파라미터라 1단계 대장 표에 행이 없었고, 검토자가 1단계에서
+    찾으면 없었다. 「손계산으로 따라올 수 있게 한다」는 이 문서의 목적에
+    정면으로 어긋나는 끊김이다.
+
+    ⚠ 값을 여기 박지 않는다 — 리포트가 읽는 그 칸에서 가져와 맞댄다.
+    """
+    assert "discount" not in _ASSUMPTIONS.read_text(encoding="utf-8"), (
+        "전제가 깨졌다 — 대장에 할인율 항목이 생겼다면 이 행의 「대장에 없다」가 "
+        "거짓이 된다(`core/casegrid/ledger_levels.py` 머리말이 그날을 예고한다)"
+    )
+    stages = split_stages(_dumped(tmp_path))
+    rate = f"{_report().basis.discount_rate:.1%}"
+    first, eighth = stages[0].body, stages[7].body
+    assert "할인율" in first, "1단계에 할인율 행이 없다 — 8단계의 참조가 거짓이 된다"
+    assert rate in first, f"1단계 할인율 행에 값({rate})이 없다"
+    assert f"1단계 할인율 {rate}" in eighth, (
+        "8단계가 1단계 할인율을 가리키지 않는다 — 두 자리가 갈렸다"
+    )
+
+
+def test_the_resource_table_carries_the_allocation_not_only_the_label(
+    tmp_path: Path,
+) -> None:
+    """★★★ 결함 2 — 3단계 운전방식 칸이 **본 실행의 배분**까지 싣는다 (요구 5).
+
+    종전에는 `dispatch_notes` 의 짧은 선언 라벨(「전량 판매」)만 실렸고, 그래서
+    *「ESS 가 가구 부하를 보고 방전한다」* 를 이 문서 어디에서도 가릴 수 없었다
+    (`부하 추종` 0건). 3단계 「전량 판매」와 2단계 「자가소비율」의 병치도 그
+    때문에 초독자에게 모순으로 읽혔다.
+    """
+    stage3 = split_stages(_dumped(tmp_path))[2].body
+    resources = _report().basis.resources
+    assert resources, "픽스처 전제가 깨졌다 — 자원이 하나도 없다"
+    for line in resources:
+        assert line.operating_mode in stage3, (
+            f"자원 {line.name} 의 운전방식 긴 문면이 3단계에 없다 — "
+            f"「{line.operating_mode}」"
+        )
+    assert any("배분: " in line.operating_mode for line in resources), (
+        "픽스처 전제가 깨졌다 — 「본 실행 배분」을 적는 자원이 하나도 없다"
+    )
+
+
+def test_a_resource_only_in_the_notes_falls_back_instead_of_going_blank() -> None:
+    """★ 결함 2 의 뒷면 — `basis.resources` 에 **없는** 자원의 칸.
+
+    ⚠ 이름으로 맞추므로 두 목록의 길이가 다를 수 있다. 못 찾았을 때 빈칸을
+    인쇄하면 「운전 방법을 안 적었다」로 읽히므로, 종전 값으로 떨어지고 그
+    값마저 비면 **문장**을 적는다(이 모듈 ★★ 「빈칸이 아니라 진술」).
+    """
+    report = _report()
+    named = {line.name for line in report.basis.resources}
+    orphans = [n for n in report.dispatch_notes if n.resource_name not in named]
+    assert orphans, "픽스처 전제가 깨졌다 — `dispatch_notes` 에만 있는 자원이 없다"
+    rows = dispatch_note_rows(report)
+    for note in orphans:
+        row = next(r for r in rows if r.startswith(f"| {note.resource_name} |"))
+        cell = row.split("|")[2].strip()
+        assert cell, f"{note.resource_name} 의 운전방식 칸이 빈칸이다 — 「{row}」"
+        assert cell == (str(note.operating_mode) or _NO_OPERATING_MODE), (
+            f"{note.resource_name} 이 종전 값으로 떨어지지 않았다 — 「{cell}」"
+        )
+
+
+def test_the_item_count_says_what_those_items_are(tmp_path: Path) -> None:
+    """★ 결함 3 — 「항목 N건」이 **그 N 이 무엇인지** 말한다.
+
+    그 수는 대장 파일의 항목 수가 아니라 **provider 를 지나 값이 실린** 항목
+    수다. 그렇게 적지 않으면 항목 수를 세는 검토자가 파일에서 다른 수를 얻는다.
+
+    ⛔ 그렇다고 여기서 파일을 새로 세어 싣지 않는다 — 정본이 둘이 되고,
+    그러면 provider 를 지나지 않은 수가 보고서에 실린다. 이 검사가 그 둘을
+    **함께** 붙든다.
+    """
+    printed = len(_report().assumptions)
+    ledger = yaml.safe_load(_ASSUMPTIONS.read_text(encoding="utf-8"))["assumptions"]
+    assert len(ledger) > printed, (
+        "픽스처 전제가 깨졌다 — 값이 비어 있는 대장 항목이 하나도 없다"
+    )
+    text = _dumped(tmp_path)
+    first = split_stages(text)[0].body
+    assert f"항목 {printed}건" in first, f"1단계에 「항목 {printed}건」이 없다"
+    assert "값을 읽어 온" in first, (
+        "그 40이 무엇인지 말하지 않는다 — 검토자는 대장 파일의 항목 수로 읽는다"
+    )
+    assert f"항목 {len(ledger)}건" not in text, (
+        "대장 파일을 새로 세어 그 수를 실었다 — 정본이 둘이 됐다"
+    )
+
+
+# ── ⑥ CLI — 인자를 주면 파일이 실제로 생긴다 ────────────────────────────────
 
 
 def test_the_cli_help_explains_all_three_arguments() -> None:

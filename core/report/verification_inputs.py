@@ -71,6 +71,7 @@ from core.casegrid.household_scale import (
     HOUSEHOLD_COUNT_LEDGER_KEY,
     HOUSEHOLD_COUNT_UNSPECIFIED,
 )
+from core.casegrid.ledger_levels import LEVEL_NAMES
 from core.casegrid.load_shift import (
     DR_SHIFT_NOTHING_MOVED,
     DR_SHIFTABLE_SHARE_LEDGER_KEY,
@@ -129,7 +130,7 @@ def execution_input_lines(report: CaseReport) -> list[str]:
 
     ## 왜 1단계인가
 
-    이 여섯은 계산의 결과가 아니라 **이 실행이 받은 전제**다. 대장 표(위 ⓑ)는
+    이 일곱은 계산의 결과가 아니라 **이 실행이 받은 전제**다. 대장 표(위 ⓑ)는
     *「대장이 무엇을 갖고 있는가」*를 적고 이 표는 *「이 실행이 무엇으로
     돌았는가」*를 적는다 — 둘은 다른 진술이며, 앞의 넷은 대장이 `track:
     blocked` · 값 없음으로 두어 **애초에 대장에서 올 수 없다.**
@@ -139,6 +140,13 @@ def execution_input_lines(report: CaseReport) -> list[str]:
     가구 수·히트펌프·전기차는 화면(`/ui/run`)에도 칸이 있고, **계절 몫은
     시나리오 yaml 에만 있다.** 「시나리오에서도 못 바꾼다」로 적으면 거짓이므로
     통로 칸이 그 차이를 그대로 나른다.
+
+    ## ★★ 할인율이 **여기** 있는 이유 (R64/WP-FIX 결함 1)
+
+    8단계 ⓐ 가 *「1단계 할인율」* 을 가리키는데 1단계에 그 행이 없었다 —
+    할인율은 대장 항목이 **아니다**(`docs/assumptions.yaml` 에 0건 ·
+    `core/casegrid/ledger_levels.py`: *「평가자가 고르는 모형 파라미터」*). 곧
+    이 표의 정의에 드는 값이므로 **참조를 지우는 대신 참으로 만든다.**
     """
     loads = report.appliance_loads
     return [
@@ -163,6 +171,10 @@ def execution_input_lines(report: CaseReport) -> list[str]:
         f"| {report.dr_shiftable_share_pct:,.1f} {DR_SHIFTABLE_SHARE_UNIT} "
         f"| 대장 `{DR_SHIFTABLE_SHARE_LEDGER_KEY}` — 시나리오 yaml 의 "
         "`assumption_overrides` · 설정 화면의 대장 항목 칸 |",
+        f"| 할인율 (8단계 `NPV` 의 r) | {report.basis.discount_rate:.1%} "
+        "| **대장에 없다** — 케이스 수준표 `core/casegrid/ledger_levels.py` 의 "
+        f"모형 파라미터이며 갈래 셋({' · '.join(LEVEL_NAMES)}) 중 이 실행의 "
+        "케이스 값이 고른 것 |",
         "",
         "- 「미지정」은 **빈칸이 아니라 진술**이다 — 가구 수가 미지정이면 이 "
         "보고서의 모든 수량과 금액이 **가구 한 호의 것**이고, 기기 부하가 "
@@ -316,7 +328,36 @@ def capacity_review_lines(report: CaseReport) -> list[str]:
     ]
 
 
-# ── 3단계 — 계절별 운전 (사용자 요구 3·6) ───────────────────────────────────
+# ── 3단계 — 자원 표와 계절별 운전 (사용자 요구 3·5·6) ───────────────────────
+
+#: 운전 방법을 **갖지 않는** 자원의 칸 — `DER._check_operating_mode` 는
+#: `OPERATING_MODES` 가 빈 자원(부하)에 `""` 를 돌려주고, 그 빈 문자열을 그대로
+#: 인쇄하면 「아직 안 적었다」와 구별되지 않는다(이 모듈 머리말 ★★).
+_NO_OPERATING_MODE = "운전 방법 없음 — 이 자원 유형은 운전 방법을 고르지 않는다"
+
+
+def dispatch_note_rows(report: CaseReport) -> list[str]:
+    """3단계 ⓐ 자원 표의 **데이터 행** — 운전방식 칸이 배분까지 싣는다 (요구 5).
+
+    `DispatchNote.operating_mode` 는 자원이 **선언한** 짧은 라벨이고(「전량
+    판매」), 이 실행이 실제로 무엇을 우선했는지는 `CaseBasis.resources` 의 긴
+    문면에만 있다 — 「전량 판매 (선언) · **본 실행 배분: 집 우선**」·「자가소비
+    우선 · **방전 배분: 부하 추종 (방전창 …)**」(`e2e_runner.py` 가 짓는다).
+    짧은 라벨만 실으면 ① 요구 5(ESS 가 가구 부하를 보고 방전한다)를 이 문서
+    어디에서도 가릴 수 없고 ② 3단계 「전량 판매」와 2단계 「자가소비율 56%」가
+    초독자에게 **모순으로 읽힌다**(R64/WP-FIX 결함 2).
+
+    ⚠ **이름으로 맞춘다 — 차례로 맞추지 않는다**(두 목록의 길이가 다르다).
+    못 찾으면 **종전 값**으로 떨어지고, 그마저 비면 위 상수가 문장을 적는다.
+    """
+    modes = {line.name: line.operating_mode for line in report.basis.resources}
+    return [
+        f"| {n.resource_name} "
+        f"| {modes.get(n.resource_name) or n.operating_mode or _NO_OPERATING_MODE} "
+        f"| `{n.dispatch_rule.value}` | {n.dispatch_priority} "
+        f"| {'예' if n.price_linked else '아니오'} |"
+        for n in report.dispatch_notes
+    ]
 
 
 def _moved_cell(season: SeasonRun) -> str:

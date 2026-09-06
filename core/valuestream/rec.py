@@ -1,9 +1,22 @@
 """REC 수익 — FR-401-AC2.REC.
 
-산식: 발전량 × 가중치 × REC 단가. 가중치는 자원 종류별로 다르다 (PV 1.0,
-ESS 방전 0.5 등 — 규제 프로파일이 정한다).
+산식: **계통으로 나간 kWh** × 가중치 × REC 단가. 가중치는 자원 종류별로
+다르다 (PV 1.0, ESS 방전 0.5 등 — 규제 프로파일이 정한다).
 
-⚠ **단가의 단위는 `원/kWh` 다.** 발전량이 kWh 이므로 그렇게만 곱이 맞는다 —
+## ⚠⚠ 수량은 **발전량이 아니다** — 「계통으로 나간 kWh」다
+
+대장 `benefit.rec_price` 의 `applicable_scope` 가 그 말을 정본으로 갖는다:
+*「여기서 세는 「발전량」은 **계통으로 나간 kWh**다(사용자 판정 §4 는 「태양광
+전력을 … 계통에 판매하면 … 재생에너지 차익(REC)을 기대할 수 있다」로
+**판매**를 조건으로 적는다)」*. 그래서 이 모듈은 산식 문면에도 코드에도
+**「발전(량)」을 수량의 이름으로 쓰지 않는다.**
+
+낱말 하나의 문제가 아니다 — 같은 리포트가 「대표일 발전 10.8kWh」(용량 ×
+이용률)를 따로 싣는데 REC 산식이 「대표일 발전 2.95kWh」라고 적으면 두 수가
+같은 이름으로 갈리고, *「REC 는 발전량 전체에 붙는다」* 로 읽은 검토자는
+편익을 **3.7배로 오독한다**(R64/WP-VERIFY 결함 5 가 실측한 자리다).
+
+⚠ **단가의 단위는 `원/kWh` 다.** 왼쪽 항이 kWh 이므로 그렇게만 곱이 맞는다 —
 REC 는 통상 **1매 = 1MWh** 로 거래되므로 `원/REC` 로 받은 값은 **1,000 으로
 나누어** 넘겨야 하며, 조항이 그 환산을 예시에 적어 두었다(`FR-401-AC2.REC`).
 배포 경로가 이 단가를 받는 자리는 대장 `benefit.rec_price` 다
@@ -19,10 +32,11 @@ from core.contracts.valuestream import Payer, ValueStream
 
 
 class REC(ValueStream):
-    """REC 수익 — 발전량 × 가중치 × 단가."""
+    """REC 수익 — 계통으로 나간 kWh × 가중치 × 단가."""
 
     tag = "REC"
-    #: 창에서 읽는다 — `dispatch.electric` 의 양수 합이 발급 대상 발전량이다.
+    #: 창에서 읽는다 — `dispatch.electric` 의 양수 합(계통으로 나간 kWh)이
+    #: 발급 대상 수량이다.
     scales_with_dispatch_window = True
     payer = Payer.OPERATOR
 
@@ -50,17 +64,20 @@ class REC(ValueStream):
     def annual_value(self, dispatch: DispatchResult, *, year: int) -> Money:
         if not self.enabled:
             return to_won(0)
-        return to_won(self._generation_kwh(dispatch) * self._weight * self._price)
+        return to_won(self._exported_kwh(dispatch) * self._weight * self._price)
 
     def formula(self, dispatch: DispatchResult, *, year: int) -> str:
-        """발전량 × 가중치 × 단가 — `ValueStream.formula` 계약.
+        """계통으로 나간 kWh × 가중치 × 단가 — `ValueStream.formula` 계약.
 
         ★ **가중치를 산식에 싣는다.** 규제 프로파일이 정하는 값이라 대장·단가와
-        다른 사람이 고치는데, 빠지면 검토자가 발전량과 단가만 곱해 보고 금액이
+        다른 사람이 고치는데, 빠지면 검토자가 수량과 단가만 곱해 보고 금액이
         맞지 않는다고 읽는다.
+
+        ⚠ **수량의 이름을 「발전」으로 적지 않는다** — 모듈 머리말 ⚠⚠ 참조.
+        같은 문서의 「발전 10.8kWh」와 갈려 편익을 3.7배로 오독하게 한다.
         """
         return (
-            f"발전 {self._generation_kwh(dispatch):,.2f}kWh "
+            f"계통으로 나간 전력 {self._exported_kwh(dispatch):,.2f}kWh "
             f"× 가중치 {self._weight:,.2f} "  # noqa: RUF001
             # ⚠ **단위는 원/kWh 다** — 왼쪽 항이 kWh 이므로 그렇게만 곱이 맞는다.
             # 종전 이 자리는 `원/REC` 라 적었고, REC 1매 = 1MWh 이므로 그 표기는
@@ -71,6 +88,11 @@ class REC(ValueStream):
         )
 
     @staticmethod
-    def _generation_kwh(dispatch: DispatchResult) -> float:
-        """발급 대상 발전량 — `electric` 양수 합. 음수(충전/소비)는 대상이 아니다."""
+    def _exported_kwh(dispatch: DispatchResult) -> float:
+        """발급 대상 수량 — `electric` 양수 합, 곧 **계통으로 나간 kWh**다.
+
+        음수(충전/소비)는 계통으로 나가지 않았으므로 대상이 아니다. 이름을
+        `_generation_kwh` 로 두지 않는 이유가 모듈 머리말 ⚠⚠ 에 있다 — 코드가
+        「발전」이라 부르면 산식 문면도 언젠가 그 말로 돌아온다.
+        """
         return sum(max(0.0, e) for e in dispatch.electric)

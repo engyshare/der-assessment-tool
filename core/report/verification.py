@@ -57,6 +57,7 @@ from core.report.case_report import (
 )
 from core.report.verification_inputs import (
     capacity_review_lines,
+    dispatch_note_rows,
     execution_input_lines,
     season_lines,
     unreflected_lines,
@@ -103,8 +104,9 @@ def _stage1_ledger(report: CaseReport) -> list[str]:
         f"외부 대장 파일 `{report.assumption_set_name}` 판 "
         f"{report.assumption_set_version}(`docs/assumptions.yaml`).",
         "",
-        f"항목 {len(report.assumptions)}건 — 값·단위·기준연도·출처·신뢰도·"
-        "최종확인일을 각 행이 함께 나른다.",
+        f"그 파일에서 **값을 읽어 온** 항목 {len(report.assumptions)}건 — "
+        "값·단위·기준연도·출처·신뢰도·최종확인일을 각 행이 함께 나른다. "
+        "**대장 파일의 항목 수가 아니다** — 값이 비어 있는 항목은 여기 없다.",
         *execution_input_lines(report),  # ★ 요구 1·2·3 — 대장 밖에서 온 실행 입력
     ]
     b = [
@@ -179,12 +181,9 @@ def _stage3_dispatch(report: CaseReport) -> list[str]:
         "",
         "| 자원 | 운전방식 | 디스패치 규칙 | 우선순위 | 가격신호 필요 |",
         "|---|---|---|---|---|",
-        *(
-            f"| {n.resource_name} | {n.operating_mode} | "
-            f"`{n.dispatch_rule.value}` | {n.dispatch_priority} | "
-            f"{'예' if n.price_linked else '아니오'} |"
-            for n in report.dispatch_notes
-        ),
+        # ★ 운전방식 칸은 **선언 라벨이 아니라 본 실행의 배분**까지 싣는다
+        # (요구 5) — 그 판단과 짝짓기 규칙은 `dispatch_note_rows` 가 갖는다.
+        *dispatch_note_rows(report),
     ]
     hours = report.dispatch_hours
     total_export = sum(h.grid_export for h in hours)
