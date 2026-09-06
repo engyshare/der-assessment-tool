@@ -22,13 +22,20 @@
 알 수 없다 — 같은 판단을 `core/cba/baseline.py::POOL_METERING_FIELD` 주석이
 이미 적어 두었다.
 
-⚠ **골든 픽스처를 고치지 않는다.** 읽기만 하고, 쓰는 곳은
-`tempfile.TemporaryDirectory()` 안이다 — 요청이 끝나면 지워진다.
+⚠ **골든 픽스처를 고치지 않는다.** 읽기만 한다.
+
+## 화살표의 뒤 두 걸음은 **옆 파일**이 한다 (R64/WP-PERF)
+
+임시 디렉터리에 쓰고 `build_case_report` 를 부르는 것은
+`app/services/ui_run_cache.py::case_report_for` 다. 이 파일이 하던 그 절차를
+한 글자도 바꾸지 않고 옮긴 것이며, 옮긴 뒤 달라진 것은 **같은 입력을 두 번
+세우지 않는다**는 것뿐이다 — 화면 하나가 이것을 아홉 번 부르는 것이 실측이고
+(HTML 1 + 그림 8), 그 아홉이 42초여서 e2e 의 30초 예산을 이미 넘겨 있었다.
+사유의 정본은 그 파일 머리말이다.
 """
 from __future__ import annotations
 
 import dataclasses
-import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +43,7 @@ from typing import Any
 
 import yaml
 
+from app.services.ui_run_cache import case_report_for
 from core.assumption.scenario_overrides import ASSUMPTION_OVERRIDES_FIELD
 from core.casegrid.appliance_load import (
     APPLIANCE_SEASON_SHARE_FIELD,
@@ -48,7 +56,7 @@ from core.casegrid.load_shift import (
     resolve_shiftable_share,
 )
 from core.cba.baseline import POOL_METERING_FIELD, PoolMeteringDeclaration
-from core.report.case_report import CaseReport, build_case_report
+from core.report.case_report import CaseReport
 
 #: 저장소 뿌리 — `app/services/ui_run.py` 에서 두 단계 위.
 #: `app/routers/reports.py` 가 같은 셈으로 같은 두 자리를 잡는다.
@@ -309,9 +317,22 @@ def run_ui_case(
     내면 거부 문면이 두 곳에 생기고, 그때 둘이 갈려도 아무 검사도 걸리지
     않는다.
 
-    ⚠ 임시 파일 이름을 골든과 같게 두는 이유: `build_case_report` 는 시나리오
-    이름이 매핑에 없을 때 `scenario_path.stem` 을 표제로 쓴다. 임의의 이름을
-    두면 리포트 표제가 실행마다 달라진다.
+    ## ★★ 같은 입력을 **두 번 세우지 않는다** (R64/WP-PERF)
+
+    리포트를 세우는 일은 `app/services/ui_run_cache.py::case_report_for` 가
+    맡는다. 화면 하나(`/ui/run`)가 이 함수를 **아홉 번** 부르기 때문이다 —
+    HTML 이 한 번, 그 안의 `<figure data-chart=…>` 여덟 장이 각각
+    `/ui/chart/<태그>.png` 로 따로 와서 한 번씩. 실측으로 그 아홉이 42초였고,
+    e2e 의 30초 예산을 이미 넘겨 **로컬에서 화면을 판정할 수 없는 상태**였다.
+
+    ⚠ **절차는 한 글자도 바뀌지 않았다.** 임시 디렉터리에 yaml 을 쓰고 그
+    경로로 `build_case_report` 를 부르는 것은 그 파일이 그대로 한다 — 옮겨
+    간 것은 *그 절차를 몇 번 도는가* 뿐이다. 임시 파일 이름을 골든과 같게
+    두는 이유(그 함수가 시나리오 이름이 매핑에 없을 때 `scenario_path.stem`
+    을 표제로 쓴다)도 옮겨 간 자리에 함께 적혀 있다.
+
+    ⚠ **`scenario_text` 는 계속 이 함수가 짓는다.** 캐시가 그것을 대신 지으면
+    화면이 그리는 문면이 *캐시에 든 옛 실행의 것*이 될 수 있다.
     """
     fields = scenario_fields(
         name,
@@ -326,8 +347,5 @@ def run_ui_case(
         dr_shiftable_share_pct=dr_shiftable_share_pct,
     )
     text = yaml.safe_dump(fields, allow_unicode=True, sort_keys=False)
-    with tempfile.TemporaryDirectory() as workspace:
-        path = Path(workspace) / f"{name}.yaml"
-        path.write_text(text, encoding="utf-8")
-        report = build_case_report(path, assumptions_path=_ASSUMPTIONS)
+    report = case_report_for(name, fields, text, assumptions_path=_ASSUMPTIONS)
     return UiRun(report=report, scenario_text=text)
