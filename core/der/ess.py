@@ -29,12 +29,14 @@ from core.contracts.units import (
 )
 from core.contracts.validation import ValidationError
 
-HOURS_PER_DAY = 24
+# ⚠ **모듈째 부른다.** 이름을 하나씩 들여오면 import 문만 열 줄이고, 이 파일은
+# 코드 줄 상한(NFR-206 · 500)에 닿아 있어 그 열 줄이 갈래를 세울 자리를 먹는다.
+from core.der import ess_schedule as sched
+from core.der.ess_schedule import ESSDischargeAllocation
+
 #: 1년 = 365일. `RC-ESS-P1` 의 연 방전 2,920 kWh = 8 kWh × 365 가 여기서 나온다
 DAYS_PER_YEAR = 365.0
 MONTHS_PER_YEAR = 12
-#: 부동소수 비교 여유. kW 비교이므로 에너지 허용오차(kWh)와 구분해 둔다
-_KW_TOLERANCE = 1e-9
 
 
 class ESSOperatingMode(StrEnum):
@@ -150,6 +152,15 @@ class ESS(DER):
         #: (판정 A-3). `ESS` 는 형제 구획을 import 할 수 없으므로(`NFR-208-AC2`)
         #: PV 를 참조하지 않고 시계열로 받는다.
         pv_surplus_profile_kwh: Sequence[float] | None = None,
+        # **기본값이 「고정 창」인 이유**는 `charge_source` 가 `GRID` 를 남긴 것과
+        # 같다 — 종전 동작이 그것이고, 기본값을 바꾸면 이 축을 모르는 기존 호출자
+        # 전부의 수가 조용히 움직인다. 갈래의 판정문은
+        # `core/der/ess_schedule.py::ESSDischargeAllocation` 에 있다 (R64/WP-6a).
+        discharge_allocation: ESSDischargeAllocation | str = ESSDischargeAllocation.FIXED_WINDOW,
+        #: 시각별(0~23) 가구 전기부하 kWh — `discharge_allocation=부하 추종` 일
+        #: 때만 쓴다. `pv_surplus_profile_kwh` 와 같은 이유로 시계열로 받는다
+        #: (형제 구획 `core.der.load` 를 import 할 수 없다, `NFR-208-AC2`).
+        load_profile_kwh: Sequence[float] | None = None,
         backup_reserve_pct: float = 0.0,
         dt: int = SECONDS_PER_HOUR,
         capex_unit_won_per_kwh: float = 0.0,
@@ -225,6 +236,14 @@ class ESS(DER):
         self.mode_weights = self._normalize_weights(operating_mode, mode_weights, name=name)
         self.charge_source = self._coerce_charge_source(charge_source, name=name)
         self.pv_surplus_profile_kwh = self._check_pv_surplus(pv_surplus_profile_kwh, name)
+        # 방전창(`discharge_hours`)이 정해진 뒤에 검사한다 — 「방전 시간대의 부하가
+        # 전부 0」이면 무엇에 맞춰 낼지가 없고, 그것은 창을 알아야 판정된다.
+        self.discharge_allocation = sched.coerce_discharge_allocation(
+            discharge_allocation, name=name
+        )
+        self.load_profile_kwh = sched.check_load_profile(
+            self.discharge_allocation, load_profile_kwh, self.discharge_hours, name=name
+        )
 
         self._capex_unit = float(capex_unit_won_per_kwh)
         self._capex_extra = float(capex_extra_won)
@@ -317,65 +336,38 @@ class ESS(DER):
             action = f"ESS 가 지원하는 충전원 중 하나를 지정하십시오 — [{allowed}]"
             raise ValidationError(field="ess.charge_source", reason=reason, action=action) from e
 
-    def _reject_pv_surplus_profile(self, reason: str, action: str) -> NoReturn:
-        """`_check_pv_surplus()` 전용 — 필드 하나에 걸린 거부 셋을
-        한 곳으로 모은다(코드 스프롤 방지, NFR-206)."""
-        raise ValidationError(field="ess.pv_surplus_profile_kwh", reason=reason, action=action)
-
     def _check_pv_surplus(
         self, profile: Sequence[float] | None, name: str) -> tuple[float, ...] | None:
         """`charge_source` 와 `pv_surplus_profile_kwh` 의 조합·형태만 검사한다
-        (판정 §1 · A-8-d).
-
-        ⚠⚠ **「시각별 충전량이 잉여를 넘으면 거부」는 판정 A-8-b 로 없어졌다** —
-        모자라면 거부가 아니라 「가능한 만큼」 충전한다(`_pv_surplus_charge_kwh_by_hour`
-        가 그 계획을 짓는다). 여기 남는 것은 판정 §1 이 요구하는 **형태 검사 넷**뿐이다.
+        (판정 §1 · A-8-d). 판정문과 거부 셋은
+        `core/der/ess_schedule.py::check_pv_surplus_profile` 로 옮겼다 —
+        R64/WP-6a 가 이 파일의 코드 줄 상한(499/500) 때문에 갈랐고, **행동은
+        한 줄도 바뀌지 않았다.** 이 이름을 남기는 이유는 `pv_allocation.py` ·
+        `tests/casegrid/` 의 문면이 `ESS._check_pv_surplus` 를 가리키기 때문이다.
         """
-        if self.charge_source is ESSChargeSource.GRID:
-            if profile is not None:
-                self._reject_pv_surplus_profile(f"{name}: 충전원=계통인데 PV잉여 시계열을 받음",
-                    "charge_source 를 PV_SURPLUS 로 바꾸거나 인자를 빼십시오")
-            return None
-
-        # charge_source == PV_SURPLUS
-        if profile is None or not any(v > 0.0 for v in profile):
-            self._reject_pv_surplus_profile(
-                f"{name}: 충전원이 태양광 잉여인데 잉여 시계열이 없거나 전부 0입니다",
-                "pv_surplus_profile_kwh 에 시각별(0~23) PV 잉여 kWh 를 지정하십시오",
-            )
-        if len(profile) != HOURS_PER_DAY:
-            self._reject_pv_surplus_profile(
-                f"{name}: PV 잉여 시계열은 {HOURS_PER_DAY}행이어야 합니다(받은 값 "
-                f"{len(profile)}행)",
-                f"pv_surplus_profile_kwh 를 {HOURS_PER_DAY}행 시계열로 맞추십시오",
-            )
-        return tuple(float(v) for v in profile)
+        return sched.check_pv_surplus_profile(
+            profile, uses_pv_surplus=self.charge_source is ESSChargeSource.PV_SURPLUS, name=name
+        )
 
     def _pv_surplus_charge_kwh_by_hour(self, *, year: int) -> dict[int, float]:
         """대표일 시각별 **실제** 충전량(kWh) — `PV_SURPLUS` 전용 (판정 A-8-a·b).
 
-        시각(0~23)을 차례로 훑어 **방전창을 뺀, 잉여가 있는 모든 시각**에서
-        `min(그 시각 잉여, 정격출력 1시간분, 남은 저장 여유)` 만큼 채운다.
-        여유가 다 차거나 잉여가 없는 시각은 건너뛴다 — **거부하지 않는다**
-        (A-8-b). 남는 여유의 상한은 `cycles_per_year` 다(A-8-c — 잉여가
-        넘치도록 많아도 사이클 상한은 지킨다).
+        계획을 짓는 것은 `core/der/ess_schedule.py::pv_surplus_charge_kwh_by_hour`
+        이고(R64/WP-6a 가 갈랐다), 이 자리는 **남는 저장 여유**를 재어 넘긴다 —
+        그 여유의 상한이 `cycles_per_year` 이고(A-8-c) 열화·용량에 매여 있어
+        저쪽이 알 수 없는 값이다.
 
         ⚠ **이 충전이 가구 부하보다 앞선다** — 그 우선순위의 정본 선언은
         `e2e_runner._resolve_ess_dispatch_inputs` 독스트링에 있다(사본을 두지
         않는다).
         """
-        profile = self.pv_surplus_profile_kwh
-        assert profile is not None  # charge_source==PV_SURPLUS 면 생성자가 보장한다
-        daily_cap = self.usable_capacity_kwh(year=year) * self.cycles_per_year / DAYS_PER_YEAR
-        room_kwh = daily_cap / self.rte
-        charged: dict[int, float] = {}
-        for hour in range(HOURS_PER_DAY):
-            if hour in self.discharge_hours or room_kwh <= 0.0 or profile[hour] <= 0.0:
-                continue
-            amount = min(profile[hour], self.power_kw, room_kwh)  # 셋 다 양수라 amount>0
-            charged[hour] = amount
-            room_kwh -= amount
-        return charged
+        return sched.pv_surplus_charge_kwh_by_hour(
+            profile=self.pv_surplus_profile_kwh,
+            discharge_hours=self.discharge_hours,
+            room_kwh=self.usable_capacity_kwh(year=year) * self.cycles_per_year
+            / DAYS_PER_YEAR / self.rte,
+            power_kw=self.power_kw,
+        )
 
     def realized_cycles_per_year(self, *, year: int) -> float:
         """실제 연 사이클 수 — `PV_SURPLUS` 에서는 잉여가 모자라면
@@ -572,7 +564,7 @@ class ESS(DER):
             if reduced_kw is None
             else reduced_kw
         )
-        if kw > self.power_kw + _KW_TOLERANCE:
+        if kw > self.power_kw + sched.KW_TOLERANCE:
             raise ValueError(
                 f"{self.name}: 저감 {kw}kW 가 정격출력 {self.power_kw}kW 초과 — 없는 편익 계상"
             )
@@ -879,10 +871,15 @@ class ESS(DER):
         쪽을 함께 끊는다 — 배터리에는 «채우지 못한 수요»가 없으므로
         `unmet_*` 는 건드리지 않는다(기본값 0이 그대로 남는다).
 
-        **`PV_SURPLUS` 는 충전창이 고정이 아니다** (판정 A-8-a). 방전은 두 충전원
-        모두 방전창에 균등 배분하지만(종전 그대로), 충전은 `GRID` 만 고정창을
-        쓰고 `PV_SURPLUS` 는 시각별 실충전량(`_pv_surplus_charge_kwh_by_hour`)을
-        그대로 싣는다 — 시각마다 다른 값이라 균등 배분할 수 없다.
+        **`PV_SURPLUS` 는 충전창이 고정이 아니다** (판정 A-8-a). 충전은 `GRID` 만
+        고정창을 쓰고 `PV_SURPLUS` 는 시각별 실충전량
+        (`_pv_surplus_charge_kwh_by_hour`)을 그대로 싣는다 — 시각마다 다른 값이라
+        균등 배분할 수 없다.
+
+        **방전도 시각마다 다를 수 있다** (R64/WP-6a · 사용자 요구 5). 기본값인
+        「고정 창」은 종전 그대로 방전창에 균등 배분하고, 「부하 추종」을 고르면
+        그 시각의 가구 부하에 비례해 나눈다 — 어느 쪽이든 하루 총량은 같고,
+        갈리는 자리는 `_discharge_kwh_by_step` 하나다.
         """
         self.check_context(ctx)
         if self.retires_at_end_of_life() and int(ctx.year) > self._first_eol_year():
@@ -892,38 +889,58 @@ class ESS(DER):
         steps_per_hour = SECONDS_PER_HOUR // ctx.dt
         hours_per_step = ctx.dt / SECONDS_PER_HOUR
         year = int(ctx.year)
-        discharge_window = len(self.discharge_hours) * steps_per_hour
-        out_step = self.annual_discharge_kwh(year=year) / DAYS_PER_YEAR / discharge_window
-        self._check_power(out_step, hours_per_step, "방전")
+        out_by_step = self._discharge_kwh_by_step(year=year, steps_per_hour=steps_per_hour)
+        for step_kwh in out_by_step.values():
+            self._check_power(step_kwh, hours_per_step, "방전")
 
-        electric = [0.0] * ctx.steps
         if self.charge_source is ESSChargeSource.PV_SURPLUS:
-            charged_by_hour = self._pv_surplus_charge_kwh_by_hour(year=year)
-            for i in range(ctx.steps):
-                hour = (i // steps_per_hour) % HOURS_PER_DAY
-                if hour in self.discharge_hours:
-                    electric[i] = out_step
-                elif hour in charged_by_hour:
-                    electric[i] = -(charged_by_hour[hour] / steps_per_hour)
+            charged = self._pv_surplus_charge_kwh_by_hour(year=year)
+            in_by_step = {hour: kwh / steps_per_hour for hour, kwh in charged.items()}
         else:
             charge_window = len(self.charge_hours) * steps_per_hour
             in_step = self.annual_charge_kwh(year=year) / DAYS_PER_YEAR / charge_window
             self._check_power(in_step, hours_per_step, "충전")
-            for i in range(ctx.steps):
-                hour = (i // steps_per_hour) % HOURS_PER_DAY
-                if hour in self.discharge_hours:
-                    electric[i] = out_step
-                elif hour in self.charge_hours:
-                    electric[i] = -in_step
+            in_by_step = dict.fromkeys(self.charge_hours, in_step)
+
+        electric = [0.0] * ctx.steps
+        for i in range(ctx.steps):
+            hour = (i // steps_per_hour) % sched.HOURS_PER_DAY
+            if hour in out_by_step:
+                electric[i] = out_by_step[hour]
+            elif hour in in_by_step:
+                electric[i] = -in_by_step[hour]
 
         self._check_grid_limit(electric, ctx, hours_per_step)
         zeros = [0.0] * ctx.steps
         return DispatchResult(electric=electric, heat=zeros, cool=list(zeros), fuel=list(zeros))
 
+    def _discharge_kwh_by_step(self, *, year: int, steps_per_hour: int) -> dict[int, float]:
+        """시각 → **한 스텝의 방전 kWh**. 배분 갈래가 갈리는 유일한 자리다
+        (R64/WP-6a · 사용자 요구 5). 판정문은
+        `core/der/ess_schedule.py::ESSDischargeAllocation` 에 있다.
+
+        ⚠⚠ **고정 창의 산술을 건드리지 않는다.** `연간/365/(창 스텝수)` 를 한 식
+        그대로 두는 이유는 부동소수다 — `a/(n*s)` 와 `(a/n)/s` 는 마지막 자리가
+        다를 수 있고, 그러면 기본값을 바꾼 적이 없는데도 골든 회귀가 「축이
+        움직였다」로 빨개진다(판정 ②).
+        """
+        if self.discharge_allocation is ESSDischargeAllocation.LOAD_FOLLOWING:
+            by_hour = sched.load_following_kwh_by_hour(
+                daily_kwh=self.annual_discharge_kwh(year=year) / DAYS_PER_YEAR,
+                discharge_hours=self.discharge_hours,
+                load_profile_kwh=self.load_profile_kwh,
+                power_kw=self.power_kw,
+                name=self.name,
+            )
+            return {hour: kwh / steps_per_hour for hour, kwh in by_hour.items()}
+        discharge_window = len(self.discharge_hours) * steps_per_hour
+        out_step = self.annual_discharge_kwh(year=year) / DAYS_PER_YEAR / discharge_window
+        return dict.fromkeys(self.discharge_hours, out_step)
+
     def _check_power(self, step_kwh: float, hours_per_step: float, label: str) -> None:
         """정격출력 초과를 **거부**한다. 잘라내면 없는 출력으로 편익이 난다."""
         kw = step_kwh / hours_per_step
-        if kw > self.power_kw + _KW_TOLERANCE:
+        if kw > self.power_kw + sched.KW_TOLERANCE:
             raise ValidationError(
                 field="ess.power_kw",
                 reason=f"{self.name}: {label} {kw:.6g}kW 가 정격출력 {self.power_kw:.6g}kW 초과",
@@ -940,7 +957,7 @@ class ESS(DER):
             return
         for i, value in enumerate(electric):
             kw = abs(value) / hours_per_step
-            if kw > ctx.grid_limit_kw[i] + _KW_TOLERANCE:
+            if kw > ctx.grid_limit_kw[i] + sched.KW_TOLERANCE:
                 raise ValidationError(
                     field="ess.power_kw",
                     reason=f"{self.name}: {i} 계통 연계 초과 {kw:.6g}/{ctx.grid_limit_kw[i]:.6g}kW",

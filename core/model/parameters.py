@@ -277,6 +277,11 @@ LABEL_BY_NAME: Mapping[str, str] = MappingProxyType({
     "charge_source": "충전 전원",
     "mode_weights": "운전 방법별 가중치",
     "pv_surplus_profile_kwh": "태양광 잉여 프로파일",
+    # R64/WP-6a 신설 축 둘. **충전원과 직교한다** — 저쪽은 「어디서 받아 채우나」,
+    # 이쪽은 「받아 둔 것을 언제 내보내나」다. 라벨을 「운전 방법」에 가깝게 적으면
+    # `operating_mode`(운전 방법)와 화면에서 구별되지 않는다.
+    "discharge_allocation": "방전 배분 방식",
+    "load_profile_kwh": "가구 부하 프로파일",
     "capex_unit_won_per_kwh": "저장용량당 설치 단가",
     "replacement_unit_won_per_kwh": "저장용량당 교체 단가",
     "pcs_cost_won": "전력변환장치 비용",
