@@ -87,8 +87,18 @@ netstat -ano | grep ":8000 .*LISTENING"          # → PID
 
 ⚠ **`ExecutablePath` 를 보지 마라 — venv 가 아니라 base 인터프리터 경로가 나온다.**
 `.venv\Scripts\python.exe` 는 uv 의 트램폴린 바이너리라 WMI 가 해석된 base 이미지를
-보고한다. **이것을 「시스템 파이썬이 떴다」로 읽으면 오진이다.** 믿을 것은
-`CommandLine` 과 적재 모듈 경로(`(Get-Process -Id <PID>).Modules`)다.
+보고한다. **이것을 「시스템 파이썬이 떴다」로 읽으면 오진이다.**
+
+⚠⚠ **`Modules` 도 «그냥 찍으면» 같은 함정이다**(2026-09-07 R65 실측). 앞머리가
+**base 인터프리터(miniconda)의 `python.exe` · `python3xx.dll`** 로 나온다 — **적재 모듈
+목록은 base 이미지부터 싣기 때문**이다. 그 앞머리만 보고 판정하면 `ExecutablePath` 와
+**똑같은 오진**이다. ⇒ **거른 뒤에 본다:**
+
+```powershell
+(Get-Process -Id <PID>).Modules | Where-Object { $_.FileName -like '*\.venv\Lib\site-packages\*' }
+```
+
+**비어 있지 않아야** 한다(실측: 총 89개 중 `.venv` 밑이 **22개**). 믿을 것은 이것과 `CommandLine` 둘이다.
 
 ## 게이트
 
