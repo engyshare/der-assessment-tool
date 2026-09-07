@@ -118,6 +118,27 @@ netstat -ano | grep ":8000 .*LISTENING"          # → PID
 **그동안 워커를 띄울 수 없다**(겹치면 1단계가 5분 → **23분 52초**가 되고 저장소 훑기
 시험이 남의 임시 파일을 보고 실패한다). CI 로 옮기면 그 8분이 **워커 시간과 겹친다**.
 
+### ⚠⚠⚠ 게이트 ②(테스트 동반 · NFR-105)도 **`pull_request` 에서만 돈다 — 그런데 이것은 로컬에서 «잴 수 있다»**
+
+**2026-09-07 R65 가 실물로 밟았다.** `core/report/sizing.py` 에 배수를 넣고 동반 시험을
+안 데려왔는데 **`fast_pytest.sh` 전건이 초록불**이었고 CI 만 빨간불이었다:
+
+```
+동반 테스트가 없는 구현 변경 1건 — NFR-105 위반
+  · core/report/sizing.py
+```
+
+★ **게이트 ①과 달리 이것은 몇 초에 로컬에서 돈다.** ⇒ **`core/` 를 고쳤으면 «커밋한 뒤»
+밀기 «전에» 이 한 줄을 돌려라** (⚠ **커밋 전에는 못 잡는다** — 이 검사는 «커밋된 diff»를 본다):
+
+```bash
+git fetch origin main
+./.venv/Scripts/python.exe scripts/check_test_accompaniment.py --base origin/main
+```
+
+인정되는 동반은 둘 — ⓐ 그 모듈을 **`import` 하는** 시험 ⓑ 파일명 규약 `tests/<구획>/test_<모듈>.py`.
+⚠ **시험 파일이 「있다」로는 안 된다 — 같은 diff 안에서 «함께 바뀌어야» 한다.**
+
 ⚠ 다만 **전체 커버리지 85%(`--cov-fail-under=85`)는 `push` 에서도 돈다.**
 ⚠ **CI 의 `tests` 잡은 pytest 를 직렬로 부른다 — 그 단계만 26분이다**(로컬 병렬 8분).
 기다릴 시간을 그렇게 잡아라.
