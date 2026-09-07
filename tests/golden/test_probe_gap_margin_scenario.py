@@ -123,7 +123,7 @@ def test_control_group_the_real_ledger_still_shows_a_shortfall() -> None:
     이 대조군이 없으면 「흑자 경로가 돈다」와 「늘 그 문면이 나온다」가
     구별되지 않는다(모듈 독스트링 참조). `fixtures/golden/
     scenario_subsidy_80.yaml`(기존 골든)이 같은 `subsidy_rate=0.80` 을
-    진짜 대장으로 매 회귀에서 재는 값(`npv_won: -166457263`)과 일치해야
+    진짜 대장으로 매 회귀에서 재는 값(`npv_won: -167457263`)과 일치해야
     한다 — 이 실측이 그 값과 어긋나면 이 파일이 아니라 진짜 대장이나
     `core/` 가 움직인 것이다.
 
@@ -166,13 +166,26 @@ def test_control_group_the_real_ledger_still_shows_a_shortfall() -> None:
     한 자도 고치지 않았다.** 그 대장에는 `load.household.count` 가 없어
     위쪽 흑자 시험은 여전히 **가구 한 호**로 돌고, 그래서 그 시험의 값은
     움직이지 않았다 — 대조군만 진짜 대장을 읽으므로 여기만 따라간다.
+
+    ## ⚠ 값이 다섯 번째로 바뀌었다 — **역시 재는 것은 그대로다** (R66/WP-2)
+
+    ESS 초기투자에 **PCS 원/kW 항**이 섰다(사용자 판정 ③ — 250,000원/kW × 100 kW
+    = 25,000,000원이 서고 배터리 단가가 몫 20% 만큼 줄어 순 **+5,000,000원**).
+    보조 80% 시나리오는 그 증가분의 20% 를 사업자가 지므로 `-166457263` →
+    **`-167457263`**(−1,000,000)이다. 산식과 「무엇이 안 움직였나」는 그 골든
+    파일의 R66 블록이 갖는다.
+    ⚠ **이번에는 파생 대장도 함께 고쳤다** — `_LEDGER_VARS` 에 PCS 두 축이 올라
+    `build_level_map()` 이 **그 두 키를 요구**하기 때문이다(없으면 *「대장에 …
+    항목이 없습니다」* 로 거부한다 — 실측으로 밟았다). 진짜 대장의 두 항목을
+    **그대로 복제**했고 값은 한 자도 바꾸지 않았다(그 파일의 규약: *「나머지 전
+    항목은 진짜 대장과 같다」*). 그래서 위쪽 흑자 시험의 값은 여전히 안 움직인다.
     """
     report = build_case_report(PROBE_SCENARIO_PATH, assumptions_path=REAL_ASSUMPTIONS_PATH)
 
     assert report.recovers_within_horizon is False
-    assert report.metrics["npv"] == -166457263.0, (
+    assert report.metrics["npv"] == -167457263.0, (
         "대조군의 순현재가치가 fixtures/golden/scenario_subsidy_80.yaml 의 "
-        "실측(-166457263)과 어긋난다 — 진짜 대장이나 core/ 가 움직였다는 뜻이다"
+        "실측(-167457263)과 어긋난다 — 진짜 대장이나 core/ 가 움직였다는 뜻이다"
     )
 
     rendered = render_markdown(report)

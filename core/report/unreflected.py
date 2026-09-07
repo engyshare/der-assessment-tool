@@ -65,6 +65,10 @@ from core.report.measured_run import (
     measured_over_seasons,
 )
 
+# ★ **판정 하나를 뗀 자리** (R66/WP-2-fix) — 같은 사유(코드 줄 상한)이고 가른 선만
+# 다르다. 그 모듈 머리말이 정본이며, **방향이 한쪽인 이유**(순환)도 거기 있다.
+from core.report.unreflected_pcs import LABEL_PCS_REPLACEMENT, pcs_replacement_gap
+
 #: 반영하면 결론이 **좋아지는** 항목.
 DIRECTION_FAVORABLE = "반영 시 결과 개선"
 #: 반영하면 결론이 **나빠지는** 항목.
@@ -523,6 +527,28 @@ def _purchase_item(
             measured=True,
         )
     ]
+
+
+def _pcs_replacement_item(report: CaseReport) -> list[UnreflectedItem]:
+    """★ **초기투자에는 섰는데 생애주기에 없는 설비** — PCS 교체비 (R66/WP-2-fix).
+
+    판정과 칸 셋(크기·사유·해소 조건)은 `core/report/unreflected_pcs.py::
+    pcs_replacement_gap` 이 갖는다 — **왜 이 파일에 두지 않았는지**(항목 하나가
+    47줄이고 이 파일은 여유 10줄이었다)와 **왜 방향이 한쪽인지**(순환)는 그
+    모듈 머리말이 정본이다. 여기 남는 것은 **라벨·방향·`measured` 를 붙여 붙임 8
+    의 한 행으로 세우는 일**뿐이다.
+
+    ⚠ **`measured=True` 다.** 이 항목은 *「PCS 가 초기투자에 있는가」* 와 *「그
+    설비의 교체가 계상됐는가」* 를 **매 실행 결과에서 재어** 판정한다(그 모듈의
+    판정 재료 ⓐ·ⓑ) — 값과 무관한 방법의 한계가 아니라, **수명이 켜지는 순간
+    사라지는** 항목이다. 크기의 이동폭만 어림이며 그 사실은 `magnitude` 문면이
+    스스로 적는다(*「어림 · … 10년을 가정하면」*).
+    """
+    gap = pcs_replacement_gap(report)
+    if gap is None:
+        return []
+    return [UnreflectedItem(label=LABEL_PCS_REPLACEMENT, direction=DIRECTION_ADVERSE,
+                            measured=True, **gap)]
 
 
 def _variable_om_item(basis: CaseBasis) -> list[UnreflectedItem]:
@@ -984,6 +1010,11 @@ def build_unreflected(report: CaseReport) -> tuple[UnreflectedItem, ...]:
         # 바로 위와 **같은 갈래**다 — 프로포마 비용 행이 비었는가. 붙여 두어
         # 검토자가 「빠진 비용 행」을 한 자리에서 읽게 한다.
         *_variable_om_item(basis),
+        # ★ **같은 갈래의 셋째** — 위 둘이 「프로포마 비용 행이 비었는가」라면 이
+        # 행은 **「부품의 수명을 세우지 않았는가」**다 (R66/WP-2-fix). 초기투자에는
+        # PCS 가 섰는데 20년 동안 한 번도 갱신하지 않는다 — 붙여 두어 검토자가
+        # **누락된 비용**을 한 자리에서 읽게 한다.
+        *_pcs_replacement_item(report),
         *_flat_generation_item(basis, report.dispatch_hours),
         # ★ **운전이 무엇을 못 덮었는가** — 위 두 행(발전 형상 · 비용 행)과 달리
         # 이 행은 **배선이 끝난 뒤에도 남는** 결손이다 (R64/WP-6b · 요구 5).

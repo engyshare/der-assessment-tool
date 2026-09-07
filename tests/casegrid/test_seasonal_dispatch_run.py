@@ -463,6 +463,10 @@ def _deployed_case(**overrides: object) -> object:
         "ess_capex": levels["ess_unit_cost"]["base"],
         "ess_fixed_om": levels["ess_fixed_om"]["base"],
         "ess_replacement_price": levels["ess_replacement"]["base"],
+        # ★ R66/WP-2 — PCS 둘. `build_and_dispatch_case` 는 이 둘을 **기본값 없는
+        # 키워드 인자**로 받으므로(러너와 같은 판단) 여기서도 대장 수준표에서 읽는다.
+        "ess_pcs_capex": levels["ess_pcs_unit_cost"]["base"],
+        "ess_pcs_share": levels["ess_pcs_share"]["base"],
         "ess_operating_mode": None,
         "ess_charge_source": None,
         # `None` 이 「고르지 않았다」이며 모듈 상수

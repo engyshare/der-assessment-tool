@@ -50,9 +50,9 @@
 |  |  | 1 | `FR-101-AC2` | 메서드: capex(), fixed_om(), variable_om(), replacement_schedule(), salvage_value(), dispatc… | 자동 | test_der_contract.py 5건, test_load.py |
 |  |  | 1 | `FR-101-AC3` | 신규 자원 클래스가 위 인터페이스만 구현하면 코어 엔진 수정 없이 동작 (단위 테스트로 실증) | 자동 | test_rule_based.py 4건 |
 |  |  | 1 | `FR-101-AC4` | 매체 플래그에 따라 엔진이 전기·열·냉 수지를 자동으로 분리 집계한다 | 자동 | test_der_contract.py 3건, test_heatpump.py 3건, test_pv.py 2건, test_rule_based.py |
-|  |  | 1 | `FR-101-AC5` | (v0.15 신설) capex()·fixed_om()·variable_om() 의 **산식은 | 자동 | test_ess.py 4건, test_ev_v2g.py 3건, test_heatpump.py 4건, test_load.py 3건, test_pv.py 8건, test_thermal_load.py 3건 |
+|  |  | 1 | `FR-101-AC5` | (v0.15 신설) capex()·fixed_om()·variable_om() 의 **산식은 | 자동 | test_ess_pcs_capex_wiring.py 4건, test_ess.py 4건, test_ev_v2g.py 3건, test_heatpump.py 4건, test_load.py 3건, test_pv.py 8건, test_thermal_load.py 3건 |
 | `FR-102` | Must-have | 1 | `FR-102-AC1.PV` | PV 태양광 (옥상/벽면 BIPV 구분) — 용량(kW), 이용률(%) 또는 8760 발전 시계열, 방위·경사, 연간 열화율, 인버터 수명 | 자동 | test_pv.py 9건, test_pv_validation.py 2건 |
-|  |  | 1 | `FR-102-AC1.ESS` | ESS 배터리 (신품/사용후배터리) — 정격용량(kWh), 정격출력(kW), RTE(%), SOC 상하한, 사이클수명, 달력수명, EOL 잔존율 | 자동 | test_ess_build.py 2건, test_ess_share.py 2건, test_ess_share_benefits.py, test_ess.py 9건 |
+|  |  | 1 | `FR-102-AC1.ESS` | ESS 배터리 (신품/사용후배터리) — 정격용량(kWh), 정격출력(kW), RTE(%), SOC 상하한, 사이클수명, 달력수명, EOL 잔존율 | 자동 | test_ess_build.py 2건, test_ess_pcs_capex_wiring.py 4건, test_ess_share.py 2건, test_ess_share_benefits.py, test_ess.py 9건 |
 |  |  | 1 | `FR-102-AC1.EV_V2G` | EV_V2G 전기차 + 양방향 충전기 — 대수, 배터리(kWh), 최대 충방전(kW), 접속가능시간대, 참여율, 열화 보상단가 | 자동 | test_ev_v2g.py 18건 |
 |  |  | 1 | `FR-102-AC1.HeatPump` | HeatPump 히트펌프 (난방/급탕) — 정격 열출력(kW), COP 곡선(외기온 함수), 열부하 대응 방식 | 자동 | test_heatpump.py 11건 |
 |  |  | 1 | `FR-102-AC1.Load` | Load 전기부하 (가구/공용부/상업) — 8760 부하 시계열 또는 월사용량+표준 프로파일, 연간 증가율 | 자동 | test_load.py 15건 |
@@ -66,7 +66,7 @@
 | `FR-104` | Must-have | 1 | `FR-104-AC1` | PV: 연 degradation_rate(%/년) 발전량 감소 | 자동 | test_smoke_wave0.py, test_ev_v2g.py, test_heatpump.py, test_pv.py 2건 |
 |  |  | 1 | `FR-104-AC2` | ESS: 사이클 누적 + 달력 열화 중 보수적 값 적용, EOL(기본 80%) 도달 시 교체비 계상 | 자동 | test_lifecycle_wiring.py, test_ess.py 9건 |
 |  |  | 1 | `FR-104-AC3` | 수명 도달 자원은 replace / retire 선택 가능. 선택의 결과는 아래 「retire 의 의미」 다섯으로 정한다 (v0.14 명확화 — 조항이 선택지만… | 자동 | test_der_contract.py 2건, test_ess.py 5건, test_ev_v2g.py 4건, test_heatpump.py 5건, test_load.py 7건, test_pv.py 5건, test_thermal_load.py 6건 |
-|  |  | 1 | `FR-104-AC4` | 인버터 등 부속설비의 독립 수명(10~12년)을 본체와 분리 관리 | 자동 | test_smoke_wave0.py, test_ess.py 2건, test_heatpump.py 2건, test_load.py, test_pv.py 5건, test_thermal_load.py 3건 |
+|  |  | 1 | `FR-104-AC4` | 인버터 등 부속설비의 독립 수명(10~12년)을 본체와 분리 관리 | 자동 | test_ess_pcs_capex_wiring.py 2건, test_smoke_wave0.py, test_ess.py 2건, test_heatpump.py 2건, test_load.py, test_pv.py 5건, test_thermal_load.py 3건, test_unreflected_pcs.py 4건 |
 |  |  | 1 | `FR-104-AC5` | 분석기간 종료 시 잔존 수명 비례 잔존가치를 최종연도에 계상 | 자동 | test_from_resource_conventions.py, test_lifecycle_wiring.py 2건, test_salvage_row.py 2건, test_der_contract.py 3건, test_ess.py 3건, test_ev_v2g.py, test_heatpump.py 3건, test_load.py 4건, test_pv.py 3건, test_thermal_load.py 3건 |
 | `FR-105` | Must-have | 1 | `FR-105-AC1` | 자원 클래스는 자신이 지원하는 운전 방법 목록을 선언한다. ESS 는 운전 방법과 함께 「충전원(charge_source)」 축을 선언한다 — 시간창만으로는 「… | 자동 | test_grid_support.py 2건, test_der_contract.py, test_dv_rule_enforcement.py 2건, test_ess.py 10건, test_ev_v2g.py 4건, test_heatpump.py 5건, test_operating_mode_mapping.py, test_pv.py 5건, test_pv_validation.py, test_tou_arbitrage.py |
 |  |  | 1 | `FR-105-AC2` | 운전 방법은 자원 클래스에 함께 정의되며, 신규 운전 방법 추가 시 코어 엔진 수정이 발생하지 않는다 (NFR-201과 동일 기준). 운전 방법과 충전원은 시나… | 자동 | test_17_11_sg5.py, test_pv.py |
@@ -292,7 +292,7 @@
 |  |  | 1 | `FR-905-AC7` | 공유·중복 방지: 동일 데이터셋을 여러 시나리오·인스턴스가 참조하며 중복 저장하지 않는다. 데이터셋 삭제 시 참조 중인 시나리오를 먼저 안내한다 | 자동 | test_timeseries.py |
 |  |  | 1 | `FR-905-AC8` | 출처 메타데이터: 데이터셋도 (출처, 계측기간, 해상도, 신뢰도, 최종확인일) 을 보유하고 리포트에 표기한다 | 자동 | test_timeseries.py |
 | `FR-1001` | Must-have | 1 | `FR-1001-AC1` | (가) 영향 인자 우선 제시 — 각 결과 지표 옆에 그 값을 좌우한 상위 인자를 영향도 순으로 제시한다. 순위는 감이 아니라 민감도 계산 결과로 정한다 (FR-… | 자동 | test_phase1_dod.py, test_report.py |
-|  |  | 1 | `FR-1001-AC2` | (나) 산식 확인 — 임의 지표·프로포마 항목에서 그것을 만든 산식과 대입값을 그 자리에서 펼쳐볼 수 있다. 이동 횟수를 제약하지 않으며, "펼치면 보인다"가 … | 자동 | test_benefit_attribution.py, test_narrative.py 6건, test_operation_appendices.py 2건, test_report.py |
+|  |  | 1 | `FR-1001-AC2` | (나) 산식 확인 — 임의 지표·프로포마 항목에서 그것을 만든 산식과 대입값을 그 자리에서 펼쳐볼 수 있다. 이동 횟수를 제약하지 않으며, "펼치면 보인다"가 … | 자동 | test_benefit_attribution.py, test_narrative.py 6건, test_operation_appendices.py 2건, test_report.py, test_unreflected_pcs.py |
 |  |  | 1 | `FR-1001-AC3` | (다) 3중 표기 — 각 산식은 자연어 설명 + 수식 + 대입값으로 표기한다 | 자동 | test_phase1_dod.py, test_from_resource_conventions.py, test_grid_purchase_cost_row.py 3건, test_lifecycle_wiring.py, test_surplus_sale_price_wiring.py, test_case_report.py, test_conclusion_gap.py 2건, test_report.py 3건 |
 |  |  | 1 | `FR-1001-AC4` | (라) 출처 동반 — 산식에 등장하는 모든 입력값에 출처·기준연도·신뢰도가 함께 표시된다 | 자동 | test_case_report.py, test_narrative.py, test_report.py |
 |  |  | 1 | `FR-1001-AC5` | (마) 판정 기준 — 비개발자 검토자가 리포트만 보고 "이 회수기간이 왜 이 값인지"와 "어떤 가정이 바뀌면 결론이 달라지는지"를 설명할 수 있다. 측정: 심의… | 수동 | test_report.py (스텁) + MC-1 (수행/충족) |
@@ -335,7 +335,7 @@
 |  |  | 1 | `NFR-107-AC5` | 수동 검증 분류의 정본은 docs/manual-checks.yaml이다. spec은 어느 수용기준이 수동인지 열거하지 않는다. 대장의 전건에 대해 ⓐ crite… | 자동 | test_traceability_gate.py |
 |  |  | 1 | `NFR-107-M1` | CI가 spec 수용기준 목록과 마커·YAML을 대조하여 미매핑 0건 확인. 구현: scripts/gen_traceability.py (Wave 0 산출물 0.… | 자동 | test_17_9_dod9.py, test_marker_substance.py 11건, test_traceability_gate.py 4건 |
 | `NFR-201` | Must-have | 1 | `NFR-201-M1` | 신규 자원 추가 PR에서 core/engine/, core/cba/ diff 0줄 | 자동 | test_phase1_measurements.py |
-| `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | 자동 | test_e2e_settlement_wiring.py 2건, test_ledger_levels.py 7건, test_override_reaches_the_level_map.py, test_surplus_sale_price_wiring.py 5건, test_ci_gates.py 6건, test_der_contract.py 2건, test_surplus_direct_sale_ledger_key.py, test_tariff.py, test_aggregated_ppa.py, test_settlement.py 3건, test_settlement_household_contract.py, test_settlement_manager_structure.py |
+| `NFR-202` | Must-have | 1 | `NFR-202-M1` | 소스 전체 수치 리터럴 스캔 lint 통과 | 자동 | test_e2e_settlement_wiring.py 2건, test_ess_pcs_capex_wiring.py, test_ledger_levels.py 7건, test_override_reaches_the_level_map.py, test_surplus_sale_price_wiring.py 5건, test_ci_gates.py 6건, test_der_contract.py 2건, test_surplus_direct_sale_ledger_key.py, test_tariff.py, test_unreflected_pcs.py, test_aggregated_ppa.py, test_settlement.py 3건, test_settlement_household_contract.py, test_settlement_manager_structure.py |
 | `NFR-203` | Should-have | 1 | `NFR-203-M1` | pytest-cov CI 게이트 | 자동 | test_ci_gates.py |
 | `NFR-204` | Should-have | 1 | `NFR-204-M1` | mypy strict 통과 | 자동 | test_ci_gates.py |
 | `NFR-205` | Must-have | 1 | `NFR-205-M1` | 코드 리뷰 + lint 규칙. 근거: DER-VET Params.py의 클래스 변수 전역 상태는 동시 실행·테스트 격리를 불가능하게 만든다 (부록 C.5) | 자동 | test_ledger_levels.py, test_ci_gates.py 2건, test_ess.py |
@@ -363,7 +363,7 @@
 | `NFR-503` | Must-have | 1 | `NFR-503-AC1` | 단일 컨테이너로 로컬 실행 가능 (docker run 1회) | 자동 | test_phase1_measurements.py, test_scenario_store_deployment.py 3건 |
 | `NFR-504` | Must-have | 1 | `NFR-504-AC1` | 무료 티어 제약(메모리 512MB, 콜드스타트, 디스크 비영속) 하에서 데이터 유실 없이 운영 | 자동 | test_freetier.py 4건 |
 | `UI-1` | Should-have | 1 | `UI-1-AC1` | 마법사 방식으로 초심자를 안내하되, 숙련자용 전체 파라미터 단일 화면(고급 모드) 병행 | 자동 | test_ui_forms.py 2건, test_ui_router.py, test_parameters.py 11건, test_dashboard.py 18건 |
-| `UI-2` | Must-have | 1 | `UI-2-AC1` | 모든 수치 입력 옆에 단위 상시 표시 (kW, kWh, 원/kWh, %, 년) | 자동 | test_parameters.py 5건, test_dashboard.py |
+| `UI-2` | Must-have | 1 | `UI-2-AC1` | 모든 수치 입력 옆에 단위 상시 표시 (kW, kWh, 원/kWh, %, 년) | 자동 | test_parameters.py 6건, test_dashboard.py |
 | `UI-3` | Must-have | 1 | `UI-3-AC1` | 신뢰도 가정 항목은 노란 배지로 표시하고, 결과에서 해당 값의 영향도와 함께 명시 (FR-1002) (v0.5: 배지 라벨 미확인 → 가정. DB enum도 동… | 자동 | test_dashboard.py |
 | `UI-4` | Must-have | 1 | `UI-4-AC1` | 결과 지표 카드는 항상 무지원 기준선 대비 증분을 함께 표시 | 자동 | test_dashboard.py |
 | `UI-5` | Should-have | 1 | `UI-5-AC1` | 한국어 우선. 영어 병기는 지표명(NPV, IRR, LCOE)에 한정 | 수동 | test_manual_stubs.py (스텁) + MC-7 (미수행) |

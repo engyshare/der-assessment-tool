@@ -91,12 +91,22 @@ def test_operator_perspective_keeps_the_conclusion_axis(report) -> None:
     축을 **다시 계산하지 않는가**」* 이며 그 실질은 **위 첫 단언**이다(사업자
     관점의 NPV 가 4.1 결론축과 같은 객체에서 오는가). 그 단언은 이 라운드에도
     통과했고, 아래 리터럴은 그 값을 실측으로 못박아 두는 자리다.
+
+    ⚠⚠⚠ **R66/WP-2 가 −323,257,263 → −328,257,263원으로 옮겼다** (사용자 판정 ③).
+    ESS 초기투자에 **원/kW 항**이 섰다 — 배터리 500,000 × (1 − 20%) = 400,000원/kWh
+    × 200 kWh = 80,000,000 **+ PCS 250,000원/kW × 100 kW = 25,000,000** 이므로
+    100,000,000 → **105,000,000원**이고, 총 초기투자가 196,000,000 → 201,000,000원
+    이다. 이동 폭이 그 **+5,000,000 과 정확히 같은** 것은 초기투자가 1년차이고
+    현가계수가 1.0 이기 때문이며, 교체비·잔존가치는 한 원도 안 움직였다
+    (교체 단가는 별 항목 `capex.ess.replacement` 에서 오고 PCS 수명은 아직
+    `None` 이다). 경위는 `fixtures/golden/scenario_unsubsidized.yaml` 의 R66 블록이
+    갖는다.
     """
     operator = next(
         r for r in report.perspectives.results if r.perspective is Perspective.OPERATOR
     )
     assert int(operator.npv_value) == int(report.metrics[CONCLUSION_METRIC])
-    assert int(operator.npv_value) == -323_257_263
+    assert int(operator.npv_value) == -328_257_263
 
 
 @pytest.mark.req("FR-402-AC7")
@@ -171,7 +181,10 @@ def test_npv_row_prints_no_number_for_perspectives_without_cost_basis(report) ->
     # R64/WP-7 이 「AI 가전」의 부하 이동을 세우며 −11,502,062 → −11,625,181원
     # 으로 옮겼다 (위 `test_operator_perspective_keeps_the_conclusion_axis` 의 ⚠).
     # ⚠⚠ R65/WP-2c 가 단지를 20호로 세우며 −11,625,181 → −323,257,263원이 됐다.
-    assert "-323,257,263원" in npv_line, npv_line
+    # ⚠⚠⚠ R66/WP-2 가 ESS 초기투자에 PCS 원/kW 항을 세우며(+5,000,000원)
+    # −323,257,263 → −328,257,263원이 됐다 (위 `test_operator_perspective_keeps_
+    # the_conclusion_axis` 의 ⚠⚠⚠ 절이 산식을 갖는다).
+    assert "-328,257,263원" in npv_line, npv_line
     cells = [cell.strip() for cell in npv_line.strip().strip("|").split("|")]
     assert "0원" not in cells, npv_line
     assert "0" not in cells, npv_line
@@ -198,7 +211,13 @@ def test_cost_total_row_prints_not_allocated_for_perspectives_without_cost_basis
     # 규모로 다시 서서 17,716,797 → **468,935,338원**이 됐다. ⚠ 정확히 20배가
     # 아닌 것은 이 칸이 **비용 합계**(전력 구매 + 고정 O&M + 교체비 − 잔존가치)
     # 이고 그중 전력 구매만 부하에 비례하기 때문이다.
-    assert "468,935,338원" in cost_line, cost_line
+    # ⚠⚠⚠ R66/WP-2 — ESS 초기투자에 PCS 원/kW 항이 서며 468,935,338 →
+    # **473,935,338원**(+5,000,000)이 됐다. ★ **위 괄호의 구성 목록은 초기투자를
+    # 빠뜨렸다** — 실측하면 이 칸은 `초기투자 + 전력 구매 + 고정 O&M 둘 + 교체비
+    # 둘 − 잔존가치 둘` 이고, 운영분만 더하면 272,935,338원이라 이 수가 되지
+    # 않는다(196,000,000 을 더해야 468,935,338 이다). 그래서 이번 이동 폭이
+    # 초기투자 증가분과 **정확히 같다** — 운영 행은 한 원도 안 움직였다.
+    assert "473,935,338원" in cost_line, cost_line
 
 
 def test_benefit_total_row_always_prints_a_real_number(report) -> None:

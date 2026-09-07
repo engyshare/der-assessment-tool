@@ -73,6 +73,11 @@ LEVEL_MAP = {
     # ESS 교체 단가 — 러너가 요구한다(R52/WP-6 에 스윕 축으로 올렸다).
     # **대장과 다른 수를 일부러 쓴다.**
     "ess_replacement": MappingProxyType({"base": 350_000.0}),
+    # ★ R66/WP-2 — PCS 둘. 러너는 이 둘에 **기본값을 두지 않으므로**
+    # (`ledger_levels.py` 의 그 줄 · `grid_purchase_price` 와 같은 판단)
+    # 탐침 수준표도 갖고 있어야 한다. 값은 대장의 사본이 아니다.
+    "ess_pcs_unit_cost": MappingProxyType({"base": 250_000.0}),
+    "ess_pcs_share": MappingProxyType({"base": 0.20}),
     # 설계 변수(용량)는 이 파일의 관심이 아니지만 **러너가 요구한다** —
     # 기본값을 두지 않는 것이 규칙이라 기본 탐색점을 그대로 받아 온다.
     **design_levels(),

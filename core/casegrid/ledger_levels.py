@@ -203,6 +203,31 @@ _LEDGER_VARS: tuple[tuple[str, str, float], ...] = (
     # §7 이 요구한 *「각각 별도 설정이 가능해야 함」*을 충족하기 위해서다 — 값이
     # 같아도 통로가 따로 있어야 다음에 견적이 오면 이 한 줄만 고치면 된다.
     ("ess_replacement", "capex.ess.replacement", 1.0),
+    # ★★★ **PCS 둘 — 초기투자에 「원/kW 항」을 세우는 통로** (R66/WP-1·WP-2 · `Q-2`).
+    #
+    # R66/WP-1 이 대장에 값을 세우고 **배선은 하지 않았다** — 그 상태가 곧
+    # `capex.replacement_real_trend`(R41→R42) · `capex.pv.inverter_share`(R43) 가
+    # 지났던 자리이며, `tests/casegrid/test_ledger_levels.py::
+    # test_every_capex_ledger_item_is_a_sweep_axis_or_says_why_not` 가 **그 상태를
+    # 실제로 빨간불로 잡았다**(WP-2 착수 실측 — 그 항목 둘을 이름으로 지목했다).
+    #
+    # ⚠⚠ **둘의 쓰임이 다르다 — 같은 값을 두 번 쓰는 것이 아니다.**
+    #   · `pcs_power`(원/kW)  → **PCS 항을 세운다**: `PCS 단가 × 정격출력`
+    #   · `pcs_share_of_system`(%) → **배터리 단가를 줄인다**: `단가 × (1 − 몫)`
+    # 몫으로 PCS 를 「떼기만」 하면 떼어낸 값이 다시 **용량에** 비례해
+    # *「정격출력을 키우는 것이 공짜」* 가 그대로 남는다 — 대장 항목
+    # `capex.ess.pcs_share_of_system` 의 `applicable_scope` 가 그 함정을 스스로
+    # 적어 두었다(*「그때는 몫이 아니라 `capex.ess.pcs_power` 를 곱해야 한다」*).
+    # 배선의 몸통은 `core/casegrid/ess_build.py::_case_ess_spec` 이다.
+    #
+    # ⚠ **배율 1.0 · 0.01 이 갈리는 것은 단위 환산이다** — 앞은 대장·자원 둘 다
+    # 원/kW 이고, 뒤는 대장이 `%` 이며 자원이 비율을 쓴다. **`0.01` 은 145줄의
+    # `pv_inverter_share` 선례를 그대로 따른 것**이며(그 항목도 「단가 하나를
+    # 쪼개는 몫」이고 단위가 `%` 다), `tests/casegrid/test_ledger_levels.py::
+    # test_percent_per_year_is_converted_once` 가 `%` 로 시작하는 단위 전건에
+    # 이 환산을 요구한다 — 즉 여기서 `1.0` 을 주면 빨간불이다.
+    ("ess_pcs_unit_cost", "capex.ess.pcs_power", 1.0),
+    ("ess_pcs_share", "capex.ess.pcs_share_of_system", 0.01),
     # ⚠ **`benefit.rec_weight_pv` 는 여기 없다** — `test_levels_come_from_
     # the_ledger_not_from_a_copy` 가 모든 스윕 축에 `low < base < high` **강한
     # 부등호**를 요구하는데, 이 라운드는 가중치 폭을 조사하지 않아 세 수준이

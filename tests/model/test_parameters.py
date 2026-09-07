@@ -593,3 +593,33 @@ def test_the_two_discharge_axes_reach_the_screen_with_their_labels() -> None:
             f"{tag}.{name} 가 화면에 내는 라벨({label!r})이 `LABEL_BY_NAME` 의 "
             f"선언({LABEL_BY_NAME[name]!r})과 다릅니다"
         )
+
+@pytest.mark.req("UI-2-AC1")
+def test_the_two_ess_capex_axes_are_told_apart_by_their_labels() -> None:
+    """★ **ESS 초기투자의 단가는 둘이고 축이 다르다** — 화면이 그것을 라벨로 말한다
+    (R66/WP-2).
+
+    `capex_unit_won_per_kwh`(원/kWh · 저장용량당)와
+    `capex_pcs_won_per_kw`(원/kW · **정격출력당**)가 설정 화면에 **나란히** 선다.
+    두 라벨이 같은 말로 시작하면 사용자는 *「같은 값이 두 칸 있다」* 로 읽고,
+    그러면 한 칸에 다른 축의 수를 넣어도 아무 오류가 나지 않는다 — 값은 그럴듯한
+    크기이고 결론만 조용히 틀린다.
+
+    ⚠ **단위가 갈리는 것만으로는 부족하다.** 단위는 접미사 규약(`_won_per_kwh` ·
+    `_won_per_kw`)이 저절로 붙이므로 **개발자가 라벨을 잘못 적어도 단위는 옳게
+    나온다.** 그래서 여기서는 **라벨 문면**을 잰다 — 아래 둘째 단언이 그것이다.
+    """
+    specs = {spec.name: spec for spec in catalogue()["ESS"]}
+    for name, unit in (("capex_unit_won_per_kwh", "원/kWh"), ("capex_pcs_won_per_kw", "원/kW")):
+        assert name in specs, f"화면 카탈로그가 ESS.{name} 를 내지 않습니다"
+        assert specs[name].unit == unit, (
+            f"ESS.{name} 의 단위가 {specs[name].unit!r} 다 — {unit!r} 여야 한다"
+        )
+
+    per_kwh = specs["capex_unit_won_per_kwh"].label
+    per_kw = specs["capex_pcs_won_per_kw"].label
+    assert per_kwh != per_kw, "두 단가의 라벨이 같습니다 — 화면에서 구별되지 않습니다"
+    assert "정격출력" in per_kw, (
+        f"ESS.capex_pcs_won_per_kw 의 라벨({per_kw!r})이 **어느 축의 단가인지** "
+        "말하지 않습니다 — 저장용량당 단가와 나란히 서므로 라벨만으로 갈려야 합니다"
+    )

@@ -244,6 +244,10 @@ def build_and_dispatch_case(
     ess_capex: float,
     ess_fixed_om: float,
     ess_replacement_price: float,
+    #: ★★★ PCS 둘 — 뜻은 `core/casegrid/ess_build.py::_case_ess_spec` 이 갖는다.
+    #: ⚠ **한 줄에 적은 것은 `NFR-206` 코드 줄 상한 때문**이다(아래 `build()` 의
+    #: 같은 ⚠ 절 — 이 파일은 착수 실측 **코드 500/500** 이었다).
+    ess_pcs_capex: float, ess_pcs_share: float,
     ess_operating_mode: ESSOperatingMode | str | None,
     ess_charge_source: ESSChargeSource | str | None,
     ess_discharge_allocation: ESSDischargeAllocation | str | None,
@@ -319,6 +323,7 @@ def build_and_dispatch_case(
         shares=ess_shares, capacity_kwh=ess_capacity_kwh, capex=ess_capex,
         household_scale_factor=household_scale(household_count),
         fixed_om=ess_fixed_om, replacement_price=ess_replacement_price,
+        capex_pcs_per_kw=ess_pcs_capex, pcs_share=ess_pcs_share,
         # ⚠ 이 두 줄을 한 줄로 묶은 것은 **NFR-206 코드 줄 상한** 때문이다
         # (위 ★★★ 절 실측 — 배수 인자가 들어와 501/500 이 됐다). 이 생성자
         # 호출은 원래도 한 줄에 인자 여럿을 적는 자리라 문체가 갈리지 않는다.
@@ -828,6 +833,13 @@ class _ESSSpec:
     #: 곱해진다. 이 배수가 닿는 곳은 **정격출력 하나**다.
     household_scale_factor: float
     capex: float
+    #: ★★★ **PCS 둘** — 대장 `capex.ess.pcs_power`(원/kW) ·
+    #: `capex.ess.pcs_share_of_system`(비율). ⚠ **여기서 곱하지 않는다** —
+    #: 앞은 정격출력에, 뒤는 배터리 단가에 걸리고 그 둘을 아는 자리는
+    #: `core/casegrid/ess_build.py::_case_ess_spec` 하나다(정격출력의 정본이
+    #: 그 파일의 `ESS_POWER_KW` 옆에 있다). 이 자료형은 나르기만 한다.
+    capex_pcs_per_kw: float
+    pcs_share: float
     fixed_om: float
     replacement_price: float
     escalation_rate: float
@@ -850,17 +862,20 @@ class _ESSSpec:
         칸이 아니라 인자로 받는다 — 칸으로 두면 계절마다 `_ESSSpec` 을 다시
         세워야 하고, 그러면 제원이 계절마다 갈릴 수 있다.
         """
+        # ⚠⚠ **인자를 한 줄에 둘씩 적은 것은 `NFR-206` 코드 줄 상한 때문이다**
+        # (R66/WP-2 · 착수 실측 **코드 500/500 — 여유 0줄**). PCS 인자 둘이
+        # 들어오면서 자리가 필요했고, **상한을 올리는 것은 금지**(spec §16.5)이며
+        # **근거 주석을 지워 줄을 맞추는 것도 금지**(`scripts/check_file_size.py`
+        # 의 판정문)다. ⇒ 남은 수단은 이 호출을 접는 것뿐이었다 — 위
+        # `_ESSSpec(...)` 생성자 호출이 R65/WP-2c 에 같은 사유로 같은 일을 했다.
+        # **넘기는 인자·값은 한 개도 바뀌지 않았다.**
         return build_case_ess_fleet(
-            shares=self.shares,
-            capacity_kwh=self.capacity_kwh,
-            household_scale_factor=self.household_scale_factor,
-            operating_mode=operating_mode,
-            charge_source=charge_source,
-            pv_surplus_profile_kwh=pv_surplus_profile_kwh,
-            discharge_allocation=discharge_allocation,
-            load_profile_kwh=load_profile_kwh,
-            capex_unit_won_per_kwh=self.capex,
-            fixed_om_won_per_year=self.fixed_om,
+            shares=self.shares, capacity_kwh=self.capacity_kwh,
+            household_scale_factor=self.household_scale_factor, operating_mode=operating_mode,
+            charge_source=charge_source, pv_surplus_profile_kwh=pv_surplus_profile_kwh,
+            discharge_allocation=discharge_allocation, load_profile_kwh=load_profile_kwh,
+            capex_unit_won_per_kwh=self.capex, capex_pcs_won_per_kw=self.capex_pcs_per_kw,
+            pcs_share_of_system=self.pcs_share, fixed_om_won_per_year=self.fixed_om,
             replacement_unit_won_per_kwh=self.replacement_price,
             escalation_rate=self.escalation_rate,
             replacement_escalation_rate=self.replacement_escalation,

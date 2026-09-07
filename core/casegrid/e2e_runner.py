@@ -756,11 +756,23 @@ def run_single_case_e2e(
     # 얹는다. ⚠ **`rec_weight_pv` 는 여기 없다** — 이유는
     # `ledger_levels.py::_LEDGER_VARS` 옆 주석에 있다(폭을 지어낼 수 없어
     # 이 함수의 인자로 직접 받는다).
+    # ★★★ **R66/WP-2 가 PCS 둘을 더했다** (`capex.ess.pcs_power` ·
+    # `capex.ess.pcs_share_of_system` · 사용자 판정 ③). 같은 이유로 새 statement 를
+    # 만들지 않고 이 대입에 얹는다 — 여섯 다 `_resolve()` 스칼라 조회다.
+    # ⚠ **여기서 곱하거나 빼지 않는다.** 배터리 단가에서 몫을 빼는 것도, 몫을
+    # 정격출력에 곱하는 것도 `core/casegrid/ess_build.py::_case_ess_spec` 이 한다 —
+    # 그 자리가 정격출력의 정본(`ESS_POWER_KW` × 단지 배수)을 아는 유일한 곳이고,
+    # 여기서 지으면 그 정본이 둘이 된다(`pv_inverter_share` 를 여기서 단가로
+    # 짓는 것과 **갈리는 판단**이며, 갈리는 사유가 그 「출력을 알아야 한다」다).
     demand_charge, pv_fixed_om, ess_fixed_om, ess_replacement_price = (
         _resolve(case_values.get("demand_charge", "base"), "demand_charge", level_map),
         _resolve(case_values.get("pv_fixed_om", "base"), "pv_fixed_om", level_map),
         _resolve(case_values.get("ess_fixed_om", "base"), "ess_fixed_om", level_map),
         _resolve(case_values.get("ess_replacement", "base"), "ess_replacement", level_map),
+    )
+    ess_pcs_capex, ess_pcs_share = (
+        _resolve(case_values.get("ess_pcs_unit_cost", "base"), "ess_pcs_unit_cost", level_map),
+        _resolve(case_values.get("ess_pcs_share", "base"), "ess_pcs_share", level_map),
     )
 
     # 1·2. Resources & Dispatch — ★★★ **계절 넷의 대표일을 각각 돌려 합산한다**
@@ -795,6 +807,7 @@ def run_single_case_e2e(
         dr_shiftable_share_pct=dr_shiftable_share_pct,
         ess_shares=ess_shares, ess_capacity_kwh=ess_capacity_kwh, ess_capex=ess_capex,
         ess_fixed_om=ess_fixed_om, ess_replacement_price=ess_replacement_price,
+        ess_pcs_capex=ess_pcs_capex, ess_pcs_share=ess_pcs_share,
         ess_operating_mode=ess_operating_mode, ess_charge_source=ess_charge_source,
         ess_discharge_allocation=ess_discharge_allocation,
         pv_allocation_priority=pv_allocation_priority,
@@ -1067,6 +1080,7 @@ def run_single_case_e2e(
     )
     resource_lines = _resource_lines(
         pv, pv_capex, ess_fleet, ess_capex, benefit_lines,
+        ess_pcs_capex=ess_pcs_capex, ess_pcs_share=ess_pcs_share,
         self_consumption_ratio=measured_self_consumption_ratio(
             pv, ctx, run.pv_surplus_profile_kwh
         ),
@@ -1239,6 +1253,12 @@ def _resource_lines(
     ess_capex: float,
     benefits: Sequence[BenefitLine],
     *,
+    #: ★ PCS 둘 — 2.1 표의 단가 칸이 **자기 취득비를 설명할 수 있어야** 한다
+    #: (R66/WP-2-fix · 아래 `unit_capex` 의 ★★★ 절). ⚠ **키워드 전용이다** —
+    #: 위치 인자를 늘리면 `PLR0917`(위치 인자 5개 상한)에 걸리고, 무엇보다
+    #: 두 단가는 호출부에서 **이름으로 구별돼야** 서로 바뀌어도 드러난다.
+    ess_pcs_capex: float,
+    ess_pcs_share: float,
     self_consumption_ratio: float,
     pv_allocation_priority: PVAllocationPriority,
 ) -> tuple[ResourceLine, ...]:
@@ -1323,7 +1343,24 @@ def _resource_lines(
                     f"{_hours_text(ess.discharge_hours)} 안)"
                 ),
                 lifetime_years=int(ess.lifetime),
-                unit_capex=f"{ess_capex:,.0f}원/kWh",
+                # ★★★ **두 축을 함께 인쇄한다** (R66/WP-2-fix). R66/WP-2 가
+                # 초기투자에 `PCS 단가 × 정격출력` 항을 세우면서 이 칸이
+                # **자기 행의 취득비를 설명하지 못하게 됐다** — 실측으로
+                # `500,000원/kWh` 를 인쇄하는데 같은 행의 취득비는
+                # 105,000,000원이었다(500,000 × 200 kWh = 100,000,000 ≠ 그 수).
+                # 즉 심의자가 표에 적힌 단가·용량으로 초기투자를 되짓지 못했다.
+                # ⚠ **대장의 시스템 단가를 그대로 적을 수 없다** — 배터리에
+                # 실제로 곱해지는 것은 `시스템 단가 × (1 − PCS 몫)` 이다
+                # (`core/casegrid/ess_build.py::_case_ess_spec`).
+                # ⚠⚠ **자원에서 되읽지 않는다** — `ESS` 는 두 단가를 비공개
+                # 속성으로만 갖고(`_capex_unit`·`_capex_pcs_per_kw`) 그 파일은
+                # 코드 498/500 이라 접근자를 세울 자리가 없다. 그래서 러너가
+                # **같은 값을 같은 자리에서** 받아 넘긴다 — 위 `capacity` 칸의
+                # ★ 가 경계한 「모듈 상수에서 다시 읽는」 형태와는 다르다.
+                unit_capex=(
+                    f"{ess_capex * (1.0 - ess_pcs_share):,.0f}원/kWh (배터리) + "
+                    f"{ess_pcs_capex:,.0f}원/kW (PCS)"
+                ),
                 capex_won=int(ess.capex(year=1)),
                 fixed_om_won_per_year=int(ess.fixed_om(year=1)),
                 produces=produced_by("ESS"),

@@ -445,6 +445,11 @@ def _level_map() -> Mapping[str, Mapping[str, float]]:
         # 와 다른 값을 준다 — 같으면 「교체 단가가 취득가와 같을 때」만
         # 재는 셈이 된다.
         "ess_replacement": MappingProxyType({"base": 350_000.0}),
+        # ★ R66/WP-2 — PCS 둘. 러너는 이 둘에 **기본값을 두지 않으므로**
+        # (`ledger_levels.py` 의 그 줄 · `grid_purchase_price` 와 같은 판단)
+        # 탐침 수준표도 갖고 있어야 한다. 값은 대장의 사본이 아니다.
+        "ess_pcs_unit_cost": MappingProxyType({"base": 250_000.0}),
+        "ess_pcs_share": MappingProxyType({"base": 0.20}),
         **design_levels(),
     }
 

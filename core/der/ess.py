@@ -164,6 +164,13 @@ class ESS(DER):
         backup_reserve_pct: float = 0.0,
         dt: int = SECONDS_PER_HOUR,
         capex_unit_won_per_kwh: float = 0.0,
+        #: ★ **정격출력(kW)당 PCS 단가** — 대장 `capex.ess.pcs_power` (R66/WP-2).
+        #: ⚠ **`capex_extra_won` 에 넣지 않는 이유**: 그 인자의 이름은 「부대비」이고
+        #: `_gross_capex_won()`·리포트가 그렇게 인쇄한다 — PCS 를 거기 넣으면 문면이
+        #: 거짓이 된다. ⚠⚠ **`capex_unit_won_per_kwh` 에 접어 넣지도 않는다** —
+        #: 접으면 초기투자가 다시 **용량에만** 비례하고 *「정격출력을 키우는 것이
+        #: 공짜」* 로 돌아간다(그것이 이 인자가 생긴 사유다).
+        capex_pcs_won_per_kw: float = 0.0,
         capex_extra_won: float = 0.0,
         vat_rate: float = 0.0,
         fixed_om_won_per_year: float = 0.0,
@@ -246,6 +253,7 @@ class ESS(DER):
         )
 
         self._capex_unit = float(capex_unit_won_per_kwh)
+        self._capex_pcs_per_kw = float(capex_pcs_won_per_kw)
         self._capex_extra = float(capex_extra_won)
         self._vat_rate = _in_range(
             vat_rate, 0.0, 1.0, field="ess.vat_rate", label="부가세율", name=name
@@ -573,11 +581,44 @@ class ESS(DER):
     # ── 비용 (§13.2.2 `RC-ALL-C1~C5`) ──────────────────────────────
 
     def _gross_capex_won(self) -> float:
-        """CAPEX 본체 — `단가 × 용량 + 부대비`. **부가세 제외** (§13.2.2 C-1)."""
-        return self._capex_unit * self.capacity_kwh + self._capex_extra
+        """CAPEX 본체 — `단가 × 용량` **+ `PCS 단가 × 정격출력`** + 부대비.
+        **부가세 제외** (§13.2.2 C-1).
+
+        ## ★ 왜 원/kW 항이 생겼는가 (R66/WP-2 · 사용자 판정 ③)
+
+        C-1 산식 원문은 `단가 × 용량 + 부대비` 이고 **원/kW 항이 없었다.** 그래서
+        **정격출력을 키우는 것이 공짜**였다 — 실측(`.orch/R66/probe/pcs_power.py`)에서
+        20 kW → 400 kW 를 훑어도 초기투자가 196,000,000원으로 **한 원도 움직이지
+        않았고**, 결론축은 40 kW 이상에서 포화했다(방전 가용량이 먼저 막는다).
+        즉 *「20가구에 PCS 몇 kW 가 맞는가」* 를 경제성으로 물을 수 없었다.
+
+        두 단가는 **축이 다르다** — 배터리는 원/kWh, PCS 는 원/kW 다. 그러므로
+        시스템 단가의 몫(`capex.ess.pcs_share_of_system`)으로 **PCS 를 떼기만** 하면
+        떼어낸 값이 다시 용량에 비례해 같은 함정이 남는다. 대장 항목 스스로 그것을
+        적어 두었다(*「용량이나 정격출력을 스윕하면서 이 몫을 상수로 쓰면 다른 사업을
+        그리게 된다 — 그때는 몫이 아니라 `capex.ess.pcs_power` 를 곱해야 한다」*).
+        ⇒ 몫은 **배터리 단가를 줄이는 데만** 쓰고(`core/casegrid/ess_build.py`),
+        PCS 는 이 항으로 세운다.
+
+        ⚠ **국내 학술 선례가 이 형태다** — 이예빈 외, 「피크 저감용 ESS의 화재예방
+        설비를 고려한 경제성 평가에 관한 연구」, 2024년 한국산학기술학회 춘계
+        학술발표논문집 식 (1): `C_ESS = (C_PCS · Q_PCS) + (C_bat · Q_bat) + α + β`
+        (`C_PCS` 원/kW · `Q_PCS` kW · `C_bat` 원/kWh · `Q_bat` kWh). 주소는
+        `.orch/R66/probe/sources.md` 가 갖는다.
+
+        ⚠ **기본값 0.0 이라 이 인자를 안 넘기는 호출자의 수는 한 원도 안 움직인다** —
+        `tests/der/test_ess.py::test_rc_all_c1_capex` 의 오라클(C-1 산식 원문)이
+        그대로 성립한다.
+        """
+        pcs = self._capex_pcs_per_kw * self.power_kw
+        return self._capex_unit * self.capacity_kwh + pcs + self._capex_extra
 
     def capex(self, *, year: int) -> Money:
-        """`RC-ALL-C1` — `단가 × 용량 + 부대비`. 초기 투자는 1년차에만."""
+        """`RC-ALL-C1` — `단가 × 용량 + PCS 단가 × 정격출력 + 부대비`. 1년차에만.
+
+        원/kW 항이 왜 생겼는지는 `_gross_capex_won()` 독스트링이 갖는다 —
+        여기 다시 적으면 사본이 되고 한쪽만 고쳐진다.
+        """
         if year != 1:
             return to_won(0)
         return to_won(self._gross_capex_won())
@@ -646,15 +687,27 @@ class ESS(DER):
         인버터에 대해 같은 이유로 갈라 담았고 **그쪽이 정본이다**
         (`pv.py::_acquisitions` 독스트링).
 
-        ⚠ **최초 PCS 를 취득분으로 세지 않는다.** 대장의 설비 단가
-        (`capex.ess.new`)는 설치 완료 기준이므로 최초 PCS 값은 이미
-        `_gross_capex_won()` 안에 있고, 여기서 또 세면 **초기투자에 없는 지출**의
-        잔존가치를 세게 된다. 반대로 본체 취득가에서 PCS 몫을 떼어내지도 않았다 —
-        떼려면 「설비 단가의 몇 %가 PCS 인가」를 새로 정해야 하고 **그 값이 대장에
-        없다**(`Q-2` 회신에 묶여 있다 · `status-human.md`). **모르는 값을 채우지
-        않는다.** 그 결과 최초 PCS 몫이 배터리 몫의 잔존가치에 남아 있으나, 그것은
-        배터리를 아직 교체하지 않은 해까지만이다 — 교체하는 순간 「마지막 취득
-        시점부터」 규약이 리셋한다. `PV` 의 인버터가 같은 자리에 있다.
+        ⚠ **최초 PCS 를 취득분으로 세지 않는다 — 그 사실은 R66/WP-2 뒤에도 참이다.**
+        달라진 것은 *「최초 PCS 값이 어디에 있는가」* 다: 종전에는 대장의 시스템 단가
+        (`capex.ess.new` · 설치 완료 기준)에 **묻혀** 있었고, 지금은
+        `_gross_capex_won()` 의 **명시적인 항**(`PCS 단가 × 정격출력`)이다. 어느
+        쪽이든 초기투자에 **이미 한 번** 서 있으므로 여기서 또 세면 **같은 지출의
+        잔존가치를 두 번** 세게 된다. ⇒ 아래 PCS 갈래는 `initial=None` 이며,
+        담기는 것은 **재취득분(교체비)뿐**이다.
+
+        ★ **「설비 단가의 몇 %가 PCS 인가」는 이제 대장에 있다** (R66/WP-1 ·
+        `capex.ess.pcs_share_of_system` 20.0% · `capex.ess.pcs_power` 250,000원/kW).
+        종전 이 자리에는 *「그 값이 대장에 없다 … 모르는 값을 채우지 않는다」* 라고
+        적혀 있었고 **그 문면은 이제 낡았다.** 그 몫이 실제로 쓰이는 자리는
+        `core/casegrid/ess_build.py` 이며 **배터리 단가를 줄이는 데만** 쓴다 —
+        PCS 는 위 원/kW 항이 세므로, 몫으로 또 떼면 두 번 떼는 것이 된다.
+
+        ⚠ 그래도 **본체 취득가에서 PCS 몫을 떼지는 않았다** — 아래 배터리 갈래의
+        최초 취득가는 여전히 `capex(year=1)` **전액**(부대비·PCS 항 포함)이다.
+        그래서 최초 PCS 몫이 배터리 몫의 잔존가치에 남아 있으나, 그것은 배터리를
+        아직 교체하지 않은 해까지만이다 — 교체하는 순간 「마지막 취득 시점부터」
+        규약이 리셋한다. `PV` 의 인버터가 **같은 자리에 그대로 있다**
+        (`pv.py::_acquisitions` 의 같은 ⚠ 절 · 그쪽도 최초 인버터를 떼지 않았다).
 
         ⚠ **`replacement_schedule()` 이 이 함수에서 파생된다** — 두 곳이 갈리면
         위 비대칭이 조용히 다시 생기므로 **같은 조건을 두 곳에 적지 않는다.**
@@ -668,9 +721,14 @@ class ESS(DER):
 
         ⚠ **위 `retire` 갈래는 실행 경로의 수를 움직이지 않는다** — 러너의 `ESS` 는
         `replace` 이므로 그 갈래를 타지 않는다(아래 물가 계수는 **움직인다**).
-        ★ **PCS 갈래도 마찬가지다** — 러너의 `ESS` 에는 PCS 가 없어 결론축이
-        움직이지 않는다. 그래서 급하지 않았고, PCS 를 쓰는 케이스가 들어오는 날
-        조용히 틀리는 것을 막으려고 지금 닫는다.
+        ★ **PCS 갈래도 마찬가지다** — 러너의 `ESS` 는 `pcs_lifetime=None` 이라 아래
+        `if life is None: continue` 로 PCS 를 **통째로 건너뛴다**(교체비도 잔존가치도
+        없다 — 대칭이므로 위 R40 ② 의 비대칭이 생기지 않는다). ⚠⚠ **「PCS 가 없다」로
+        읽지 마라 — R66/WP-2 뒤로 러너의 `ESS` 는 PCS 를 «초기투자에» 갖는다**
+        (`_gross_capex_won()` 의 원/kW 항). 없는 것은 **수명 하나**이고, 그것은 조사가
+        찾은 값(국내 학술 10년)이 이 저장소의 설계점과 표본 규모가 크게 달라 **사용자
+        판정에 올려 둔 상태**여서다(`.orch/R66/result_2.md` §1). 값이 정해지는 날
+        이 인자에 넣으면 아래 루프가 그대로 돈다.
 
         ## 재취득분에 **물가 계수를 곱한다** (R40 · `DV-7`)
 
