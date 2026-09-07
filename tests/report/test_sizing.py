@@ -254,3 +254,116 @@ def test_without_a_reference_load_no_mismatch_line_is_invented() -> None:
 
     assert not [line for line in lines if line.startswith("- 어긋남")]
     assert len([line for line in lines if line.startswith("| 대장 ")]) == 3
+
+
+# ── R65/WP-2c — **이 역산이 답하는 사업이 본문과 같은가** ──────────────────────
+#
+# ⚠ 이 절이 없어 CI 의 게이트 ②(NFR-105 · 테스트 동반)가 빨간불이었다.
+# `core/report/sizing.py` 가 배수를 받도록 바뀌었는데 **그것을 재는 시험이
+# 함께 오지 않았다** — 그 게이트는 `pull_request` 에서만 돌아 로컬 전건이
+# 초록불이어도 드러나지 않는다(`CLAUDE.md` 「로컬 초록불 ≠ CI 초록불」).
+
+
+def _scaling_inputs() -> tuple[dict[str, float], float, float, float]:
+    """배수 시험 셋이 함께 쓰는 입력 — **수를 세 곳에 베끼지 않는다.**"""
+    variable = next(v for v in design_variables() if v.name == "pv_capacity_kw")
+    capacity_factor = 0.15
+    base_kwh = variable.low * HOURS_PER_YEAR * capacity_factor
+    load_levels = {"low": base_kwh * 0.8, "base": base_kwh, "high": base_kwh * 1.2}
+    return load_levels, capacity_factor, variable.low, variable.high
+
+
+def test_the_site_size_multiplies_both_the_load_and_the_search_band() -> None:
+    """★★ **부하와 탐색 구간이 «같은» 배수를 탄다** (R65/WP-2c).
+
+    한쪽만 곱하면 이 표가 본문과 다른 사업을 그린다 — 본문 4절은 20호면
+    60 kW 로 도는데 이 역산이 「1~9 kW 구간」과 한 호 부하로 답하던 것이
+    R65 가 닫은 어긋남이다. ⛔ 띠의 **수**(`low`·`high`)를 고친 것이 아니라
+    **곱한 것**이므로, 여기서도 `design_variables()` 에서 읽어 곱해 견준다.
+    """
+    load_levels, capacity_factor, low_kw, high_kw = _scaling_inputs()
+    count = 20
+
+    sizing = build_self_sufficiency_sizing(
+        load_levels=load_levels,
+        capacity_factor=capacity_factor,
+        capacity_factor_source="시험 탐침값",
+        search_low_kw=low_kw,
+        search_high_kw=high_kw,
+        household_count=count,
+    )
+
+    assert sizing.household_count == count
+    assert sizing.search_low_kw == pytest.approx(low_kw * count), "탐색 하한이 한 호분이다"
+    assert sizing.search_high_kw == pytest.approx(high_kw * count), "탐색 상한이 한 호분이다"
+    for point, level in zip(sizing.points, ("low", "base", "high"), strict=True):
+        assert point.annual_load_kwh == pytest.approx(load_levels[level] * count), (
+            f"{level}: 부하가 단지 규모로 곱해지지 않았다"
+        )
+
+
+def test_the_appliance_load_is_added_before_the_site_size_multiplies() -> None:
+    """★★★ **더한 «뒤에» 곱한다 — 차례가 뜻을 정한다** (R65/WP-2c).
+
+    대장 `load.household.annual` 은 *「추가 전력사용기기가 없는 가구 기준」*
+    이고 본문은 `(annual + 기기) × 호수` 로 총량을 낸다
+    (`core/casegrid/seasonal_dispatch.py::_load_total_kwh`). 곱한 뒤에 더하면
+    기기 부하가 **한 호분만** 들어와 이 표의 「필요 용량」이 본문이 실제로
+    감당해야 하는 것보다 **작게** 나온다 — 그 어긋남은 아무 예외도 내지 않는다.
+    """
+    load_levels, capacity_factor, low_kw, high_kw = _scaling_inputs()
+    count, extra = 20, 5_459.0
+
+    sizing = build_self_sufficiency_sizing(
+        load_levels=load_levels,
+        capacity_factor=capacity_factor,
+        capacity_factor_source="시험 탐침값",
+        search_low_kw=low_kw,
+        search_high_kw=high_kw,
+        reference_loads=[("참고", load_levels["base"])],
+        extra_appliance_load_kwh=extra,
+        household_count=count,
+    )
+
+    base_point = sizing.points[1]
+    added_then_scaled = (load_levels["base"] + extra) * count
+    scaled_then_added = load_levels["base"] * count + extra
+    assert base_point.annual_load_kwh == pytest.approx(added_then_scaled)
+    assert base_point.annual_load_kwh != pytest.approx(scaled_then_added), (
+        "곱한 뒤에 더했다 — 기기 부하가 한 호분만 들어왔다"
+    )
+
+    # ⚠ 참고 부하(사용자 예시)에도 **같은** 처리를 한다. 두 부하를 나란히 놓고
+    # 「어느 쪽이 맞는가」를 묻는 것이 이 표의 목적인데, 한쪽만 곱하면 그 물음이
+    # 규모 차이로 덮인다.
+    assert sizing.points[-1].annual_load_kwh == pytest.approx(added_then_scaled), (
+        "참고 부하만 한 호분으로 남아 대장 점과 규모가 갈렸다"
+    )
+
+
+def test_an_unspecified_site_size_is_unchanged_to_the_last_element() -> None:
+    """★ **미지정이면 이 두 인자가 생기기 전과 원소 하나까지 같다.**
+
+    배수가 `1` 이고 기기 부하가 `0` 이므로 **인자를 주지 않은 호출과 같은
+    객체**가 나와야 한다. 이것이 참이라야 「움직인 것은 값이지 배선이 아니다」
+    가 성립한다.
+    """
+    load_levels, capacity_factor, low_kw, high_kw = _scaling_inputs()
+    common = {
+        "load_levels": load_levels,
+        "capacity_factor": capacity_factor,
+        "capacity_factor_source": "시험 탐침값",
+        "search_low_kw": low_kw,
+        "search_high_kw": high_kw,
+        "reference_loads": [("참고", load_levels["base"])],
+    }
+
+    before = build_self_sufficiency_sizing(**common)
+    after = build_self_sufficiency_sizing(
+        **common, household_count=None, extra_appliance_load_kwh=0.0
+    )
+
+    assert after == before, "미지정 실행이 배선 전과 달라졌다"
+    assert all("호" not in point.source_label for point in after.points), (
+        "미지정인데 점 이름에 단지 규모가 붙었다"
+    )
