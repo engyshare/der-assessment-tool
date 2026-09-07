@@ -179,13 +179,28 @@ def test_control_group_the_real_ledger_still_shows_a_shortfall() -> None:
     항목이 없습니다」* 로 거부한다 — 실측으로 밟았다). 진짜 대장의 두 항목을
     **그대로 복제**했고 값은 한 자도 바꾸지 않았다(그 파일의 규약: *「나머지 전
     항목은 진짜 대장과 같다」*). 그래서 위쪽 흑자 시험의 값은 여전히 안 움직인다.
+
+    ## ⚠ 값이 여섯 번째로 바뀌었다 — **역시 재는 것은 그대로다** (R66/WP-5)
+
+    사용자 지시 **둘**이 함께 들어왔다 — 히트펌프 부하가 조사 결과로 갈리고
+    (`load.heatpump.annual` 2,675 → **3,289.0** · 없던 급탕 501.6 이 서고 냉방이
+    조사값 712.4 로 갈렸다 · 계절 몫 넷도 함께) 대장에 **동시율 80%**
+    (`design.coincidence_factor`)가 섰다. `-167457263` → **`-194228932`**
+    (−26,771,669). 산식·손계산·「무엇이 안 움직였나」는 그 골든 파일의
+    R66/WP-5 블록이 갖는다.
+    ⚠ **이번에는 세 시나리오의 이동 폭이 «같다»** — 움직인 것이 **운영
+    현금흐름**이고 초기투자가 1원도 안 움직여 보조율이 나눌 대상이 없다.
+    ⚠ **파생 대장에는 `design.coincidence_factor` 를 옮겨 적었다** —
+    `_LEDGER_VARS` 의 스윕 축이므로 `build_level_map()` 이 그 키를 요구한다.
+    ⛔ **`load.heatpump.annual` 은 그 파일에 아예 없다**(종전부터 없었다) —
+    그래서 위쪽 흑자 시험의 부하는 여전히 히트펌프 없이 돌고 값이 안 움직인다.
     """
     report = build_case_report(PROBE_SCENARIO_PATH, assumptions_path=REAL_ASSUMPTIONS_PATH)
 
     assert report.recovers_within_horizon is False
-    assert report.metrics["npv"] == -167457263.0, (
+    assert report.metrics["npv"] == -194228932.0, (
         "대조군의 순현재가치가 fixtures/golden/scenario_subsidy_80.yaml 의 "
-        "실측(-167457263)과 어긋난다 — 진짜 대장이나 core/ 가 움직였다는 뜻이다"
+        "실측(-194228932)과 어긋난다 — 진짜 대장이나 core/ 가 움직였다는 뜻이다"
     )
 
     rendered = render_markdown(report)

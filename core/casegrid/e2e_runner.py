@@ -284,7 +284,10 @@ PV_SELF_CONSUMPTION_RATIO = 0.0
 
 
 def _site_load_kw(
-    household: Load | None, dispatch: SystemDispatch, ctx: DispatchContext
+    household: Load | None,
+    dispatch: SystemDispatch,
+    ctx: DispatchContext,
+    coincidence_factor: float,
 ) -> list[float] | None:
     """가구 부하의 시각별 kW — `ESS.reducible_peak_kw(site_load_kw=...)` 로 간다
     (판정 §4·B-3, `docs/decisions-2026-08-31-R48.md`).
@@ -298,12 +301,43 @@ def _site_load_kw(
 
     ⚠ **kWh 를 kW 로 명시 환산한다.** 스텝이 1시간이면 수는 같지만 단위가
     다르고, `dt` 가 바뀌는 날 조용히 틀린다.
+
+    ## ★★★ **동시율이 걸리는 자리는 여기 하나다** (R66/WP-5 · 사용자 지시)
+
+    사용자 문면은 *「동시율은 내가 임의로 정하기 어려움. 초기설정은 80%로
+    하고, 설정을 통해 변경하는 한 것으로 설계해줘」* 까지이고 **적용 자리를
+    말하지 않았다.** 그 자리를 정한 것은 판정
+    (`docs/decisions-2026-09-07-R66.md` §3)이며 *「출력·ESS 용량에 걸리고
+    연간 전력량·태양광 용량에는 걸리지 않는다」* 다. 이 함수의 반환값이
+    **단지의 시각별 최대수요(kW)** 이므로 그 「출력」의 자리가 여기다.
+
+    ⛔⛔ **연간 부하 kWh 총량에 곱하지 마라.** `annual_load_kwh` ·
+    `extra_appliance_load_kwh` · `household_scale()` 근처에 곱하면 **부하를
+    20% 지우는 것**이고, 스무 집이 1년에 쓰는 전기의 합은 동시성과 무관하므로
+    그것은 *쓰지 않은 전기를 안 쓴 것으로 만드는* 계산이다 — 결론축이
+    **좋아지는 쪽으로** 틀린다.
+    ⛔ **`load_profile_kwh`(부하 추종 방전용)에도 곱하지 마라** — 그것은
+    kW 가 아니라 **에너지**이고, 곱하면 같은 부하가 계산 안에서 두 크기를
+    갖는다(방전량은 줄고 계통 수전량은 안 줄어 잔차가 어디로도 가지 않는다).
+    ⛔ **태양광 용량 역산에도 걸지 않는다** — 연간 총량 ÷ (8,760 × 이용률)
+    이므로 동시성이 들어올 자리가 없다.
+
+    ⚠ **곱하지 않은 것이 「빠뜨린 것」이 아니다.** 위 셋은 판정이 명시로
+    제외한 자리이며, 다음 사람이 「일관성」을 이유로 넣으면 그 순간 결론축이
+    조용히 좋아진다. ⚠ **ESS 용량(kWh) 역산에는 걸려야 하는데 그 역산 자체가
+    아직 없다**(판정 §6 착수 4) — 세워지면 그 자리에 함께 태운다.
+
+    ⚠ **배수로 받는다**(80% → `0.8`). `%` → 배수 환산은
+    `core/casegrid/ledger_levels.py::_LEDGER_VARS` 한 곳에서만 한다.
+    기본값을 두지 않는 이유는 `grid_purchase_price` 와 같다 — 두면 수준표에서
+    이 변수를 빼도 러너가 옛 값으로 계속 계산하고 아무 예외도 나지 않는다.
     """
     if household is None:
         return None
     hours_per_step = ctx.dt / SECONDS_PER_HOUR
     return [
-        -v / hours_per_step for v in dispatch.per_resource[household.name].electric
+        -v * coincidence_factor / hours_per_step
+        for v in dispatch.per_resource[household.name].electric
     ]
 
 
@@ -770,9 +804,15 @@ def run_single_case_e2e(
         _resolve(case_values.get("ess_fixed_om", "base"), "ess_fixed_om", level_map),
         _resolve(case_values.get("ess_replacement", "base"), "ess_replacement", level_map),
     )
-    ess_pcs_capex, ess_pcs_share = (
+    # ★★★ **R66/WP-5 가 동시율을 이 대입에 얹었다** (`design.coincidence_factor` ·
+    # 사용자 지시 · 판정 §3). 새 statement 를 만들지 않는 이유는 위 넷과 같다 —
+    # `PLR0915`(이 함수의 statement 상한 50) 여유가 0 이고, 셋 다 `_resolve()`
+    # 스칼라 조회다. ⚠ **여기서 곱하지 않는다** — 곱하는 자리는
+    # `_site_load_kw` 하나이며 그 독스트링이 *어디에 곱하면 안 되는가*를 갖는다.
+    ess_pcs_capex, ess_pcs_share, coincidence_factor = (
         _resolve(case_values.get("ess_pcs_unit_cost", "base"), "ess_pcs_unit_cost", level_map),
         _resolve(case_values.get("ess_pcs_share", "base"), "ess_pcs_share", level_map),
+        _resolve(case_values.get("coincidence_factor", "base"), "coincidence_factor", level_map),
     )
 
     # 1·2. Resources & Dispatch — ★★★ **계절 넷의 대표일을 각각 돌려 합산한다**
@@ -842,7 +882,7 @@ def run_single_case_e2e(
         nwas_price_won_per_kwh=nwas_price_won_per_kwh,
         cp_price_won_per_kw_month=cp_price_won_per_kw_month,
         demand_charge_won_per_kw_month=demand_charge,
-        site_load_kw=_site_load_kw(household, dispatch, ctx),
+        site_load_kw=_site_load_kw(household, dispatch, ctx, coincidence_factor),
     )
     # ★ **계약구조가 주어지면 그것이 잉여 화폐화 편익을 고른다 (FR-205-AC1).**
     #

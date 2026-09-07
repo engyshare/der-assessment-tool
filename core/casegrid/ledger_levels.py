@@ -228,6 +228,21 @@ _LEDGER_VARS: tuple[tuple[str, str, float], ...] = (
     # 이 환산을 요구한다 — 즉 여기서 `1.0` 을 주면 빨간불이다.
     ("ess_pcs_unit_cost", "capex.ess.pcs_power", 1.0),
     ("ess_pcs_share", "capex.ess.pcs_share_of_system", 0.01),
+    # ★★★ **동시율** — 사용자 지시 (R66/WP-5 · `docs/decisions-2026-09-07-R66.md`
+    # §1ⓑ *「동시율은 내가 임의로 정하기 어려움. 초기설정은 80%로 하고, 설정을
+    # 통해 변경하는 한 것으로 설계해줘」*).
+    #
+    # ⚠⚠ **이 축이 걸리는 자리는 한 곳뿐이다** — `core/casegrid/e2e_runner.py::
+    # _site_load_kw` 의 반환값(시각별 kW)이다. 그 함수 독스트링이 *왜 거기 하나인가*
+    # 와 *어디에 걸면 안 되는가* 를 갖는다. ⛔ **연간 부하 kWh 총량에 곱하면
+    # 부하를 20% 지우는 것**이고 결론축이 좋은 쪽으로 틀린다(대장 항목의
+    # `applicable_scope` 가 그 오독을 ⛔⛔ 로 막는다).
+    #
+    # ⚠ **배율 0.01 은 단위 환산이다** — 대장이 `%` 이고 러너는 배수를 쓴다.
+    # 145줄 `pv_inverter_share` 의 선례를 그대로 따랐고, 아래
+    # `test_percent_per_year_is_converted_once` 가 `%` 로 시작하는 단위 전건에
+    # 이 환산을 요구한다 — 여기서 `1.0` 을 주면 빨간불이다.
+    ("coincidence_factor", "design.coincidence_factor", 0.01),
     # ⚠ **`benefit.rec_weight_pv` 는 여기 없다** — `test_levels_come_from_
     # the_ledger_not_from_a_copy` 가 모든 스윕 축에 `low < base < high` **강한
     # 부등호**를 요구하는데, 이 라운드는 가중치 폭을 조사하지 않아 세 수준이

@@ -63,6 +63,10 @@ _LEVEL_MAP = {
     # 탐침 수준표도 갖고 있어야 한다. 값은 대장의 사본이 아니다.
     "ess_pcs_unit_cost": MappingProxyType({"base": 250_000.0}),
     "ess_pcs_share": MappingProxyType({"base": 0.20}),
+    # ★ R66/WP-5 — 동시율. 러너가 기본값을 두지 않으므로 탐침도 갖고 있어야
+    # 한다. **끈 값(1.0 = 100%)을 준다** — 사유는
+    # `tests/casegrid/test_coincidence_factor_wiring.py` 머리말이 갖는다.
+    "coincidence_factor": MappingProxyType({"base": 1.0}),
     **design_levels(),
 }
 

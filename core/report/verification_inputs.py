@@ -141,8 +141,8 @@ def execution_input_lines(report: CaseReport) -> list[str]:
 
     종전에는 앞의 넷이 대장에서 `track: blocked` · 값 없음이라 **애초에
     대장에서 올 수 없었다.** R65 가 그 셋에 값을 세웠다
-    (`load.household.count` 20 · `load.heatpump.annual` 2,675 ·
-    `load.ev.annual` 2,784)이고, 계절 몫은 형상 자산의
+    (`load.household.count` 20 · `load.heatpump.annual` **3,289.0**(R66/WP-5 가
+    2,675 에서 갈았다 — 급탕이 섰다) · `load.ev.annual` 2,784)이고, 계절 몫은 형상 자산의
     `appliance_season_shares:` 절이 갖는다. ⇒ **통로가 둘 이상이 되었고
     실행 입력이 이긴다** — 시나리오·화면이 적으면 그것이, 적지 않으면
     대장·자산이 답한다(`core/casegrid/appliance_load.py::

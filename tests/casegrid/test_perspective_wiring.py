@@ -101,12 +101,20 @@ def test_operator_perspective_keeps_the_conclusion_axis(report) -> None:
     (교체 단가는 별 항목 `capex.ess.replacement` 에서 오고 PCS 수명은 아직
     `None` 이다). 경위는 `fixtures/golden/scenario_unsubsidized.yaml` 의 R66 블록이
     갖는다.
+
+    ⚠⚠⚠⚠ **R66/WP-5 가 −328,257,263 → −355,028,932원으로 옮겼다** (사용자 지시
+    둘). ★ **이번에는 초기투자가 1원도 안 움직였다** — 움직인 것은 **운영
+    현금흐름**이다: ⓐ 히트펌프 부하가 조사 결과로 2,675 → **3,289.0 kWh/호·년**
+    (없던 급탕 501.6 이 서고 냉방이 조사값 712.4 로 갈렸다)이 되어 사 오는
+    전기가 늘고 잉여판매·REC 가 줄었다(**−19,367,215**) ⓑ 대장에 **동시율
+    80%** 가 서서 첨두 저감이 3,993,600 → 3,424,374원/년이 됐다
+    (**−7,404,454**). 손계산은 그 골든 파일의 **R66/WP-5 블록**이 갖는다.
     """
     operator = next(
         r for r in report.perspectives.results if r.perspective is Perspective.OPERATOR
     )
     assert int(operator.npv_value) == int(report.metrics[CONCLUSION_METRIC])
-    assert int(operator.npv_value) == -328_257_263
+    assert int(operator.npv_value) == -355_028_932
 
 
 @pytest.mark.req("FR-402-AC7")
@@ -184,7 +192,10 @@ def test_npv_row_prints_no_number_for_perspectives_without_cost_basis(report) ->
     # ⚠⚠⚠ R66/WP-2 가 ESS 초기투자에 PCS 원/kW 항을 세우며(+5,000,000원)
     # −323,257,263 → −328,257,263원이 됐다 (위 `test_operator_perspective_keeps_
     # the_conclusion_axis` 의 ⚠⚠⚠ 절이 산식을 갖는다).
-    assert "-328,257,263원" in npv_line, npv_line
+    # ⚠⚠⚠⚠ R66/WP-5 가 히트펌프 부하(2,675 → 3,289.0 · 급탕 신설)와 동시율
+    # 80% 를 함께 세우며 −328,257,263 → −355,028,932원이 됐다 (같은 함수의
+    # ⚠⚠⚠⚠ 절이 분해와 손계산을 갖는다).
+    assert "-355,028,932원" in npv_line, npv_line
     cells = [cell.strip() for cell in npv_line.strip().strip("|").split("|")]
     assert "0원" not in cells, npv_line
     assert "0" not in cells, npv_line
@@ -217,7 +228,16 @@ def test_cost_total_row_prints_not_allocated_for_perspectives_without_cost_basis
     # 둘 − 잔존가치 둘` 이고, 운영분만 더하면 272,935,338원이라 이 수가 되지
     # 않는다(196,000,000 을 더해야 468,935,338 이다). 그래서 이번 이동 폭이
     # 초기투자 증가분과 **정확히 같다** — 운영 행은 한 원도 안 움직였다.
-    assert "473,935,338원" in cost_line, cost_line
+    # ⚠⚠⚠⚠ R66/WP-5 — 이번은 **정반대다.** 초기투자가 1원도 안 움직이고
+    # **전력 구매 비용만** 올랐다: 히트펌프 부하가 2,675 → 3,289.0 kWh/호·년
+    # (한 호 +614 × 20호 = 연 +12,280kWh)이 되어 1년차 운영비가 12,719,530 →
+    # 14,080,292원(+1,360,762)이고, 20년 단순 누계 **+27,215,240** 이 그대로
+    # 이 칸에 실려 473,935,338 → **501,150,578원**이 됐다.
+    # ⚠ **동시율은 이 칸을 움직이지 않는다** — 최대수요(kW)에만 걸리므로 사는
+    # 전기의 kWh 가 한 자리도 안 바뀐다(판정 §3 · `tests/casegrid/
+    # test_coincidence_factor_wiring.py` 가 그 동일성을 잰다). 동시율이 지는
+    # 몫은 아래 편익 합계 쪽이다.
+    assert "501,150,578원" in cost_line, cost_line
 
 
 def test_benefit_total_row_always_prints_a_real_number(report) -> None:
@@ -260,12 +280,24 @@ def test_benefit_total_row_always_prints_a_real_number(report) -> None:
     그 둘은 부하·설비에 비례해 커지는데, 사업자는 거기에 **잉여판매·REC** 를
     더 지고 그쪽은 계통 역송량에 붙는다. 20호 단지는 낮에도 부하가 커져
     **역송 자체가 규모만큼 늘지 않으므로** 사업자의 배수가 더 작다.
+
+    ⚠⚠⚠ **R66/WP-5 가 둘 다 «내렸다» — 이 라운드에 처음이다.** 참여 주민
+    79,872,000 → **68,487,480원** · 사업자 83,142,400 → **69,195,580원**.
+    ⓐ **참여 주민의 감소는 통째로 동시율 몫이다** — 그쪽이 지는 것은 첨두
+    절감뿐이고, 그것이 1년차 3,993,600 → 3,424,374원이 되어 20년 단순 누계가
+    **68,487,480**(= 3,424,374 × 20)이다.
+    ⓑ **사업자는 거기에 잉여판매·REC 를 더 진다** — 히트펌프 부하(2,675 →
+    3,289.0)가 낮의 태양광을 먹어 계통 역송이 줄면서 잉여판매 100,010 →
+    21,535 · REC 63,510 → 13,870원/년이 됐다. 68,487,480 + (21,535 + 13,870)
+    × 20 = **69,195,580원**.
+    ★ 그래서 이 칸이 **두 지시가 서로 다른 관점에 실린다**는 것을 보인다 —
+    동시율은 주민·사업자 **둘 다**에, 히트펌프의 역송 감소는 **사업자만**에.
     """
     text = render_markdown(report)
     benefit_line = next(line for line in text.splitlines() if line.startswith("| 편익 합계 |"))
     assert "미산출" not in benefit_line and "미배분" not in benefit_line
-    assert "79,872,000원" in benefit_line  # 참여 주민
-    assert "83,142,400원" in benefit_line  # 사업자
+    assert "68,487,480원" in benefit_line  # 참여 주민
+    assert "69,195,580원" in benefit_line  # 사업자
 
 
 def test_header_row_pairs_repository_and_user_vocabulary(report) -> None:
