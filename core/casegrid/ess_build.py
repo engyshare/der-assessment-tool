@@ -49,9 +49,24 @@ from core.der.ess import ESS, ESSChargeSource, ESSOperatingMode
 from core.der.ess_schedule import ESSDischargeAllocation
 from core.valuestream import PeakShaving, TouArbitrage
 
-#: ESS **정격출력**(kW). 용량과 달리 설계 변수로 올리지 않았다 — 이 값이
+#: ESS **정격출력**(kW) — ★ **한 호분이다** (R65/WP-2c).
+#:
+#: 용량과 달리 **설계 변수로 올리지 않았다** — 이 값이
 #: `reducible_peak_kw = min(power_kw, 가용량/방전창)` 의 **상한**이라, 고정해
 #: 두어야 용량 스윕이 *「용량을 키우면 어디서 출력에 막히는가」* 를 드러낸다.
+#:
+#: ★★ **그 사유는 단지 규모를 곱해도 무너지지 않는다** — 단지 규모는 **설계
+#: 선택이 아니라 규모 환산**이기 때문이다. 20호 단지 안에서 용량을 스윕하면
+#: 여전히 **(5 kW/호 × 20호 = 100 kW)** 라는 출력 상한에 부딪히고, 드러내는
+#: 성질이 그대로다. 고정되는 것은 **호당 출력**이지 단지 출력이 아니다.
+#:
+#: ⛔ **이 수를 키워 거부를 피하지 마라.** 20호 실행이 `ess.power_kw` 로
+#: 거부됐던 것(R65/WP-2b)은 이 값이 작아서가 아니라 **배수가 안 걸려서**였다 —
+#: 아래 `_case_ess_spec(household_scale_factor=...)` 가 그 배수를 받는다.
+#: `pv_capacity_kw` base 3 kW · `ess_capacity_kwh` base 10 kWh 가 한 호분인
+#: 것과 **같은 성질**이며(`core/casegrid/ledger_levels.py::_DESIGN_VARS`),
+#: 셋이 같은 배수를 타지 않으면 같은 실행 안에서 설비 셋이 서로 다른 규모의
+#: 사업을 그린다.
 ESS_POWER_KW = 5.0
 ESS_RTE_PCT = 90.0
 ESS_SOC_MIN_PCT = 10.0
@@ -68,6 +83,7 @@ ESS_CYCLES_PER_YEAR = 365.0
 def _case_ess_spec(
     *,
     capacity_kwh: float,
+    household_scale_factor: float = 1.0,
     operating_mode: ESSOperatingMode | str,
     charge_source: ESSChargeSource | str,
     pv_surplus_profile_kwh: Sequence[float] | None,
@@ -97,7 +113,13 @@ def _case_ess_spec(
     return dict(
         name="e2e-ess",
         capacity_kwh=capacity_kwh,
-        power_kw=ESS_POWER_KW,
+        # ★★★ **정격출력도 한 호 규모다 — 단지 규모를 곱한다** (R65/WP-2c).
+        # 위 `ESS_POWER_KW` 옆 주석이 정본이다. `pv_capacity_kw`·
+        # `ess_capacity_kwh` 가 러너에서 같은 배수를 타므로
+        # (`core/casegrid/e2e_runner.py` 의 ★★★ 절) **여기만 안 타면 같은
+        # 어긋남이 설비 한 자리에 남는다.** ⚠ 배수 `1.0` 이 기본이고, 그때
+        # 이 곱은 이 인자가 생기기 전과 **원소 하나까지** 같다.
+        power_kw=ESS_POWER_KW * household_scale_factor,
         rte_pct=ESS_RTE_PCT,
         soc_min_pct=ESS_SOC_MIN_PCT,
         soc_max_pct=ESS_SOC_MAX_PCT,
@@ -157,6 +179,7 @@ def _case_ess_spec(
 def build_case_ess(
     *,
     capacity_kwh: float,
+    household_scale_factor: float = 1.0,
     operating_mode: ESSOperatingMode | str,
     charge_source: ESSChargeSource | str,
     pv_surplus_profile_kwh: Sequence[float] | None,
@@ -176,6 +199,7 @@ def build_case_ess(
     """
     return ESS(**_case_ess_spec(
         capacity_kwh=capacity_kwh,
+        household_scale_factor=household_scale_factor,
         operating_mode=operating_mode,
         charge_source=charge_source,
         pv_surplus_profile_kwh=pv_surplus_profile_kwh,
@@ -193,6 +217,7 @@ def build_case_ess_fleet(
     *,
     shares: Sequence[ESSShare] | None,
     capacity_kwh: float,
+    household_scale_factor: float = 1.0,
     operating_mode: ESSOperatingMode | str,
     charge_source: ESSChargeSource | str,
     pv_surplus_profile_kwh: Sequence[float] | None,
@@ -233,6 +258,7 @@ def build_case_ess_fleet(
     """
     spec = _case_ess_spec(
         capacity_kwh=capacity_kwh,
+        household_scale_factor=household_scale_factor,
         operating_mode=operating_mode,
         charge_source=charge_source,
         pv_surplus_profile_kwh=pv_surplus_profile_kwh,

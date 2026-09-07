@@ -37,7 +37,10 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 from core.assumption.provider import AssumptionSet
-from core.casegrid.appliance_load import APPLIANCE_SEASON_SHARE_UNSPECIFIED
+from core.casegrid.appliance_load import (
+    APPLIANCE_SEASON_SHARE_UNSPECIFIED,
+    asset_appliance_season_shares,
+)
 from core.casegrid.load_shift import DR_SHIFTABLE_SHARE_LEDGER_KEY
 from core.casegrid.profiles import load_daily_shapes
 from web.render_load_shape import SEASON_SHARE_PREFIX
@@ -397,12 +400,37 @@ def test_the_result_screen_says_what_shape_it_ran_on(client: TestClient) -> None
     바꿀 수 있게 해 놓고 결과가 그것을 안 적으면 확인할 방법이 없다. 특히
     계절 몫은 **안 준 실행도 글자로** 적어야 한다 — 빈칸이면 「기본 부하와
     같은 몫으로 돌았다」와 「그 축이 없다」가 화면에서 같아진다.
+
+    ## ⚠⚠ 「안 준 실행」의 뜻이 R65 에 달라졌다 — **자산이 답한다**
+
+    옛 단언은 *「화면에 안 적으면 「미지정 — 기본 부하와 같은 계절 몫으로
+    돌았다」가 실린다」* 였다. R65/WP-2 가 사용자 요구(*「계절별 냉난방 부하 …
+    수치를 사용」*)에 따라 형상 자산
+    (`fixtures/profiles/representative-day.yaml`)에 `appliance_season_shares:`
+    절을 세웠고, 그때부터 **화면에 안 적은 실행도 그 몫으로 돈다.**
+
+    ⇒ 그 실행에서 「미지정」을 적으면 **거짓**이다 — 몫이 실제로 걸려 있다.
+    재는 것을 *「무엇으로 돌았는지 화면이 적는가」* 로 두되, 안 준 실행에서는
+    **자산이 준 몫이 계절마다 실리는가**를 본다. ⚠ 「미지정」 갈래 자체는
+    사라지지 않았다(자산이 그 절을 갖지 않는 실행) — 그 갈래를 재는 자리는
+    `tests/report/test_verification_inputs.py::
+    test_unspecified_inputs_print_a_sentence_not_a_blank` 다.
     """
     unspecified = client.get("/ui/run", params={"scenario": _SCENARIO}).text
-    assert APPLIANCE_SEASON_SHARE_UNSPECIFIED in unspecified, (
-        f"계절 몫을 안 준 실행이 「{APPLIANCE_SEASON_SHARE_UNSPECIFIED}」를 "
-        "적지 않았다"
+    asset_shares = asset_appliance_season_shares()
+    assert asset_shares is not None, (
+        "형상 자산이 계절 몫을 갖지 않는다 — 그러면 옛 단언(「"
+        f"{APPLIANCE_SEASON_SHARE_UNSPECIFIED}」가 실린다)으로 되돌려야 한다"
     )
+    assert APPLIANCE_SEASON_SHARE_UNSPECIFIED not in unspecified, (
+        "자산이 계절 몫을 준 실행에 「미지정」이 실렸다 — 몫이 걸려 있는데 "
+        "안 걸렸다고 적는 것이다"
+    )
+    for name, share in asset_shares.by_season:
+        assert f'data-season="{name}"' in unspecified, f"계절 {name} 이 화면에 없다"
+        assert f'data-season-share="{share}"' in unspecified, (
+            f"계절 {name} 의 몫 {share} 가 화면의 날값에 없다"
+        )
     assert "총량은 그대로" in unspecified, (
         "이 두 축이 총량을 바꾸지 않는다는 것을 결과 화면이 적지 않는다 — "
         "검토자가 「부하가 늘었다」로 읽는다"

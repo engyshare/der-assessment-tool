@@ -1,15 +1,23 @@
-"""**거부가 화면에서 읽히는가** — 가구 수를 늘린 실행 (R64/WP-8b · `NFR-303-M1`).
+"""**거부가 화면에서 읽히는가** — 가구 수 칸이 낸 거부 (R64/WP-8b · `NFR-303-M1`).
+
+## ⚠⚠ R65/WP-2c — **재던 거부가 사라졌다. 재는 성질은 그대로 둔다**
+
+이 파일이 태우던 거부는 *「가구 수를 3호 이상으로 적으면 낮에도 부하가 태양광을
+넘어 PV 잉여가 하루 종일 0 이 되고, 태양광 잉여로만 충전하는 ESS 가 거부한다」*
+(`core/der/ess_schedule.py::check_pv_surplus_profile`)였다.
+
+**그 거부는 R65 에 사라졌다** — 없앤 것이 아니라 **원인이 없어졌다.** 부하만
+단지 규모로 커지고 설비는 한 호분이던 것이 어긋남이었고, 설계 변수 셋(태양광
+용량·ESS 용량·ESS 정격출력)이 같은 배수를 타면서 20호 단지에서도 낮에 잉여가
+남는다. ⛔ **검사를 풀어 통과시킨 것이 아니다** — `check_pv_surplus_profile` 은
+한 자도 바뀌지 않았고, 잉여가 정말 없는 구성에서는 그대로 거부한다.
+
+⇒ 그래서 **태우는 입력을 바꿨다.** 화면의 같은 칸이 내는 거부 중 지금도 확실히
+서는 것은 `load.household.count` 의 3요소 거부다(`0` 호 · `core/casegrid/
+household_scale.py::resolve_household_count`). 재는 성질 셋은 한 자도 바뀌지
+않았다:
 
 ## 무엇을 재는가
-
-가구 수를 3호 이상으로 적으면 낮에도 부하가 태양광을 넘어 PV 잉여가 하루 종일
-0 이 되고, 태양광 잉여로만 충전하는 ESS 가 **거부한다**
-(`core/der/ess_schedule.py::check_pv_surplus_profile`).
-
-⛔ **그 거부를 없애지 않는다.** 한 해 내내 PV 잉여가 없는 단지에 태양광 연계
-ESS 를 놓는 것은 사업 설계의 오류일 수 있고, 조용히 통과시키면 **없는 충전으로
-편익이 난다.** 재는 것은 *「거부가 사람이 읽을 수 있는 모양으로 화면에 오는가」*
-하나다:
 
     ① `500` 이 아니라 **`400`** 이다 — 서버가 터진 것이 아니라 입력을 거부한 것
     ② 화면이 **필드·사유·조치 셋**을 글자로 싣는다 (`NFR-303`)
@@ -17,14 +25,16 @@ ESS 를 놓는 것은 사업 설계의 오류일 수 있고, 조용히 통과시
 
 ## ⚠ 문턱을 이 파일이 정하지 않는다
 
-몇 호부터 거부되는지는 **자산·대장이 정하는 사실**이며(발전 형상과 가구 부하의
-크기), 그것을 여기 수로 박으면 자산이 바뀌는 날 이 검사가 조용히 낡는다. 그래서
-`_REFUSING_COUNT` 는 *「거부가 나는 규모」* 를 찾아 쓰지 않고, **거부가 나든 안
-나든 500 이 아니다**를 규모마다 함께 잰다 — 그 성질이 이 파일의 본론이다.
+몇 호부터 무엇이 거부되는지는 **자산·대장·설비 구성이 정하는 사실**이며, 그것을
+여기 수로 박으면 그쪽이 바뀌는 날 이 검사가 조용히 낡는다(R65 가 정확히 그 일을
+겪었다). 그래서 `_COUNTS` 는 **거부가 나든 안 나든 500 이 아니다**를 규모마다
+함께 잰다 — 그 성질이 이 파일의 본론이다. `_REFUSING_COUNT` 는 자산·설비가
+아니라 **규칙 하나**(1 이상의 정수)가 거부하는 값이라 그쪽이 움직여도 낡지 않는다.
 
-⚠ 조치 문면 자체는 `tests/der/test_ess_schedule_rejection_action.py` 가 정본으로
-잰다. 여기서는 **그 문면이 화면까지 오는가**만 본다 — 두 곳에서 문면을 적으면
-한쪽만 고쳐지는 날이 온다.
+⚠ 조치 문면 자체는 그 거부를 내는 자리
+(`core/casegrid/household_scale.py::resolve_household_count`)가 정본으로 갖는다.
+여기서는 **그 문면이 화면까지 오는가**만 본다 — 두 곳에서 문면을 적으면 한쪽만
+고쳐지는 날이 온다.
 """
 from __future__ import annotations
 
@@ -33,8 +43,8 @@ from fastapi.testclient import TestClient
 from httpx import Response
 
 from app.main import create_app
+from core.casegrid.household_scale import resolve_household_count
 from core.contracts.validation import ValidationError
-from core.der.ess_schedule import check_pv_surplus_profile
 
 #: 화면으로 태워 보는 규모. **1·2호는 통과하고 3호 이상은 거부되는 것이 착수
 #: 시점의 실측**이지만(2026-09-06 · `.orch/R64/result_8b.md` ⑤), 이 파일은 그
@@ -43,9 +53,11 @@ from core.der.ess_schedule import check_pv_surplus_profile
 #: (「500 이 아니다」)은 규모를 늘려도 더 세게 서지 않는다.
 _COUNTS: tuple[str, ...] = ("2", "3", "10")
 
-#: 거부가 확실히 나는 규모. 3호에서 이미 나므로 넉넉히 위를 쓴다 — 자산이
-#: 바뀌어 여기서도 통과하게 되면 이 검사는 **건너뛰지 않고** 그 사실을 말한다.
-_REFUSING_COUNT = "10"
+#: 거부가 확실히 나는 값. **`0` 은 규칙이 거부한다** — *「가구 수는 1 이상의
+#: 정수여야 합니다」*(`resolve_household_count`). ⚠ 종전에는 `"10"`(잉여가
+#: 사라져 ESS 가 거부하는 규모)이었고, R65 가 설비에 배수를 걸면서 그 규모가
+#: 통과하게 됐다 — 머리말 ⚠⚠ 참조. 이 값은 **자산·설비 구성과 무관**하다.
+_REFUSING_COUNT = "0"
 
 _SCENARIO = "scenario_unsubsidized"
 _SCREENS: tuple[str, ...] = ("/ui/run", "/ui/verify")
@@ -71,17 +83,19 @@ def refusals(client: TestClient) -> dict[str, Response]:
     }
 
 
-def _rejection_action() -> str:
-    """거부가 실제로 내는 조치 문면 — **정본에게 물어서** 얻는다.
+def _rejection() -> ValidationError:
+    """거부가 실제로 내는 셋 — **정본에게 물어서** 얻는다.
 
     ⚠ 문면을 이 파일에 베껴 적지 않는다. 베끼면 문면을 다듬는 날 화면 검사가
     빨간불이 되고, 그때 고쳐지는 것은 **검사의 사본** 쪽이다.
     """
     try:
-        check_pv_surplus_profile(None, uses_pv_surplus=True, name="탐침")
+        resolve_household_count(int(_REFUSING_COUNT))
     except ValidationError as exc:
-        return exc.action
-    raise AssertionError("빈 PV 잉여가 거부되지 않았다 — 이 파일의 전제가 무너졌다")
+        return exc
+    raise AssertionError(
+        f"{_REFUSING_COUNT}호가 거부되지 않았다 — 이 파일의 전제가 무너졌다"
+    )
 
 
 @pytest.mark.req("NFR-303-M1")
@@ -116,14 +130,15 @@ def test_the_refusal_reaches_the_screen_as_three_readable_parts(
     R62/WP-5 가 브라우저로 잡은 **D3** 이 그 상태였다.
     """
     response = refusals[screen]
+    refusal = _rejection()
     assert response.status_code == 400, (
-        f"{_REFUSING_COUNT}호가 통과했다 — 자산이 바뀌어 이 검사의 전제가 "
-        "무너졌다면 거부가 나는 규모를 다시 재라"
+        f"{_REFUSING_COUNT}호가 통과했다 — 규칙이 바뀌어 이 검사의 전제가 "
+        "무너졌다면 거부가 나는 값을 다시 고르라"
     )
     body = response.text
-    assert "필드: ess.pv_surplus_profile_kwh" in body
-    assert "잉여 시계열이 없거나 전부 0입니다" in body
-    assert _rejection_action() in body, "조치 문면이 화면까지 오지 않았다"
+    assert f"필드: {refusal.field}" in body
+    assert refusal.reason in body, "사유 문면이 화면까지 오지 않았다"
+    assert refusal.action in body, "조치 문면이 화면까지 오지 않았다"
 
 
 @pytest.mark.req("NFR-303-M1")

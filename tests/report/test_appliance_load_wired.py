@@ -41,7 +41,9 @@ from core.casegrid.appliance_load import (
     APPLIANCE_LOAD_UNSPECIFIED,
     APPLIANCE_SEASON_SHARE_FIELD,
     EV_LOAD_FIELD,
+    EV_LOAD_LEDGER_KEY,
     HEATPUMP_LOAD_FIELD,
+    HEATPUMP_LOAD_LEDGER_KEY,
 )
 from core.casegrid.profiles import load_daily_shapes
 from core.contracts.validation import ValidationError
@@ -59,8 +61,33 @@ _HEATPUMP = 900.0
 _EV = 600.0
 
 
+def _blocked_ledger_text() -> str:
+    """★ **기기 부하를 «아무 통로도» 갖지 않는 대장** (R65/WP-2c).
+
+    R65 가 `load.heatpump.annual`(2,675 · 가정) · `load.ev.annual`(2,784 ·
+    조사값)을 `track: blocked` → 값 있음으로 세우면서 *「안 준 실행」* 의 뜻이
+    달라졌다 — 시나리오에 안 적어도 **대장이 답한다.** 그래서 「미지정」 갈래를
+    재려면 그 두 항목이 답하지 않는 대장이 있어야 하고, 이 함수가 **R65 이전과
+    같은 모양**(`blocked` · 값 없음)으로 되돌린 사본을 만든다.
+
+    ⛔ **`docs/assumptions.yaml` 을 고치는 것이 아니다** — 읽어서 사본을 짓고
+    그 사본은 `tempfile` 안에서만 산다. ⚠ 값을 지어내지 않는다 — 지우는 것뿐이다.
+    ⚠ **`load.household.count` 는 그대로 둔다** — 이 파일이 재는 축이 아니다.
+    """
+    doc = yaml.safe_load(_ASSUMPTIONS.read_text(encoding="utf-8"))
+    for item in doc["assumptions"]:
+        if item.get("key") in {HEATPUMP_LOAD_LEDGER_KEY, EV_LOAD_LEDGER_KEY}:
+            item["track"] = "blocked"
+            item["value"] = None
+            item["sensitivity"] = None
+    return yaml.safe_dump(doc, allow_unicode=True, sort_keys=False)
+
+
 def _report(**fields_given: object) -> CaseReport:
     """골든 시나리오 + 기기 부하 → 리포트 하나.
+
+    `ledger_answers=False` 를 주면 **대장 통로까지 닫은** 사본으로 돈다
+    (`_blocked_ledger_text` 참조) — 「어느 통로에도 값이 없다」를 재는 자리다.
 
     ⚠ **골든 픽스처를 고치지 않는다.** 읽기만 하고 쓰는 곳은
     `tempfile.TemporaryDirectory()` 안이다 — `app/services/ui_run.py::
@@ -68,6 +95,7 @@ def _report(**fields_given: object) -> CaseReport:
     화면이 실제로 지나는 통로(시나리오 필드 둘)를 잰다.
     """
     fields: dict[str, Any] = yaml.safe_load(_GOLDEN.read_text(encoding="utf-8")) or {}
+    ledger_answers = bool(fields_given.pop("ledger_answers", True))
     fields.update(fields_given)
     with tempfile.TemporaryDirectory() as workspace:
         path = Path(workspace) / _GOLDEN.name
@@ -75,16 +103,40 @@ def _report(**fields_given: object) -> CaseReport:
             yaml.safe_dump(fields, allow_unicode=True, sort_keys=False),
             encoding="utf-8",
         )
-        return build_case_report(path, assumptions_path=_ASSUMPTIONS)
+        ledger = _ASSUMPTIONS
+        if not ledger_answers:
+            ledger = Path(workspace) / "assumptions.yaml"
+            ledger.write_text(_blocked_ledger_text(), encoding="utf-8")
+        return build_case_report(path, assumptions_path=ledger)
 
 
-def test_the_scenario_fields_are_the_only_channel() -> None:
-    """★★ 시나리오 yaml 의 필드 둘이 리포트까지 그대로 간다.
+def test_the_scenario_fields_win_over_the_ledger() -> None:
+    """★★ 시나리오 yaml 의 필드 둘이 리포트까지 그대로 가고, **대장을 이긴다.**
 
-    통로가 둘이면 어느 것이 이겼는지 산출물에서 알 수 없다 — 갈래
-    (`baseline_arrangement`)·ⓒ 선언·가구 수가 같은 규약을 따른다.
+    ## ⚠ 이 시험이 재던 것이 뒤집혔다 — **낡은 것이 아니라 반대 사실이었다**
+
+    옛 이름은 `test_the_scenario_fields_are_the_only_channel` 이었고
+    *「통로가 하나다 — 시나리오에 안 적으면 `None` 이다」* 를 쟀다. 그때는 그것이
+    옳았다: 대장의 두 항목이 `track: blocked` 였다.
+
+    **R65 에 사용자가 값을 정해 주었다** — *「히트펌프, 전기차 충전 연간
+    소비전력량 … 엑셀 파일 상의 수치를 사용(조사 권장)」*(2026-09-07). 그래서
+    `load.heatpump.annual`(2,675 · `가정`)·`load.ev.annual`(2,784 · `추정` —
+    조사값)이 섰고 **통로가 둘이 되었다.**
+
+    ⇒ 이 시험이 재는 것은 이제 *「통로가 하나인가」* 가 아니라 **「차례가
+    지켜지는가」**다 — 뒤집히면 사용자가 화면에서 적은 값을 대장이 덮어쓴다.
+    ⚠ 통로를 **세는** 자리는 그대로 여기 하나다.
     """
-    empty = _report().appliance_loads
+    from_ledger = _report().appliance_loads
+    assert from_ledger.heatpump_kwh is not None, (
+        "시나리오가 안 적은 실행이 대장의 히트펌프 부하로 돌지 않는다"
+    )
+    assert from_ledger.ev_kwh is not None, (
+        "시나리오가 안 적은 실행이 대장의 전기차 부하로 돌지 않는다"
+    )
+
+    empty = _report(ledger_answers=False).appliance_loads
     assert empty.heatpump_kwh is None
     assert empty.ev_kwh is None
 
@@ -172,8 +224,13 @@ def test_an_unspecified_appliance_is_printed_as_words_not_left_blank() -> None:
 
     빈칸은 「반영됐다」와 「반영하지 않았다」를 구별해 주지 않고, 사용자는
     앞쪽으로 읽는다. 그 오독이 한 호의 총부하를 절반 가까이 틀리게 만든다.
+
+    ⚠ **「안 준 실행」의 뜻이 R65 에 달라졌다** — 시나리오에 안 적어도 대장이
+    답하므로, 여기서는 **대장 통로까지 닫은** 사본으로 돈다
+    (`_blocked_ledger_text`). 재는 것은 그대로다: *「어느 통로에도 값이 없는
+    실행이 그 사실을 글자로 말하는가」*.
     """
-    lines = appendix_section(_report())
+    lines = appendix_section(_report(ledger_answers=False))
     printed = [line for line in lines if APPLIANCE_LOAD_UNSPECIFIED in line]
     assert len(printed) == 2, (
         f"기기를 안 준 실행의 붙임 1 에 「{APPLIANCE_LOAD_UNSPECIFIED}」가 "

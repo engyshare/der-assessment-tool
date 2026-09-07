@@ -84,6 +84,8 @@ from core.assumption.scenario_overrides import (
     apply_scenario_overrides,
 )
 from core.casegrid.appliance_load import (
+    EV_LOAD_LEDGER_KEY,
+    HEATPUMP_LOAD_LEDGER_KEY,
     ApplianceLoads,
     resolve_appliance_loads,
     with_ledger_defaults,
@@ -91,6 +93,8 @@ from core.casegrid.appliance_load import (
 from core.casegrid.e2e_runner import PV_CAPACITY_FACTOR, run_single_case_e2e
 from core.casegrid.household_scale import (
     HOUSEHOLD_COUNT_FIELD,
+    HOUSEHOLD_COUNT_LEDGER_KEY,
+    household_scale,
     ledger_household_count,
     resolve_household_count,
 )
@@ -241,6 +245,16 @@ COMPUTE_PHASE_READ_KEYS: frozenset[str] = frozenset(
         # 구간이 `required_scalar()` 로 읽어 러너·스윕에 함께 넘긴다 — 그래서
         # 이 선언 안에 든다. 키 문면은 `core/casegrid/load_shift.py` 가 정본이다.
         DR_SHIFTABLE_SHARE_LEDGER_KEY,
+        # ★★ **단지 규모와 기기 부하 셋** (R65/WP-2 · 사용자 요구
+        # *「가구수를 20가구로 설정」* · *「히트펌프, 전기차 … 수치를 사용」*).
+        # 계산 구간이 이 셋을 읽어 러너·스윕에 함께 넘긴다
+        # (`ledger_household_count()` · `with_ledger_defaults()`) — 그래서 이
+        # 선언 안에 든다. ⚠ **선언을 넓혀 통과시킨 것이 아니다**: 셋 다
+        # `run_single_case_e2e(...)` 호출보다 **앞에서** 읽혀 총부하를 정하고,
+        # 그 읽기는 산출물 조립이 아니라 계산이다(그것이 이 선언의 기준이다).
+        HOUSEHOLD_COUNT_LEDGER_KEY,
+        HEATPUMP_LOAD_LEDGER_KEY,
+        EV_LOAD_LEDGER_KEY,
     }
     | {key for _field, key in DISTRIBUTED_CREDIT_LEDGER_KEYS}
 )
@@ -780,11 +794,11 @@ def build_case_report(
     # ⚠ **차례를 뒤집지 마라.** 시나리오·화면이 적은 수가 먼저이고, 적지
     # 않았을 때만 대장이 답한다 — 뒤집으면 사용자가 화면에서 적은 수를 대장이
     # 덮어쓴다. 둘 다 없으면 여전히 `None`(가구 한 호)이다.
-    # ⚠⚠⚠ **골든 픽스처에는 이 필드가 없다** — 그래서 골든 셋이 **대장의
-    # 20호**로 돌려다가 `DV` 로 **거부된다**(태양광 3kW 에 20호 부하를 얹으면
-    # 낮에 잉여가 남지 않는다). R65/WP-2 는 그래서 골든을 다시 뽑지 못했고,
-    # 판정을 오케스트레이터에게 넘겼다 — `.orch/R65/result_2.md` ③·⑥ ·
-    # `core/casegrid/household_scale.py` 머리말 ⚠⚠⚠.
+    # ⚠⚠ **골든 픽스처에는 이 필드가 없다** — 그래서 골든 셋은 **대장의 20호**
+    # 로 돈다. R65/WP-2 에서는 그것이 `DV` 거부였다(태양광 3kW 에 20호 부하를
+    # 얹으면 낮에 잉여가 남지 않는다). WP-2b·2c 가 설계 변수 셋에 같은 배수를
+    # 걸어 그 거부를 없앴고, 골든 3종은 **20호 구성으로 다시 뽑혔다** —
+    # `core/casegrid/household_scale.py` 머리말 ★★★ 가 경위를 갖는다.
     household_count = resolve_household_count(scenario.get(HOUSEHOLD_COUNT_FIELD))
     if household_count is None:
         household_count = ledger_household_count(provider)
@@ -804,7 +818,7 @@ def build_case_report(
     # ⚠ 판정과 거부는 `core/casegrid/appliance_load.py` 하나가 지고, 대장 값도
     # 같은 관문을 지난다.
     # ⚠ **골든 픽스처에는 세 필드가 다 없다** — 그래서 골든 셋은 대장·자산의
-    # 값으로 돌려 한다. 다만 가구 수와 함께 얹히면 위 ⚠⚠⚠ 의 거부에 걸린다.
+    # 값으로 돈다(위 ⚠⚠ 와 같은 통로다).
     appliance_loads = with_ledger_defaults(resolve_appliance_loads(scenario), provider)
     # ★ ⓒ(자가용 집합자원화)를 **선언 없이** 고르면 여기서 `DV-15` 로 거부된다 —
     # 리포트를 조립하기 전이다. 러너도 같은 거부를 지나므로(그 진입점을 직접
@@ -998,6 +1012,14 @@ def build_case_report(
     # ★ 경우 「가」(100% 자립) 역산 — 붙임 10 의 별도 소절 (R55/WP-2 · 검토서 §1).
     # `pv_capacity_kw` 탐색 구간은 `design_variables()` 에서 읽는다 — 1.0·9.0 을
     # 여기 리터럴로 적으면 `_DESIGN_VARS` 가 바뀌어도 이 소절만 낡는다.
+    # ★★★ **이 역산도 「단지」로 답한다** (R65/WP-2c). 종전에는 탐색 구간도
+    # 부하도 **한 호분**이라, 본문 4절이 60 kW·20호 부하로 도는 동안 이
+    # 소절만 1~9 kW 띠와 한 호 부하로 답했다 — **같은 리포트가 두 사업을
+    # 그렸다.** 곱은 `build_self_sufficiency_sizing` 이 하고(그 독스트링 ★★),
+    # 여기서는 **본문이 쓴 것과 같은 두 수**를 넘긴다: 단지 규모와, 본문이
+    # 부하에 더하는 기기 부하(`appliance_loads.total_kwh` — 위 러너 호출의
+    # `extra_appliance_load_kwh` 와 **같은 값**이다).
+    # ⛔ 띠의 수(1.0·9.0)를 고치지 않았다 — 곱한 것이다.
     if "household_load_annual_kwh" not in level_map:
         raise ValidationError(
             field="load.household.annual",
@@ -1021,6 +1043,8 @@ def build_case_report(
                 USER_EXAMPLE_MONTHLY_KWH * MONTHS_PER_YEAR,
             ),
         ],
+        extra_appliance_load_kwh=appliance_loads.total_kwh,
+        household_count=household_count,
     )
 
     # ★ 경우 「ESS」(하루 결손) 역산 — 붙임 10 의 같은 자리 (R64/WP-8b · 요구 4).
@@ -1032,13 +1056,20 @@ def build_case_report(
     ess_design_variable = next(
         v for v in design_variables() if v.name == "ess_capacity_kwh"
     )
+    # ★★★ **탐색 구간에만 단지 규모를 곱한다** (R65/WP-2c). 이쪽 역산의
+    # **부하는 이미 단지분**이다 — `hours`·`seasons`·`resources` 가 본문이
+    # 돌린 디스패치에서 오고 그 디스패치는 20호 부하·60 kW 로 돌았다. 곱해야
+    # 하는 것은 *「그 결손을 감당할 용량이 지금 훑는 띠 안인가」* 를 재는
+    # `search_low/high_kwh` **하나**이며, 그것만 한 호분(2~30 kWh)이었다.
+    # ⚠ **부하까지 곱하면 두 번 곱해진다.** ⛔ 띠의 수를 고친 것이 아니다.
+    ess_scale = household_scale(household_count)
     ess_sizing = build_ess_sizing_review(
         hours=build_hourly_profile(outcome.dispatch),
         seasons=outcome.seasons,
         resources=outcome.resources,
         year=outcome.basis.horizon_years,
-        search_low_kwh=ess_design_variable.low,
-        search_high_kwh=ess_design_variable.high,
+        search_low_kwh=ess_design_variable.low * ess_scale,
+        search_high_kwh=ess_design_variable.high * ess_scale,
     )
 
     manifest = create_manifest({

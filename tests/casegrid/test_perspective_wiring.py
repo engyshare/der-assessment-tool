@@ -80,6 +80,13 @@ def test_operator_perspective_keeps_the_conclusion_axis(report) -> None:
     갖는다). 연간 부하 총량은 **한 kWh 도 움직이지 않았다** — 움직인 것은
     하루의 모양이고, 그 모양이 계통 수전·송전과 첨두 절감을 바꿨다.
 
+    ⚠⚠ **R65/WP-2c 가 다시 갱신했다 — 이번에는 「사업의 규모」다.** 사용자
+    요구(*「가구수를 20가구로 설정」*)로 단지가 20호가 되고 설계 변수 셋이 그
+    배수를 타면서(태양광 3 → 60 kW · ESS 10 → 200 kWh · 정격출력 5 → 100 kW)
+    결론축이 −11,625,181 → **−323,257,263원**이 됐다. 앞의 갱신들과 달리 이번에
+    움직인 것은 **하루의 모양이 아니라 사업의 크기**이며, 그 경위와 산식은
+    `fixtures/golden/scenario_unsubsidized.yaml` 의 R65 블록이 갖는다.
+
     ⚠⚠ **이 검사가 재는 것은 「축이 절대 안 움직인다」가 아니다** — *「관점 층이
     축을 **다시 계산하지 않는가**」* 이며 그 실질은 **위 첫 단언**이다(사업자
     관점의 NPV 가 4.1 결론축과 같은 객체에서 오는가). 그 단언은 이 라운드에도
@@ -89,7 +96,7 @@ def test_operator_perspective_keeps_the_conclusion_axis(report) -> None:
         r for r in report.perspectives.results if r.perspective is Perspective.OPERATOR
     )
     assert int(operator.npv_value) == int(report.metrics[CONCLUSION_METRIC])
-    assert int(operator.npv_value) == -11_625_181
+    assert int(operator.npv_value) == -323_257_263
 
 
 @pytest.mark.req("FR-402-AC7")
@@ -163,7 +170,8 @@ def test_npv_row_prints_no_number_for_perspectives_without_cost_basis(report) ->
     # R64/WP-6b 가 방전 부하 추종을 세우며 −11,495,622 → −11,502,062원으로,
     # R64/WP-7 이 「AI 가전」의 부하 이동을 세우며 −11,502,062 → −11,625,181원
     # 으로 옮겼다 (위 `test_operator_perspective_keeps_the_conclusion_axis` 의 ⚠).
-    assert "-11,625,181원" in npv_line, npv_line
+    # ⚠⚠ R65/WP-2c 가 단지를 20호로 세우며 −11,625,181 → −323,257,263원이 됐다.
+    assert "-323,257,263원" in npv_line, npv_line
     cells = [cell.strip() for cell in npv_line.strip().strip("|").split("|")]
     assert "0원" not in cells, npv_line
     assert "0" not in cells, npv_line
@@ -186,7 +194,11 @@ def test_cost_total_row_prints_not_allocated_for_perspectives_without_cost_basis
     # **17,716,797원**이 됐다. ★ 이 축에서는 **비용이 내려간 것이 요구가 시킨
     # 결과**다 — 그런데도 결론축이 나빠진 이유(잉여판매·REC·첨두 절감의 감소)는
     # 아래 `test_benefit_total_row_always_prints_a_real_number` 가 적는다.
-    assert "17,716,797원" in cost_line, cost_line
+    # ⚠⚠ R65/WP-2c — 단지가 20호가 되며 전력 구매·고정 O&M·교체비가 다 20배
+    # 규모로 다시 서서 17,716,797 → **468,935,338원**이 됐다. ⚠ 정확히 20배가
+    # 아닌 것은 이 칸이 **비용 합계**(전력 구매 + 고정 O&M + 교체비 − 잔존가치)
+    # 이고 그중 전력 구매만 부하에 비례하기 때문이다.
+    assert "468,935,338원" in cost_line, cost_line
 
 
 def test_benefit_total_row_always_prints_a_real_number(report) -> None:
@@ -222,12 +234,19 @@ def test_benefit_total_row_always_prints_a_real_number(report) -> None:
     ⚠⚠ **참여 주민이 처음으로 움직였다** — 앞의 두 항이 *「참여 주민은
     그대로다」* 라고 적은 것은 그 배선들이 **자가소비량**을 바꾸지 않았기
     때문이고, 이 축은 **부하의 시각 자체**를 옮기므로 사업장 최대부하가 바뀐다.
+
+    ⚠⚠ **R65/WP-2c 가 둘 다 갱신했다 — 규모가 20배가 됐다.** 참여 주민
+    1,403,940 → **79,872,000원** · 사업자 5,272,940 → **83,142,400원**이다.
+    ★ 둘의 배수가 다르다 — 참여 주민은 요금 절감(자가소비·첨두 절감)만 지고
+    그 둘은 부하·설비에 비례해 커지는데, 사업자는 거기에 **잉여판매·REC** 를
+    더 지고 그쪽은 계통 역송량에 붙는다. 20호 단지는 낮에도 부하가 커져
+    **역송 자체가 규모만큼 늘지 않으므로** 사업자의 배수가 더 작다.
     """
     text = render_markdown(report)
     benefit_line = next(line for line in text.splitlines() if line.startswith("| 편익 합계 |"))
     assert "미산출" not in benefit_line and "미배분" not in benefit_line
-    assert "1,403,940원" in benefit_line  # 참여 주민
-    assert "5,272,940원" in benefit_line  # 사업자
+    assert "79,872,000원" in benefit_line  # 참여 주민
+    assert "83,142,400원" in benefit_line  # 사업자
 
 
 def test_header_row_pairs_repository_and_user_vocabulary(report) -> None:

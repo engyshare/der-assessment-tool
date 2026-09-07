@@ -97,13 +97,20 @@ def test_the_year_is_the_end_of_the_analysis_period(report: CaseReport) -> None:
 
 
 def test_the_search_range_comes_from_the_design_variable(report: CaseReport) -> None:
-    """★ 탐색 구간을 리터럴로 적지 않는다 — `_DESIGN_VARS` 에서 온다.
+    """★ 탐색 구간을 리터럴로 적지 않는다 — `_DESIGN_VARS` **× 단지 규모**다.
 
     2.0·30.0 을 여기(그리고 배선부)에 적으면 그 표가 바뀌어도 이 소절만 낡는다.
+
+    ⚠ **곱이 붙었다** (R65/WP-2c). `_DESIGN_VARS` 의 수는 「한 호가 갖는 설비」
+    이고 본문은 단지 규모를 곱한 설비로 돈다 — 구간을 안 곱하면 20호 실행에서
+    이 소절만 한 호를 말한다. **곱한 것이지 띠의 수를 고친 것이 아니며**, 그
+    사실을 재는 것이 여기 `* scale` 이다(리터럴 40·600 을 적으면 그 구별이
+    사라진다). ⚠ 가구 수를 안 준 실행에서는 배수가 1 이라 종전과 같다.
     """
     design = next(v for v in design_variables() if v.name == "ess_capacity_kwh")
-    assert report.ess_sizing.search_low_kwh == design.low
-    assert report.ess_sizing.search_high_kwh == design.high
+    scale = report.household_count if report.household_count is not None else 1
+    assert report.ess_sizing.search_low_kwh == design.low * scale
+    assert report.ess_sizing.search_high_kwh == design.high * scale
 
 
 def test_the_printed_divisor_is_the_divisor_it_actually_divided_by(

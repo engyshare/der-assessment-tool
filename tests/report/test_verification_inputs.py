@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import sys
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -40,19 +41,22 @@ from core.casegrid.appliance_load import (
     APPLIANCE_SEASON_SHARE_FIELD,
     APPLIANCE_SEASON_SHARE_UNSPECIFIED,
     EV_LOAD_FIELD,
+    EV_LOAD_LEDGER_KEY,
     EV_LOAD_TITLE,
     HEATPUMP_LOAD_FIELD,
+    HEATPUMP_LOAD_LEDGER_KEY,
     HEATPUMP_LOAD_TITLE,
 )
 from core.casegrid.household_scale import (
     HOUSEHOLD_COUNT_FIELD,
+    HOUSEHOLD_COUNT_LEDGER_KEY,
     HOUSEHOLD_COUNT_UNSPECIFIED,
 )
 from core.casegrid.profiles import load_daily_shapes
 from core.report.case_report import CaseReport, build_case_report
 from core.report.dispatch_notes import NO_OPERATING_MODE
 from core.report.verification import render_verification_markdown
-from core.report.verification_inputs import dispatch_note_rows
+from core.report.verification_inputs import dispatch_note_rows, execution_input_lines
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -106,15 +110,49 @@ def _scenario_file(workspace: Path, **fields_given: object) -> Path:
     return path
 
 
-def _dumped(tmp_path: Path, **fields_given: object) -> str:
-    """CLI 를 지나 **파일로 뽑은** 검증 보고서 문면."""
+def _blocked_ledger_text() -> str:
+    """★ 가구 수·기기 부하를 **아무 통로도 갖지 않는 대장** (R65/WP-2c).
+
+    R65 가 그 셋을 `track: blocked` → 값 있음으로 세우면서 *「안 적은 실행」*
+    의 뜻이 달라졌다 — 시나리오에 안 적어도 **대장이 답한다.** 「미지정」 갈래를
+    재려면 그 항목들이 답하지 않는 대장이 있어야 하고, 이 함수가 R65 이전과
+    같은 모양으로 되돌린 사본을 만든다.
+
+    ⛔ `docs/assumptions.yaml` 을 고치는 것이 아니다 — 사본은 임시 디렉터리
+    안에서만 산다. ⚠ 값을 지어내지 않는다 — 지우는 것뿐이다.
+    """
+    doc = yaml.safe_load(_ASSUMPTIONS.read_text(encoding="utf-8"))
+    for item in doc["assumptions"]:
+        if item.get("key") in {
+            HOUSEHOLD_COUNT_LEDGER_KEY,
+            HEATPUMP_LOAD_LEDGER_KEY,
+            EV_LOAD_LEDGER_KEY,
+        }:
+            item["track"] = "blocked"
+            item["value"] = None
+            item["sensitivity"] = None
+    return yaml.safe_dump(doc, allow_unicode=True, sort_keys=False)
+
+
+def _dumped(
+    tmp_path: Path, *, ledger_answers: bool = True, **fields_given: object
+) -> str:
+    """CLI 를 지나 **파일로 뽑은** 검증 보고서 문면.
+
+    `ledger_answers=False` 면 대장 통로까지 닫은 사본으로 돈다
+    (`_blocked_ledger_text`).
+    """
     with tempfile.TemporaryDirectory() as workspace:
         scenario = _scenario_file(Path(workspace), **fields_given)
+        ledger = _ASSUMPTIONS
+        if not ledger_answers:
+            ledger = Path(workspace) / "assumptions.yaml"
+            ledger.write_text(_blocked_ledger_text(), encoding="utf-8")
         target = tmp_path / "verification.md"
         rc = _cli().main(
             [
                 "--scenario", str(scenario),
-                "--assumptions", str(_ASSUMPTIONS),
+                "--assumptions", str(ledger),
                 "--out", str(target),
             ]
         )
@@ -220,17 +258,33 @@ def test_unspecified_inputs_print_a_sentence_not_a_blank(tmp_path: Path) -> None
     빈칸으로 두면 검토자가 「반영됐다」로 읽고, 그 오독이 단지 총부하를 수십 배
     틀리게 만든다. 세 문면의 정본은 `core/casegrid/` 의 상수 셋이며 여기서
     베껴 적지 않고 들여와 대조한다.
+
+    ## ⚠⚠ 「안 적은 실행」의 뜻이 R65 에 달라졌다 — **통로가 늘었다**
+
+    시나리오에 안 적어도 **대장·자산이 답한다**(가구 수 20 · 히트펌프 2,675 ·
+    전기차 2,784 · 계절 몫은 형상 자산의 `appliance_season_shares:` 절).
+    그래서 앞의 둘은 **대장 통로까지 닫은 사본**으로 돌려 재고
+    (`_blocked_ledger_text`), 계절 몫은 통로가 **자산**이라 그 자산을 지우면
+    다른 것(형상 없는 실행)을 재게 되므로 **인쇄 자리에서** 직접 잰다.
+    ⚠ 재는 성질은 셋 다 그대로다: *「값이 없으면 빈칸이 아니라 문장이 선다」*.
     """
-    text = _dumped(tmp_path)
-    for sentence in (
-        HOUSEHOLD_COUNT_UNSPECIFIED,
-        APPLIANCE_LOAD_UNSPECIFIED,
-        APPLIANCE_SEASON_SHARE_UNSPECIFIED,
-    ):
+    text = _dumped(tmp_path, ledger_answers=False)
+    for sentence in (HOUSEHOLD_COUNT_UNSPECIFIED, APPLIANCE_LOAD_UNSPECIFIED):
         assert sentence in text, f"「미지정」 문장이 빠졌다: {sentence!r}"
     assert "| — |" not in text.split("### 미반영")[0].split("## 1단계")[1].split(
         "## 2단계"
     )[0].split("**ⓑ")[0], "1단계 실행 입력 표에 빈칸(`—`)이 있다"
+
+    # ★ 계절 몫 — 자산이 답하지 않는 실행을 **인쇄 자리에서** 만든다.
+    report = _report()
+    without = replace(
+        report, appliance_loads=replace(report.appliance_loads, season_shares=None)
+    )
+    printed = "\n".join(execution_input_lines(without))
+    assert APPLIANCE_SEASON_SHARE_UNSPECIFIED in printed, (
+        f"「미지정」 문장이 빠졌다: {APPLIANCE_SEASON_SHARE_UNSPECIFIED!r}"
+    )
+    assert "| — |" not in printed, "실행 입력 표에 빈칸(`—`)이 있다"
 
 
 def test_the_season_shares_are_printed_when_given(tmp_path: Path) -> None:

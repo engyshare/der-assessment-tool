@@ -57,6 +57,7 @@ from core.report.case_report import (
 )
 from core.report.unreflected import build_unreflected
 from tests.report.conftest import (
+    report_household_wiring,
     report_rec_terms,
     report_shapes,
     report_shift_share,
@@ -157,6 +158,9 @@ def test_the_conclusion_stands_on_the_shaped_run() -> None:
         # ★ **부하 이동도 같은 배선** (R64/WP-7 · 사용자 요구 2) — 안 넘기면
         # 리포트(옮긴 하루)와 재실행(옮기지 않은 하루)이 서로 다른 사업을 그린다.
         dr_shiftable_share_pct=report_shift_share(),
+        # ★★ **단지 규모·기기 부하·계절 몫도 같은 배선** (R65/WP-2c) — 안 넘기면
+        # 리포트(20호 단지)의 수를 **한 호짜리** 재실행과 맞대게 된다.
+        **report_household_wiring(),
     )
     flat = run_single_case_e2e(
         {},
@@ -283,6 +287,9 @@ def test_the_sensitivity_and_capacity_sections_run_the_same_business() -> None:
                 # ★ **부하 이동도 같은 배선** (R64/WP-7 · 사용자 요구 2) — 안 넘기면
                 # 리포트(옮긴 하루)와 재실행(옮기지 않은 하루)이 서로 다른 사업을 그린다.
                 dr_shiftable_share_pct=report_shift_share(),
+                # ★★ **단지 규모·기기 부하·계절 몫도 같은 배선** (R65/WP-2c) — 안 넘기면
+                # 리포트(20호 단지)의 수를 **한 호짜리** 재실행과 맞대게 된다.
+                **report_household_wiring(),
             )
             measured = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
             assert point.conclusion == pytest.approx(measured, abs=1.0), (

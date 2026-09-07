@@ -28,9 +28,17 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.services.ui_run import scenario_fields
+from core.assumption.provider import AssumptionSet
 from core.assumption.scenario_overrides import ASSUMPTION_OVERRIDES_FIELD
-from core.casegrid.appliance_load import APPLIANCE_LOAD_UNSPECIFIED
-from core.casegrid.household_scale import HOUSEHOLD_COUNT_UNSPECIFIED
+from core.casegrid.appliance_load import (
+    APPLIANCE_LOAD_UNSPECIFIED,
+    resolve_appliance_loads,
+    with_ledger_defaults,
+)
+from core.casegrid.household_scale import (
+    HOUSEHOLD_COUNT_UNSPECIFIED,
+    ledger_household_count,
+)
 from core.cba.baseline import BaselineArrangement, get_baseline_branch
 from core.contracts.validation import ValidationError
 from core.report.case_report import REC_PRICE_LEDGER_KEY, build_case_report
@@ -322,6 +330,23 @@ _HOUSEHOLD_COUNT = 2
 _HOUSEHOLD_ATTRIBUTE = re.compile(r'data-household-count="([^"]*)"')
 
 
+def _ledger_provider() -> AssumptionSet:
+    """화면이 읽는 그 대장. ⚠ 여기서 값을 베끼지 않는다 — 대장이 정본이다."""
+    return AssumptionSet.load_from_yaml(
+        str(Path(__file__).resolve().parents[2] / "docs" / "assumptions.yaml")
+    )
+
+
+def _ledger_household_count() -> int | None:
+    """대장이 답하는 가구 수 (R65) — 없으면 `None`."""
+    return ledger_household_count(_ledger_provider())
+
+
+def _ledger_appliance_loads():
+    """대장이 답하는 기기 부하 (R65) — 안 적은 실행이 실제로 쓰는 값이다."""
+    return with_ledger_defaults(resolve_appliance_loads({}), _ledger_provider())
+
+
 def test_the_dashboard_lets_a_person_type_a_household_count(
     client: TestClient,
 ) -> None:
@@ -350,15 +375,36 @@ def test_the_result_screen_says_how_many_households_it_ran_on(
 
     ⚠ 수를 리터럴로 박지 않는다 — 날값 속성(`data-household-count`)에서 되찾아
     질의로 보낸 값과 맞댄다.
+
+    ## ⚠⚠ 「안 준 실행」의 뜻이 R65 에 달라졌다 — **통로가 둘이 됐다**
+
+    옛 단언은 *「화면에 안 적으면 날값이 빈 문자열이고 「미지정」이 실린다」*
+    였고 그때는 참이었다 — 대장의 `load.household.count` 가 `track: blocked`
+    라 통로가 실행 입력 하나뿐이었다. **R65 에 사용자가 20 을 정해 주었고**
+    (*「가구수를 20가구로 설정」*) 대장이 답하게 됐다.
+
+    ⇒ 화면에 안 적은 실행은 이제 **20호로 돈다.** 그때 날값을 비우거나
+    「미지정」을 적으면 **화면이 자기가 돌린 규모를 감추는 것**이며, 그 오독이
+    이 검사가 막으려던 바로 그것이다. 그래서 재는 것을 *「화면이 실제로 돈
+    규모를 싣는가」* 로 두고, 견줄 값을 **대장에서 읽어** 온다.
+    ⚠ 대장이 다시 비면 첫 단언이 그 사실을 문면으로 말하고 멈춘다.
     """
     unspecified = client.get("/ui/run", params={"scenario": _SCENARIO}).text
     match = _HOUSEHOLD_ATTRIBUTE.search(unspecified)
     assert match is not None, "결과 화면이 가구 수를 날값으로 싣지 않았다"
-    assert match.group(1) == "", (
-        f"가구 수를 주지 않았는데 날값이 {match.group(1)!r} 이다 — 지어낸 수다"
+    ledger_count = _ledger_household_count()
+    assert ledger_count is not None, (
+        "대장이 가구 수를 갖지 않는다 — 그러면 이 검사의 아래 갈래가 「대장이 "
+        "답한다」를 재지 못한다. 대장이 다시 비었으면 옛 단언(날값이 빈 문자열 "
+        f"이고 화면에 「{HOUSEHOLD_COUNT_UNSPECIFIED}」가 실린다)으로 되돌릴 것"
     )
-    assert HOUSEHOLD_COUNT_UNSPECIFIED in unspecified, (
-        f"가구 수를 안 준 실행이 「{HOUSEHOLD_COUNT_UNSPECIFIED}」를 적지 않았다"
+    assert match.group(1) == str(ledger_count), (
+        f"화면에 가구 수를 안 적은 실행의 날값이 {match.group(1)!r} 인데 대장은 "
+        f"{ledger_count} 호를 갖는다 — 화면이 실제로 돈 규모를 싣지 않는다"
+    )
+    assert HOUSEHOLD_COUNT_UNSPECIFIED not in unspecified, (
+        f"대장이 답한 실행에 「{HOUSEHOLD_COUNT_UNSPECIFIED}」가 실렸다 — "
+        "화면이 20호로 돌고도 「미지정」이라 적으면 그것이 거짓이다"
     )
 
     sized = client.get(
@@ -462,15 +508,26 @@ def test_the_result_screen_says_what_it_loaded_the_household_with(
 
     ⚠ 수를 리터럴로 박지 않는다 — 날값 속성(`data-appliance-load`)에서 되찾아
     질의로 보낸 값과 맞댄다.
+
+    ⚠⚠ **「안 준 실행」의 뜻이 R65 에 달라졌다** — 사용자가 히트펌프·전기차
+    값을 정해 주어 대장이 답한다. 사유와 갈래는 바로 위
+    `test_the_result_screen_says_how_many_households_it_ran_on` 의 ⚠⚠ 절이
+    갖는다(같은 성질이다).
     """
     unspecified = client.get("/ui/run", params={"scenario": _SCENARIO}).text
     match = _APPLIANCE_ATTRIBUTE.search(unspecified)
     assert match is not None, "결과 화면이 기기 부하를 날값으로 싣지 않았다"
-    assert match.group(1) == "", (
-        f"기기 부하를 주지 않았는데 날값이 {match.group(1)!r} 이다 — 지어낸 수다"
+    ledger_heatpump = _ledger_appliance_loads().heatpump_kwh
+    assert ledger_heatpump is not None, (
+        "대장이 히트펌프 부하를 갖지 않는다 — 대장이 다시 비었으면 옛 단언(날값이 "
+        f"빈 문자열이고 「{APPLIANCE_LOAD_UNSPECIFIED}」가 실린다)으로 되돌릴 것"
     )
-    assert APPLIANCE_LOAD_UNSPECIFIED in unspecified, (
-        f"기기를 안 준 실행이 「{APPLIANCE_LOAD_UNSPECIFIED}」를 적지 않았다"
+    assert match.group(1) == f"{float(ledger_heatpump)}", (
+        f"화면에 기기 부하를 안 적은 실행의 날값이 {match.group(1)!r} 인데 대장은 "
+        f"{ledger_heatpump} 를 갖는다 — 화면이 실제로 돈 부하를 싣지 않는다"
+    )
+    assert APPLIANCE_LOAD_UNSPECIFIED not in unspecified, (
+        f"대장이 답한 실행에 「{APPLIANCE_LOAD_UNSPECIFIED}」가 실렸다"
     )
 
     loaded = client.get(

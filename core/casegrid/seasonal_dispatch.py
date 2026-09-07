@@ -304,11 +304,25 @@ def build_and_dispatch_case(
         replacement_escalation=replacement_escalation_rate,
         self_consumption_ratio=pv_self_consumption_ratio,
     )
+    # ★★★ **설비 셋째(ESS 정격출력)에도 같은 배수를 건다** (R65/WP-2c).
+    # 태양광 용량·ESS 용량은 러너가 `_resolve` 직후에 곱해 **이미 곱해진 채로**
+    # 온다(R65/WP-2b). 정격출력만 `ess_build.py` 의 모듈 상수라 그 통로를 타지
+    # 못했고, 그래서 20호 실행이 `ess.power_kw` 로 거부됐다 — 용량이 20배가
+    # 됐는데 출력이 한 호분이면 하루 방전량을 부하 시각에 다 실을 수 없다.
+    # ⚠ **여기가 곱하는 자리인 이유는 「이미 있는 통로」이기 때문**이다 —
+    # `household_count` 가 부하 총량(`_load_total_kwh`)을 위해 이미 이 함수에
+    # 와 있고, `household_scale` 도 이미 import 되어 있다. 러너에서 정격출력을
+    # 새 인자로 날라 오면 이 파일의 코드 줄이 셋 늘어 **NFR-206 코드 상한
+    # 500 을 넘긴다**(착수 실측 498/500 — `scripts/check_file_size.py
+    # --code-strict`). 상한을 올려 푸는 것은 금지다(spec §16.5).
     ess_spec = _ESSSpec(
         shares=ess_shares, capacity_kwh=ess_capacity_kwh, capex=ess_capex,
+        household_scale_factor=household_scale(household_count),
         fixed_om=ess_fixed_om, replacement_price=ess_replacement_price,
-        escalation_rate=price_escalation_rate,
-        replacement_escalation=replacement_escalation_rate,
+        # ⚠ 이 두 줄을 한 줄로 묶은 것은 **NFR-206 코드 줄 상한** 때문이다
+        # (위 ★★★ 절 실측 — 배수 인자가 들어와 501/500 이 됐다). 이 생성자
+        # 호출은 원래도 한 줄에 인자 여럿을 적는 자리라 문체가 갈리지 않는다.
+        escalation_rate=price_escalation_rate, replacement_escalation=replacement_escalation_rate,
     )
     inputs = _season_inputs(daily_shapes, generation_total_kwh, load_total_kwh, shares)
     weights = tuple(season.days / DAYS_PER_YEAR for season in inputs)
@@ -799,6 +813,20 @@ class _ESSSpec:
 
     shares: Sequence[ESSShare] | None
     capacity_kwh: float
+    #: ★★★ **단지 규모 배수** — `ESS_POWER_KW`(한 호분 5 kW)에 곱해질 수다
+    #: (R65/WP-2c). ⚠ **여기서 다시 판정하지 않는다** — 아래 생성자가
+    #: `household_scale(household_count)` 로 한 번만 얻고, 그 함수가
+    #: `core/casegrid/household_scale.py` 의 판정 자리 하나다.
+    #:
+    #: ★ **왜 「정격출력(kW)」이 아니라 「배수」를 나르나**: 그러면 이 파일이
+    #: `ESS_POWER_KW` 를 import 해 곱해야 하고, 「한 호분 정격출력」이라는
+    #: 사실의 정본이 `ess_build.py` 와 여기 **둘**이 된다. 배수만 나르면
+    #: 정본은 그대로 상수 옆에 남는다.
+    #:
+    #: ⚠ **용량(`capacity_kwh`)은 이미 곱해져서 온다** — 러너가
+    #: `_resolve` 직후에 곱한다(R65/WP-2b). 그래서 여기서 또 곱하면 두 번
+    #: 곱해진다. 이 배수가 닿는 곳은 **정격출력 하나**다.
+    household_scale_factor: float
     capex: float
     fixed_om: float
     replacement_price: float
@@ -825,6 +853,7 @@ class _ESSSpec:
         return build_case_ess_fleet(
             shares=self.shares,
             capacity_kwh=self.capacity_kwh,
+            household_scale_factor=self.household_scale_factor,
             operating_mode=operating_mode,
             charge_source=charge_source,
             pv_surplus_profile_kwh=pv_surplus_profile_kwh,

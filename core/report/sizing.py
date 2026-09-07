@@ -98,9 +98,20 @@ class SelfSufficiencySizing:
     #: 이용률의 **출처**. 지금은 대장 항목이 아니라 소스 상수다 — 그 사실을
     #: 값으로 갖는다(검토서 §7 부수발견).
     capacity_factor_source: str
+    #: ★ **단지 규모가 곱해진 탐색 구간**이다 (R65/WP-2c) —
+    #: `_DESIGN_VARS` 의 `pv_capacity_kw` 는 **한 호분**(1.0~9.0 kW)이고
+    #: 20호 실행에서는 20~180 kW 가 된다. ⛔ **띠의 수를 고친 것이 아니라
+    #: 곱한 것이다.**
     search_low_kw: float
     search_high_kw: float
     points: tuple[SelfSufficiencyPoint, ...]
+    #: 이 역산이 답한 **단지 규모**(호). `None` 이면 「가구 한 호」이고 그때
+    #: 배수는 1 이라 이 인자가 생기기 전과 원소 하나까지 같다.
+    household_count: int | None = None
+    #: 한 호에 얹힌 **추가 전력사용기기** 연간 부하(kWh/호·년). 위 점들의
+    #: 연간 사용량에 **이미 더해져 있다** — 왜 더하는지는
+    #: `build_self_sufficiency_sizing` 독스트링 ★★ 가 갖는다.
+    extra_appliance_load_kwh: float = 0.0
 
 
 def build_self_sufficiency_sizing(
@@ -111,6 +122,8 @@ def build_self_sufficiency_sizing(
     search_low_kw: float,
     search_high_kw: float,
     reference_loads: Sequence[tuple[str, float]] = (),
+    extra_appliance_load_kwh: float = 0.0,
+    household_count: int | None = None,
 ) -> SelfSufficiencySizing:
     """대장 세 수준(low·base·high)과 참고 부하를 **각각** 역산한다.
 
@@ -118,6 +131,31 @@ def build_self_sufficiency_sizing(
     그대로 받는 모양이다(`low`·`base`·`high` 셋). 점 순서는 **`low` → `base` →
     `high` → `reference_loads` 순서 그대로**다 — `source_label` 은 그 순서로
     「대장 low」·「대장 base」·「대장 high」이고, 참고 부하는 받은 라벨 그대로다.
+
+    ## ★★ R65/WP-2c — **이 역산이 답하는 사업이 본문과 같아졌다**
+
+    받는 부하도 탐색 구간도 **「한 호」 값**이었다. 그런데 본문 4절은
+    `core/casegrid/e2e_runner.py` 가 단지 규모를 곱한 설비(20호면 60 kW)로
+    돌고 부하도 `(대장 annual + 기기) × 호수` 다. 그래서 같은 리포트가
+    **두 사업을 그렸다** — 본문은 60 kW 를 쓰는데 이 표는 「1~9 kW 구간」과
+    한 호 부하로 *「필요 용량은 2.74 kW」* 라 답했다.
+
+    ⇒ 부하와 탐색 구간에 **같은 배수**를 건다. 곱하는 것이지 **띠의 수
+    (1.0·9.0)를 고치는 것이 아니다** — 고치면 결론축(4.4 가 훑는 폭)이
+    움직인다(머리 독스트링 「탐색 구간을 넓히지 않는다」).
+
+    ★★ **기기 부하를 더하는 자리도 여기다.** 대장 `load.household.annual` 은
+    *「추가 전력사용기기가 없는 가구 기준」* 이고 본문은 거기에 히트펌프·전기차를
+    **더한 뒤** 곱한다(`core/casegrid/seasonal_dispatch.py::_load_total_kwh`).
+    이 역산이 `annual` 만 보면 **본문보다 작은 부하로 답한다** — 그러면 이
+    표의 「필요 용량」이 본문이 실제로 감당해야 하는 것보다 작게 나온다.
+
+    ⚠ **참고 부하(사용자 예시)에도 같은 처리를 한다.** 두 부하를 나란히 놓고
+    *「어느 쪽이 맞는가」* 를 묻는 것이 이 표의 목적인데(`_mismatch_lines`),
+    한쪽만 곱하면 그 물음이 **규모 차이로 덮인다.**
+
+    ⚠ **미지정이면 배수가 1 이고 기기 부하가 0** 이라, 이 두 인자가 생기기
+    전과 원소 하나까지 같다.
     """
     missing = [name for name in _LOAD_LEVEL_NAMES if name not in load_levels]
     if missing:
@@ -140,14 +178,21 @@ def build_self_sufficiency_sizing(
     ]
     labeled_loads.extend(reference_loads)
 
+    # ★★★ **한 호분 → 단지분** (R65/WP-2c · 위 독스트링 ★★). 부하와 탐색
+    # 구간에 **같은 배수**를 건다.
+    scale = 1.0 if household_count is None else float(household_count)
+    suffix = _scale_suffix(extra_appliance_load_kwh, household_count)
+    search_low_kw, search_high_kw = search_low_kw * scale, search_high_kw * scale
+
     points: list[SelfSufficiencyPoint] = []
-    for label, annual_load_kwh in labeled_loads:
+    for label, household_load_kwh in labeled_loads:
+        annual_load_kwh = (household_load_kwh + extra_appliance_load_kwh) * scale
         required_capacity_kw = required_pv_capacity_kw(
             annual_load_kwh=annual_load_kwh, capacity_factor=capacity_factor
         )
         points.append(
             SelfSufficiencyPoint(
-                source_label=label,
+                source_label=f"{label}{suffix}",
                 annual_load_kwh=annual_load_kwh,
                 required_capacity_kw=required_capacity_kw,
                 within_search_range=(
@@ -162,7 +207,23 @@ def build_self_sufficiency_sizing(
         search_low_kw=search_low_kw,
         search_high_kw=search_high_kw,
         points=tuple(points),
+        household_count=household_count,
+        extra_appliance_load_kwh=extra_appliance_load_kwh,
     )
+
+
+def _scale_suffix(extra_appliance_load_kwh: float, household_count: int | None) -> str:
+    """점 이름에 **무엇을 더하고 무엇을 곱했는지**를 적는다.
+
+    ⚠ 라벨을 그대로 두면 「대장 base」가 대장에 적힌 수가 아닌 값을 가리키게
+    되고, 그 어긋남은 아무 예외도 내지 않는다.
+    """
+    parts = []
+    if extra_appliance_load_kwh:
+        parts.append(" + 기기")
+    if household_count is not None:
+        parts.append(f" × {household_count}호")  # noqa: RUF001
+    return "".join(parts)
 
 
 def _range_note(sizing: SelfSufficiencySizing, point: SelfSufficiencyPoint) -> str:
@@ -186,6 +247,35 @@ def _mismatch_lines(sizing: SelfSufficiencySizing) -> list[str]:
         f"(연 {reference_point.annual_load_kwh:,.0f}kWh)의 필요 용량 "
         f"**{reference_point.required_capacity_kw:.2f}kW**가 두 배 가까이 다르고, "
         "어느 쪽이 맞는지는 답이 오지 않았다(검토서 §7)",
+    ]
+
+
+def _scale_lines(sizing: SelfSufficiencySizing) -> list[str]:
+    """**무엇을 곱했고 무엇을 더했는가** — 한 호 실행에서는 한 줄도 나오지 않는다.
+
+    이 줄이 없으면 표의 수가 대장에 적힌 수와 달라 보이는데 **왜 다른지가
+    리포트 안에 없다**(R65/WP-2c).
+    """
+    if sizing.household_count is None and not sizing.extra_appliance_load_kwh:
+        return []
+    added = (
+        f"한 호에 추가 전력사용기기 **{sizing.extra_appliance_load_kwh:,.0f}kWh/년**을 "
+        "더하고 "
+        if sizing.extra_appliance_load_kwh
+        else ""
+    )
+    scaled = (
+        f"단지 규모 **{sizing.household_count}호**를 곱했다"
+        if sizing.household_count is not None
+        else "단지 규모는 곱하지 않았다(가구 한 호)"
+    )
+    return [
+        f"- 규모 — {added}{scaled}. 본문 4절이 도는 부하·설비와 **같은 배수**이며"
+        "(`core/casegrid/e2e_runner.py`), 탐색 구간도 함께 곱했다 — "
+        "구간의 수(한 호분 "
+        f"{sizing.search_low_kw / (sizing.household_count or 1):g}~"
+        f"{sizing.search_high_kw / (sizing.household_count or 1):g}kW)를 고친 것이 "
+        "아니다",
     ]
 
 
@@ -228,6 +318,7 @@ def self_sufficiency_section(sizing: SelfSufficiencySizing) -> list[str]:
             "그 일치를 근거로 쓸 수 없다"
         ),
     ]
+    lines += _scale_lines(sizing)
     lines += _mismatch_lines(sizing)
     lines.append(
         "- 이 표는 진단이다 — 이 용량을 채택한 것이 아니다. 채택하려면 탐색 구간·"

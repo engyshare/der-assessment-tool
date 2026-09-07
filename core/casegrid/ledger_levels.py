@@ -238,11 +238,16 @@ _MODELLING_VARS: tuple[tuple[str, tuple[tuple[str, float], ...]], ...] = (
 #: 한쪽만 곱하면 부하와 설비가 서로 다른 사업을 그린다.
 #: ⛔ **그러니 이 수를 「작다」고 키우지 마라** — 키우면 한 호가 60 kW 를 갖는
 #: 사업이 되고 배수가 두 번 곱해진다. 여기 적는 것은 **한 호분**이다.
-#: ⚠ **탐색 구간(1.0~9.0 · 2.0~30.0)도 한 호분이다** — `design_variables()`
-#: 를 읽어 4.4(적정 용량)와 역산 소절을 인쇄하는 자리
-#: (`core/report/case_report.py`·`sizing.py`·`ess_sizing.py`)는 그 수를 **곱하지
-#: 않는다.** 그래서 20호 실행에서 그 절들은 여전히 **한 호**를 말한다 — 본문과
-#: 다른 규모다. 자리는 `.orch/R65/result_2b.md` ⑧ 이 넘긴다.
+#: ⚠ **탐색 구간(1.0~9.0 · 2.0~30.0)도 한 호분이다.** 그 수를 읽어 인쇄하는
+#: 자리가 둘인데 **지금은 한쪽만 곱한다** (R65/WP-2c):
+#:   · **곱한다** — 붙임 10 의 역산 소절. `core/report/case_report.py` 가
+#:     `core/report/sizing.py`·`core/report/ess_sizing.py` 에 넘길 때 부하와
+#:     구간에 같은 배수를 건다(20호면 20~180 kW · 40~600 kWh).
+#:   · ⛔ **아직 안 곱한다** — 본문 4.4(적정 용량). `core/report/capacity.py`
+#:     가 `design_variables()` 의 수를 그대로 훑고 인쇄하므로, 20호 실행에서도
+#:     *「3 kW 를 썼다」* 라 적는다(실제로는 60 kW 다). 스윕 자체는 러너를
+#:     지나 20호로 도니 **수는 맞고 이름표가 한 호분**이다.
+#:     자리는 `.orch/R65/result_2c.md` ⑧ 이 넘긴다.
 #: (변수, 단위, 사람이 읽는 이름, 탐색 구간)
 _DESIGN_VARS: tuple[tuple[str, str, str, tuple[tuple[str, float], ...]], ...] = (
     (

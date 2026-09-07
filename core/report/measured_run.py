@@ -188,8 +188,49 @@ class DischargeCoverage:
     steps: float
 
 
-def discharge_coverage(hours: tuple[DispatchHour, ...]) -> DischargeCoverage | None:
+def _resource_shapes(
+    hours: tuple[DispatchHour, ...],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """부호 모양으로 (부하 자원, 저장장치) 이름을 가른다 — 아래 둘이 함께 쓴다."""
+    names = tuple(hours[0].per_resource)
+    load = tuple(
+        name
+        for name in names
+        if all(hour.per_resource.get(name, 0.0) <= 0.0 for hour in hours)
+        and any(hour.per_resource.get(name, 0.0) < 0.0 for hour in hours)
+    )
+    storage = tuple(
+        name
+        for name in names
+        if any(hour.per_resource.get(name, 0.0) > 0.0 for hour in hours)
+        and any(hour.per_resource.get(name, 0.0) < 0.0 for hour in hours)
+    )
+    return load, storage
+
+
+def discharge_coverage(
+    hours: tuple[DispatchHour, ...],
+    *,
+    resources: tuple[tuple[str, ...], tuple[str, ...]] | None = None,
+) -> DischargeCoverage | None:
     """창 하나에서 위 넷을 잰다. **이름이 아니라 부호 모양으로 자원을 가른다.**
+
+    ## ⚠⚠ `resources` — **「하루 종일 쉰 배터리」와 「배터리가 없다」를 가른다**
+    (R65/WP-2c)
+
+    부호 모양은 그 하루 안에서만 본다. 그래서 **한 스텝도 움직이지 않은**
+    배터리는 「저장장치가 없는 실행」과 구별되지 않고 이 함수가 `None` 을 낸다.
+    20호 단지의 **겨울**이 정확히 그 자리다 — 낮에도 부하가 발전을 넘어 태양광
+    잉여가 0 이라 배터리가 통째로 쉰다(실측: `e2e-ess` 가 24스텝 모두 0.0000).
+
+    그때 `None` 을 내면 계절 평균이 통째로 `None` 이 되고, **붙임 8 의 「방전창
+    밖 가구 수요」 항목이 산출물에서 사라진다.** 그것은 *「대응했다」* 도
+    *「못 했다」* 도 아닌 **침묵**이며, 이 저장소가 반복해 막아 온 형태다.
+
+    ⇒ 호출부가 **연간등가 하루에서 가른 자원 이름**을 넘겨 주면 그것을 쓴다.
+    쉰 계절에서는 방전 스텝이 0 이고 창 밖 수요가 그 계절 부하 전량이 되어,
+    *「그 계절엔 배터리가 아무것도 덮지 못했다」* 가 **수로** 실린다.
+    ⚠ 넘기지 않으면 종전과 **원소 하나까지** 같다.
 
     부하는 전 스텝이 0 이하이고 한 스텝이라도 음수인 자원, 저장장치는 **양수
     스텝과 음수 스텝을 함께 갖는** 자원이다 — `_measured_quantities` 가 자가소비를
@@ -204,19 +245,7 @@ def discharge_coverage(hours: tuple[DispatchHour, ...]) -> DischargeCoverage | N
     """
     if not hours:
         return None
-    names = tuple(hours[0].per_resource)
-    load = [
-        name
-        for name in names
-        if all(hour.per_resource.get(name, 0.0) <= 0.0 for hour in hours)
-        and any(hour.per_resource.get(name, 0.0) < 0.0 for hour in hours)
-    ]
-    storage = [
-        name
-        for name in names
-        if any(hour.per_resource.get(name, 0.0) > 0.0 for hour in hours)
-        and any(hour.per_resource.get(name, 0.0) < 0.0 for hour in hours)
-    ]
+    load, storage = resources if resources is not None else _resource_shapes(hours)
     if not load or not storage:
         return None
     outside = [
@@ -251,8 +280,19 @@ def discharge_coverage_over_seasons(
     """
     if not hours or not seasons:
         return discharge_coverage(hours)
+    # ★ **자원 이름은 연간등가 하루에서 가른다** (R65/WP-2c · 위 함수의 ⚠⚠).
+    # 계절마다 다시 가르면 배터리가 쉰 계절이 「배터리가 없는 실행」이 되어
+    # `None` 을 내고, 그 하나 때문에 **연간 평균이 통째로 사라진다.**
+    resources = _resource_shapes(hours)
+    if not resources[0] or not resources[1]:
+        return None
     parts = [
-        (discharge_coverage(build_hourly_profile(season.dispatch)), season.days)
+        (
+            discharge_coverage(
+                build_hourly_profile(season.dispatch), resources=resources
+            ),
+            season.days,
+        )
         for season in seasons
     ]
     measured = [(part, days) for part, days in parts if part is not None]

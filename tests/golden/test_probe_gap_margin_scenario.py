@@ -123,7 +123,7 @@ def test_control_group_the_real_ledger_still_shows_a_shortfall() -> None:
     이 대조군이 없으면 「흑자 경로가 돈다」와 「늘 그 문면이 나온다」가
     구별되지 않는다(모듈 독스트링 참조). `fixtures/golden/
     scenario_subsidy_80.yaml`(기존 골든)이 같은 `subsidy_rate=0.80` 을
-    진짜 대장으로 매 회귀에서 재는 값(`npv_won: -3785181`)과 일치해야
+    진짜 대장으로 매 회귀에서 재는 값(`npv_won: -166457263`)과 일치해야
     한다 — 이 실측이 그 값과 어긋나면 이 파일이 아니라 진짜 대장이나
     `core/` 가 움직인 것이다.
 
@@ -153,13 +153,26 @@ def test_control_group_the_real_ledger_still_shows_a_shortfall() -> None:
     `build_case_report()` 가 *「전제 대장에 항목이 없습니다」* 로 멈춘다(그
     파일의 해당 항목 위 주석이 사유를 갖는다). 파생 대장이 진짜 대장과 다른
     칸은 여전히 `benefit.rec_price` 하나뿐이다.
+
+    ## ⚠ 값이 네 번째로 바뀌었다 — **역시 재는 것은 그대로다** (R65/WP-2c)
+
+    R65 가 사용자 요구(*「가구수를 20가구로 설정」*)를 대장에 세우고 설계 변수
+    셋(태양광 용량·ESS 용량·ESS 정격출력)이 그 배수를 타게 되면서 결론축이
+    다시 움직였다 — **이 사업의 규모가 한 호에서 20호가 됐다**(그 골든 파일의
+    R65 블록이 경위와 산식을 갖는다). `-3785181` → `-166457263`.
+    ⚠ **이번에는 세 시나리오의 이동 폭이 다르다** — 초기투자 자체가 20배가
+    됐고 보조율이 그 분담을 가르기 때문이다(같은 블록 참조).
+    ⚠ **이 파일의 파생 대장(`fixtures/probe/assumptions_probe_gap_margin.yaml`)은
+    한 자도 고치지 않았다.** 그 대장에는 `load.household.count` 가 없어
+    위쪽 흑자 시험은 여전히 **가구 한 호**로 돌고, 그래서 그 시험의 값은
+    움직이지 않았다 — 대조군만 진짜 대장을 읽으므로 여기만 따라간다.
     """
     report = build_case_report(PROBE_SCENARIO_PATH, assumptions_path=REAL_ASSUMPTIONS_PATH)
 
     assert report.recovers_within_horizon is False
-    assert report.metrics["npv"] == -3785181.0, (
+    assert report.metrics["npv"] == -166457263.0, (
         "대조군의 순현재가치가 fixtures/golden/scenario_subsidy_80.yaml 의 "
-        "실측(-3785181)과 어긋난다 — 진짜 대장이나 core/ 가 움직였다는 뜻이다"
+        "실측(-166457263)과 어긋난다 — 진짜 대장이나 core/ 가 움직였다는 뜻이다"
     )
 
     rendered = render_markdown(report)

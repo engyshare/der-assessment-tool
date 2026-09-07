@@ -663,6 +663,15 @@ def run_single_case_e2e(
     # `용량 × 단가` 로 나온다(`seasonal_dispatch.py` 의 `unit_capex_won_per_kw` ·
     # `capex_unit_won_per_kwh`). 여기서 함께 곱하면 **두 번 곱해진다.**
     # ⚠ **미지정(`None`)이면 배수가 `1`** 이라 이 곱이 생기기 전과 원소 하나까지 같다.
+    #
+    # ⚠⚠ **설비는 셋이고 곱하는 자리도 둘이다** (R65/WP-2c). 여기서 곱하는 것은
+    # 용량 둘뿐이며, 셋째인 **ESS 정격출력**은 `_resolve` 를 지나지 않는다 —
+    # 설계 변수가 아니라 `core/casegrid/ess_build.py::ESS_POWER_KW`(한 호분
+    # 5 kW) 모듈 상수이기 때문이다. 그것은 **같은 배수**를
+    # `core/casegrid/seasonal_dispatch.py::_ESSSpec` 이 날라 곱한다(그 자리의
+    # ★★★ 주석이 왜 여기가 아닌지를 갖는다). ⛔ **셋 중 하나만 배수를 안 타면
+    # 같은 실행 안에서 설비가 서로 다른 규모의 사업을 그린다** — WP-2b 가
+    # 용량 둘만 곱했을 때 실행이 `ess.power_kw` 로 거부된 것이 그 증상이다.
     scale = household_scale(household_count)
     pv_capacity_kw = scale * _resolve(
         case_values.get("pv_capacity_kw", "base"), "pv_capacity_kw", level_map

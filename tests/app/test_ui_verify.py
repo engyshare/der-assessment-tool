@@ -60,6 +60,7 @@ from __future__ import annotations
 
 import html
 import re
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -72,6 +73,8 @@ from app.services.verify_steps import (
     VerificationStageError,
     split_stages,
 )
+from core.assumption.provider import AssumptionSet
+from core.casegrid.household_scale import ledger_household_count
 from core.report._format import _num, _won
 from core.report.case_report import CaseReport
 from core.report.verification import render_verification_markdown
@@ -326,6 +329,15 @@ _FILL_TAG = re.compile(r'data-fill="([^"]+)"')
 _FILL_VALUE = re.compile(r'<p class="fill-value">(.*?)</p>', re.DOTALL)
 
 
+def _ledger_household_count() -> int | None:
+    """대장이 답하는 가구 수 (R65) — **여기 리터럴로 적지 않는다.**"""
+    return ledger_household_count(
+        AssumptionSet.load_from_yaml(
+            str(Path(__file__).resolve().parents[2] / "docs" / "assumptions.yaml")
+        )
+    )
+
+
 @pytest.fixture(scope="module")
 def sized_body(client: TestClient) -> str:
     """가구 수를 **준** 실행의 화면 — 위 `body` 와 같은 시나리오·다른 갈래."""
@@ -337,14 +349,46 @@ def sized_body(client: TestClient) -> str:
     return response.text
 
 
-def test_without_a_household_count_the_screen_stands_no_number(body: str) -> None:
-    """★★★ **가구 수를 안 준 실행에는 값 칸이 하나도 없다** — 지금까지와 같다.
+def test_without_a_household_count_the_screen_shows_the_ledger_number(
+    body: str,
+) -> None:
+    """★★★ **화면에 안 적은 실행은 「대장이 답한 수」를 보인다** (R65).
 
-    이것이 기본 갈래이며 골든 셋이 도는 갈래다. 여기에 값이 서면 그것은
-    저장소가 지어낸 세대 수이고, 그 수가 단지 총부하를 통째로 정한다.
+    ## ⚠⚠ 이 시험이 재던 것이 뒤집혔다 — **낡은 것이 아니라 반대 사실이었다**
+
+    옛 이름은 `test_without_a_household_count_the_screen_stands_no_number` 였고
+    *「값이 선 칸이 하나도 없다」* 를 쟀다. 그때는 그것이 옳았다: 대장의
+    `load.household.count` 가 `track: blocked` 였으므로 **거기에 값이 서면 그것은
+    저장소가 지어낸 세대 수**였고, 그 수가 단지 총부하를 통째로 정했다.
+
+    **R65 에 그 사실을 정하는 쪽이 값을 주었다** — 사용자 요구 원문
+    *「가구수를 20가구로 설정」*(2026-09-07). 저장소가 고른 수가 아니므로
+    §13.0.2 자기충족이 아니다. ⇒ 이제 화면에 안 적은 실행도 **20호로 돌고**,
+    그때 칸을 비우면 화면이 **자기가 돌린 규모를 감추는 것**이 된다.
+
+    ⇒ 재는 것을 *「값이 없다」* 에서 **「실제로 돈 수를 보이고, 그 수가 어디서
+    왔는지 함께 적는가」** 로 옮겼다. ⚠ 저장소가 지어내지 않는다는 성질은
+    그대로이며, 그 감시는 대장 쪽(`tests/assumption/test_ledger_titles.py`)이
+    이어 진다.
     """
-    assert not _FILL_BLOCK.findall(body), (
-        "가구 수를 주지 않았는데 값이 선 칸이 있다 — 지어낸 수다"
+    blocks = _FILL_BLOCK.findall(body)
+    ledger_count = _ledger_household_count()
+    assert ledger_count is not None, (
+        "대장이 가구 수를 갖지 않는다 — 그러면 화면에 값이 설 이유가 없고, "
+        "옛 단언(값이 선 칸이 하나도 없다)으로 되돌려야 한다"
+    )
+    tags = [_FILL_TAG.search(block).group(1) for block in blocks]
+    assert tags == ["households"], f"값이 선 칸 목록이 다르다: {tags}"
+    value = _FILL_VALUE.search(blocks[0])
+    assert value is not None, "값이 선 칸에 값 문단이 없다"
+    assert f"{ledger_count:,}호" in _text(value.group(1)), (
+        f"화면이 대장의 {ledger_count}호를 보이지 않는다: {value.group(1)!r}"
+    )
+    # ★ **어디서 왔는지**가 함께 실린다 — 「실행 입력이 정했다」만 적으면
+    # 화면에 아무것도 안 적은 이 실행에서 그 문장이 거짓이다
+    # (`app/services/verify_steps.py::_household_count_fill` 의 ⚠⚠).
+    assert "load.household.count" in body, (
+        "대장이 답한 수인데 화면이 그 통로를 적지 않는다"
     )
 
 

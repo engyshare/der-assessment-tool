@@ -35,7 +35,11 @@ from core.report.dispatch_sections import (
     dispatch_rule_section,
 )
 from core.report.narrative import render_markdown
-from tests.report.conftest import report_shapes, report_shift_share
+from tests.report.conftest import (
+    report_household_wiring,
+    report_shapes,
+    report_shift_share,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -182,6 +186,9 @@ def test_hourly_export_total_matches_the_benefit_formula_quantity() -> None:
         # 재게 되고, 그때 옳은 리포트가 빨간불이 된다. 바로 위 두 배선
         # (형상 · 가구 부하)이 적어 둔 것과 같은 함정이다.
         dr_shiftable_share_pct=report_shift_share(),
+        # ★★ **단지 규모·기기 부하·계절 몫도 같은 배선** (R65/WP-2c) — 안 넘기면
+        # 리포트(20호 단지)의 수를 **한 호짜리** 재실행과 맞대게 된다.
+        **report_household_wiring(),
     )
     expected = sum(outcome.dispatch.grid_export)
     reported = sum(hour.grid_export for hour in report.dispatch_hours)
