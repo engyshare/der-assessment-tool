@@ -1000,6 +1000,18 @@ def build_case_report(
 
     # ★ 용량 스윕은 **1변수 스윕과 같은 기계**를 쓴다 (`sweeper.conclusion_at`).
     # 갈라 두면 용량 쪽만 변형(`as_planned`)을 읽지 않는 어긋남이 생긴다.
+    # ★★★ **4.4 도 「단지」로 답한다** (R65/WP-5). 종전에는 `used` 도 탐색
+    # 구간도 **한 호분**이라, 본문 4절이 60 kW·200 kWh 로 도는 동안 이 표만
+    # *「3 kW 를 썼다」* 고 적었다 — 위 붙임 10 역산(WP-2c)이 닫은 것과 **같은
+    # 형태**이며 4.4 만 안 따라온 것이었다.
+    # ⚠ **곱은 `build_capacity_review` 가 한다** — `used` 에는 금액·비율 축도
+    # 함께 있어(`pv_unit_cost`·`discount_rate` 등) 여기서 통째로 곱할 수 없고,
+    # **무엇이 설계 변수인지는 `design_variables()` 가** 안다. 그 목록을 도는
+    # 자리가 그 함수다(그 독스트링 ★★★).
+    # ⚠⚠ **스윕에 넘기는 값은 곱하지 않는다** — `sweeper.conclusion_at` 은
+    # 러너를 지나고 러너가 `household_scale` 을 곱하므로, 여기서 곱하면 **두 번
+    # 곱해져** 결론축이 움직인다. 그 가름도 그 함수 안에 있다.
+    # ⛔ 띠의 수(1.0·9.0 · 2.0·30.0)를 고치지 않았다 — 곱한 것이다.
     capacity_review = build_capacity_review(
         sweeper.conclusion_at,
         used={
@@ -1007,6 +1019,7 @@ def build_case_report(
             for name, levels in level_map.items()
             if "base" in levels
         },
+        scale=household_scale(household_count),
     )
 
     # ★ 경우 「가」(100% 자립) 역산 — 붙임 10 의 별도 소절 (R55/WP-2 · 검토서 §1).

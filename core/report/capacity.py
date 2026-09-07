@@ -164,6 +164,7 @@ def build_capacity_review(
     probe: Callable[[str, float], float],
     *,
     used: dict[str, float],
+    scale: int = 1,
 ) -> tuple[CapacityFinding, ...]:
     """설계 변수마다 탐색 구간을 훑는다.
 
@@ -175,12 +176,37 @@ def build_capacity_review(
     `used` 는 이 실행이 실제로 쓴 용량이다. 탐색 구간의 `base` 를 그대로 쓰지
     않는 이유는, 러너가 다른 값을 받았을 때 **표만 기준 구성을 가리키는** 것을
     막기 위해서다.
+
+    ## ★★★ `scale` — **단지 규모를 «인쇄에만» 곱한다** (R65/WP-5)
+
+    `design_variables()` 의 수와 `used` 는 **한 호분**이고, 러너가
+    `core/casegrid/e2e_runner.py` 에서 `household_scale(household_count)` 를
+    곱한다. 그래서 20호 실행의 스윕은 이미 60 kW·200 kWh 로 도는데 **이 표만
+    「3 kW 를 썼다」** 고 적었다 — 수는 맞고 이름표가 한 호분이었다
+    (`.orch/R65/result_2c.md` ⑧ⓑ).
+
+    ⚠⚠ **그러므로 `probe` 에 넘기는 값은 곱하지 않는다.** 곱하면 러너가 **두
+    번 곱해** 20호 실행이 1,200 kW 를 재고 결론축이 움직인다. 곱하는 것은
+    `CapacityPoint.value`·`used_value` 처럼 **표에 인쇄되는 값**뿐이며, 그래서
+    이 인자는 산출물의 이름표만 바꾸고 계산은 한 원도 건드리지 않는다.
+
+    ⚠ **`scale` 을 여기서 받는 이유** — 무엇이 설계 변수인지 아는 것은
+    `design_variables()` 이고 그것을 도는 자리가 이 함수다. 호출부에서 `used`
+    를 곱하려면 그 목록을 `case_report.py` 가 다시 알아야 하고, 그때 *「곱하는
+    것은 설계 변수뿐」* 이라는 규칙이 두 파일에 나뉘어 산다. 무엇보다 **곱하는
+    값과 곱하지 않는 값을 가르는 자리가 이 루프 하나**여야 위 ⚠⚠ 가 지켜진다.
+
+    ⚠ **미지정이면 `1`** 이라 곱이 생기기 전과 원소 하나까지 같다 — 호출부는
+    `household_scale(household_count)` 를 넘기고 그 함수가 `None` 을 `1` 로
+    옮긴다(⛔ `household_count or 1` 은 `0` 도 조용히 `1` 로 바꾼다).
     """
     findings: list[CapacityFinding] = []
     for variable in design_variables():
         points: list[CapacityPoint] = []
         blocked: str | None = None
         for value in _sample_values(variable):
+            # ⚠ `value` 는 **한 호분**이라 `probe` 가 그대로 받고,
+            # 표에 남는 것은 `value * scale`(단지분)이다. 위 ⚠⚠ 참조.
             field: str | None = None
             by_design = False
             try:
@@ -204,7 +230,7 @@ def build_capacity_review(
                 # *「적정값이 정해진다」* 를 낸다.
             points.append(
                 CapacityPoint(
-                    value=value,
+                    value=value * scale,
                     conclusion=conclusion,
                     blocked_by=reason,
                     by_design=by_design,
@@ -218,7 +244,7 @@ def build_capacity_review(
                 variable=variable.name,
                 label=variable.label,
                 unit=variable.unit,
-                used_value=used.get(variable.name, variable.base),
+                used_value=used.get(variable.name, variable.base) * scale,
                 points=frozen,
                 shape=_shape_of(frozen),
                 marginal_won_per_unit=_marginal(frozen),

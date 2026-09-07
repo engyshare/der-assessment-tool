@@ -20,6 +20,7 @@ from core.contracts.validation import ValidationError
 from core.report.capacity import (
     BLOCKED_BY_DESIGN,
     BLOCKED_BY_FAILURE,
+    SAMPLES,
     SHAPE_DECREASING,
     SHAPE_INCREASING,
     SHAPE_INTERIOR,
@@ -255,3 +256,96 @@ def test_a_real_failure_is_not_counted_as_a_capacity_bound() -> None:
         assert not finding.bounded, (
             "결함이 났을 뿐인데 「적정 용량이 정해진다」로 나왔다"
         )
+
+
+# ── 단지 규모 (R65/WP-5) ──────────────────────────────────────────────
+
+
+def _band(variable, scale: float = 1.0) -> list[float]:
+    """`variable` 의 탐색 구간 `SAMPLES` 점 — **배수를 곱해** 짓는다.
+
+    ⚠ **수를 리터럴로 적지 않는다.** 1.0·9.0·2.0·30.0 을 여기 적으면
+    `_DESIGN_VARS` 가 바뀌는 날 이 검사만 조용히 낡는다 — 그때 재는 것은
+    *지금 띠가 맞는가* 가 아니라 *옛 띠와 같은가* 가 된다.
+    """
+    step = (variable.high - variable.low) / (SAMPLES - 1)
+    return [(variable.low + step * index) * scale for index in range(SAMPLES)]
+
+
+def test_the_capacity_review_says_what_this_run_actually_used() -> None:
+    """★★★ **20호 실행이 「3 kW 를 썼다」고 적고 있었다** (R65/WP-5).
+
+    이 라운드가 설비를 가구 수에 비례시켰고(WP-2b) 붙임 10 의 역산도 단지로
+    옮겼는데(WP-2c) **4.4 만 안 따라왔다.** 스윕 자체는 러너를 지나 20호로
+    도니 수는 맞았고 **이름표가 한 호분**이었다 — 그래서 *어떤 검사도 이것을
+    잡지 못했다.*
+
+    ⚠ 그 함수의 독스트링이 바로 이 상태를 금지하려고 쓰였다 — *「러너가 다른
+    값을 받았을 때 **표만 기준 구성을 가리키는** 것을 막기 위해서다」*.
+    """
+    report = _report()
+    count = report.household_count
+    assert count is not None, "이 시나리오가 단지 규모 없이 돈다 — 검사의 전제가 깨졌다"
+    assert count > 1, "배수가 1 이면 곱한 것과 안 곱한 것이 구별되지 않는다"
+
+    by_name = {v.name: v for v in design_variables()}
+    for finding in report.capacity_review:
+        variable = by_name[finding.variable]
+        assert finding.used_value == variable.base * count, (
+            f"{finding.variable}: 4.4 가 「{finding.used_value:g}{finding.unit} 를 "
+            f"썼다」고 적는데 이 실행은 {variable.base * count:g}{finding.unit} 로 "
+            f"돌았다 — 한 호분({variable.base:g})을 인쇄하고 있다"
+        )
+        assert [p.value for p in finding.points] == _band(variable, count), (
+            f"{finding.variable}: 탐색 구간이 한 호분 띠다 — "
+            f"{count}호 단지에 대해 「{finding.points[0].value:g}"
+            f"{finding.unit} 로 두면?」 은 아무 뜻이 없다"
+        )
+
+
+def test_an_unspecified_run_is_unchanged_to_the_last_element() -> None:
+    """⚠ **미지정이면 배수가 1** — 곱이 생기기 전과 원소 하나까지 같다.
+
+    호출부 다수가 `scale` 없이 부른다(시험·스크립트). 기본값이 1 이 아니거나
+    곱이 어딘가 남으면 그 실행들이 조용히 달라진다.
+    """
+    findings = build_capacity_review(lambda _v, value: value * 1_000.0, used={})
+    by_name = {v.name: v for v in design_variables()}
+    assert findings, "설계 변수가 하나도 없다"
+    for finding in findings:
+        variable = by_name[finding.variable]
+        assert finding.used_value == variable.base
+        assert [p.value for p in finding.points] == _band(variable)
+
+
+def test_the_plant_multiplier_never_reaches_the_probe() -> None:
+    """★★★ **곱을 스윕에 태우면 결론축이 움직인다** (R65/WP-5의 금지선).
+
+    러너가 설계 변수에 `household_scale` 을 **이미** 곱한다
+    (`core/casegrid/e2e_runner.py`). 그러므로 `probe` 에 단지분을 넘기면 **두
+    번 곱해져** 20호 실행이 1,200 kW 를 재고, 4.4 는 *인쇄만 고치려던 자리에서*
+    결론축을 흔든다.
+
+    ⚠ 그래서 여기서 재는 것은 *표에 무엇이 찍히는가* 가 아니라 **탐침이 무엇을
+    받는가**이며, 배수를 바꿔도 그것이 **같아야** 한다.
+    """
+    seen: dict[float, list[float]] = {}
+
+    def record(scale: float) -> None:
+        received: list[float] = []
+
+        def probe(_variable: str, value: float) -> float:
+            received.append(value)
+            return value * 1_000.0
+
+        build_capacity_review(probe, used={}, scale=int(scale))
+        seen[scale] = received
+
+    record(1)
+    record(20)
+    assert seen[20] == seen[1], (
+        "단지 배수가 탐침에 새어 들어갔다 — 러너가 다시 곱하므로 "
+        "이 실행의 결론축이 움직인다"
+    )
+    expected = [value for v in design_variables() for value in _band(v)]
+    assert seen[1] == expected, "탐침이 받는 값이 한 호분 띠가 아니다"
