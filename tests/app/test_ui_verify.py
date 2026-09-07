@@ -607,3 +607,72 @@ def test_the_seasonal_blank_cell_narrowed_instead_of_disappearing(
     assert "가구별" in reason, (
         f"남은 결손이 「가구별 분해가 없다」임을 말하지 않는다: {reason}"
     )
+
+
+# ── ★★★ R65/WP-3: ① 걸음의 **계절별 도표** (사용자 요구 — 검증 모드에서
+#    수치와 도표 둘 다 확인이 어렵다) ──────────────────────────────────────────
+#
+# 사용자가 본 곳은 검증 모드다. 계절별 **수치 표**는 R64/WP-5 가 세웠고 이
+# 라운드가 그 아래에 **도표**를 세운다 — 그림 `seasonal_operation` 은 이미
+# 있고(`/ui/chart/seasonal_operation.png`), 검증 화면이 그것을 부르지 않을
+# 뿐이었다(`.orch/R65/result_1.md` ① 5번 상세).
+
+#: ⚠ 태그의 **속성을 열어 둔다** — 이 파일 머리말이 적은 대로 클래스·속성은
+#: 접근성·스타일 때문에 늘어나는 것이 정상이고, 재는 것은 태그 하나로 좁힌다.
+#: `data-chart` 는 `/ui/run` 의 결과 그림 칸(`run_result.html`) 이 이미 쓰는
+#: 이름이다 — 같은 그림을 같은 이름으로 센다.
+_SEASON_CHART = re.compile(
+    r'<figure[^>]*data-chart="seasonal_operation".*?</figure>', re.DOTALL
+)
+#: `src` 의 첫 조각 — 그림 주소가 **이미 있는 그림 라우트**를 가리키는지.
+_IMG_SRC = re.compile(r'<img[^>]*\ssrc="([^"]+)"')
+
+
+def test_the_season_step_carries_the_seasonal_operation_chart(body: str) -> None:
+    """★★★ ① 걸음이 계절별 **도표**를 싣는다 — 표 바로 아래에.
+
+    ⚠ 그림을 새로 그리지 않는다 — 화면은 이미 있는 라우트
+    `GET /ui/chart/seasonal_operation.png` 를 `<img>` 로 부를 뿐이다.
+    손으로 그린 그림이 서면 같은 그림이 두 곳에 살고 화면의 수가 리포트와
+    갈릴 수 있다(그림 라우트 독스트링).
+    """
+    section = _group_slice(body, 1)
+    block = _SEASON_CHART.search(section)
+    assert block is not None, "① 걸음에 seasonal_operation 그림 칸이 없다"
+    img = _IMG_SRC.search(block.group(0))
+    assert img is not None, "그림 칸에 <img> 가 없다"
+    src = img.group(1)
+    assert src.startswith("/ui/chart/seasonal_operation.png"), (
+        f"그림이 이미 있는 라우트를 가리키지 않는다: {src!r}"
+    )
+    # ★ 칸은 계절 표 **아래**에 — 표와 그림이 같은 걸음에 나란히 서야
+    # 「수치와 도표로 확인」이 한 화면에서 성립한다.
+    assert section.index('data-chart="seasonal_operation"') > section.rindex(
+        "data-season="
+    ), "그림 칸이 계절 표 아래에 있지 않다"
+
+
+def test_the_chart_src_carries_the_query_of_this_run(client: TestClient) -> None:
+    """★★★ **질의가 그림에 따라간다** — 20호로 돈 화면의 그림은 20호를 그린다.
+
+    안 따라가면 화면의 표는 `household_count=20` 인데 그림은 1호(또는 대장
+    기본값)가 된다 — 둘 다 그럴듯해 보이고 그 어긋남은 아무 오류도 내지
+    않는다. 질의를 잇는 것은 `/ui/run` 이 쓰는 `chart_query` 와 인자가 한
+    칸씩 같아야 한다(`app/routers/ui_verify.py::_seasonal_figure`).
+    """
+    response = client.get(
+        _VERIFY_PATH,
+        params={"scenario": _SCENARIO, "household_count": 20},
+    )
+    assert response.status_code == 200, response.text[:400]
+    block = _SEASON_CHART.search(response.text)
+    assert block is not None, "가구 수를 준 실행에도 그림 칸이 서야 한다"
+    img = _IMG_SRC.search(block.group(0))
+    assert img is not None, "그림 칸에 <img> 가 없다"
+    src = img.group(1)
+    assert "household_count=20" in src, (
+        f"그림 주소에 이 실행의 가구 수가 안 실렸다: {src!r}"
+    )
+    assert f"scenario={_SCENARIO}" in src, (
+        f"그림 주소에 이 실행의 시나리오가 안 실렸다: {src!r}"
+    )

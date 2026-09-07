@@ -139,6 +139,31 @@
         {% endfor %}
         <figcaption>{{ group.season_caption }}</figcaption>
       </figure>
+
+      {# ★★ 계절별 시간대별 운전 — **도표** (R65/WP-3 · 사용자 요구: 검증 모드에서
+         수치와 도표 둘 다). 위 표와 같은 걸음에 두는 이유: 「수치와 도표로
+         확인」이 한 화면에서 성립해야 하기 때문이다.
+         ⛔ 그림을 새로 그리지 않는다 — 이미 있는 라우트 GET /ui/chart/{tag}.png 를
+         부르며 칸의 재료는 `chart_figures` 가 짓는다(`app/routers/ui_verify.py`).
+         ⚠ `src` 에 **이 화면에 온 질의**가 실려 있다 — 안 실리면 표는 20호인데
+         그림은 1호가 된다. `group.seasons` 가 있을 때만 세운다: 계절이 없는 실행의
+         그림 주소는 501 로 거부되며, 그 빈자리의 사유는 같은 걸음의 빈 칸
+         (`seasonal_operation`) 이 이미 글자로 갖는다.
+         ⚠ 마크업·캡션 문면은 `run_result.html#result-charts` 와 같은 모양이다 —
+         한 그림을 두 화면이 다르게 소개하면 어느 쪽이 정본인지 화면만 봐서는
+         알 수 없다. #}
+      {% if seasonal_figure %}
+      <figure class="season-chart" data-chart="{{ seasonal_figure.tag }}">
+        {% if seasonal_figure.wired %}
+        <img src="{{ seasonal_figure.src }}" alt="{{ seasonal_figure.alt }}"
+             loading="lazy" style="max-width:100%;height:auto">
+        <figcaption>{{ seasonal_figure.label }} · 자료: {{ seasonal_figure.source }}</figcaption>
+        {% else %}
+        <p class="chart-unwired" role="note">아직 배선되지 않았다 — {{ seasonal_figure.reason }}</p>
+        <figcaption>{{ seasonal_figure.label }}</figcaption>
+        {% endif %}
+      </figure>
+      {% endif %}
       {% endif %}
 
       {% if group.net_demand %}
