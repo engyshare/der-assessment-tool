@@ -95,7 +95,7 @@ group_titles:
   capacity_factor: "설비 이용률"
   capex: "설비 투자비"
   cost: "비용 보상 단가"
-  design: "단지 설계 전제"
+  design: "단지 설계"
   escalation: "장기 상승률"
   fee: "수수료"
   load: "전기사용자 부하"

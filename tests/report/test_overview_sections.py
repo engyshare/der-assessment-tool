@@ -193,10 +193,10 @@ def test_unclassified_key_is_shown_not_absorbed() -> None:
     # ★ **R66/WP-5 가 이 래칫을 실물로 밟았다.** 대장에
     # `design.coincidence_factor`(단지 설비 동시율 · 사용자 지시 2026-09-07)를
     # 세우자 이 검사가 「미분류 — 1건」으로 빨간불이 됐고, `TOPIC_PREFIXES` 에
-    # **`단지 설계 전제`** 주제를 선언해 닫았다. 그 주제 이름은 대장의
+    # **`단지 설계`** 주제를 선언해 닫았다. 그 주제 이름은 대장의
     # `group_titles.design` 과 **같은 낱말**이며, 그 대응을 여기서 못박아 둔다 —
     # 한쪽만 바뀌면 붙임 1 과 설정 화면이 같은 무리를 다른 이름으로 부른다.
-    assert topic_of("design.coincidence_factor") == "단지 설계 전제"
+    assert topic_of("design.coincidence_factor") == "단지 설계"
 
 
 def test_appendix_one_carries_no_reading_instructions() -> None:
