@@ -24,8 +24,12 @@ from __future__ import annotations
 from decimal import Decimal
 from pathlib import Path
 
-from app.run.report_cli import DEFAULT_SCENARIO, main
+import pytest
+
+from app.run.report_cli import DEFAULT_SCENARIO, INDEX_FILENAME, main
+from app.services.verify_steps import split_stages
 from core.report.case_report import build_case_report
+from core.report.verification import render_verification_markdown
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -113,7 +117,9 @@ def test_verification_kind_differs_from_deliberation(tmp_path: Path) -> None:
     )
 
 
-def test_stderr_names_which_report_kind_was_written(tmp_path: Path, capsys) -> None:
+def test_stderr_names_which_report_kind_was_written(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     target = tmp_path / "verification.md"
     assert main(["--kind", "verification", "--out", str(target)]) == 0
     message = capsys.readouterr().err
@@ -125,3 +131,108 @@ def test_no_judgement_sentences(tmp_path: Path) -> None:
     text = _verification_text(tmp_path)
     for banned in ("타당하다", "타당하지", "적절하다", "바람직하다", "권고한다", "결론적으로"):
         assert banned not in text, f"판정 문장으로 읽히는 낱말이 있다: {banned!r}"
+
+
+# ---------------------------------------------------------------------------
+# R67/WP-1 — `--split-stages`: 검증 보고서를 단계별 파일로 나눠 내는 선택지.
+# 요구 정본: `docs/decisions-2026-09-08-R67.md` §4-1.
+# ---------------------------------------------------------------------------
+
+
+def _stage_dir(tmp_path: Path) -> Path:
+    """`--split-stages` 로 단계별 파일을 뽑는다 — 돌려값은 받은 디렉터리."""
+    out_dir = tmp_path / "stages"
+    assert (
+        main(["--kind", "verification", "--split-stages", "--out", str(out_dir)]) == 0
+    )
+    return out_dir
+
+
+def test_split_stages_writes_nine_stage_files_and_an_index(tmp_path: Path) -> None:
+    out_dir = _stage_dir(tmp_path)
+    names = sorted(p.name for p in out_dir.iterdir())
+    assert names[0] == INDEX_FILENAME, "목차가 사전순으로 가장 앞이어야 한다"
+    stage_files = names[1:]
+    assert len(stage_files) == 9, f"단계 파일은 9개여야 한다: {stage_files}"
+    assert [n[:2] for n in stage_files] == [f"{n:02d}" for n in range(1, 10)], (
+        "사전순 = 단계순이어야 한다(01- … 09-)"
+    )
+
+
+def test_split_stages_index_lists_every_stage(tmp_path: Path) -> None:
+    out_dir = _stage_dir(tmp_path)
+    index = (out_dir / INDEX_FILENAME).read_text(encoding="utf-8")
+    for stage in split_stages(_verification_text(tmp_path)):
+        row = f"| {stage.number} | {stage.title} |"
+        assert row in index, f"목차에 {stage.number}단계의 번호·제목 행이 없다"
+    for path in sorted(out_dir.iterdir()):
+        if path.name != INDEX_FILENAME:
+            assert path.name in index, f"목차가 실제 파일을 가리키지 않는다: {path.name}"
+
+
+def test_split_stages_index_carries_the_reports_provenance(tmp_path: Path) -> None:
+    """목차는 가르면서 사라진 출처를 보관한다 — 시나리오명·전제 대장 판·매니페스트.
+
+    값은 `report` 를 독립 재실행해 얻어 대조한다(박아 두면 시나리오가 바뀌는
+    날 거짓이 된다). 라벨과 16자리 매니페스트 자릿수는 렌더러 머리말
+    (`core/report/verification.py`)과 같다 — stderr 보고의 12자리가 아니다.
+    """
+    index = (_stage_dir(tmp_path) / INDEX_FILENAME).read_text(encoding="utf-8")
+    report = build_case_report(
+        _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    assert f"| 평가 대상 | {report.scenario_name} |" in index
+    assert (
+        f"| 전제 대장 | `{report.assumption_set_name}` 판 "
+        f"{report.assumption_set_version} |" in index
+    )
+    assert f"| 실행 매니페스트 | `{report.manifest_hash[:16]}` |" in index
+
+
+def test_verification_without_split_stages_is_the_unchanged_single_file(
+    tmp_path: Path,
+) -> None:
+    """★★★ `--split-stages` 를 «주지 않으면» 종전의 한 덩어리 그대로다.
+
+    골든값과 `/ui/verify` 화면이 이 문자열에 걸려 있다(WP-1 합격 조건).
+    종전과의 대조는 렌더러를 **독립 재실행해** 잰다 — CLI 를 두 번 불러 서로
+    같다고 확인하는 것만으로는 «안 바뀌었다»가 증명되지 않는다."""
+    single = tmp_path / "single.md"
+    again = tmp_path / "single_again.md"
+    assert main(["--kind", "verification", "--out", str(single)]) == 0
+    assert main(["--kind", "verification", "--out", str(again)]) == 0
+    assert single.read_bytes() == again.read_bytes(), "같은 시나리오 두 번이 다르다"
+    report = build_case_report(
+        _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    assert single.read_text(encoding="utf-8") == render_verification_markdown(report)
+
+
+def test_split_stage_files_cover_every_stage_of_the_original(tmp_path: Path) -> None:
+    """나눈 조각을 이어 보면 단계 본문이 원본에 «다» 있다 — 빠진 단계가 없다."""
+    out_dir = _stage_dir(tmp_path)
+    original = _verification_text(tmp_path)
+    pieces = {
+        path.read_text(encoding="utf-8")
+        for path in out_dir.iterdir()
+        if path.name != INDEX_FILENAME
+    }
+    for stage in split_stages(original):
+        assert stage.body in original, "픽스처 전제가 깨졌다 — body 는 원본 조각이다"
+        assert stage.body in pieces, f"{stage.number}단계 파일이 본문을 온전히 담지 않는다"
+
+
+def test_split_stages_refuses_deliberation_kind(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--split-stages` 는 검증 보고서 전용 — 다른 `--kind` 와 함께 주면 멈춘다."""
+    target = tmp_path / "should-not-exist"
+    rc = main(["--kind", "deliberation", "--split-stages", "--out", str(target)])
+    assert rc != 0
+    assert not target.exists(), "오류로 멈췄으면 아무 것도 쓰지 않는다"
+    assert capsys.readouterr().err.strip() != ""
+
+
+def test_split_stages_requires_out(tmp_path: Path) -> None:
+    """단계별 파일은 표준출력으로 낼 수 없다 — `--out` 없이는 멈춘다."""
+    assert main(["--kind", "verification", "--split-stages"]) != 0

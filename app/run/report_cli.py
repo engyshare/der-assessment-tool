@@ -12,18 +12,24 @@
 
     PYTHONUTF8=1 python -m app.run.report_cli --scenario scenario_unsubsidized
     PYTHONUTF8=1 python -m app.run.report_cli --out docs/evidence/MC-1-리포트.md
+    PYTHONUTF8=1 python -m app.run.report_cli --kind verification --split-stages \
+        --out docs/evidence/검증-단계별/
 
-`--out` 을 주지 않으면 표준출력으로 낸다. **덮어쓰기를 묻지 않는다** — 리포트는
+`--out` 을 주지 않으면 표준출력으로 낸다. `--split-stages` 를 주면 `--out` 을
+**디렉터리**로 읽어 검증 리포트를 단계마다 파일 하나(`01-` … `09-`)와 목차
+(`00-목차.md`)로 나눠 쓴다 — 검증 리포트 전용이다. **덮어쓰기를 묻지 않는다** — 리포트는
 대장과 코드로부터 언제든 다시 만들어지는 산출물이고, 손으로 고친 리포트는
 `MC-1` 의 증거가 되지 못한다(고친 것이 리포트인지 사람인지 갈리지 않는다).
 """
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
-from core.report.case_report import build_case_report
+from app.services.verify_steps import VerifyStage, split_stages
+from core.report.case_report import CaseReport, build_case_report
 from core.report.narrative import render_markdown
 from core.report.verification import render_verification_markdown
 
@@ -39,6 +45,14 @@ KIND_DELIBERATION = "deliberation"
 #: 없는 대신 단계별 전제·계산·인계·수식을 늘어놓는다.
 KIND_VERIFICATION = "verification"
 REPORT_KINDS = (KIND_DELIBERATION, KIND_VERIFICATION)
+
+#: 단계별 분할 출력의 목차 파일 이름. 단계 파일이 ``01-`` 부터 시작하므로 ``00-``
+#: 을 앞세워 **사전순으로 목차가 먼저 오게** 한다.
+INDEX_FILENAME = "00-목차.md"
+
+#: Windows 가 파일 이름에 허용하지 않는 문자. 렌더러의 단계 제목에는 없지만,
+#: 제목이 바뀌는 날 파일 쓰기가 터지지 않게 방어로만 둔다.
+_FILENAME_FORBIDDEN = re.compile(r'[<>:"/\\|?*]')
 
 
 def available_scenarios() -> list[str]:
@@ -77,12 +91,95 @@ def build_parser() -> argparse.ArgumentParser:
             "늘어놓는 검증 보고서다(사용자 판정 §2)"
         ),
     )
+    parser.add_argument(
+        "--split-stages",
+        action="store_true",
+        help=(
+            f"검증 보고서를 단계마다 파일 하나로 나눠 쓴다 — --kind "
+            f"{KIND_VERIFICATION} 전용. --out 을 디렉터리로 읽어 단계 파일과 "
+            f"목차({INDEX_FILENAME})를 그 안에 쓴다"
+        ),
+    )
     return parser
+
+
+def _stage_filename(stage: VerifyStage) -> str:
+    """단계 파일 이름 — 두 자리 번호가 앞에 서서 **사전순 = 단계순**이 되게 한다."""
+    safe = _FILENAME_FORBIDDEN.sub("_", stage.title)
+    return f"{stage.number:02d}-{safe}.md"
+
+
+def _index_markdown(stages: tuple[VerifyStage, ...], report: CaseReport) -> str:
+    """목차 — 출처 표와 단계 번호 · 제목 · 파일명(사용자 판정 R67 §4-1).
+
+    원본 머리말의 「항목 | 값」 표를 싣는다 — 한 덩어리가 머리말로 하던 일
+    (어느 시나리오의 어느 대장 판·어느 실행이 낸 수인가)을 가르는 순간 잃으니
+    목차가 대신 보관한다. 라벨과 16자리 매니페스트 자릿수는 렌더러 머리말
+    (`core/report/verification.py`)과 한 글자도 다르지 않다 — 갈라지면 같은
+    것이 두 이름을 갖는다(stderr 보고의 12자리와 헷갈리지 않는다).
+    """
+    lines = [
+        "# 검증 보고서 — 단계별 목차",
+        "",
+        "| 항목 | 값 |",
+        "|---|---|",
+        f"| 평가 대상 | {report.scenario_name} |",
+        f"| 전제 대장 | `{report.assumption_set_name}` 판 "
+        f"{report.assumption_set_version} |",
+        f"| 실행 매니페스트 | `{report.manifest_hash[:16]}` |",
+        "",
+        "| 단계 | 제목 | 파일 |",
+        "| --- | --- | --- |",
+    ]
+    lines.extend(
+        f"| {stage.number} | {stage.title} | {_stage_filename(stage)} |"
+        for stage in stages
+    )
+    return "\n".join(lines) + "\n"
+
+
+def _write_stage_files(text: str, out_dir: Path, report: CaseReport) -> int:
+    """검증 리포트를 단계마다 파일 하나 + 목차 하나로 내는 갈래 (R67/WP-1).
+
+    `--split-stages` 를 줄 때만 불리며, 그때 `--out` 은 **디렉터리**다. 가르는
+    일은 `split_stages` 에 이미 있으니 다시 짜지 않는다 — 단계 수가
+    `STAGE_COUNT` 와 어긋나면 그 예외가 그대로 올라와 CLI 가 멈춘다(일부만
+    내지 않는다). 단계 파일 본문은 머리글(``## N단계 — …``)부터 렌더러 원문
+    그대로다.
+    """
+    stages = split_stages(text)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for stage in stages:
+        (out_dir / _stage_filename(stage)).write_text(stage.body, encoding="utf-8")
+    (out_dir / INDEX_FILENAME).write_text(
+        _index_markdown(stages, report), encoding="utf-8"
+    )
+    print(
+        f"{out_dir} 에 단계 파일 {len(stages)}개와 목차 {INDEX_FILENAME} 을 썼습니다 — "
+        f"{KIND_VERIFICATION} 리포트 · 전제 대장 판 {report.assumption_set_version} · "
+        f"매니페스트 {report.manifest_hash[:12]}",
+        file=sys.stderr,
+    )
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     """리포트를 만들고 낸다. 시나리오가 없으면 **목록을 보여 주고 멈춘다.**"""
     args = build_parser().parse_args(argv)
+    if args.split_stages and args.kind != KIND_VERIFICATION:
+        print(
+            f"--split-stages 는 --kind {KIND_VERIFICATION} 전용입니다 — "
+            f"--kind {args.kind} 와 함께 쓸 수 없습니다",
+            file=sys.stderr,
+        )
+        return 2
+    if args.split_stages and args.out is None:
+        print(
+            "--split-stages 는 단계마다 파일을 만드는 선택지입니다 — "
+            "--out 에 받을 디렉터리를 함께 주세요",
+            file=sys.stderr,
+        )
+        return 2
     names = available_scenarios()
     if args.scenario not in names:
         print(
@@ -100,6 +197,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.kind == KIND_VERIFICATION
         else render_markdown(report)
     )
+
+    if args.split_stages:
+        return _write_stage_files(text, args.out, report)
 
     if args.out is None:
         print(text)
