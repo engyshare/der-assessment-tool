@@ -29,10 +29,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.services.ui_charts import chart_data, unwired_reason
+from app.services.ui_charts import (
+    _DEMAND_LABEL,
+    chart_data,
+    resource_labels,
+    unwired_reason,
+)
 from app.services.ui_run import run_ui_case
 from core.contracts.validation import ValidationError
 from core.report.charts import chart_registry
+from core.report.charts.seasonal_operation import _DEMAND_LABEL as _CHART_DEMAND_LABEL
 
 #: PNG 파일 서명. **이것으로 「그렸다」와 「200 을 냈다」가 갈린다** —
 #: `tests/contract/test_chart_contract.py` 가 같은 상수를 같은 이유로 쓴다.
@@ -268,6 +274,95 @@ def test_the_seasonal_picture_draws_the_seasons_the_report_ran() -> None:
                 f"계절 {ran.name} 의 자원 {name} 이 실행 값과 다르다 — 표시 층이 "
                 "수를 고쳤다"
             )
+
+
+# ── ★★★ R65/WP-4: 범례가 **사람 말인가** (독립 검증 `.orch/R65/result_V.md`
+#    ③-3) ────────────────────────────────────────────────────────────────────
+#
+# 검증자가 잡은 것: 그림의 범례가 `e2e-ess`·`e2e-pv` 를 그대로 싣고 점선 곡선
+# **「수요」만 한글**이라 표기가 갈렸다. 표와 그림이 같은 실행을 그리는데 글자가
+# 갈리면 맞대 볼 수 없다.
+#
+# ⚠ 범례는 PNG 안의 글자라 응답 본문에서 셀 수 없다. 그래서 여기서 재는 것은
+# **그림에 들어가는 입력**이다 — 화면의 열 이름과 같은 함수가 지었는가, 그리고
+# 수요 곡선의 글자가 표의 수요 열과 같은가.
+
+
+def test_the_seasonal_picture_gets_human_words_for_its_legend() -> None:
+    """★★★ **범례에 들어갈 글자가 조인 키가 아니다** — `kind` 다.
+
+    ⛔ 사전의 **키**는 그대로 조인 키여야 한다. 라벨로 갈아 끼우면 종류가 같은
+    자원이 둘인 실행에서 키가 겹쳐 **계열 하나가 사전에서 사라진다** — 그림은
+    멀쩡해 보이고 아무 오류도 나지 않는다.
+    """
+    report = run_ui_case(_SCENARIO).report
+    kinds = {line.name: line.kind for line in report.basis.resources}
+
+    data = chart_data(report, _SEASONAL_TAG)
+    labels = data["resource_labels"]
+    drawn = tuple(data["seasons"][0]["resource_dispatch"])
+
+    assert drawn, "그림에 자원 계열이 하나도 없다"
+    for name in drawn:
+        assert name in labels, f"계열 {name!r} 에 인쇄할 글자가 없다"
+        assert labels[name] == kinds[name], (
+            f"계열 {name!r} 의 범례가 대장의 이름과 다르다: "
+            f"{labels[name]!r} ≠ {kinds[name]!r}"
+        )
+        assert name not in labels[name], (
+            f"범례에 조인 키가 그대로 남았다: {labels[name]!r}"
+        )
+
+
+def test_the_demand_curve_is_named_the_same_in_the_table_and_the_picture() -> None:
+    """★★★ **표의 수요 열과 그림의 수요 곡선이 같은 글자다.**
+
+    ⚠ 글자가 두 파일에 따로 적혀 있다 — 그림은 `core.report` 안이고 표는 `app`
+    안이라 **계층이 import 를 막는다**(`lint-imports` 의 `layers` 계약: `core`
+    가 `app` 을 알 수 없다). 한쪽만 고치면 표는 「가구 전력수요」인데 그림은
+    옛 글자가 되고, 그때 둘 다 그럴듯해 보인다 — **그 어긋남을 재는 것이 이
+    검사다.**
+    """
+    assert _CHART_DEMAND_LABEL == _DEMAND_LABEL, (
+        "표와 그림의 수요 이름이 갈렸다: "
+        f"{_DEMAND_LABEL!r}(표) ≠ {_CHART_DEMAND_LABEL!r}(그림)"
+    )
+
+
+def test_resource_labels_keeps_every_column_named_and_told_apart() -> None:
+    """★★ **이름이 없거나 겹치는 갈래에서도 열이 사라지지 않는다.**
+
+    셋을 한 번에 잰다. ⓐ `kind` 가 빈 자원은 **키를 그대로** 인쇄한다(빈 글자를
+    내면 열이 이름 없이 선다). ⓑ 종류가 같은 자원이 둘이면 **키를 덧붙여**
+    가른다(안 가르면 두 열이 화면에서 한 이름이 되고, 그림에서는 사전 키가
+    겹쳐 계열 하나가 사라진다). ⓒ 대장에 없는 키는 수요다.
+
+    ⚠ 실행을 새로 돌리지 않고 대장의 자원 행만 갈아 끼운다 — 이 함수가 보는
+    것은 `basis.resources` 뿐이다.
+    """
+    report = run_ui_case(_SCENARIO).report
+    lines = report.basis.resources
+    assert len(lines) >= 2, "이 실행의 자원이 둘 미만이라 겹침을 만들 수 없다"
+
+    nameless = dataclasses.replace(lines[0], kind="")
+    twin = dataclasses.replace(lines[1], name=f"{lines[1].name}-2")
+    doubled = dataclasses.replace(
+        report,
+        basis=dataclasses.replace(
+            report.basis, resources=(nameless, lines[1], twin)
+        ),
+    )
+    keys = (nameless.name, lines[1].name, twin.name, "없는-키")
+    labels = resource_labels(doubled, keys)
+
+    assert labels[0] == nameless.name, "kind 가 빈 자원의 열이 이름을 잃었다"
+    assert labels[1] != labels[2], f"종류가 같은 두 자원이 한 이름이다: {labels}"
+    assert lines[1].name in labels[1] and twin.name in labels[2], (
+        f"겹친 이름을 조인 키로 가르지 않았다: {labels}"
+    )
+    assert labels[3] == _DEMAND_LABEL, (
+        f"대장에 없는 키가 수요로 적히지 않았다: {labels[3]!r}"
+    )
 
 
 def test_the_seasonal_picture_refuses_a_run_without_seasons() -> None:

@@ -27,6 +27,14 @@
 0 위·아래로 **따로** 쌓는 막대는 그 둘을 가르며, 그것은 이 저장소가
 `energy_balance.py` 에서 이미 고른 관용구다(공급은 0 위, 사용은 0 아래).
 
+## ⚠ 범례는 **조인 키가 아니라 사람 말**이다 (R65/WP-4)
+
+`resource_dispatch` 의 키는 `ResourceLine.name`(`e2e-pv`)이고 그것은 조인 키다 —
+`core/report/method_sections.py::_earner_cell` 이 *「그것은 심의위원이 읽을
+이름이 아니다」* 라고 이미 적었다. 그래서 계열 이름은 **입력이 함께 넘긴
+`resource_labels`** 로 인쇄한다. ⛔ 사전의 키를 라벨로 갈아 끼우지 않는다:
+종류가 같은 자원이 둘이면 키가 겹쳐 **계열 하나가 사라진다.**
+
 ## ⚠ 계절 사이를 이어 그리지 않는다
 
 계절 넷은 **같은 하루를 네 번** 그린 것이지 96시간이 이어진 것이 아니다. 그래서
@@ -53,6 +61,18 @@ _GUIDE = "#888888"
 #: 수요 곡선의 색·모양. `dispatch_stack.py` 의 부하 곡선과 같다.
 _DEMAND_COLOR = "#222222"
 
+#: 수요 곡선의 범례 이름 (R65/WP-4).
+#:
+#: ⚠ 검증 모드 표의 수요 열과 **같은 글자**여야 한다
+#: (`app/services/ui_charts.py::_DEMAND_LABEL`). 종전 문면은 「수요」였고
+#: 자원 계열만 `e2e-*` 라 표기가 갈려 있었다 — 독립 검증
+#: `.orch/R65/result_V.md` ③-3 이 잡은 자리다. ⛔ 두 곳에 글자를 따로 적어
+#: 두면 한쪽만 고쳐지고, 그때 표와 그림 중 어느 쪽이 정본인지 화면만 봐서는
+#: 알 수 없다. 여기서 `ui_charts` 를 import 하지 않는 이유는 계층이다
+#: (`core.report` 가 `app` 을 알면 `lint-imports` 가 거부한다) — 그래서
+#: **검사가 두 글자를 맞댄다**(`tests/app/test_ui_charts.py`).
+_DEMAND_LABEL = "가구 전력수요"
+
 
 class SeasonalOperation(Chart):
     """계절마다 하루 24스텝의 수요·발전·저장장치 운전."""
@@ -66,6 +86,10 @@ class SeasonalOperation(Chart):
         seasons = _checked(data["seasons"])
         names = tuple(seasons[0]["resource_dispatch"])
         steps = len(seasons[0]["load"])
+        # ★ 범례에 인쇄할 글자 — **조인 키가 아니다** (R65/WP-4). 없으면 키를
+        # 그대로 쓴다: 라벨이 안 온 실행에서 계열 이름이 사라지는 것보다
+        # `e2e-pv` 가 보이는 편이 낫다.
+        labels: Mapping[str, str] = data.get("resource_labels") or {}
 
         figure = new_figure(width=12.0, height=5.0)
         axes = figure.axes[0]
@@ -83,7 +107,7 @@ class SeasonalOperation(Chart):
                 negative = [min(0.0, v) for v in values]
                 axes.bar(
                     xs, positive, bottom=up, width=0.9, color=colors[name],
-                    label=name if index == 0 else None,
+                    label=labels.get(name, name) if index == 0 else None,
                 )
                 axes.bar(xs, negative, bottom=down, width=0.9, color=colors[name])
                 up = [b + v for b, v in zip(up, positive, strict=True)]
@@ -91,7 +115,7 @@ class SeasonalOperation(Chart):
             axes.plot(
                 xs, [float(v) for v in season["load"]],
                 color=_DEMAND_COLOR, linewidth=1.4, linestyle="--",
-                label="수요" if index == 0 else None,
+                label=_DEMAND_LABEL if index == 0 else None,
             )
             if index:
                 axes.axvline(offset - 0.5, color=_GUIDE, linewidth=1.0)

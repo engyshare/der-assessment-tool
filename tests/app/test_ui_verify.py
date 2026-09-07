@@ -525,6 +525,18 @@ def test_the_screen_splits_the_run_by_season(body: str, report: CaseReport) -> N
             )
 
 
+def _resource_columns(body: str) -> list[tuple[str, ...]]:
+    """표마다 **자원 열의 머리글**만 — 첫 칸(스텝)과 뒤 두 칸(계통)을 걷어 낸 것.
+
+    ⚠ 뒤 두 칸을 남기면 ③ 순수요 표의 마지막 열이 「순수요 = 계통 수전」이라
+    「수요」를 찾는 검사가 **부하 열이 아닌 것**을 보고 초록불이 된다.
+    """
+    return [
+        tuple(re.findall(r'<th scope="col">([^<]*)</th>', head))[1:-2]
+        for head in re.findall(r"<thead>(.*?)</thead>", body, re.DOTALL)
+    ]
+
+
 def test_the_seasonal_tables_carry_the_same_columns_as_the_net_demand_one(
     body: str,
 ) -> None:
@@ -538,16 +550,98 @@ def test_the_seasonal_tables_carry_the_same_columns_as_the_net_demand_one(
     빼지 않는다」*). 같아야 하는 것은 **자원 열**이며, 첫 칸(스텝)과 뒤 두
     칸(계통 송·수전)을 걷어 낸 나머지다.
     """
-    heads = re.findall(r"<thead>(.*?)</thead>", body, re.DOTALL)
-    columns = [
-        tuple(re.findall(r'<th scope="col">([^<]*)</th>', head))[1:-2]
-        for head in heads
-    ]
+    columns = _resource_columns(body)
     assert len(columns) >= 2, f"화면에 표가 {len(columns)}개뿐이다"
     assert all(columns), "자원 열이 없는 표가 있다"
     assert len(set(columns)) == 1, (
         f"표마다 자원 열이 다르다 — 표를 두 벌로 그리고 있다: {set(columns)}"
     )
+
+
+# ── ★★★ R65/WP-4: 열 이름이 **사람 말인가** (독립 검증 `.orch/R65/result_V.md`
+#    ②-1 · ③-3) ──────────────────────────────────────────────────────────────
+#
+# 사용자 요구 문면은 *「계절별로 가구의 **전력 수요, 발전, ESS 운전** 등을
+# 시간대별로 수치와 도표로 확인」* 인데, 표의 열 이름이 `e2e-load`·`e2e-pv`·
+# `e2e-ess` 였다. 화면은 200 을 내고 수도 맞았지만 **어느 열이 수요이고 어느
+# 열이 발전인지 사람이 알 수 없다** — 요구가 물은 것이 확인되지 않는다.
+#
+# ⚠ 이 저장소는 같은 판단을 이미 적었다:
+# `core/report/method_sections.py::_earner_cell` — *「자원 이름이 아니라 `kind`
+# 로 적는다 … 그것은 심의위원이 읽을 이름이 아니다」*. 새 규약이 아니라 있는
+# 규약을 이 화면에도 적용한 것이며, 통로는 `ui_charts.resource_labels` 하나다.
+
+
+def _join_keys(report: CaseReport) -> tuple[str, ...]:
+    """운전 결과가 쓰는 **조인 키** — 화면의 자원 열과 **같은 차례**다.
+
+    ⚠ `app/services/verify_steps.py::net_demand_columns` 와 같은 규칙(키 합집합을
+    정렬)을 여기서 다시 적는다 — 그 함수를 불러 대조하면 「화면이 그 함수를
+    썼는가」만 재고 **차례가 맞는가**는 아무도 재지 않는다.
+    """
+    return tuple(sorted(
+        {name for hour in report.dispatch_hours for name in hour.per_resource}
+    ))
+
+
+def test_the_resource_columns_are_named_in_human_words(
+    body: str, report: CaseReport
+) -> None:
+    """★★★ **열 이름이 조인 키가 아니라 사람이 읽는 이름이다** (검증자 ②-1).
+
+    ⚠ 이름을 소스에 박지 않는다 — `ResourceLine.kind` 가 정본이고 리포트가
+    나른다. 박으면 자원 제원이 바뀌는 날 이 검사가 「화면이 틀렸다」로 빨간불이
+    된다.
+    """
+    kinds = {line.name: line.kind for line in report.basis.resources}
+    assert kinds, "이 실행에 자원이 하나도 없다"
+
+    columns = _resource_columns(body)
+    assert columns and all(columns), "자원 열이 없는 표가 있다"
+    printed = {column for head in columns for column in head}
+
+    for name in kinds:
+        assert not any(name in column for column in printed), (
+            f"조인 키 {name!r} 가 열 이름으로 인쇄됐다: {sorted(printed)} — "
+            "키는 조인용이고 화면 라벨이 아니다"
+        )
+    for name, kind in kinds.items():
+        assert kind, f"자원 {name!r} 의 kind 가 비어 있다"
+        assert any(kind in column for column in printed), (
+            f"자원 {name!r} 의 이름 {kind!r} 이 열 이름에 없다: {sorted(printed)}"
+        )
+
+
+def test_the_demand_column_says_it_is_demand(
+    body: str, report: CaseReport
+) -> None:
+    """★★★ **수요 열이 「수요」라고 적혀 있다** — 대장에 없는 키의 갈래다.
+
+    `e2e-load` 는 자원이 아니라 부하라 `basis.resources` 에 **없다.** 그래서
+    `kind` 매핑이 없고, 그 하나만 키로 남으면 결함의 본체가 그대로 남는다.
+    가름은 `app/services/ui_charts.py::_demand_names` 와 **같은 이음쇠**다 —
+    평가 대상 자원 이름에 없는 항목이 수요다.
+
+    ⚠ **자리로 찾는다.** 열의 차례가 키의 차례(정렬)와 같으므로 몇 번째 열이
+    수요인지 계산할 수 있다 — 「수요」라는 글자를 아무 열에서나 찾으면 ③ 표의
+    마지막 열 「순수요 = 계통 수전」이 그 검사를 조용히 통과시킨다.
+    """
+    keys = _join_keys(report)
+    resource_names = {line.name for line in report.basis.resources}
+    demand = tuple(key for key in keys if key not in resource_names)
+    assert demand, "이 실행의 운전에 수요 항목이 없다"
+
+    for head in _resource_columns(body):
+        assert len(head) == len(keys), (
+            f"열 수가 조인 키 수와 다르다: {head} ≠ {keys} — 열이 하나 "
+            "사라지면 그 자원의 운전이 화면에서 통째로 없어진다"
+        )
+        for key in demand:
+            column = head[keys.index(key)]
+            assert key not in column, f"수요 열이 아직 조인 키다: {column!r}"
+            assert "수요" in column, (
+                f"수요 열이 「수요」라고 말하지 않는다: {column!r}"
+            )
 
 
 def test_the_seasonal_caption_says_the_calendar_is_an_assumption(body: str) -> None:
@@ -629,12 +723,18 @@ _IMG_SRC = re.compile(r'<img[^>]*\ssrc="([^"]+)"')
 
 
 def test_the_season_step_carries_the_seasonal_operation_chart(body: str) -> None:
-    """★★★ ① 걸음이 계절별 **도표**를 싣는다 — 표 바로 아래에.
+    """★★★ ① 걸음이 계절별 **도표**를 싣는다 — 표 바로 **위**에.
 
     ⚠ 그림을 새로 그리지 않는다 — 화면은 이미 있는 라우트
     `GET /ui/chart/seasonal_operation.png` 를 `<img>` 로 부를 뿐이다.
     손으로 그린 그림이 서면 같은 그림이 두 곳에 살고 화면의 수가 리포트와
     갈릴 수 있다(그림 라우트 독스트링).
+
+    ★★ **차례가 R65/WP-4 에서 뒤집혔다.** 종전 이 검사는 그림이 표 **아래**
+    임을 쟀다. 독립 검증(`.orch/R65/result_V.md` ③-1)이 잡은 것: 계절 넷의
+    24행이 **96행**이라 표를 먼저 두면 그림이 스크롤 한참 아래에 서고
+    *「수치와 도표로 확인」* 이 한 화면에서 성립하지 않는다. **재는 것은
+    그대로 「같은 걸음에 나란히 서는가」이고 바뀐 것은 차례뿐이다.**
     """
     section = _group_slice(body, 1)
     block = _SEASON_CHART.search(section)
@@ -645,11 +745,11 @@ def test_the_season_step_carries_the_seasonal_operation_chart(body: str) -> None
     assert src.startswith("/ui/chart/seasonal_operation.png"), (
         f"그림이 이미 있는 라우트를 가리키지 않는다: {src!r}"
     )
-    # ★ 칸은 계절 표 **아래**에 — 표와 그림이 같은 걸음에 나란히 서야
-    # 「수치와 도표로 확인」이 한 화면에서 성립한다.
-    assert section.index('data-chart="seasonal_operation"') > section.rindex(
+    # ★ 칸은 계절 표 **위**에 — 그림이 한 화면에 들어오고 96행짜리 표가 그
+    # 근거로 뒤따라야 「수치와 도표로 확인」이 한 화면에서 성립한다.
+    assert section.index('data-chart="seasonal_operation"') < section.index(
         "data-season="
-    ), "그림 칸이 계절 표 아래에 있지 않다"
+    ), "그림 칸이 계절 표보다 먼저 오지 않는다"
 
 
 def test_the_chart_src_carries_the_query_of_this_run(client: TestClient) -> None:

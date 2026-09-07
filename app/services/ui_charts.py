@@ -42,6 +42,7 @@
 """
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
 from typing import Any
@@ -303,6 +304,59 @@ def _demand_names(
     ))
 
 
+#: 자원이 **아닌** `per_resource` 항목에 인쇄할 이름 — 곧 수요다.
+#:
+#: ⚠ 「부하」가 아니라 「가구 전력수요」로 적는다. 사용자 요구 문면이
+#: *「가구의 전력 수요, 발전, ESS 운전」* 이고, 화면은 그 말로 찾을 수 있어야
+#: 한다. `_demand_names` 가 가른 그 항목이며 가름은 여기서 다시 하지 않는다.
+_DEMAND_LABEL = "가구 전력수요"
+
+
+def resource_labels(report: CaseReport, keys: Sequence[str]) -> tuple[str, ...]:
+    """`per_resource` 의 **조인 키**를 화면에 인쇄할 **글자**로 옮긴다.
+
+    ## ⛔ 키를 바꾸는 함수가 아니다
+
+    `e2e-pv` 같은 이름은 리포트·귀속·시험이 서로를 맞추는 **조인 키**이고
+    (`core/casegrid/models.py::ResourceLine.name`), 이 함수가 내는 것은
+    **인쇄할 글자뿐**이다. 자료는 그대로 키로 남는다 — 키를 라벨로 갈아
+    끼우면 같은 이름을 쓰는 다른 자리(귀속 행·붙임 4·시험)가 조용히 어긋난다.
+
+    ## 왜 `kind` 인가 — **이 저장소가 이미 내린 판단이다**
+
+    `core/report/method_sections.py::_earner_cell` 이 같은 자리에서 적었다:
+    *「자원 이름이 아니라 `kind` 로 적는다. 귀속 행은 `ResourceLine.name` 으로
+    조인하고(`e2e-pv`), **그것은 심의위원이 읽을 이름이 아니다**」*. 검증 모드의
+    계절 표·순수요 표와 계절 운전 그림의 범례가 그 규약을 안 따르고 있었고
+    (독립 검증 `.orch/R65/result_V.md` ②-1 · ③-3), 여기가 그 하나뿐인 통로다.
+
+    ## 갈래 셋 — **하나도 조용히 지우지 않는다**
+
+    1. 대장에 있는 자원이고 `kind` 가 있으면 → `kind`
+       (`e2e-pv` → 「태양광 (옥상 고정형)」).
+    2. 대장에 **없는** 키는 수요다 → `_DEMAND_LABEL`. 가름은 `_demand_names`
+       와 **같은 이음쇠**(평가 대상 자원 이름에 없는 항목이 수요다)이며,
+       그래서 `e2e-load` 가 여기로 온다.
+    3. `kind` 가 빈 자원은 → **키를 그대로** 인쇄한다. 빈 글자를 내면 열이
+       이름 없이 서고, 열을 빼면 그 자원의 운전이 화면에서 통째로 사라진다.
+
+    ⚠⚠ **같은 글자가 둘이 되면 키를 덧붙인다.** 종류가 같은 자원이 둘인 실행
+    (저장장치 두 대 등)에서 라벨만 쓰면 두 열·두 계열이 화면에서 **한 이름**이
+    되고, 그러면 어느 쪽이 어느 자원인지 알 수 없다 — 그림에서는 사전 키가
+    겹쳐 계열 하나가 **사라진다.** 겹칠 때만 키가 다시 보이는 것은 위 3번과
+    같은 태도다: 사람 말로 못 적는 자리에서는 조인 키가 낫다.
+    """
+    kinds = {line.name: line.kind for line in report.basis.resources}
+    drafted = tuple(
+        kinds.get(key) or (key if key in kinds else _DEMAND_LABEL) for key in keys
+    )
+    repeated = Counter(drafted)
+    return tuple(
+        f"{label} ({key})" if repeated[label] > 1 else label
+        for key, label in zip(keys, drafted, strict=True)
+    )
+
+
 def _dispatch_stack(report: CaseReport) -> dict[str, Any]:
     """대표일 스텝별 자원 기여 + 부하 곡선.
 
@@ -392,6 +446,17 @@ def _seasonal_operation(report: CaseReport) -> dict[str, Any]:
 
     ⚠ 계절이 없는 실행에서는 **조용히 빈 그림을 내지 않고 거부한다** — 재료가
     없다는 사실이 화면에 글자로 남아야 한다(`unwired_reason` 머리말).
+
+    ## ★ 범례에 인쇄할 글자를 함께 넘긴다 (R65/WP-4)
+
+    독립 검증(`.orch/R65/result_V.md` ③-3)이 잡은 것: 범례가 `e2e-pv`·`e2e-ess`
+    를 그대로 싣고 **수요만 한글**이라 표기가 갈렸다. `resource_labels` 가
+    검증 모드의 계절 표·순수요 표 열 이름과 **같은 함수**이므로 표와 그림이
+    같은 글자를 쓴다 — 갈라 두면 한쪽만 고쳐지고, 그때 둘 다 그럴듯해 보인다.
+
+    ⛔ **사전의 키를 라벨로 갈지 않는다.** `resource_dispatch` 의 키는 조인
+    키이고 차트의 `_checked` 가 계절끼리 그 키를 맞대 색을 고정한다. 종류가
+    같은 자원이 둘이면 라벨이 겹쳐 **계열 하나가 사전에서 사라진다.**
     """
     if not report.seasons:
         raise _unwired_error(
@@ -429,7 +494,12 @@ def _seasonal_operation(report: CaseReport) -> dict[str, Any]:
                 for hour in hours
             ],
         })
-    return {"seasons": seasons}
+    return {
+        "seasons": seasons,
+        "resource_labels": dict(
+            zip(resource_names, resource_labels(report, resource_names), strict=True)
+        ),
+    }
 
 
 def _tornado(report: CaseReport) -> dict[str, Any]:

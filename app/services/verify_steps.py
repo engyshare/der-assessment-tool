@@ -58,6 +58,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from app.services.ui_charts import resource_labels
 from core.report._format import _num
 from core.report.case_report import CaseReport
 from core.report.dispatch_notes import DispatchHour, build_hourly_profile
@@ -170,14 +171,22 @@ class VerifyGroup:
     #: ③ 순수요만 갖는다 — 아래 `net_demand_rows` 참조.
     net_demand: tuple[NetDemandRow, ...] = ()
     net_demand_caption: str = ""
-    net_demand_columns: tuple[str, ...] = ()
+    #: ③ 순수요 표의 자원 열에 **인쇄할 글자** (R65/WP-4).
+    #:
+    #: ⚠⚠ **조인 키가 아니다.** 열의 차례는 `net_demand_columns()` 가 낸 키의
+    #: 차례 그대로이고(행의 칸도 그 차례로 찼다), 여기 담기는 것은 그 키를
+    #: `resource_labels()` 로 옮긴 **사람이 읽는 이름**이다. 키를 그대로 인쇄해
+    #: `e2e-load` · `e2e-pv` 가 열 이름으로 서 있던 것이 독립 검증
+    #: `.orch/R65/result_V.md` ②-1 이 잡은 결함이다.
+    net_demand_column_labels: tuple[str, ...] = ()
     #: ① 계절별 시간대별 운전 (R64/WP-5 · 사용자 요구 6). 순수요와 **같은 열**을
-    #: 쓰므로 열 이름은 `net_demand_columns` 를 함께 본다.
+    #: 쓰므로 열 이름은 `net_demand_column_labels` 를 함께 본다.
     seasons: tuple[SeasonTable, ...] = ()
     season_caption: str = ""
-    #: 계절 표의 자원 열. ⚠ `net_demand_columns` 와 **같은 함수**가 짓는다 —
-    #: 두 표가 같은 실행의 같은 자원을 싣는데 열이 갈리면 맞대 볼 수 없다.
-    season_columns: tuple[str, ...] = ()
+    #: 계절 표의 자원 열 이름. ⚠ `net_demand_column_labels` 와 **같은 함수**가
+    #: 짓는다 — 두 표가 같은 실행의 같은 자원을 싣는데 열이 갈리면 맞대 볼 수
+    #: 없다.
+    season_column_labels: tuple[str, ...] = ()
 
 
 def split_stages(markdown: str) -> tuple[VerifyStage, ...]:
@@ -266,6 +275,10 @@ def net_demand_columns(report: CaseReport) -> tuple[str, ...]:
 
     ⚠ 계절 표도 이 열을 쓴다. 계절마다 키를 다시 모으면 잉여가 0 이라 배터리가
     쉰 계절에서 열이 하나 사라질 수 있고, 그러면 계절끼리도 맞대 볼 수 없다.
+
+    ⚠⚠ **이것은 조인 키이지 화면에 인쇄할 글자가 아니다** (R65/WP-4).
+    `_rows_from_hours` 가 이 이름으로 `hour.per_resource` 를 찾으므로 키를
+    바꾸면 칸이 전부 `—` 가 된다. 인쇄할 글자는 `resource_labels()` 가 낸다.
     """
     names: set[str] = set()
     for hour in report.dispatch_hours:
@@ -626,6 +639,9 @@ def build_verify_groups(report: CaseReport) -> tuple[VerifyGroup, ...]:
         render_verification_markdown(report)
     )}
     columns = net_demand_columns(report)
+    # ★ 열에 **인쇄할 글자**는 키가 아니다 (R65/WP-4 · 독립 검증 ②-1).
+    # 차례는 `columns` 그대로다 — 행의 칸이 그 차례로 찼기 때문이다.
+    column_labels = resource_labels(report, columns)
     rows = net_demand_rows(report)
     seasons = season_tables(report)
     count = report.household_count
@@ -660,10 +676,12 @@ def build_verify_groups(report: CaseReport) -> tuple[VerifyGroup, ...]:
                 fills=fills,
                 net_demand=rows if is_net_demand else (),
                 net_demand_caption=_NET_DEMAND_CAPTION if is_net_demand else "",
-                net_demand_columns=columns if is_net_demand else (),
+                net_demand_column_labels=column_labels if is_net_demand else (),
                 seasons=seasons if is_seasonal else (),
                 season_caption=_SEASON_CAPTION if is_seasonal and seasons else "",
-                season_columns=columns if is_seasonal and seasons else (),
+                season_column_labels=(
+                    column_labels if is_seasonal and seasons else ()
+                ),
             )
         )
     return tuple(groups)

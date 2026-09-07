@@ -36,6 +36,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.services.ui_charts import _DEMAND_LABEL
 from core.assumption.provider import AssumptionSet
 from core.casegrid.appliance_load import (
     APPLIANCE_SEASON_SHARE_UNSPECIFIED,
@@ -142,18 +143,43 @@ def _npv_on_screen(body: str) -> float:
 def _season_load(body: str) -> dict[str, float]:
     """검증 화면의 계절별 표에서 **계절마다 하루 부하 합**을 꺼낸다.
 
-    ⚠ 열 번호를 박지 않는다 — 머리글에서 `e2e-load` 열을 찾아 그 열만 더한다.
-    박으면 자원이 하나 늘어 열이 밀리는 날 이 검사가 다른 열을 재면서
-    초록불을 낸다.
+    ⚠ 열 번호를 박지 않는다 — 머리글에서 **수요 열의 이름**을 찾아 그 열만
+    더한다. 박으면 자원이 하나 늘어 열이 밀리는 날 이 검사가 다른 열을
+    재면서 초록불을 낸다.
+
+    ## ⚠⚠ 이름을 리터럴로 적지 않는다 — 배포 코드의 상수를 읽는다
+
+    종전에는 조인 키 `"e2e-load"` 로 찾았다. R65/WP-4 가 그 머리글을 사람이
+    읽는 이름으로 갈았고(*「자원 이름이 아니라 `kind` 로 적는다 … 그것은
+    심의위원이 읽을 이름이 아니다」* —
+    `core/report/method_sections.py::_earner_cell`), 그러면서 **이 함수가
+    아무 열도 못 찾아 `StopIteration` 으로 터졌다.** 새 이름을 여기에 다시
+    적으면 같은 일이 다음 개명에서 또 난다 — 이 파일이 `SEASON_SHARE_PREFIX`
+    를 배포 코드에서 읽는 것과 **같은 규약**으로 라벨도 읽는다.
+
+    ⚠ `app/services/ui_charts.py` 의 이름이 비공개(`_DEMAND_LABEL`)이나 그대로
+    읽는다. 공개 이름을 새로 세우면 `tests/app/test_ui_charts.py` 가 이미 읽고
+    있는 이름과 **둘이 되고**, 그 파일은 이 교정이 손대도 되는 자리가 아니다
+    (WP-4-fix §3). 같은 저장소가 `core/report/_format` 의 `_num`·`_won` 을
+    검사에서 같은 방식으로 읽는다.
+
+    ⚠ **「수요」라는 낱말로 찾지 않는다** — ③ 걸음에 「순수요 = 계통 수전」
+    열이 있어 그 낱말로는 엉뚱한 열을 조용히 고른다.
     """
     totals: dict[str, float] = {}
     for name, table in _SEASON_TABLE.findall(body):
         header = _CELL.findall(table[: table.index("</thead>")])
-        column = next(
-            index for index, cell in enumerate(header) if "e2e-load" in cell
+        columns = [
+            index for index, cell in enumerate(header) if _DEMAND_LABEL in cell
+        ]
+        # ⚠ `next(...)` 로 두면 못 찾았을 때 `StopIteration` 만 올라오고 **머리글이
+        # 무엇이었는지**가 실패 문면에 없다 — 이 함수가 실제로 그렇게 터졌다.
+        assert len(columns) == 1, (
+            f"계절 {name} 표에서 수요 열({_DEMAND_LABEL!r})을 하나로 "
+            f"집지 못했다: {header}"
         )
         totals[name] = sum(
-            float(_CELL.findall(row)[column]) for row in _SEASON_ROW.findall(table)
+            float(_CELL.findall(row)[columns[0]]) for row in _SEASON_ROW.findall(table)
         )
     assert totals, "검증 화면에 계절별 표가 없다 — 잴 것이 없다"
     return totals
