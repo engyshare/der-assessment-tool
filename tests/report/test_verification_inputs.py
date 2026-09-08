@@ -33,6 +33,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 from app.services.verify_steps import STAGE_COUNT, split_stages
@@ -62,6 +63,8 @@ from core.report.case_report import CaseReport, build_case_report
 from core.report.dispatch_notes import NO_OPERATING_MODE
 from core.report.ess_sizing_section import (
     ADOPTED_HEAD,
+    PER_HOUSEHOLD_HEAD,
+    PER_HOUSEHOLD_SCALED,
     SELF_SUFFICIENT_HEAD,
     adopted_value_note,
     ess_daily_sizing_section,
@@ -246,6 +249,277 @@ def test_the_capacity_review_and_the_two_back_calculations_are_printed(
         assert finding.label in text, f"설계 변수 {finding.label} 이 빠졌다"
     for point in report.self_sufficiency.points:
         assert point.source_label in text, f"자립 역산의 {point.source_label} 이 빠졌다"
+
+
+# ── R67/WP-③ — **1가구를 먼저, 20호 확대를 그 뒤에** ─────────────────────
+#
+# 사용자 판정 `docs/decisions-2026-09-08-R67.md` §4-3: *「2단계는 1가구 적정
+# 용량을 먼저 제시한 뒤 20가구 확대 구성을 설명한다. 진단값과 실제 실행값을
+# 구분한다」*. 착수 실측: ② 표가 **20호 값만** 실어 심의자가 「가구 하나에
+# 얼마가 필요한가」를 읽으려면 **표의 수를 20으로 나눠야** 했다.
+
+
+def _capacity_section(text: str) -> str:
+    """② 표가 있는 구획만 — 다른 절의 낱말이 이 판정에 섞이지 않게 자른다."""
+    head = "② **수요 기반 적정 용량**"
+    start = text.index(head)
+    return text[start : text.index("③ **수요 기반 적정 용량**", start)]
+
+
+def test_the_self_sufficiency_table_puts_the_single_household_before_the_estate(
+    tmp_path: Path,
+) -> None:
+    """★★★ ② 표에 **1가구 열이 있고 20호 열보다 «앞에» 선다** (판정 §4-3).
+
+    ⚠ **「있다」로 재지 않는다 — «순서»를 잰다.** 사용자 문면이 *「먼저
+    제시한 뒤」* 이므로 두 열이 다 있어도 뒤에 서면 요구가 만족되지 않는다.
+    표를 훑는 눈은 왼쪽부터 읽고, 그 순서가 곧 *무엇이 답인가* 로 읽힌다.
+
+    ⚠ 가구 수를 리터럴로 적지 않는다 — 이 실행이 몇 호인지는 시나리오·대장이
+    정하므로 `report` 에서 읽어 열 이름을 짓는다.
+    """
+    text = _dumped(tmp_path)
+    report = _report()
+    sizing = report.self_sufficiency
+    assert sizing.scales_to_estate, (
+        f"이 골든이 단지로 확대되지 않았다(가구 수 {sizing.household_count}) — "
+        "두 열을 견줄 자리가 없다. 확대 없는 실행의 갈래는 아래 "
+        "`test_a_single_household_run_folds_the_estate_columns` 가 잰다"
+    )
+    section = _capacity_section(text)
+
+    household_head, estate_head = "연간 부하(1가구)", f"연간 부하({sizing.estate_label})"
+    assert household_head in section, (
+        f"② 표에 「{household_head}」 열이 없다 — 심의자가 가구 하나에 얼마가 "
+        "필요한지를 표의 수를 나눠서 얻어야 한다"
+    )
+    assert estate_head in section, f"② 표에서 「{estate_head}」 열이 사라졌다"
+    assert section.index(household_head) < section.index(estate_head), (
+        f"「{estate_head}」 가 「{household_head}」 보다 앞에 선다 — 사용자 문면은 "
+        "*「1가구 적정 용량을 먼저 제시한 뒤 20가구 확대 구성을 설명한다」* 다"
+    )
+    # ★ 필요 용량 쪽도 같은 순서다 — 부하만 앞에 오고 용량이 뒤면 표가 갈린다.
+    assert section.index("필요 태양광(1가구)") < section.index(
+        f"필요 태양광({sizing.estate_label})"
+    ), "부하는 1가구가 먼저인데 필요 태양광은 단지가 먼저다 — 두 쌍이 갈렸다"
+
+
+def test_the_single_household_capacity_times_the_count_is_the_estate_capacity(
+    tmp_path: Path,
+) -> None:
+    """★★★ **1가구 × 가구 수 = 20호 값** — 두 벌이 같은 사업을 말한다.
+
+    ⚠⚠ **이 단언이 없으면 1가구 열이 «아무 수나» 실어도 통과한다.** 두 벌은
+    같은 산식(`required_pv_capacity_kw`)을 각자의 부하로 돈 결과이므로 그
+    산식이 부하에 **비례**하는 한 이 항등식이 성립한다 — 깨지면 한쪽이 다른
+    부하를 쓴 것이다.
+
+    ⚠ **리터럴을 쓰지 않는다** — 가구 수도 두 벌의 수도 `report` 에서 읽는다
+    (지시문 §4-2). 대장 부하가 바뀌어도 이 검사가 재는 성질은 그대로다.
+
+    ⚠ 산출물에도 **두 수가 다 인쇄돼 있는지**를 함께 본다 — 자료구조만 맞고
+    표가 한쪽을 싣지 않으면 심의자는 여전히 못 읽는다.
+    """
+    report = _report()
+    sizing = report.self_sufficiency
+    count = sizing.household_count
+    assert count is not None and count > 1, (
+        f"이 골든의 가구 수가 {count} 다 — 배수를 잴 자리가 없다"
+    )
+    section = _capacity_section(_dumped(tmp_path))
+
+    for point in sizing.points:
+        assert point.household_load_kwh * count == pytest.approx(
+            point.annual_load_kwh
+        ), (
+            f"{point.source_label}: 1가구 부하 {point.household_load_kwh:,.4f} × "  # noqa: RUF001
+            f"{count}호 가 단지 부하 {point.annual_load_kwh:,.4f} 와 다르다"
+        )
+        assert point.household_capacity_kw * count == pytest.approx(
+            point.required_capacity_kw
+        ), (
+            f"{point.source_label}: 1가구 필요 용량 "
+            f"{point.household_capacity_kw:,.6f}kW × {count}호 가 단지 값 "  # noqa: RUF001
+            f"{point.required_capacity_kw:,.6f}kW 와 다르다 — 두 벌이 다른 부하로 "
+            "돌았다"
+        )
+        assert f"{point.household_capacity_kw:,.2f}kW" in section, (
+            f"{point.source_label}: 1가구 필요 용량이 ② 표에 인쇄되지 않았다"
+        )
+        assert f"{point.required_capacity_kw:,.2f}kW" in section, (
+            f"{point.source_label}: 단지 필요 용량이 ② 표에서 사라졌다"
+        )
+
+
+def test_a_single_household_run_folds_the_estate_columns(tmp_path: Path) -> None:
+    """★★ 가구 한 호 실행에서는 **같은 수를 두 번 인쇄하지 않는다.**
+
+    두 벌이 같은 수인데 열이 둘이면 검토자는 *「둘이 다른 것을 재는가」* 로
+    읽는다. ⇒ 단지 열을 **접고** 「확대 없음」을 글자로 적는다 — 접었다는
+    사실이 없으면 단지 값을 **싣지 못한** 것과 구별되지 않는다.
+    """
+    section = _capacity_section(_dumped(tmp_path, **{HOUSEHOLD_COUNT_FIELD: 1}))
+    assert "연간 부하(1가구)" in section, "1가구 열은 접지 않는다"
+    assert "연간 부하(1호)" not in section, (
+        "가구 한 호 실행인데 단지 열이 그대로 섰다 — 같은 수가 두 번 인쇄된다"
+    )
+    assert "단지 확대 — **없다**" in section, (
+        "단지 열을 접었는데 그 사실이 표 아래에 없다 — 「싣지 못했다」와 "
+        "구별되지 않는다"
+    )
+
+
+def test_the_section_head_separates_the_run_configuration_from_the_diagnosis(
+    tmp_path: Path,
+) -> None:
+    """★★★ 절 머리가 **지금 도는 구성**을 역산값과 갈라 «수로» 적는다 (§4-3).
+
+    *「진단값과 실제 실행값을 구분한다」* 는 낱말만으로 성립하지 않는다 —
+    **지금 무엇으로 도는지가 수로 없으면** 검토자는 아래 역산값을 이 실행의
+    구성으로 읽는다. 그 수는 설계 변수의 사용값과 배터리 정격출력이다.
+
+    ⛔ **「채택」이라 적지 않는다** (판정 §4-4 *「적용 전이면 결과를 만들어 낸
+    것처럼 표시하지 않는다」*). 실행 구성은 역산의 결과가 아니다.
+
+    ⚠ 수를 리터럴로 적지 않는다 — `report` 에서 읽는다.
+    """
+    text = _dumped(tmp_path)
+    report = _report()
+    head = text[: text.index("① **" + ECONOMIC_SENSITIVITY_TITLE + "**")]
+
+    assert "지금 도는 구성" in head, (
+        "역산 표 위에 「지금 도는 구성」이 없다 — 진단값과 견줄 대상이 산출물에 "
+        "없으면 검토자가 역산값을 실행 구성으로 읽는다"
+    )
+    for finding in report.capacity_review:
+        assert f"{finding.used_value:g} {finding.unit}" in head, (
+            f"{finding.label} 의 실행 사용값 {finding.used_value:g}"
+            f"{finding.unit} 가 절 머리에 없다"
+        )
+    power_kw = report.ess_sizing.run_power_kw
+    assert power_kw is not None, "이 골든에 배터리가 있는데 정격출력이 None 이다"
+    assert f"{power_kw:g} kW" in head, (
+        f"배터리 정격출력 {power_kw:g}kW 가 절 머리에 없다 — 용량만 적으면 "
+        "출력 쪽 역산값(정격출력)과 견줄 실행값이 없다"
+    )
+    assert "역산의 결과가 아니다" in head, (
+        "실행 구성이 역산의 결과가 아니라는 진술이 없다 — 그 줄이 없으면 "
+        "「역산대로 세웠다」로 읽힌다"
+    )
+
+
+# ── R67/WP-③-fix — ③(ESS)의 1가구 열은 **환산이고, 표가 그렇게 말한다** ────
+#
+# ## 왜 ② 와 다르게 재는가
+#
+# ②(자립 PV)의 1가구 값은 산식을 **1호분 부하로 다시 돈** 것이고, ③의 1가구 값은
+# 단지 값을 **나눈** 것이다. ③의 역산 입력이 **20호로 돈 운전의 스텝별 시계열**이라
+# 1호분 운전이 저장소에 없기 때문이다(오케스트레이터 판정 R67/WP-③-fix §1 —
+# *「지시가 틀렸다」*). ⇒ 나누는 것을 **허락받았고**, 대신 **그 성질을 표가 글자로
+# 말해야** 한다. 아래 둘이 그 둘을 각각 붙든다.
+
+
+def _ess_section(text: str) -> str:
+    """③ 표가 있는 구획만 — 다른 절의 낱말이 이 판정에 섞이지 않게 자른다."""
+    start = text.index("③ **수요 기반 적정 용량**")
+    return text[start : text.index("- 점별 결론 축과", start)]
+
+
+def test_the_ess_per_household_column_times_the_count_is_the_estate_value(
+    tmp_path: Path,
+) -> None:
+    """★★★ ③ 표의 **1가구 값 × 가구 수 = 20호 값**(정확히).
+
+    ⚠⚠ **이 단언이 없으면 그 열이 «아무 수나» 실어도 통과한다.** 환산이므로
+    항등식이 **정확히** 성립해야 한다 — 어긋나면 나눈 분모가 가구 수가 아니다.
+
+    ⚠ **리터럴을 쓰지 않는다** — 가구 수도 두 수도 `report` 에서 읽는다.
+    ⚠ **채택값만 환산한다**(렌더러 독스트링 ⚠) — 완전 자립분은 견줌이라 단지 값
+    하나로 족하고, 환산하면 열이 열셋이 되어 읽히지 않는다. 그래서 이 검사도
+    채택값 두 칸만 잰다.
+    """
+    report = _report()
+    count = report.household_count
+    assert count is not None and count > 1, (
+        f"이 골든의 가구 수가 {count} 다 — 환산을 잴 자리가 없다"
+    )
+    review = report.ess_sizing
+    assert review.unmeasurable_reason is None, (
+        f"이 골든에서 역산이 안 됐다 — {review.unmeasurable_reason}"
+    )
+    section = _ess_section(_dumped(tmp_path))
+
+    for season in review.seasons:
+        adopted = season.relaxed
+        for value, unit in (
+            (adopted.required_capacity_kwh, "kWh"),
+            (adopted.required_power_kw, "kW"),
+        ):
+            printed = f"{value / count:,.2f}{unit}"
+            assert printed in section, (
+                f"{season.season_name}: 1가구 환산값 {printed} 가 ③ 표에 없다 — "
+                f"단지 값 {value:,.2f}{unit} ÷ {count}호 다"
+            )
+            # ★ 단지 값도 함께 서 있어야 한다 — 환산값만 실으면 「무엇을 나눈
+            #   수인가」가 표에서 사라진다.
+            assert f"{value:,.2f}{unit}" in section, (
+                f"{season.season_name}: 단지 채택값 {value:,.2f}{unit} 가 ③ 표에서 "
+                "사라졌다 — 환산의 분자가 표에 없으면 1가구 열을 확인할 수 없다"
+            )
+
+
+def test_the_ess_per_household_column_says_it_is_a_conversion(
+    tmp_path: Path,
+) -> None:
+    """★★★ 그 열이 **「환산」임을 표가 말한다** — 낱말·사유·근거·②와의 차이.
+
+    ⚠⚠ **수만 맞으면 안 된다.** 환산값을 역산값과 같은 표 모양으로 실으면서
+    성질을 적지 않으면, 다음 사람은 이 열을 **역산 결과로 읽는다** — 그것이
+    오케스트레이터 판정 §2-2·§2-3 이 못 박은 자리다.
+
+    ⚠ **낱말을 이 시험이 갖지 않는다** — `PER_HOUSEHOLD_SCALED` ·
+    `PER_HOUSEHOLD_HEAD` 를 렌더러와 **나눠 갖는다**(지시문 §4-2). 리터럴로
+    적으면 문면을 고치는 날 한쪽만 고쳐지고, 그때 이 시험은 **옛 낱말을 찾아
+    초록불**이다.
+    """
+    section = _ess_section(_dumped(tmp_path))
+
+    assert PER_HOUSEHOLD_HEAD in section, (
+        f"③ 표의 열 이름에 「{PER_HOUSEHOLD_HEAD}」 가 없다 — 열 이름이 성질을 "
+        "말하지 않으면 ②의 1가구 열과 같은 것으로 읽힌다"
+    )
+    assert PER_HOUSEHOLD_SCALED in section, (
+        f"「{PER_HOUSEHOLD_SCALED}」 이라는 낱말이 ③ 표에 없다"
+    )
+    # ⓐ **왜** 환산인가 — 1호분 운전이 없다는 사실.
+    assert "1호분 운전이 없다" in section, (
+        "왜 환산인지가 표에 없다 — 「나눴다」만 적으면 그것이 게으름인지 "
+        "불가피함인지 구별되지 않는다"
+    )
+    # ⓑ 환산이 **정당한 근거** — 실측 하나뿐이다.
+    assert "20.0000" in section, (
+        "환산의 근거(가구 수 1 로 따로 돌려 네 계절 전부 비 20.0000)가 표에 없다 — "
+        "그 문장이 이 환산이 정당한 유일한 근거다"
+    )
+    # ⓒ ② 와 **성질이 다르다**는 것.
+    assert "다시 돈" in section and "나눈" in section, (
+        "②(다시 돈 값)와 ③(나눈 값)의 차이가 표에 없다 — 같은 표 모양이 두 "
+        "성질을 숨긴다"
+    )
+
+
+def test_a_single_household_run_folds_the_ess_per_household_column(
+    tmp_path: Path,
+) -> None:
+    """★★ 가구 한 호 실행에서는 ② 와 **같은 규칙**으로 열을 접는다 (§2-5)."""
+    section = _ess_section(_dumped(tmp_path, **{HOUSEHOLD_COUNT_FIELD: 1}))
+    assert PER_HOUSEHOLD_HEAD not in section, (
+        "가구 한 호 실행인데 1가구 환산 열이 그대로 섰다 — 같은 수가 두 번 "
+        "인쇄된다"
+    )
+    assert "1가구 열을 접었다" in section, (
+        "열을 접었는데 그 사실이 표 아래에 없다 — 「싣지 못했다」와 구별되지 않는다"
+    )
 
 
 # ── R67/WP-N2 — ①표는 **경제성 민감도**이지 적정값을 정하는 표가 아니다 ─────

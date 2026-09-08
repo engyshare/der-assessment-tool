@@ -93,13 +93,19 @@ from core.report.case_report import CaseReport
 from core.report.dispatch_notes import resolved_operating_mode
 from core.report.ess_sizing_section import (
     ADOPTED_HEAD,
+    PER_HOUSEHOLD_HEAD,
     SELF_SUFFICIENT_HEAD,
     ESSSizingReview,
     adopted_value_note,
+    per_household_scaled,
+    per_household_scaled_notes,
     relaxation_reach_note,
     within_range_head,
 )
-from core.report.sizing import SelfSufficiencySizing
+from core.report.sizing import (
+    SelfSufficiencySizing,
+    household_first_notes,
+)
 from core.report.unreflected import build_unreflected, unreflected_direction_tally
 
 #: 「그렇다/아니다」 두 글자를 한 자리에서만 정한다 — 표마다 다른 낱말을 쓰면
@@ -394,30 +400,75 @@ def _self_sufficiency_table(sizing: SelfSufficiencySizing) -> list[str]:
     칸 이름이 그 구간의 **소유자**를 말하고, 표 아래 주가 *「밖」이 무슨
     뜻인가* 를 적는다 — 종전에는 「탐색 구간 안인가」라고만 적어 두 표가
     같은 구간을 공유하는 것처럼 읽혔다.
+
+    ## ★★★ **1가구 두 칸이 «앞에» 선다** (R67/WP-③ · 사용자 판정 §4-3)
+
+    사용자 문면이 *「2단계는 **1가구 적정 용량을 먼저 제시한 뒤** 20가구 확대
+    구성을 설명한다」* 다. 종전 이 표는 **단지 값(20호)만** 실었고, 그래서
+    심의자가 「가구 하나에 얼마가 필요한가」를 읽으려면 **표의 수를 20으로
+    나눠야** 했다 — 산출물이 답해야 하는 물음을 독자의 나눗셈으로 넘긴 자리다.
+
+    ⚠⚠ **1가구 값은 «나눠서» 만든 것이 아니다** — `core/report/sizing.py::
+    build_self_sufficiency_sizing` 이 `required_pv_capacity_kw` 를 **1호분
+    부하로 한 번 더 돌린다.** 값의 소유자가 그 함수 하나이므로 이 표는
+    나눗셈도 반올림도 하지 않는다.
+
+    ⚠ **가구 한 호 실행에서는 단지 열을 접는다**
+    (`SelfSufficiencySizing.scales_to_estate`) — 두 벌이 같은 수인데 두 번
+    인쇄하면 검토자가 **둘이 다른 것을 재는 줄로** 읽는다. 접었다는 사실은
+    `sizing.py::household_first_notes` 가 글자로 적는다.
+
+    ## ⚠ 짝 렌더러가 있다 — **한쪽만 고치지 마라**
+
+    `core/report/sizing.py::self_sufficiency_section` 이 같은 자료를 심의
+    리포트 붙임 10 에 그린다. 두 표는 칸 이름과 단위 표기가 달라 합치지
+    않았으나(이 표는 단위를 값에 붙여 쓴다) **열의 순서와 접는 규칙은 같다.**
     """
     span = f"{sizing.search_low_kw:g}~{sizing.search_high_kw:g}kW"
+    estate = sizing.scales_to_estate
+    head = ["부하 수준", "연간 부하(1가구)", "필요 태양광(1가구)"]
+    if estate:
+        head += [
+            f"연간 부하({sizing.estate_label})",
+            f"필요 태양광({sizing.estate_label})",
+        ]
+    head.append("①의 경제성 스윕 구간 안인가")
     rows = [
-        "| 부하 수준 | 연간 부하 | 100% 자립에 필요한 태양광 "
-        "| ①의 경제성 스윕 구간 안인가 |",
-        "|---|---|---|---|",
+        "| " + " | ".join(head) + " |",
+        "|" + "|".join(["---"] * len(head)) + "|",
     ]
     for point in sizing.points:
         within = _YES if point.within_search_range else f"{_NO} — 구간 {span} 밖"
-        rows.append(
-            f"| {point.source_label} | {_num(point.annual_load_kwh)}kWh "
-            f"| {point.required_capacity_kw:,.2f}kW | {within} |"
-        )
+        cells = [
+            point.source_label,
+            f"{_num(point.household_load_kwh)}kWh",
+            f"{point.household_capacity_kw:,.2f}kW",
+        ]
+        if estate:
+            cells += [
+                f"{_num(point.annual_load_kwh)}kWh",
+                f"{point.required_capacity_kw:,.2f}kW",
+            ]
+        cells.append(within)
+        rows.append("| " + " | ".join(cells) + " |")
     rows += [
         "",
         "- 산식 — 필요 용량(kW) = 연간 부하(kWh) ÷ (8,760h × 이용률 "  # noqa: RUF001
         f"{sizing.capacity_factor:.0%})",
+        "- 1가구 칸과 "
+        + (f"{sizing.estate_label} 칸" if estate else "단지 칸")
+        + " — **같은 산식을 각자의 부하로 돌린 결과**다. 단지 값을 가구 수로 "
+        "나눈 것이 아니므로 두 칸의 반올림이 서로를 끌지 않는다",
         f"- 이용률의 출처 — {sizing.capacity_factor_source}",
         f"- {search_range_note(sweep_where='위 ①')}",
+        *household_first_notes(sizing),
     ]
     return rows
 
 
-def _ess_sizing_table(review: ESSSizingReview) -> list[str]:
+def _ess_sizing_table(
+    review: ESSSizingReview, household_count: int | None
+) -> list[str]:
     """하루 결손 역산 — 계절마다 필요한 저장장치 용량·출력.
 
     ⚠ **못 한 것을 「없음」으로 두지 않는다** — 역산할 수 없는 실행에서는
@@ -437,18 +488,56 @@ def _ess_sizing_table(review: ESSSizingReview) -> list[str]:
     ⛔ **한쪽만 고치지 마라.** 합치지 않은 이유는 표 자체가 다르기 때문이다 —
     이 표는 **단위를 값에 붙여** 쓰고(`564.17kWh`) 절 번호가 `①` 다.
     ⇒ **낱말은 합쳐 두었다**: `ADOPTED_HEAD` · `SELF_SUFFICIENT_HEAD` ·
-    `within_range_head` · `adopted_value_note` · `relaxation_reach_note` 가
-    그 파일 머리에 있고 여기서 들여와 쓴다. **베껴 적지 않는다.**
+    `within_range_head` · `adopted_value_note` · `relaxation_reach_note` ·
+    `PER_HOUSEHOLD_HEAD` · `per_household_scaled` ·
+    `per_household_scaled_notes` 가 그 파일 머리에 있고 여기서 들여와 쓴다.
+    **베껴 적지 않는다.**
+
+    ## ★★★ **1가구 두 칸이 «앞에» 선다 — 그리고 「비례 환산」이라 적는다**
+
+    R67/WP-③-fix · 사용자 판정 §4-3 *「1가구 적정 용량을 **먼저** 제시한 뒤 20가구
+    확대 구성을 설명한다」*. ②(자립 PV)와 **성질이 다르므로 이름도 다르다:**
+
+    | | ② 자립 PV | **③ 이 표** |
+    |---|---|---|
+    | 역산의 입력 | 대장 부하 수준의 **수** | **20호로 돈 운전의 스텝별 시계열** |
+    | 1호분 입력이 있나 | 있다(곱하기 **전** 부하) | ⛔ **없다** |
+    | 1가구 값을 어떻게 얻나 | 산식을 **1호분으로 다시 돈다** | **나눈다**(비례 환산) |
+
+    ⚠⚠ **그 성질을 표가 스스로 말한다** — 열 이름이 `PER_HOUSEHOLD_HEAD`
+    (「1가구(비례 환산)」)이고 표 아래 세 줄이 *왜 환산인지* · *환산의 근거* ·
+    *②와 무엇이 다른지* 를 적는다(`per_household_scaled_notes`). 적지 않으면
+    다음 사람은 이 열을 **역산 결과로 읽는다.**
+
+    ⚠ **채택값만 환산한다** — 이 표가 「답」이라 말하는 열이 채택값이고
+    (`ADOPTED_HEAD`), 완전 자립분까지 환산하면 열이 열셋이 되어 읽히지 않는다.
+    완전 자립분은 **견줌**이므로 단지 값 하나로 족하다.
+
+    ⚠ 가구 수 1(또는 미지정)이면 ② 와 **같은 규칙**으로 열을 접는다 —
+    같은 수를 두 번 인쇄하지 않는다(지시문 §2-5).
     """
     if review.unmeasurable_reason is not None:
         return [f"- 역산하지 못했다 — {review.unmeasurable_reason}"]
     span = f"{review.search_low_kwh:g}~{review.search_high_kwh:g}kWh"
+    scaled = household_count is not None and household_count > 1
+    head = ["계절", "일수"]
+    if scaled:
+        head += [
+            f"{PER_HOUSEHOLD_HEAD} {ADOPTED_HEAD} 정격용량",
+            f"{PER_HOUSEHOLD_HEAD} {ADOPTED_HEAD} 정격출력",
+        ]
+    head += [
+        "하루 필요 방전량",
+        "최대 결손(스텝)",
+        f"{SELF_SUFFICIENT_HEAD} 정격용량",
+        f"{SELF_SUFFICIENT_HEAD} 정격출력",
+        f"{ADOPTED_HEAD} 정격용량",
+        f"{ADOPTED_HEAD} 정격출력",
+        within_range_head(sweep_where="①의"),
+    ]
     rows = [
-        f"| 계절 | 일수 | 하루 필요 방전량 | 최대 결손(스텝) "
-        f"| {SELF_SUFFICIENT_HEAD} 정격용량 | {SELF_SUFFICIENT_HEAD} 정격출력 "
-        f"| {ADOPTED_HEAD} 정격용량 | {ADOPTED_HEAD} 정격출력 "
-        f"| {within_range_head(sweep_where='①의')} |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| " + " | ".join(head) + " |",
+        "|" + "|".join(["---"] * len(head)) + "|",
     ]
     for season in review.seasons:
         sizing = season.sizing
@@ -456,15 +545,25 @@ def _ess_sizing_table(review: ESSSizingReview) -> list[str]:
         # 붙이면 표가 「답」이 아닌 수를 구간과 견준다.
         adopted = season.relaxed
         within = _YES if adopted.within_search_range else f"{_NO} — 구간 {span} 밖"
-        rows.append(
-            f"| {season.season_name} | {season.days}일 "
-            f"| {sizing.required_discharge_kwh:,.2f}kWh "
-            f"| {sizing.peak_shortfall_kwh:,.2f}kWh "
-            f"| {sizing.required_capacity_kwh:,.2f}kWh "
-            f"| {sizing.required_power_kw:,.2f}kW "
-            f"| {adopted.required_capacity_kwh:,.2f}kWh "
-            f"| {adopted.required_power_kw:,.2f}kW | {within} |"
-        )
+        cells = [season.season_name, f"{season.days}일"]
+        if scaled:
+            # ⛔ **나눗셈을 여기서 하지 않는다** — 산식의 소유자는
+            # `per_household_scaled` 하나이고, 그 함수의 독스트링이 *왜 나누는가*
+            # 와 *그것이 옳다는 실측*을 진다. 여기 적으면 그 근거가 사본이 된다.
+            cells += [
+                f"{per_household_scaled(adopted.required_capacity_kwh, household_count):,.2f}kWh",
+                f"{per_household_scaled(adopted.required_power_kw, household_count):,.2f}kW",
+            ]
+        cells += [
+            f"{sizing.required_discharge_kwh:,.2f}kWh",
+            f"{sizing.peak_shortfall_kwh:,.2f}kWh",
+            f"{sizing.required_capacity_kwh:,.2f}kWh",
+            f"{sizing.required_power_kw:,.2f}kW",
+            f"{adopted.required_capacity_kwh:,.2f}kWh",
+            f"{adopted.required_power_kw:,.2f}kW",
+            within,
+        ]
+        rows.append("| " + " | ".join(cells) + " |")
     per_capacity = (
         f"{review.usable_per_capacity_kwh:,.4f}"
         if review.usable_per_capacity_kwh is not None
@@ -481,8 +580,51 @@ def _ess_sizing_table(review: ESSSizingReview) -> list[str]:
         f"- 어느 해의 결손인가 — 분석기간 말({review.year}년차). 열화가 가장 "
         "진행된 해라 필요한 용량이 가장 크다",
         f"- {search_range_note(sweep_where='위 ①')}",
+        # ★★ **1가구 열의 성질을 표가 말한다** — 낱말도 문면도 정본은
+        # `ess_sizing_section.py` 다(위 독스트링 ⚠⚠).
+        *per_household_scaled_notes(household_count),
     ]
     return rows
+
+
+def _run_configuration_lines(report: CaseReport) -> list[str]:
+    """**지금 도는 구성**을 수로 적는다 — 아래 역산값과 견줄 대상 (R67/WP-③).
+
+    ## 왜 이 줄이 필요한가 (사용자 판정 §4-3 *「진단값과 실제 실행값을 구분한다」*)
+
+    아래 ①②③ 이 모두 **진단**인데, 그 위에 *「진단이지 결론이 아니다」* 만
+    있고 **지금 무엇으로 돌고 있는지가 수로 없었다.** 그러면 검토자는 아래
+    역산값이 실행 구성과 얼마나 다른지를 다른 절로 넘어가 맞춰 봐야 하고,
+    맞춰 보지 않으면 **역산값을 이 실행의 구성으로 읽는다.**
+
+    ⚠ **수를 이 파일이 갖지 않는다** — 설계 변수의 사용값은
+    `report.capacity_review` 의 `used_value`(경제성 스윕이 훑은 그 축의 기준
+    점)이고 정격출력은 `report.ess_sizing.run_power_kw` 다. 여기 적으면
+    실행이 다른 용량으로 도는 날 이 줄만 옛 수를 들고 있게 된다.
+
+    ⛔ **「채택」이라 쓰지 않는다** (판정 §4-4). 이 구성은 역산의 **결과가
+    아니고**, 역산값을 적용한 것도 아니다 — 그 둘을 한 낱말로 묶으면 산출물이
+    *「역산대로 세웠다」* 를 주장하게 된다.
+    """
+    used = [
+        f"{finding.label} **{finding.used_value:g} {finding.unit}**"
+        for finding in report.capacity_review
+    ]
+    power_kw = report.ess_sizing.run_power_kw
+    if power_kw is not None:
+        used.append(f"저장장치 정격출력 **{power_kw:g} kW**")
+    if not used:
+        return [
+            "⚠⚠ **지금 도는 구성** — 이 실행에는 설계 변수가 서지 않아 적을 "
+            "용량이 없다. 아래 역산값은 **어느 구성에도 적용되지 않았다.**",
+        ]
+    return [
+        "⚠⚠ **지금 도는 구성과 아래 역산값은 다른 수다.** 이 실행이 실제로 "
+        f"세우고 돌린 것은 {' · '.join(used)} 이며, 그것은 **역산의 결과가 "
+        "아니다**(위 ⓐ 자원 표가 그 자원의 제원을 진다). 아래 ②③ 이 내는 수는 "
+        "**진단값**이고 이 실행에 적용되지 않았다 — 적용하면 결론축이 움직이며 "
+        "그것은 이 리포트가 한 일이 아니다.",
+    ]
 
 
 def capacity_review_lines(report: CaseReport) -> list[str]:
@@ -511,6 +653,17 @@ def capacity_review_lines(report: CaseReport) -> list[str]:
         "않는다 — 역산 결과를 실행에 되먹이지 않으므로 8단계 지표는 이 수에 "
         "움직이지 않는다. 위 ⓐ·ⓑ 가 이 실행이 **실제로 세운** 자원이다.",
         "",
+        # ★★★ **진단값과 실행값을 «한 자리에서» 갈라 적는다** (R67/WP-③ ·
+        # 사용자 판정 §4-3 *「진단값과 실제 실행값을 구분한다」*). 종전에는
+        # 「진단이지 결론이 아니다」만 있고 **지금 도는 구성이 수로 없어서**,
+        # 검토자가 아래 역산값과 견줄 대상을 다른 절에서 찾아야 했다.
+        # ⛔ **「채택했다」로 적지 않는다** — 판정 §4-4 가 *「적용 전이면 결과를
+        # 만들어 낸 것처럼 표시하지 않는다」* 로 금했다. 그래서 문면은
+        # **「지금 도는 구성」**이고 「채택값」이 아니다.
+        # ⚠ 수를 리터럴로 적지 않는다 — `capacity_review` 의 설계 변수 사용값과
+        # `ess_sizing.run_power_kw` 가 정본이다.
+        *_run_configuration_lines(report),
+        "",
         f"⚠⚠ **①과 ②③ 은 서로 다른 물음에 답한다.** ①은 {ECONOMIC_SENSITIVITY_TITLE}"
         "이고 *「용량을 흔들면 결론축이 얼마나 움직이나」* 를 재며, **얼마가 "
         "적정한가에 답하지 않는다.** ②③ 이 적정 용량을 내고 그 축은 **전력수요와 "
@@ -536,7 +689,7 @@ def capacity_review_lines(report: CaseReport) -> list[str]:
         f"저장장치 용량 **역산**(계절별). **{ADOPTED_HEAD} 열이 채택값**이고 "
         "완전 자립분은 견줌으로 함께 싣는다:",
         "",
-        *_ess_sizing_table(report.ess_sizing),
+        *_ess_sizing_table(report.ess_sizing, report.household_count),
         "",
         "- 점별 결론 축과 걸린 제약은 심의용 리포트 붙임 10 이 싣는다 — 이 표는 "
         "그 요약이며, 두 문서가 같은 `CaseReport` 를 읽는다",

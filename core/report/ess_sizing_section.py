@@ -179,6 +179,83 @@ class ESSSizingReview:
     #: 소절이 이 수를 산식 줄에 인쇄한다. 역산할 수 없는 실행에서도 **비율은
     #: 안다**(대장에서 왔다) — 그래서 `_unmeasurable` 도 이것을 싣는다.
     grid_supply_allowance: float
+    #: ★★ **이 실행이 실제로 세운 배터리의 정격출력**(kW) — 역산값이 아니다
+    #: (R67/WP-③ · 사용자 판정 §4-3 *「진단값과 실제 실행값을 구분한다」*).
+    #: 검증 리포트 2단계가 역산 표 **위에** 「지금 도는 구성」을 적을 때 이 수를
+    #: 읽는다(`core/report/verification_inputs.py::_run_configuration_lines`) —
+    #: 그 줄이 수를 리터럴로 갖지 않게 하는 것이 이 칸의 유일한 쓰임이다.
+    #: ⚠ 용량 쪽은 설계 변수라 `capacity_review` 가 이미 갖는다. 정격출력은
+    #: 설계 변수가 아니어서 **`CaseReport` 어디에도 수로 없었다.**
+    #: `None` 은 「이 실행에 배터리가 없다」다(`_unmeasurable` 갈래).
+    run_power_kw: float | None = None
+
+
+#: ★★★ ③ 의 1가구 값이 **역산이 아니라 나눗셈**임을 말하는 낱말
+#: (R67/WP-③-fix · 오케스트레이터 판정 §2-2).
+#:
+#: ## 왜 낱말을 상수로 두는가
+#:
+#: 이 낱말은 **렌더러와 시험이 함께 갖는다**(지시문 §4-2 *「낱말을 리터럴로 두
+#: 곳에 적지 말고 상수 하나를 시험과 렌더러가 나눠 갖게 하라」*). 두 곳에 적으면
+#: 문면을 고치는 날 한쪽만 고쳐지고, 그때 **시험은 옛 낱말을 찾아 초록불**이다.
+PER_HOUSEHOLD_SCALED: Final[str] = "비례 환산"
+
+#: 그 낱말이 붙은 열 이름의 **머리**. ②(`연간 부하(1가구)`)와 **일부러 다르다** —
+#: ② 의 1가구 값은 산식을 1호분 부하로 **다시 돈** 것이고 이쪽은 **나눈** 것이다.
+#: 같은 이름을 쓰면 두 성질이 같은 표 모양 뒤로 숨는다(지시문 §2-4).
+PER_HOUSEHOLD_HEAD: Final[str] = f"1가구({PER_HOUSEHOLD_SCALED})"
+
+
+def per_household_scaled(value: float, household_count: int | None) -> float:
+    """단지 값을 **가구 수로 나눈** 1가구 값.
+
+    ⛔ **이것은 역산이 아니다.** `build_ess_daily_sizing` 의 입력은
+    **20호로 돈 운전의 스텝별 시계열**이라 1호분 입력이 저장소에 없고, 1호분
+    운전을 만들려면 계절 디스패치를 다시 돌아야 한다(`core/casegrid/**`) —
+    리포트 렌더링에서 파이프라인을 다시 도는 일이므로 하지 않는다.
+
+    ⇒ 그래서 **나눈다.** 그 나눗셈이 옳다는 근거는 실측 하나다 —
+    `household_count: 1` 로 따로 돌려 **네 계절 전부 비 20.0000**(정확한 선형)임을
+    확인했다(R67/WP-③). 부하와 설비가 같은 배수를 타므로 스텝별 결손도 비례한다.
+    ⚠ 그 근거를 산출물에서 지우지 마라 — 지우면 다음 사람이 이 열을 **역산
+    결과로 읽는다**(`per_household_scaled_notes` 가 그 줄을 갖는다).
+
+    ⚠ 가구 수가 없거나 1 이면 나눌 것이 없다 — 그대로 돌려준다.
+    """
+    if household_count is None or household_count <= 1:
+        return value
+    return value / household_count
+
+
+def per_household_scaled_notes(household_count: int | None) -> list[str]:
+    """③ 의 1가구 열이 **무엇인지 · 왜 환산인지 · ②와 무엇이 다른지** 세 줄.
+
+    ⚠ **표가 스스로 말해야 한다.** 열 이름의 「비례 환산」 넷 글자만으로는
+    *왜* 환산인지가 서지 않고, 그러면 검토자는 ②의 1가구 열과 **같은 성질**로
+    읽는다 — 그 둘은 다르다(②는 다시 돈 것 · ③은 나눈 것).
+    """
+    if household_count is None or household_count <= 1:
+        # ② 와 **같은 규칙**이다(지시문 §2-5) — 두 벌이 같은 수이므로 열을 접고
+        # 접었다는 사실만 적는다. 정본 문면은
+        # `core/report/sizing.py::household_first_notes` 쪽과 짝이다.
+        return [
+            "- 단지 확대 — **없다**(가구 "
+            f"{'한 호' if household_count is None else f'{household_count}호'}"
+            " 실행). 1가구 값과 단지 값이 같은 수이므로 **1가구 열을 접었다** — "
+            "지운 것이 아니다",
+        ]
+    return [
+        f"- 1가구 열은 **{PER_HOUSEHOLD_SCALED}**이다 — 단지 값을 가구 수 "
+        f"{household_count}로 나눈 수이며 **역산을 1호분으로 다시 돈 것이 "
+        "아니다.** 이 역산의 입력은 **20호로 돈 운전의 스텝별 시계열**이라 "
+        "1호분 운전이 없다",
+        "- 환산의 근거 — `household_count: 1` 로 따로 돌려 **네 계절 전부 비 "
+        "20.0000**(정확한 선형)임을 확인했다(R67/WP-③). 부하와 설비가 같은 "
+        "배수를 타므로 스텝별 결손도 비례한다",
+        "- ⚠ **②의 1가구 열과 성질이 다르다** — ②는 같은 산식을 **1호분 부하로 "
+        "다시 돈** 값이고, 이 표의 1가구 열은 단지 값을 **나눈** 값이다. 표 "
+        "모양이 같아도 두 수가 서 있는 근거는 같지 않다",
+    ]
 
 
 def usable_capacity_probe(ess: ESS) -> UsableCapacityKwh:
@@ -364,6 +441,9 @@ def build_ess_sizing_review(
         search_low_kwh=search_low_kwh,
         search_high_kwh=search_high_kwh,
         grid_supply_allowance=grid_supply_allowance,
+        # ⚠ **러너가 세운 그 배터리에서 읽는다** — 자원을 다시 세우지 않는다
+        # (위 독스트링의 같은 판단). 역산값이 아니라 **실행값**이다.
+        run_power_kw=ess.power_kw,
     )
 
 
