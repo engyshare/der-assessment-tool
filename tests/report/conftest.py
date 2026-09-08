@@ -182,7 +182,12 @@ def report_household_wiring() -> dict[str, object]:
         # ⚠ **계절 몫도 같은 묶음이다** — 합계만 넘기면 재실행이 그 부하를 계절에
         # 고르게 펴고, 리포트(겨울에 몰린 하루)와 다른 사업이 된다. 셋을 따로
         # 넘기게 두면 셋 중 하나를 잊는 자리가 다시 생긴다.
-        "appliance_season_shares": loads.season_shares,
+        # ★★ **`.season_shares` 가 아니라 `.blended_season_shares` 다**
+        # (R67/WP-N1) — `build_case_report` 가 러너로 넘기는 것이 그 속성이다.
+        # 여기서 적힌 몫을 그대로 넘기면 재실행이 **전기차 충전에 냉난방의
+        # 겨울 몫을 씌운** 사업을 재고, 그것이 이 함수가 막으려는 바로 그
+        # 함정(「한 호짜리 다른 사업의 결론에 대고 잰다」)의 여덟 번째 형태다.
+        "appliance_season_shares": loads.blended_season_shares,
     }
 
 

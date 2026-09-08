@@ -331,3 +331,42 @@ def test_a_scenario_whose_season_shares_do_not_sum_to_one_is_refused() -> None:
     short = {name: share * 0.9 for name, share in _season_heavy().items()}
     with pytest.raises(ValidationError, match="1 이어야 합니다"):
         _report(**{HEATPUMP_LOAD_FIELD: 3000.0, APPLIANCE_SEASON_SHARE_FIELD: short})
+
+
+# ── 기기별 배분 — 전기차에 냉난방 몫을 씌우지 않는다 (R67/WP-N1) ────────────
+
+
+def test_the_ev_slice_reaches_the_body_and_moves_the_conclusion() -> None:
+    """★★★★ **합계가 같아도 「그중 얼마가 전기차인가」가 결론축을 움직인다.**
+
+    ## 이 검사가 붙드는 어긋남
+
+    러너로 가는 것은 **합계 하나**(`extra_appliance_load_kwh`)이고 계절 몫은
+    자산이 적은 **냉난방의 것**이다. `build_case_report` 가 그 몫을
+    `.season_shares` 로 넘기면 히트펌프의 겨울 몫이 **전기차 충전에도** 씌워져
+    겨울 부하가 과대해지고, 그 위에서 역산한 겨울 ESS 용량이 부풀려진다.
+    `.blended_season_shares` 는 전기차 몫만 **일수 비례**로 갈아 끼운다.
+
+    ⇒ 아래 두 실행은 **부하 합계가 한 kWh 도 다르지 않다.** 다른 것은 그
+    합계의 기기 구성뿐이므로, 결론축이 그대로라면 그 구성이 계산에 들어가지
+    않았다는 뜻이다 — 위 `test_the_season_shares_reach_the_body_and_move_the_
+    conclusion` 이 계절 몫에 대해 재는 것과 같은 형태다.
+
+    ⚠ 계절 몫은 **적지 않는다** — 자산의 절이 `with_ledger_defaults` 로 들어와
+    두 실행 모두에 같은 몫이 걸리는 것이 이 검사가 재려는 배포 실행의 모습이다.
+    """
+    total = 6000.0
+    all_heatpump = float(
+        _report(**{HEATPUMP_LOAD_FIELD: total, EV_LOAD_FIELD: 0.0})
+        .metrics[CONCLUSION_METRIC]
+    )
+    half_ev = float(
+        _report(**{HEATPUMP_LOAD_FIELD: total / 2, EV_LOAD_FIELD: total / 2})
+        .metrics[CONCLUSION_METRIC]
+    )
+    assert half_ev != pytest.approx(all_heatpump, abs=1.0), (
+        f"추가 부하 합계 {total:,.0f}kWh 를 전부 히트펌프로 둔 실행과 절반을 "
+        f"전기차로 둔 실행의 결론축이 둘 다 {all_heatpump:,.0f}원이다 — 러너로 "
+        "가는 계절 몫이 기기 구성을 반영하지 않는다 "
+        "(`ApplianceLoads.blended_season_shares` 를 넘기고 있는가?)"
+    )

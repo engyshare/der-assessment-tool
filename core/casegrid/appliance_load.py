@@ -250,9 +250,13 @@ class ApplianceLoads:
     #: `None` 이 미지정이며 그때 기본 부하와 **같은 계절 몫**으로 돈다 —
     #: 그것이 이 라운드 전의 유일한 갈래였다(모듈 머리말 ★★★ 절).
     #:
-    #: ⚠ **`total_kwh` 를 나누지 않는다.** 이 몫은 히트펌프·전기차를 가르지
-    #: 않고 **둘의 합계**에 걸린다 — 러너의 인자가 합계 하나이고(위 ⚠ 절)
-    #: 기기별 계절 몫을 따로 받으면 화면 칸이 기기 수 × 계절 수로 늘어난다.
+    #: ⚠ **`total_kwh` 를 나누지 않는다.** 이 몫은 사용자·자산이 적은 것
+    #: 그대로이며 러너의 인자는 여전히 합계 하나다(위 ⚠ 절) — 기기별 계절
+    #: 몫을 **칸으로** 따로 받으면 화면 칸이 기기 수 × 계절 수로 늘어난다.
+    #:
+    #: ⚠⚠ **이 값을 러너로 그대로 넘기지 마라 — `blended_season_shares` 다**
+    #: (R67/WP-N1). 이 몫은 자산이 **히트펌프의 것**으로 적은 것인데 그대로
+    #: 넘기면 전기차 충전에도 그 겨울 몫이 씌워진다(그 속성의 ★ 절).
     season_shares: ApplianceSeasonShares | None = None
 
     @property
@@ -269,6 +273,51 @@ class ApplianceLoads:
     def any_specified(self) -> bool:
         """둘 중 **하나라도** 적혔는가 — 산출물이 문면을 가르는 데 쓴다."""
         return self.heatpump_kwh is not None or self.ev_kwh is not None
+
+    @property
+    def ev_ratio(self) -> float:
+        """추가 기기 부하 중 **전기차의 몫**. 분모가 0 이면 `0.0` 이다.
+
+        ⚠ **여기가 두 수를 다 아는 유일한 자리다** (R67/WP-N1). 러너는 합계
+        하나(`total_kwh`)만 받고 계절 몫은 자산에서 오므로, 「그 합계의 몇
+        할이 전기차인가」를 아는 것은 이 자료형뿐이다.
+
+        ⚠⚠ **미지정(`None`)과 `0.0` 이 여기서는 같은 수를 낸다** — 둘 다
+        더해지는 값이 0 이므로 *비중*도 0 이다. 갈리는 것은 산출물의 문면이고
+        (`any_specified`) 그 판정은 이 속성이 지지 않는다.
+        """
+        total = self.total_kwh
+        if total <= 0.0:
+            return 0.0
+        return (self.ev_kwh or 0.0) / total
+
+    @property
+    def blended_season_shares(self) -> ApplianceSeasonShares | None:
+        """★ **러너로 갈 계절 몫** — 전기차 몫을 도장 찍은 사본 (R67/WP-N1).
+
+        ## 무엇이 결함이었나
+
+        자산(`fixtures/profiles/representative-day.yaml` 의
+        `appliance_season_shares:` 절)이 적은 몫은 **냉난방의 것**이고 그
+        파일이 스스로 그 결손을 적어 두었다: *「이 몫이 냉난방만의 것이 아니라
+        전기차 충전에도 걸린다」*. 러너 인자가 **합계 하나**라서 히트펌프의
+        겨울 몫이 전기차 충전에도 그대로 씌워졌고, 그러면 **겨울 부하가
+        과대**해지고 그 위에서 역산한 겨울 ESS 용량이 부풀려진다.
+
+        ## 무엇을 하는가
+
+        `season_shares` 에 `ev_ratio` 를 실어 준다. 섞는 산식과 「전기차는
+        **일수 비례**」라는 판정은 `ApplianceSeasonShares._matched` 가 갖는다 —
+        이 속성은 **두 수를 아는 자리에서 그 비율을 건네줄 뿐**이다.
+
+        ⚠ **몫을 안 적은 실행은 `None` 그대로다.** 그때 러너가 종전 식을
+        지나며 출력이 원소 하나까지 같다(`ApplianceSeasonShares` 머리말 ⛔ 절).
+        ⚠⚠ **전기차가 `None` 이거나 `0.0` 인 실행도 오늘과 같다** —
+        `ev_ratio` 가 0.0 이고 `_matched` 가 그때 섞지 않는다.
+        """
+        if self.season_shares is None:
+            return None
+        return replace(self.season_shares, ev_ratio=self.ev_ratio)
 
 
 #: 아무것도 적지 않은 실행의 값. 이것으로 도는 실행은 이 배선이 생기기 전과
@@ -422,6 +471,15 @@ class ApplianceSeasonShares:
     #: 단지 총부하 중 **추가 기기 부하**의 비중. 채우기 전에는 0.0 이며, 그때
     #: 이 자료형은 어떤 수도 움직이지 않는다.
     appliance_ratio: float = 0.0
+    #: ★ **그 추가 기기 부하 중 전기차의 몫** (R67/WP-N1). `by_season` 이
+    #: **냉난방의** 계절 몫이므로, 전기차에는 그것을 씌우지 않고 **일수 비례**를
+    #: 씌운다 — 섞는 산식은 `_matched` 가 갖는다.
+    #:
+    #: ⚠ 기본값 `0.0` 은 *「전기차가 없다」*이며 그때 `_matched` 가 **섞지
+    #: 않고** 적힌 몫을 그대로 낸다 — 출력이 이 필드가 서기 전과 원소 하나까지
+    #: 같다. 채우는 자리는 `ApplianceLoads.blended_season_shares` 하나다
+    #: (두 수를 다 아는 곳이 거기뿐이다).
+    ev_ratio: float = 0.0
 
     @staticmethod
     def of(
@@ -515,12 +573,40 @@ class ApplianceSeasonShares:
         return [value for _day in range(days) for value in day]
 
     def _matched(self, shape: DailyShape) -> tuple[tuple[tuple[float, ...], float], ...]:
-        """자산의 계절 차례대로 (그 계절 가중치, **사용자가 적은 몫**).
+        """자산의 계절 차례대로 (그 계절 가중치, **그 계절에 실제로 걸릴 몫**).
 
         ⚠⚠ **달력이 다르면 여기서 거부한다.** 자산 머리말이 *「부하와 발전이
         같은 달력을 적어야 한다 … 읽는 쪽이 거부한다」* 로 못 박은 것과 같은
         규칙이며, 계절 이름이 다르면 **같은 인덱스가 서로 다른 날을 가리킨다.**
         고쳐 주지 않는다 — 이름을 짐작해 붙이면 겨울 몫이 봄에 걸린다.
+
+        ## ★ 적힌 몫과 「실제로 걸릴 몫」이 다른 경우 — 전기차 (R67/WP-N1)
+
+        `by_season` 은 **냉난방의** 계절 몫이다. 그런데 러너로 가는 것은
+        히트펌프와 전기차의 **합계 하나**라, 그대로 쓰면 히트펌프의 겨울 몫이
+        전기차 충전에도 씌워진다 — 전기차는 통상 심야·**연중 고른 충전**이므로
+        그것은 겨울 부하를 과대하게 만들고, 그 위에서 역산한 겨울 ESS 용량이
+        부풀려진다. 자산 파일이 그 결손을 스스로 적어 두었다
+        (`appliance_season_shares` 의 `derivation_method` 안 ⚠⚠ 절).
+
+        ⇒ 전기차 몫에는 **자산 달력의 일수 비례**를 씌우고 둘을 섞는다:
+
+            유효 몫[i] = (1 − ev_ratio) × 적힌 몫[i]
+                       + ev_ratio × ( 일수[i] ÷ 일수 합 )
+
+        ⚠ **일수 비례를 상수로 박지 않는다.** `SHARE_TOLERANCE` 가 `1e-9` 라
+        네 자리로 끊으면(`0.2521 + … = 1.0001`) 합 검사가 거부하고, 무엇보다
+        자산이 달력을 고치는 날 그 상수만 낡는다 — 여기서 **자산의 `days` 를
+        그 자리에서 나눈다.** 새 수를 발명하지 않는 것이 이 갈래의 근거다.
+
+        ⚠⚠ **「기본 부하와 같은 몫」을 쓰지 않는 이유** — 기본 부하의 계절
+        몫은 자산이 그 사유를 *「**냉난방 때문에** 여름·겨울이 높다」* 로
+        적었다. 그것을 전기차에 씌우면 냉난방 사유의 계절성을 전기차에 붙이는
+        것이 되어 결함이 형태만 바뀐다.
+
+        ⛔ **`ev_ratio` 가 0 이면 섞지 않고 적힌 몫을 그대로 낸다** — 다시
+        계산하면 부동소수 마지막 자리가 갈릴 수 있고, 그러면 전기차를 적지
+        않은 실행이 조용히 움직인다(`load_days` 의 ⛔ 절과 같은 사유).
         """
         given = dict(self.by_season)
         names = [season.name for season in shape.seasons]
@@ -538,7 +624,39 @@ class ApplianceSeasonShares:
                     "(비우면 냉난방이 기본 부하와 같은 계절 몫으로 돕니다)"
                 ),
             )
-        return tuple((weights, given[season.name]) for season, weights in shape.by_season)
+        declared = tuple(
+            (weights, given[season.name]) for season, weights in shape.by_season
+        )
+        if not self.ev_ratio:
+            return declared
+        return tuple(
+            (weights, (1.0 - self.ev_ratio) * share + self.ev_ratio * day_share)
+            for (weights, share), day_share in zip(
+                declared, _day_proportional(shape), strict=True
+            )
+        )
+
+
+def _day_proportional(shape: DailyShape) -> tuple[float, ...]:
+    """자산 달력의 **일수 비례 몫** — 계절 차례대로, 합이 1 이다 (R67/WP-N1).
+
+    「연중 고르게 쓴다」를 계절 축에 옮긴 것이 이것이다. 전기차 충전이 그
+    성질을 갖는다고 본 근거는 `ApplianceSeasonShares._matched` 의 ★ 절이다.
+
+    ⚠ **일수를 여기서 세지 않는다** — 자산이 선언한 `Season.days` 를 그대로
+    나눈다. 배포 자산은 봄 92 · 여름 92 · 가을 91 · 겨울 90 (합 365)이므로
+    `0.252055 · 0.252055 · 0.249315 · 0.246575` 이고 **합이 정확히 1** 이다.
+
+    ⚠⚠ **일수를 안 적은 계절**(`days is None`)은 「읽는 쪽이 준 `days` 전부」를
+    뜻하며 `DailyShape.__post_init__` 이 **계절이 하나일 때만** 허용한다. 그때
+    그 계절이 한 해 전부이므로 몫은 1.0 이고, 이것은 그 계절의 `share` 가 1
+    이라는 사실(합이 1)과 같은 값이라 섞어도 아무 수가 움직이지 않는다.
+    """
+    declared = [season.days for season in shape.seasons]
+    if any(days is None for days in declared):
+        return tuple(1.0 for _ in declared)
+    total = float(math.fsum(days for days in declared if days is not None))
+    return tuple((days or 0) / total for days in declared)
 
 
 def resolve_appliance_season_shares(

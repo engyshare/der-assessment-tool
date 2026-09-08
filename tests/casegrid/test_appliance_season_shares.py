@@ -52,14 +52,16 @@ from core.casegrid.appliance_load import (
     APPLIANCE_SEASON_SHARE_FIELD_KEY,
     EV_LOAD_FIELD,
     HEATPUMP_LOAD_FIELD,
+    ApplianceLoads,
     ApplianceSeasonShares,
+    asset_appliance_season_shares,
     resolve_appliance_loads,
     resolve_appliance_season_shares,
 )
 from core.casegrid.e2e_runner import DAYS_PER_YEAR, run_single_case_e2e
 from core.casegrid.ledger_levels import build_level_map
 from core.casegrid.models import CaseOutcome
-from core.casegrid.profiles import DailyShape, load_daily_shapes
+from core.casegrid.profiles import SHARE_TOLERANCE, DailyShape, load_daily_shapes
 from core.contracts.validation import ValidationError
 from tests.casegrid.test_seasonal_dispatch_run import _ASSUMPTIONS, _load_kwh
 
@@ -71,6 +73,11 @@ _HEATPUMP = 3000.0
 #: 마지막 계절에 몰아 주는 몫. 자산이 그 계절에 적은 몫보다 **커야** 차등의
 #: 방향이 정해진다 — 아래 `_winter_heavy` 가 그것을 단언으로 붙든다.
 _HEAVY = 0.7
+
+#: 시험용 전기차 부하(kWh/호·년). 위 `_HEATPUMP` 와 같은 규약이며 — 이 수가
+#: 하는 일은 **「히트펌프와 견줄 만큼 커서 `ev_ratio` 가 0 도 1 도 아니다」**
+#: 하나다. 대장의 조사값(2,784)을 박지 않는 사유도 그쪽과 같다.
+_EV = 2000.0
 
 
 def _load_shape() -> DailyShape:
@@ -450,3 +457,169 @@ def test_a_run_with_no_appliance_load_is_unmoved_by_any_calendar() -> None:
             f"기기 부하가 0 인데 {name!r} 의 부하가 움직였다\n"
             f"{_table(plain, after)}"
         )
+
+
+# ── ⑤ 기기별 배분 — **전기차에는 냉난방 몫을 씌우지 않는다** (R67/WP-N1) ────
+#
+# 위 ①~④ 가 재는 것은 *「합계 하나가 계절마다 갈린다」* 까지다. 그런데 그
+# 합계는 **히트펌프 + 전기차**이고 자산이 적은 몫은 **히트펌프의 것**이라,
+# 그대로 쓰면 히트펌프의 겨울 몫이 전기차 충전에도 씌워진다 — 전기차는 통상
+# 심야·**연중 고른 충전**이므로 그때 겨울 부하가 과대해지고, 그 위에서 역산한
+# 겨울 ESS 필요 용량이 부풀려진다. 자산 파일이 그 결손을 스스로 적어 두었다
+# (`appliance_season_shares` 의 `derivation_method` 안 ⚠⚠ 절).
+
+
+def _asset_shares() -> ApplianceSeasonShares:
+    """배포 자산이 선언한 **냉난방** 계절 몫. 값을 여기 박지 않는다."""
+    shares = asset_appliance_season_shares()
+    assert shares is not None, (
+        "배포 자산에 `appliance_season_shares:` 절이 없다 — 이 아래 검사들이 "
+        "재는 것은 그 절이 있는 실행이다"
+    )
+    return shares
+
+
+def _day_share() -> dict[str, float]:
+    """자산 달력의 **일수 비례 몫** — 시험도 자산에서 «그 자리에서» 나눈다.
+
+    ⚠ `0.2521` 처럼 네 자리로 끊어 적으면 합이 `1.0001` 이 되어
+    `SHARE_TOLERANCE`(1e-9)를 넘고, 무엇보다 자산이 달력을 고치는 날 이 검사만
+    낡는다 — 구현이 하는 것과 **같은 나눗셈**을 여기서도 한다.
+    """
+    seasons = _load_shape().seasons
+    total = float(sum(season.days or 0 for season in seasons))
+    return {season.name: (season.days or 0) / total for season in seasons}
+
+
+def _effective(shares: ApplianceSeasonShares) -> dict[str, float]:
+    """그 몫이 **계절마다 실제로 걸리는 값** — 형상과 맞춰 꺼낸다."""
+    shape = _load_shape()
+    return {
+        season.name: share
+        for season, (_weights, share) in zip(
+            shape.seasons, shares._matched(shape), strict=True
+        )
+    }
+
+
+def test_the_ev_ratio_is_the_ev_slice_of_the_appliance_load() -> None:
+    """★★★ `ev_ratio` 는 **전기차 ÷ (히트펌프 + 전기차)** 이고 분모 0 이면 0.0 이다.
+
+    ⚠ **`None`(적지 않았다)과 `0.0`(없다고 적었다)이 여기서는 같은 수를 낸다** —
+    둘 다 더해지는 값이 0 이므로 *비중*도 0 이다. 둘을 가르는 것은 산출물의
+    문면(`any_specified`)이고 그 판정은 이 속성이 지지 않는다.
+    """
+    assert ApplianceLoads(heatpump_kwh=300.0, ev_kwh=100.0).ev_ratio == pytest.approx(0.25)
+    assert ApplianceLoads(heatpump_kwh=None, ev_kwh=None).ev_ratio == 0.0
+    assert ApplianceLoads(heatpump_kwh=0.0, ev_kwh=0.0).ev_ratio == 0.0
+    assert ApplianceLoads(heatpump_kwh=None, ev_kwh=0.0).ev_ratio == 0.0
+    assert ApplianceLoads(heatpump_kwh=None, ev_kwh=_EV).ev_ratio == 1.0
+    assert ApplianceLoads(heatpump_kwh=0.0, ev_kwh=_EV).ev_ratio == 1.0
+    # ⚠ 몫을 안 적은 실행은 도장 찍을 것이 없다 — `None` 그대로여야 러너가
+    # 종전 식을 지난다(위 ① 검사).
+    assert ApplianceLoads(heatpump_kwh=_HEATPUMP, ev_kwh=_EV).blended_season_shares is None
+
+
+def test_a_run_without_an_ev_is_element_for_element_what_it_was() -> None:
+    """★★★★ **전기차가 없으면 오늘과 원소 하나까지 같다** (동일성 · 합격 조건).
+
+    `None`(적지 않았다)과 `0.0`(없다고 적었다) 둘 다 그렇다. 섞는 식을 지나며
+    「같은 값이 나오도록」 다시 계산하면 부동소수 마지막 자리가 갈릴 수 있고,
+    그러면 전기차를 적지 않은 실행이 조용히 움직인다 — 그래서 `pytest.approx`
+    가 아니라 **`==`** 로 잰다(위 ① 검사와 같은 사유).
+    """
+    asset = _asset_shares()
+    shape = _load_shape()
+    baseline = asset._matched(shape)
+    for ev in (None, 0.0):
+        stamped = ApplianceLoads(
+            heatpump_kwh=_HEATPUMP, ev_kwh=ev, season_shares=asset
+        ).blended_season_shares
+        assert stamped is not None
+        assert stamped._matched(shape) == baseline, (
+            f"전기차가 {ev!r} 인데 계절 몫이 움직였다 — 그 실행은 오늘과 원소 "
+            f"하나까지 같아야 한다\n  오늘 {[s for _w, s in baseline]}\n"
+            f"  지금 {[s for _w, s in stamped._matched(shape)]}"
+        )
+    # 운전까지 내려가도 같다 — 위 단언은 몫 하나만 보고, 이것은 러너가 그 몫으로
+    # 실제로 돌린 결과를 본다.
+    plain = _season_load(_run(asset))
+    same = _season_load(
+        _run(
+            ApplianceLoads(
+                heatpump_kwh=_HEATPUMP, ev_kwh=0.0, season_shares=asset
+            ).blended_season_shares
+        )
+    )
+    assert same == plain, f"전기차가 0 인 실행이 움직였다\n{_table(plain, same)}"
+
+
+def test_the_ev_pulls_the_heaviest_season_down_towards_the_day_count() -> None:
+    """★★★★ **히트펌프와 전기차가 둘 다 있으면 겨울 몫이 «작아진다»** (WP-N1 §4-2).
+
+    재는 것 셋:
+      ⓐ 섞인 몫이 자산 값에서 계산한 기대값과 같다 — **리터럴을 박지 않는다**
+      ⓑ 가장 무거운 계절의 몫이 **일수 비례와 적힌 몫 «사이»**에 있다.
+         한쪽만 보면 「전부 일수 비례로 갈아치웠다」와 구별되지 않는다
+      ⓒ 섞은 뒤에도 **합이 1** 이다 — 아니면 연간 에너지가 조용히 사라진다
+    """
+    asset = _asset_shares()
+    declared = dict(asset.by_season)
+    day = _day_share()
+    heaviest = max(declared, key=lambda name: declared[name])
+    assert declared[heaviest] > day[heaviest], (
+        f"자산이 {heaviest!r} 에 적은 몫 {declared[heaviest]!r} 이 일수 비례 "
+        f"{day[heaviest]!r} 보다 크지 않다 — 이 검사의 방향이 정해지지 않는다"
+    )
+
+    loads = ApplianceLoads(heatpump_kwh=_HEATPUMP, ev_kwh=_EV, season_shares=asset)
+    stamped = loads.blended_season_shares
+    assert stamped is not None
+    ratio = loads.ev_ratio
+    got = _effective(stamped)
+    want = {
+        name: (1.0 - ratio) * declared[name] + ratio * day[name] for name in declared
+    }
+    for name in declared:
+        assert got[name] == pytest.approx(want[name], rel=1e-12), (
+            f"{name!r} 의 유효 몫이 {got[name]!r} 인데 자산에서 계산한 기대값은 "
+            f"{want[name]!r} 다 (ev_ratio={ratio!r})"
+        )
+    assert day[heaviest] < got[heaviest] < declared[heaviest], (
+        f"{heaviest!r} 의 몫이 {got[heaviest]!r} 다 — 일수 비례 "
+        f"{day[heaviest]!r} 와 적힌 몫 {declared[heaviest]!r} 사이여야 한다"
+    )
+    assert abs(math.fsum(got.values()) - 1.0) <= SHARE_TOLERANCE, (
+        f"섞은 몫의 합이 {math.fsum(got.values())!r} 다 — 1 이어야 한다"
+    )
+
+
+def test_splitting_the_ev_out_moves_the_seasons_but_not_the_annual_total() -> None:
+    """★★★★ **계절만 갈리고 연 총량은 한 kWh 도 움직이지 않는다** (WP-N1 §4-3).
+
+    이 성질이 없으면 위 검사는 *「전기차 부하를 덜어 냈다」* 로도 통과한다 —
+    위 `test_the_annual_total_does_not_move_when_the_seasons_do` 와 같은 축이며,
+    거기서는 사용자가 몫을 바꾸었고 여기서는 **같은 합계의 기기 구성**이 바뀐다.
+    """
+    asset = _asset_shares()
+    total = _HEATPUMP + _EV
+    stamped = ApplianceLoads(
+        heatpump_kwh=_HEATPUMP, ev_kwh=_EV, season_shares=asset
+    ).blended_season_shares
+
+    plain = _season_load(_run(asset, heatpump=total))
+    after = _season_load(_run(stamped, heatpump=total))
+
+    heaviest = max(dict(asset.by_season), key=lambda name: dict(asset.by_season)[name])
+    assert after[heaviest] < plain[heaviest], (
+        f"합계 {total:,.0f} 중 {_EV:,.0f} 이 전기차인데 {heaviest!r} 의 부하가 "
+        f"줄지 않았다 — 냉난방의 겨울 몫이 전기차에도 씌워지고 있다\n"
+        f"{_table(plain, after)}"
+    )
+    assert math.fsum(after.values()) == pytest.approx(
+        math.fsum(plain.values()), rel=1e-9
+    ), (
+        f"연간 부하 총량이 {math.fsum(plain.values()):,.1f} 에서 "
+        f"{math.fsum(after.values()):,.1f} 로 움직였다 — 계절 사이에서 옮겨 갈 "
+        f"뿐이어야 한다\n{_table(plain, after)}"
+    )
