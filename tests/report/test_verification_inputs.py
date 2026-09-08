@@ -37,6 +37,7 @@ import yaml
 
 from app.services.verify_steps import STAGE_COUNT, split_stages
 from core.casegrid.appliance_load import (
+    APPLIANCE_LOAD_UNIT,
     APPLIANCE_LOAD_UNSPECIFIED,
     APPLIANCE_SEASON_SHARE_FIELD,
     APPLIANCE_SEASON_SHARE_UNSPECIFIED,
@@ -56,7 +57,11 @@ from core.casegrid.profiles import load_daily_shapes
 from core.report.case_report import CaseReport, build_case_report
 from core.report.dispatch_notes import NO_OPERATING_MODE
 from core.report.verification import render_verification_markdown
-from core.report.verification_inputs import dispatch_note_rows, execution_input_lines
+from core.report.verification_inputs import (
+    HOUSEHOLD_LOAD_LEDGER_KEY,
+    dispatch_note_rows,
+    execution_input_lines,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -247,6 +252,115 @@ def test_the_unreflected_items_are_printed_with_their_direction(
     for item in items:
         assert item.label in text, f"미반영 항목 {item.label} 이 빠졌다"
         assert item.direction in text
+
+
+# ── ①-2 가구 수요 — 세 항목과 «이름이 다른» 두 합계 (R67/WP-2) ──────────────
+
+
+def _general_load_kwh(report: CaseReport) -> float:
+    """일반용 전력 — 리포트가 읽은 대장 행(이 절 검사들의 대조값)."""
+    return next(
+        float(row.value)
+        for row in report.assumptions
+        if row.key == HOUSEHOLD_LOAD_LEDGER_KEY
+    )
+
+
+def test_the_three_household_demand_items_are_each_printed(tmp_path: Path) -> None:
+    """일반용·히트펌프·전기차가 **각각** 이름과 값으로 실린다 (판정 §4-2).
+
+    합 하나로 뭉뚱그리면 어느 항목이 얼마인지 보고서가 말하지 않는다.
+    값은 리포트에서 읽어 대조한다 — 참고자료의 수를 여기 박지 않는다.
+    단계 수는 이 표의 행이 늘어도 그대로다(아래 ③ 과 같은 경계).
+    """
+    report = _report()
+    text = _dumped(tmp_path)
+    loads = report.appliance_loads
+    assert loads.heatpump_kwh is not None and loads.ev_kwh is not None, (
+        "픽스처 전제가 깨졌다 — 대장이 기기 부하에 답하지 않는다"
+    )
+    assert "| 일반용 전력 |" in text, "일반용 전력 행이 없다"
+    assert f"{_general_load_kwh(report):,.0f}" in text, "일반용 전력의 값이 없다"
+    assert HEATPUMP_LOAD_TITLE in text, "히트펌프 행이 없다"
+    assert EV_LOAD_TITLE in text, "전기차 행이 없다"
+    assert f"{loads.heatpump_kwh:,.0f}" in text
+    assert f"{loads.ev_kwh:,.0f}" in text
+    assert len(split_stages(text)) == STAGE_COUNT, "표가 늘어 단계가 갈렸다"
+
+
+def test_the_subtotal_and_the_total_have_different_names_and_values(
+    tmp_path: Path,
+) -> None:
+    """★★ 소계(HP+EV)와 총계(일반+HP+EV)가 «다른 이름·다른 값»으로 실린다.
+
+    종전의 「한 호에 더해진 합계」는 HP+EV 뿐인데 이름이 «합계»라서 일반용이
+    계산에서 빠졌다고 읽혔다(판정 §4-2). 총계는 **일반 + 소계** 로 대조한다 —
+    값을 여기 박지 않는다.
+    """
+    report = _report()
+    text = _dumped(tmp_path)
+    loads = report.appliance_loads
+    assert loads.heatpump_kwh is not None and loads.ev_kwh is not None, (
+        "픽스처 전제가 깨졌다 — 대장이 기기 부하에 답하지 않는다"
+    )
+    subtotal = loads.total_kwh
+    total = _general_load_kwh(report) + subtotal
+    assert total != subtotal, "픽스처 전제가 깨졌다 — 일반용이 0 이다"
+    row_subtotal = next(
+        line for line in text.splitlines() if line.startswith("| **추가 부하 소계")
+    )
+    row_total = next(
+        line for line in text.splitlines() if line.startswith("| **가구 총 전력")
+    )
+    assert "**추가 부하 소계 (HP+EV)**" in row_subtotal
+    assert "**가구 총 전력 (일반+HP+EV)**" in row_total
+    assert f"{subtotal:,.0f} {APPLIANCE_LOAD_UNIT}" in row_subtotal
+    assert f"{total:,.0f} {APPLIANCE_LOAD_UNIT}" in row_total
+    assert f"{total:,.0f}" not in row_subtotal, "소계 칸에 총계 값이 함께 실렸다"
+
+
+def test_the_estate_total_multiplies_the_household_total_by_count(
+    tmp_path: Path,
+) -> None:
+    """단지 총 전력 = 가구 총 전력 × 가구 수 — **더한 뒤에 곱한다**."""
+    report = _report(**{HOUSEHOLD_COUNT_FIELD: _HOUSEHOLDS})
+    text = _dumped(tmp_path, **{HOUSEHOLD_COUNT_FIELD: _HOUSEHOLDS})
+    loads = report.appliance_loads
+    assert loads.heatpump_kwh is not None and loads.ev_kwh is not None, (
+        "픽스처 전제가 깨졌다 — 대장이 기기 부하에 답하지 않는다"
+    )
+    row = next(
+        line for line in text.splitlines() if line.startswith("| 단지 총 전력 |")
+    )
+    expected = (_general_load_kwh(report) + loads.total_kwh) * _HOUSEHOLDS
+    assert f"{expected:,.0f} kWh/년" in row, "단지 총 전력이 곱한 값이 아니다"
+
+
+def test_unspecified_heatpump_prints_differently_from_zero_heatpump(
+    tmp_path: Path,
+) -> None:
+    """★★ 히트펌프가 `None`(적지 않았다)일 때와 `0.0`(없다고 적었다)일 때
+    인쇄가 «다르다» — 합계 칸도 그 둘을 가른다 (`ApplianceLoads` 머리말).
+
+    둘 다 더해지는 값은 0 이지만 진술이 다르고, 합계 칸이 그것을 확정값
+    하나로 묻으면 검토자가 «반영됐다»로 읽는다.
+    """
+    zero = _dumped(tmp_path, **{HEATPUMP_LOAD_FIELD: 0.0})
+    unspecified = _dumped(tmp_path, ledger_answers=False)
+    row_zero = next(
+        line for line in zero.splitlines() if line.startswith("| **가구 총 전력")
+    )
+    row_unspecified = next(
+        line for line in unspecified.splitlines()
+        if line.startswith("| **가구 총 전력")
+    )
+    assert APPLIANCE_LOAD_UNSPECIFIED in row_unspecified, (
+        "미지정이 합계 칸에 문장으로 실리지 않았다"
+    )
+    assert APPLIANCE_LOAD_UNSPECIFIED not in row_zero, (
+        "0 이라고 적었는데 «미지정»이 함께 실렸다"
+    )
+    assert row_zero != row_unspecified
 
 
 # ── ② `None` 은 빈칸이 아니라 진술이다 ──────────────────────────────────────

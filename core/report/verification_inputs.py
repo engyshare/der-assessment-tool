@@ -95,6 +95,14 @@ from core.report.unreflected import build_unreflected, unreflected_direction_tal
 _YES = "예"
 _NO = "아니오"
 
+#: 일반용 전력의 **대장 자리** — 가구가 기본으로 쓰는 전기, 추가 전력사용기기
+#: 이전의 기본 소비(대장 제목 «가구당 연간 전력사용량»). `HEATPUMP_LOAD_LEDGER_KEY`
+#: · `EV_LOAD_LEDGER_KEY` 와 같은 규약의 열쇠인데 정본 상수가 아직
+#: `core/casegrid/` 에 없어 여기서 정의한다 — 같은 형태의 전례가
+#: `tests/report/test_shaped_run_invariants.py::_LOAD_LEDGER_KEY` 다.
+#: ⚠ 값은 대장이 갖는다 — 이 모듈이 수를 세우는 것이 아니다.
+HOUSEHOLD_LOAD_LEDGER_KEY = "load.household.annual"
+
 
 # ── 1단계 — 대장이 갖지 않는 실행 입력 (사용자 요구 1·2·3) ─────────────────
 
@@ -116,6 +124,61 @@ def _appliance_cell(value: float | None) -> str:
     return f"{value:,.0f} {APPLIANCE_LOAD_UNIT}"
 
 
+def _household_base_kwh(report: CaseReport) -> float | None:
+    """일반용 전력 — 이 실행이 읽은 대장 값, 행이 없으면 `None`(미지정).
+
+    ## 왜 대장 행에서 읽나
+
+    일반용은 히트펌프·전기차와 달리 **실행 입력의 칸이 없다** — 값은 대장
+    `load.household.annual` 이 갖고, 바꾸는 통로는 오버라이드(시나리오 yaml 의
+    `assumption_overrides` · 설정 화면의 대장 항목 칸)다. `report.assumptions`
+    의 행은 **실행이 쓴 값**을 싣는(R48-E1 — `case_report.py::_appendix`) —
+    그대로 읽으면 이 표의 「이 실행의 값」 칸과 어긋나지 않는다.
+
+    ⚠ 여기서 판정을 새로 세우지 않는다 — 러너가 이미 같은 대장 축으로
+    돌았고(`case_report.py` 의 `household_load_annual_kwh`), 이 함수는 그
+    사실을 인쇄할 뿐이다. 행이 없으면 `None` 이고 칸은 문장이 된다(모듈 머리말 ★★).
+    """
+    for row in report.assumptions:
+        if row.key == HOUSEHOLD_LOAD_LEDGER_KEY:
+            return float(row.value)
+    return None
+
+
+def _stated_sum(number: str, missing: tuple[str, ...]) -> str:
+    """합계 칸에 「미지정」 진술을 얹는다 — 미지정이 없으면 그대로 둔다.
+
+    ⚠⚠ **미지정 항목이 끼면 확정값만으로 적지 않는다.** «9,673» 처럼 인쇄하면
+    읽는 사람이 그 미지정 항목이 계산에서 빠졌다고 읽는다 — 빠지지 않았고
+    **0으로 들어갔다**. 그 진술은 기존 상수 `APPLIANCE_LOAD_UNSPECIFIED` 의
+    문면 그대로 얹는다(새 문면을 짓지 않는다), 항목 이름은 위 표의 행 이름과
+    같은 낱말로 쓴다.
+    """
+    if not missing:
+        return number
+    return f"{number} ({' · '.join(missing)}: {APPLIANCE_LOAD_UNSPECIFIED})"
+
+
+def _estate_total_cell(
+    per_household_kwh: float, count: int | None, missing: tuple[str, ...]
+) -> str:
+    """단지 총 전력 칸 — 가구 수가 미지정이면 **곱하지 않고 진술을 적는다.**
+
+    미지정에 곱할 수를 지으면 «모든 가구가 같다»는 뜻이 되고, 이 보고서의
+    모든 수량이 한 호의 것이라는 사실이 그 칸에서 사라진다 — 그때 칸은
+    `HOUSEHOLD_COUNT_UNSPECIFIED` 문면으로 채운다. 부하 쪽 미지정은 위
+    `_stated_sum` 과 같은 괄호를 얹는다.
+
+    ⚠ 단위가 위 칸들과 다르다 — `kWh/호·년` 이 아니라 **`kWh/년`**(단지의
+    합계)이다. 가구 수를 곱하는 순간 «호당» 이 아니다.
+    """
+    if count is None:
+        number: str = HOUSEHOLD_COUNT_UNSPECIFIED
+    else:
+        number = f"{per_household_kwh * count:,.0f} kWh/년"
+    return _stated_sum(number, missing)
+
+
 def _season_share_cell(shares: ApplianceSeasonShares | None) -> str:
     """계절 몫 칸 — 적었으면 계절마다의 몫을, 안 적었으면 그 사실을 적는다.
 
@@ -133,9 +196,9 @@ def execution_input_lines(report: CaseReport) -> list[str]:
 
     ## 왜 1단계인가
 
-    이 일곱은 계산의 결과가 아니라 **이 실행이 받은 전제**다. 대장 표(위 ⓑ)는
-    *「대장이 무엇을 갖고 있는가」*를 적고 이 표는 *「이 실행이 무엇으로
-    돌았는가」*를 적는다 — **둘은 다른 진술이며 값이 같아도 그렇다.**
+    이 표의 행들은 계산의 결과가 아니라 **이 실행이 받은 전제와 그 산수**다.
+    대장 표(위 ⓑ)는 *「대장이 무엇을 갖고 있는가」*를 적고 이 표는 *「이 실행이
+    무엇으로 돌았는가」*를 적는다 — **둘은 다른 진술이며 값이 같아도 그렇다.**
 
     ## ★★ R65 — 앞의 넷은 이제 대장·자산에서도 온다
 
@@ -155,8 +218,9 @@ def execution_input_lines(report: CaseReport) -> list[str]:
     ## ⚠ 화면과 시나리오의 통로가 항목마다 다르다
 
     가구 수·히트펌프·전기차는 화면(`/ui/run`)에도 칸이 있고, **계절 몫은
-    시나리오 yaml 에만 있다.** 「시나리오에서도 못 바꾼다」로 적으면 거짓이므로
-    통로 칸이 그 차이를 그대로 나른다.
+    시나리오 yaml 에만 있다.** 일반용 전력은 둘 다 아니다 — 대장 항목이라
+    오버라이드로만 바꾼다(위 `_household_base_kwh`). 「시나리오에서도 못
+    바꾼다」로 적으면 거짓이므로 통로 칸이 그 차이를 그대로 나른다.
 
     ## ★★ 할인율이 **여기** 있는 이유 (R64/WP-FIX 결함 1)
 
@@ -164,8 +228,38 @@ def execution_input_lines(report: CaseReport) -> list[str]:
     할인율은 대장 항목이 **아니다**(`docs/assumptions.yaml` 에 0건 ·
     `core/casegrid/ledger_levels.py`: *「평가자가 고르는 모형 파라미터」*). 곧
     이 표의 정의에 드는 값이므로 **참조를 지우는 대신 참으로 만든다.**
+
+    ## ★★ R67/WP-2 — 소계와 총계는 «다른 이름»을 쓴다
+
+    종전의 「한 호에 더해진 합계」는 히트펌프+전기차(러너의
+    `extra_appliance_load_kwh`)인데 «합계» 라는 이름이 붙어, 읽는 사람이
+    **가구 총 전력이 그 수이고 일반용이 빠졌다**고 읽었다(사용자 판정
+    `docs/decisions-2026-09-08-R67.md` §4-2). 빠지지 않았다 — 일반용은 위
+    대장 표(ⓑ)에 따로 서 있고 가구 총량은 `일반+HP+EV` 다. 이제 세 항목과
+    두 합계가 **이름을 달리** 인쇄된다: «추가 부하 소계(HP+EV)» 는 러너로
+    가는 수, «가구 총 전력(일반+HP+EV)» 은 가구가 실제로 쓰는 전기,
+    «단지 총 전력» 은 거기에 가구 수를 곱한 것이다.
     """
     loads = report.appliance_loads
+    base_kwh = _household_base_kwh(report)
+    # 합계 칸에 얹을 「미지정」 항목 이름 — 짝 지어 늦추지 않는다: 이름과
+    # `is None` 판정이 어긋나면 없는 항목을 미지정으로 인쇄한다.
+    missing_extra = tuple(
+        name
+        for name, value in (("히트펌프", loads.heatpump_kwh), ("전기차", loads.ev_kwh))
+        if value is None
+    )
+    missing_total = (("일반용",) if base_kwh is None else ()) + missing_extra
+    household_total_kwh = (base_kwh or 0.0) + loads.total_kwh
+    subtotal_cell = _stated_sum(
+        f"{loads.total_kwh:,.0f} {APPLIANCE_LOAD_UNIT}", missing_extra
+    )
+    household_total_cell = _stated_sum(
+        f"{household_total_kwh:,.0f} {APPLIANCE_LOAD_UNIT}", missing_total
+    )
+    estate_total_cell = _estate_total_cell(
+        household_total_kwh, report.household_count, missing_total
+    )
     return [
         "",
         "**이 실행이 받은 입력 — 실행 입력이 정하는 값** (사용자 요구 1·2·3)",
@@ -175,14 +269,24 @@ def execution_input_lines(report: CaseReport) -> list[str]:
         f"| 단지 가구 수 | {_household_cell(report.household_count)} "
         f"| 시나리오 yaml `{HOUSEHOLD_COUNT_FIELD}` · 화면 `/ui/run` 칸 — "
         f"안 적으면 대장 `{HOUSEHOLD_COUNT_LEDGER_KEY}` |",
+        f"| 일반용 전력 | {_appliance_cell(base_kwh)} "
+        f"| 대장 `{HOUSEHOLD_LOAD_LEDGER_KEY}` — 가구가 기본으로 쓰는 전기"
+        "(추가 전력사용기기 이전의 기본 소비). 시나리오 yaml 의 "
+        "`assumption_overrides` · 설정 화면의 대장 항목 칸 |",
         f"| {HEATPUMP_LOAD_TITLE} | {_appliance_cell(loads.heatpump_kwh)} "
         f"| 시나리오 yaml `{HEATPUMP_LOAD_FIELD}` · 화면 `/ui/run` 칸 — "
         f"안 적으면 대장 `{HEATPUMP_LOAD_LEDGER_KEY}` |",
         f"| {EV_LOAD_TITLE} | {_appliance_cell(loads.ev_kwh)} "
         f"| 시나리오 yaml `{EV_LOAD_FIELD}` · 화면 `/ui/run` 칸 — "
         f"안 적으면 대장 `{EV_LOAD_LEDGER_KEY}` |",
-        f"| 한 호에 더해진 합계 | {loads.total_kwh:,.0f} {APPLIANCE_LOAD_UNIT} "
-        "| 위 둘의 합 — 러너의 `extra_appliance_load_kwh` 로 간다 |",
+        f"| **추가 부하 소계 (HP+EV)** | {subtotal_cell} "
+        "| 히트펌프 + 전기차 — 러너의 `extra_appliance_load_kwh` 로 가는 것은 "
+        "**이 수**다 |",
+        f"| **가구 총 전력 (일반+HP+EV)** | {household_total_cell} "
+        "| 일반용 전력 + 추가 부하 소계 — 가구가 실제로 쓰는 전기 |",
+        f"| 단지 총 전력 | {estate_total_cell} "
+        "| 가구 총 전력 × 단지 가구 수 — "  # noqa: RUF001
+        "**더한 뒤에 곱한다** |",
         f"| {APPLIANCE_SEASON_SHARE_TITLE} "
         f"| {_season_share_cell(loads.season_shares)} "
         f"| 시나리오 yaml `{APPLIANCE_SEASON_SHARE_FIELD}` — **화면 칸은 아직 "
@@ -205,8 +309,11 @@ def execution_input_lines(report: CaseReport) -> list[str]:
         "값이 섰다. ⚠ 저장소가 **소스의 기본값으로 메우는 자리는 없다**: 그 "
         "기기를 가구가 갖는지는 사업 계획이 정하는 사실이므로, 값은 대장이나 "
         "실행 입력이 갖는다",
-        "- 단지 총부하 = 가구 수 × (가구 한 호의 연간 사용량 + 그 호의 추가 "  # noqa: RUF001
-        "전력사용기기 소비량) — **더한 뒤에 곱한다**",
+        "- 산식 — 추가 부하 소계 = 히트펌프 + 전기차",
+        "- 산식 — 가구 총 전력 = 일반용 전력 + 추가 부하 소계",
+        "- 산식 — 단지 총 전력 = 가구 총 전력 × 단지 가구 수 — "  # noqa: RUF001
+        "**더한 뒤에 곱한다**(곱한 뒤에 더하면 추가 기기가 단지에 딱 한 대 "
+        "있는 사업이 된다)",
         "- ⚠ **부하이지 설비가 아니다.** 히트펌프·전기차의 설치비·유지보수비와 "
         "그 설비가 만드는 편익은 이 표에 없다 — 2단계 자원 목록이 세운 것만이 "
         "설비이며, 부하에 편익을 붙이면 같은 흐름이 두 번 계상된다",
