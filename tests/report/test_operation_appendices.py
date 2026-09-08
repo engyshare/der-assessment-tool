@@ -41,6 +41,12 @@ from tests.report.conftest import (
     report_shift_share,
 )
 
+# ★ **오버라이드 실행을 짓는 관용구를 새로 만들지 않는다** (R67/WP-N1d).
+# `test_load_shift_wired.py::_report` 가 골든을 **임시 디렉터리로 복사해**
+# `assumption_overrides` 를 얹는다 — 사용자가 실제로 지나는 통로(전용 필드가
+# 아니라 대장 오버라이드)이며 골든 픽스처를 고치지 않는다.
+from tests.report.test_load_shift_wired import _report as _report_with_shift_share
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
 _GOLDEN = _REPO_ROOT / "fixtures" / "golden"
@@ -380,8 +386,26 @@ def test_the_profile_section_warns_that_one_step_can_hold_both_directions() -> N
     ★ **경고만 재지 않는다** — 이 실행에 그런 스텝이 **실제로 있는지**를 먼저
     본다. 없는데 경고만 있으면 그 문장이 무엇을 가리키는지 아무도 확인할 수 없고,
     있는데 경고가 없으면 검토자가 표를 결함으로 읽는다.
+
+    ## ⚠⚠ **배포 실행이 아니라 «오버라이드 실행»에서 잰다** (R67/WP-N1d)
+
+    R67/WP-N1·N1b 가 부하의 계절 축과 하루 축을 가른 뒤 **배포 실행의 계통
+    송전이 0 kWh** 가 됐다 — 잉여가 없어서가 아니라 **DR 이동과 ESS 충전이
+    먼저 다 먹기 때문**이다(디스패치 차례가 `pv_self_consumption →
+    ess_charge → v2g_charge → grid_export` 로 **송전이 맨 끝**이다). 송전이
+    0 이면 **한 스텝에 송전과 수전이 함께 서는 일이 없고**, 그러면 이 검사가
+    붙들 상태 자체가 사라진다.
+
+    ⇒ `load.dr_shiftable_share` 를 **0** 으로 두면 DR 이 잉여를 먹지 않아
+    송전이 돌아온다(실측: 스텝 **18** 에 송전과 수전이 함께 선다).
+    ⚠ **단언을 「없어도 된다」로 완화하지 않았다** — 완화하면 붙임 7 의 경고가
+    무엇을 가리키는지 아무도 확인할 수 없게 된다.
+
+    ★★ **그러므로 이 경고가 가리키는 상태는 배포 실행에 없다** — 「이 사업에는
+    잉여 판매가 없다」가 참인 동안 그 상태를 지키는 것은 **이 오버라이드 검사
+    하나뿐**이다. *「배포 실행이 이것을 지난다」* 고 믿지 마라.
     """
-    report = _report()
+    report = _report_with_shift_share(share=0)
     both = [
         hour.step
         for hour in report.dispatch_hours

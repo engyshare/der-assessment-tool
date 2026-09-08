@@ -748,8 +748,40 @@ def _judgement_section(report: CaseReport) -> list[str]:
                 f"| 자료 확보 | 전제 대장 `{entry.ledger_key}` | "
                 f"신뢰도 `{entry.confidence}` → 실측·회신 |"
             )
-    for item in unreflected:
-        lines.append(f"| 미반영 | {item.label} | {item.resolves_when} |")
+    # ★★★ **미반영 항목의 해소 조건 «전문»을 여기 되풀이하지 않는다**
+    # (R67/WP-N1d · 사용자 판정 P1 *「결론·주요 민감도·미반영 항목의 방향을
+    # 본문에 남기고 상세 근거와 중복 내용을 붙임으로 재배치한다」*).
+    #
+    # 종전에는 `for item in unreflected:` 가 항목마다 한 줄씩
+    # `| 미반영 | {label} | {resolves_when} |` 을 인쇄했다. 그 `resolves_when`
+    # 은 **붙임 8 의 「해소 조건」 열과 글자 하나 다르지 않은 같은 문자열**이며
+    # (`unreflected.unreflected_section()` 이 같은 항목을 인쇄한다), 그래서
+    # 미반영 항목이 하나 늘 때마다 본문이 **두 줄**(3.4 표 + 여기) 자랐다.
+    #
+    # ⚠ **양식이 그 열을 붙임 8 에 배정한다** — `docs/report-form-심의보고서.md`
+    # 두 곳이 그렇게 적는다:
+    #
+    #     :143  「본문에는 항목명 · 방향 · 판정 근거만 싣고
+    #            크기·사유·**해소 조건**은 붙임 8 전문으로 내린다」
+    #     :286  붙임 8 = 「미반영 항목 — 전문(항목·방향·크기·사유·**해소 조건**)
+    #            … 본문 3.4 는 이름과 방향만」
+    #
+    # 그 절충안이 성립하는지를 기계가 그렇게 붙든다 —
+    # `tests/report/test_unreflected.py::test_body_carries_only_the_name_and_direction`
+    # 이 **본문 = 3.4 구간**만 잘라 `label`·`direction` 을 요구하고
+    # `magnitude`·`resolves_when` 은 **붙임 8** 에서 요구한다.
+    #
+    # ⚠⚠ **같은 문서 :266 은 6.3 을 「미반영 항목의 해소 조건」으로도 적는다** —
+    # 양식 안에서 어긋나는 자리다. 그래서 **행을 지우지 않았다** — 미반영 항목은
+    # 6.3 에 그대로 서 있고(건수와 그 조건이 있는 자리), 항목별 전문은 붙임 8 이
+    # 진다. 경위는 `.orch/R67/result_N1d.md` ② 가 갖는다.
+    # ⛔ **항목의 «방향»을 지운 것이 아니다** — 3.4 표가 항목명·방향·판정을
+    # 그대로 싣는다(`unreflected.unreflected_rows`).
+    if unreflected:
+        lines.append(
+            f"| 미반영 | {len(unreflected)}건 (항목명 · 방향 · 판정은 3.4) | "
+            "항목마다 다르다 — 붙임 8 「해소 조건」 열이 전문을 진다 |"
+        )
     lines += ["", "- 상세 — 자료 확보는 붙임 2, 미반영 항목은 붙임 8", ""]
     return lines
 

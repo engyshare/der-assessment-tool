@@ -42,6 +42,14 @@ from core.report.narrative import NONE_IN_RANGE, render_markdown
 from core.report.unreflected import DIRECTION_ADVERSE, build_unreflected
 from tests.report.conftest import unwired_report, with_variable_om_row
 
+# ★ **오버라이드 실행을 짓는 관용구를 새로 만들지 않는다** (R67/WP-N1d).
+# `test_load_shift_wired.py::_report` 가 골든을 **임시 디렉터리로 복사해**
+# `assumption_overrides` 를 얹는다 — 사용자가 실제로 지나는 통로(전용 필드가
+# 아니라 대장 오버라이드)이며 골든 픽스처를 고치지 않는다. 사본을 지으면
+# 배선 방식이 바뀌는 날 한쪽만 고쳐진다(`conftest.unwired_report` 머리말의
+# 같은 판단).
+from tests.report.test_load_shift_wired import _report as _report_with_shift_share
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
 _GOLDEN = _REPO_ROOT / "fixtures" / "golden"
@@ -428,9 +436,38 @@ def test_the_resource_table_carries_the_costs_that_belong_to_no_resource() -> No
 #: 사라지는가」*(자가소비율 89% — 팔 것이 남지 않는다)를 자원별로 갈라 보여 준다.
 #: ⚠ 초기투자 두 칸(96,000,000 · 105,000,000)은 **한 원도 안 움직였다** —
 #: 히트펌프는 부하이고 동시율은 단가도 용량도 아니다.
+#:
+#: ★★★ **R67/WP-N1d 가 이 표를 재는 «실행»을 바꿨다 — 값만이 아니다.**
+#: R67/WP-N1·N1b 가 부하의 계절 축과 하루 축을 가른 뒤 **배포 실행의 계통 송전이
+#: 0 kWh** 가 됐다. 잉여가 없어서가 아니라 **DR 이동과 ESS 충전이 먼저 다 먹기
+#: 때문**이다(디스패치 차례가 `pv_self_consumption → ess_charge → v2g_charge →
+#: grid_export` 로 **송전이 맨 끝**이다). 송전이 0 이면 `SurplusSale`·`REC` 가
+#: 0원이고, **두 자원이 함께 만든 편익이 하나도 없다** — 그 순간 4.3 의 안분
+#: 논리를 재던 아래 두 검사가 «잴 대상이 없어» 무너진다.
+#: ⇒ ★ **대장 오버라이드로 잉여를 되살린 실행에서 잰다**
+#: (`load.dr_shiftable_share` = **0** · DR 이 잉여를 먹지 않아 송전이 돌아온다).
+#: 실측(R67/WP-N1d · 골든 무보조):
+#:
+#:     태양광 자가소비율      94%  →  87%
+#:     `SurplusSale` 연 편익   0원  →  10,220원 (태양광 몫 6,924 · ESS 몫 3,296)
+#:     `REC` 연 편익           0원  →   6,570원 (태양광 몫 4,451 · ESS 몫 2,119)
+#:     4.3 태양광 「연 편익」   0원  →  11,375원
+#:     `npv`          −360,695,500  →  −360,105,668
+#:
+#: ⇒ 태양광 24,755 → **11,375원**(순편익 −75,245 → **−88,625원** · 회수 불가
+#: 그대로) · ESS 3,435,024 → **3,069,197원**(순편익 3,335,024 → **2,969,197원** ·
+#: 회수 31.5 → **35.4년**). ⚠ 초기투자 두 칸은 **또 한 원도 안 움직였다** —
+#: 오버라이드가 흔든 것은 **하루의 모양**이지 단가도 용량도 아니다.
+#: ⚠ **값을 옮겨 적은 것이 아니라 돌려서 얻었다** — `_report_with_shift_share
+#: (share=0)` 의 `cost_benefit_section()` 출력을 그대로 읽었다.
+#:
+#: ⚠⚠ **그러므로 이 두 검사가 재는 코드 경로는 배포 실행에서 더 이상 지나지
+#: 않는다.** 「이 사업에는 잉여 판매가 없다」가 참인 동안 4.3 의 **안분 논리를
+#: 지키는 것은 이 오버라이드 검사 둘뿐**이다 — 다음 사람이 *「배포 실행이 이것을
+#: 지난다」* 고 믿으면 안 된다.
 _ATTRIBUTED_PAYBACK = (
-    ("태양광 (옥상 고정형)", "24,755원", "-75,245원", "회수 불가"),
-    ("에너지저장장치 (신품)", "3,435,024원", "3,335,024원", "31.5년"),
+    ("태양광 (옥상 고정형)", "11,375원", "-88,625원", "회수 불가"),
+    ("에너지저장장치 (신품)", "3,069,197원", "2,969,197원", "35.4년"),
 )
 
 #: 종전 4.3 이 표 아래에 **문장으로 박아 두었던** 성립 조건. 이 실행에서
@@ -454,10 +491,19 @@ def test_the_resource_table_splits_a_benefit_that_two_resources_earned() -> None
     적는가* 뿐이며 연 편익 합계도 NPV 도 그대로다 — 아래 마지막 단언이 그
     항등식을 잰다. 어느 편익을 켜고 끌지는 사람 판정이다
     (`docs/evidence/판정요구-이중계상-2026-08-29.md`).
+
+    ## ⚠⚠ **배포 실행이 아니라 «오버라이드 실행»에서 잰다** (R67/WP-N1d)
+
+    배포 실행은 계통 송전이 **0 kWh** 라 `SurplusSale`·`REC` 가 0원이고 **두
+    자원이 함께 만든 편익이 하나도 없다** — 그러면 이 검사가 붙들 상태 자체가
+    없다. `load.dr_shiftable_share` 를 **0** 으로 두면 DR 이 잉여를 먹지 않아
+    송전이 돌아온다. 경위·실측·값의 출처는 위 `_ATTRIBUTED_PAYBACK` 주석이 진다.
+
+    ★★ **그러므로 4.3 의 안분 논리는 배포 실행에서 더 이상 지나지 않는다** —
+    「이 사업에는 잉여 판매가 없다」가 참인 동안 그 코드 경로를 지키는 것은 이
+    검사와 아래 검사 **둘뿐**이다. *「배포 실행이 이것을 지난다」* 고 믿지 마라.
     """
-    report = build_case_report(
-        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
-    )
+    report = _report_with_shift_share(share=0)
     section = "\n".join(cost_benefit_section(report.basis))
     assert section in render_markdown(report), "4.3 절이 문서에 실리지 않았다"
 
@@ -485,10 +531,15 @@ def test_the_resource_table_states_an_attribution_that_is_true_of_this_run() -> 
 
     ⚠ 「1:1 귀속」이라는 말은 **자원 하나에만 간 갈래에만** 붙어야 한다. 이
     단언이 없으면 표가 갈린 갈래에도 1:1 을 붙일 수 있고, 그것이 종전 상태다.
+
+    ## ⚠⚠ **배포 실행이 아니라 «오버라이드 실행»에서 잰다** (R67/WP-N1d)
+
+    앞 검사와 같은 사유·같은 통로다(`load.dr_shiftable_share` = 0). 배포 실행에는
+    갈린 갈래가 0건이어서 `split` 이 비고, 그러면 「1:1 을 잘못 붙였는가」를 잴
+    대상이 사라진다. ★★ **이 논리를 지키는 것은 오버라이드 검사 둘뿐이며 배포
+    실행은 이 경로를 지나지 않는다.**
     """
-    report = build_case_report(
-        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
-    )
+    report = _report_with_shift_share(share=0)
     basis = report.basis
     section = "\n".join(cost_benefit_section(basis))
 
