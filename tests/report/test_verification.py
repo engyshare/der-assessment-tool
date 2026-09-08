@@ -26,7 +26,12 @@ from pathlib import Path
 
 import pytest
 
-from app.run.report_cli import DEFAULT_SCENARIO, INDEX_FILENAME, main
+from app.run.report_cli import (
+    DEFAULT_SCENARIO,
+    INDEX_FILENAME,
+    REPORT_OUT_DIR_ENV,
+    main,
+)
 from app.services.verify_steps import split_stages
 from core.report.case_report import build_case_report
 from core.report.verification import render_verification_markdown
@@ -233,6 +238,64 @@ def test_split_stages_refuses_deliberation_kind(
     assert capsys.readouterr().err.strip() != ""
 
 
-def test_split_stages_requires_out(tmp_path: Path) -> None:
-    """단계별 파일은 표준출력으로 낼 수 없다 — `--out` 없이는 멈춘다."""
+def test_split_stages_requires_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    """단계별 파일은 표준출력으로 낼 수 없다 — 받을 자리가 없으면 멈춘다.
+
+    ⚠ 환경변수를 **지우고** 잰다 — 이 검사가 재는 것은 「자리가 없을 때」이고,
+    돌리는 기계에 `DER_REPORT_OUT_DIR` 가 서 있으면 자리가 «있는» 것이라
+    지우지 않으면 검사가 기계에 따라 답을 바꾼다.
+    """
+    monkeypatch.delenv(REPORT_OUT_DIR_ENV, raising=False)
     assert main(["--kind", "verification", "--split-stages"]) != 0
+
+
+def test_out_dir_env_names_the_file_when_out_is_omitted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--out` 을 안 주면 `DER_REPORT_OUT_DIR` 자리에 이름을 지어 쓴다."""
+    monkeypatch.setenv(REPORT_OUT_DIR_ENV, str(tmp_path))
+    assert main(["--kind", "verification"]) == 0
+    written = sorted(path.name for path in tmp_path.iterdir())
+    assert written == [f"{DEFAULT_SCENARIO}-verification.md"], written
+    report = build_case_report(
+        _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    body = (tmp_path / written[0]).read_text(encoding="utf-8")
+    assert body == render_verification_markdown(report)
+
+
+def test_out_dir_env_names_the_directory_when_splitting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """분할도 같은 자리에 쓴다 — 그때 이름은 **디렉터리**이고 꼬리로 갈린다."""
+    monkeypatch.setenv(REPORT_OUT_DIR_ENV, str(tmp_path))
+    assert main(["--kind", "verification", "--split-stages"]) == 0
+    out_dir = tmp_path / f"{DEFAULT_SCENARIO}-verification-단계별"
+    assert out_dir.is_dir(), sorted(p.name for p in tmp_path.iterdir())
+    assert INDEX_FILENAME in {path.name for path in out_dir.iterdir()}
+
+
+def test_explicit_out_wins_over_the_env_var(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """★ `--out` 을 적었으면 환경변수가 그것을 덮지 않는다.
+
+    덮으면 사용자가 적은 경로가 **조용히 무시된다** — 그 침묵이 「썼는데 없다」로
+    돌아온다.
+    """
+    env_dir = tmp_path / "env"
+    env_dir.mkdir()
+    monkeypatch.setenv(REPORT_OUT_DIR_ENV, str(env_dir))
+    explicit = tmp_path / "적은자리.md"
+    assert main(["--kind", "verification", "--out", str(explicit)]) == 0
+    assert explicit.exists(), "명시한 자리에 쓰이지 않았다"
+    assert list(env_dir.iterdir()) == [], "환경변수 자리에도 썼다 — 두 벌이 생긴다"
+
+
+def test_env_var_absent_still_goes_to_stdout(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """둘 다 없으면 **종전처럼** 표준출력이다 — 규약이며 결함이 아니다."""
+    monkeypatch.delenv(REPORT_OUT_DIR_ENV, raising=False)
+    assert main(["--kind", "verification"]) == 0
+    assert "# 계산 검증 보고서" in capsys.readouterr().out

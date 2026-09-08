@@ -47,6 +47,30 @@ export PYTHONUTF8=1
 인메모리로 동작하고 프로세스가 끝나면 사라진다 — 결함이 아니라 규약이다
 (`DER_DB_URL` 이 없으면 DB 가 인메모리가 되는 것과 같다. README 「로컬 실행」 절).
 
+## 리포트 산출물을 둘 자리 — **이 기계는 `DER_REPORT_OUT_DIR` 를 쓴다**
+
+`app/run/report_cli.py` 는 `--out` 을 안 주면 **이 환경변수가 가리키는 디렉터리에
+이름을 지어 쓴다**(`<시나리오>-<종류>.md` · 분할이면 `<시나리오>-<종류>-단계별/`).
+둘 다 없으면 표준출력이다 — `DER_SCENARIO_STORE` 와 같은 규약이며 결함이 아니다.
+
+★ **이 기계(사용자 지시 2026-09-08)의 값은 볼트 밑 `ai-output` 이다:**
+
+```bash
+export PYTHONUTF8=1
+export DER_REPORT_OUT_DIR="D:/Obsidian_mirror/ai-output"
+./.venv/Scripts/python.exe -m app.run.report_cli --kind verification                    # 한 덩어리
+./.venv/Scripts/python.exe -m app.run.report_cli --kind verification --split-stages     # 단계별 + 목차
+./.venv/Scripts/python.exe -m app.run.report_cli --kind verification --scenario scenario_subsidy_20
+```
+
+⚠ **`--out` 을 적었으면 환경변수가 그것을 덮지 않는다** — 덮으면 적은 경로가 조용히
+무시되고, 그 침묵이 「썼는데 없다」로 돌아온다.
+⚠ **경로를 소스에 박지 마라.** 그 폴더는 **이 기계에만 있다** — CI·Docker·다른 클론에는
+없으므로 저장소 코드가 아는 사실이 아니다. 이름은 `report_cli.py::REPORT_OUT_DIR_ENV`
+한 곳이 갖고 값은 환경이 준다.
+⚠ **볼트 자리는 `.gitignore` 밖의 남의 디렉터리다** — 리포트가 그리로 나가면 저장소
+`git status` 에 안 보인다. 「산출물이 안 생겼다」로 읽지 말고 그 폴더를 봐라.
+
 ## 서버가 떴는지 확인하는 법 — **`/health` 로는 아무것도 증명되지 않는다**
 
 `/health` 는 의존성이 빠져 있어도 200 을 낸다. 화면 여덟을 전부 때려라.

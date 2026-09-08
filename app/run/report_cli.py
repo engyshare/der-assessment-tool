@@ -20,10 +20,23 @@
 (`00-목차.md`)로 나눠 쓴다 — 검증 리포트 전용이다. **덮어쓰기를 묻지 않는다** — 리포트는
 대장과 코드로부터 언제든 다시 만들어지는 산출물이고, 손으로 고친 리포트는
 `MC-1` 의 증거가 되지 못한다(고친 것이 리포트인지 사람인지 갈리지 않는다).
+
+## 산출물을 둘 자리는 **기계가 정한다** — `DER_REPORT_OUT_DIR`
+
+`--out` 을 안 주고 이 환경변수를 주면 **그 디렉터리에 이름을 지어 쓴다**
+(`<시나리오>-<종류>.md`, 분할이면 `<시나리오>-<종류>-단계별/`). 둘 다 없으면
+표준출력이다 — `DER_SCENARIO_STORE` 가 *「자리를 정하지 않으면 인메모리」* 인 것과
+같은 규약이며 **결함이 아니다**.
+
+⚠ **경로 리터럴을 이 소스에 박지 않는다.** 어느 기계의 어느 폴더인지는 저장소가
+아는 사실이 아니다 — CI·Docker·다른 클론에는 그 폴더가 없다. 이름만 여기 한 곳이
+갖고 값은 환경이 준다(`app/services/scenario_store_file.py::SCENARIO_STORE_ENV` 와
+같은 규약). 이 기계의 값은 `CLAUDE.md` 가 적는다.
 """
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -53,6 +66,38 @@ INDEX_FILENAME = "00-목차.md"
 #: Windows 가 파일 이름에 허용하지 않는 문자. 렌더러의 단계 제목에는 없지만,
 #: 제목이 바뀌는 날 파일 쓰기가 터지지 않게 방어로만 둔다.
 _FILENAME_FORBIDDEN = re.compile(r'[<>:"/\\|?*]')
+
+#: `--out` 을 안 줬을 때 산출물을 둘 디렉터리를 정하는 환경변수.
+#: **이름만 여기 한 곳이 갖고 값은 환경이 준다** —
+#: `app/services/scenario_store_file.py::SCENARIO_STORE_ENV` 와 같은 규약이다.
+REPORT_OUT_DIR_ENV = "DER_REPORT_OUT_DIR"
+
+#: 분할 출력 디렉터리 이름의 꼬리. 파일과 디렉터리가 같은 자리에 서므로
+#: **꼬리로 갈라** 둘이 이름으로 부딪히지 않게 한다.
+_SPLIT_DIRNAME_SUFFIX = "-단계별"
+
+
+def _configured_out_dir() -> Path | None:
+    """`DER_REPORT_OUT_DIR` 가 가리키는 디렉터리. 안 줬거나 비었으면 `None`.
+
+    ⚠ **여기서 `mkdir` 하지 않는다** — 자리를 만드는 것은 실제로 쓰는 쪽이고,
+    조회만으로 디렉터리가 생기면 「환경변수를 잘못 적었다」가 조용히 지나간다.
+    """
+    raw = os.environ.get(REPORT_OUT_DIR_ENV, "").strip()
+    return Path(raw) if raw else None
+
+
+def _derived_out_path(scenario: str, kind: str, *, split: bool) -> Path | None:
+    """환경변수 자리에 **이름을 지어** 낼 경로. 자리가 없으면 `None`.
+
+    이름이 시나리오와 종류를 함께 나르는 이유는, 한 자리에 여러 실행이 쌓이는데
+    파일명이 그것을 가르지 않으면 **뒤에 돈 실행이 앞의 것을 조용히 덮는다.**
+    """
+    out_dir = _configured_out_dir()
+    if out_dir is None:
+        return None
+    stem = f"{scenario}-{kind}"
+    return out_dir / (f"{stem}{_SPLIT_DIRNAME_SUFFIX}" if split else f"{stem}.md")
 
 
 def available_scenarios() -> list[str]:
@@ -173,10 +218,17 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    # ★ `--out` 을 안 줬으면 환경변수가 정한 자리에 **이름을 지어** 쓴다
+    #   (`DER_REPORT_OUT_DIR` · 머리말 그 절). ⚠ `--out` 이 있으면 손대지 않는다 —
+    #   명시한 자리를 환경이 덮으면 사용자가 적은 경로가 조용히 무시된다.
+    if args.out is None:
+        args.out = _derived_out_path(
+            args.scenario, args.kind, split=args.split_stages
+        )
     if args.split_stages and args.out is None:
         print(
             "--split-stages 는 단계마다 파일을 만드는 선택지입니다 — "
-            "--out 에 받을 디렉터리를 함께 주세요",
+            f"--out 에 받을 디렉터리를 주거나 {REPORT_OUT_DIR_ENV} 를 설정하세요",
             file=sys.stderr,
         )
         return 2
