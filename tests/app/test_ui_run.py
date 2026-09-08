@@ -39,9 +39,10 @@ from core.casegrid.household_scale import (
     HOUSEHOLD_COUNT_UNSPECIFIED,
     ledger_household_count,
 )
+from core.casegrid.load_shift import DR_SHIFTABLE_SHARE_LEDGER_KEY
 from core.cba.baseline import BaselineArrangement, get_baseline_branch
 from core.contracts.validation import ValidationError
-from core.report.case_report import REC_PRICE_LEDGER_KEY, build_case_report
+from core.report.case_report import build_case_report
 
 #: 결과 화면이 **서식 이전의 날값**으로 함께 싣는 결론 축. 서식을 입힌 문면만
 #: 보면 이 검사가 서식 문자열을 다시 짜 맞추게 되고, 그때 재는 것은 수가
@@ -298,9 +299,14 @@ def test_a_scenario_that_carries_overrides_runs_on_the_changed_values(
     fields = scenario_fields(_SCENARIO)
     fields[ASSUMPTION_OVERRIDES_FIELD] = [
         {
-            "key": REC_PRICE_LEDGER_KEY,
-            "value": 300.0,
-            "reason": "검사 — 대장(70원/kWh)과 다른 값을 시나리오가 적는다",
+            # ⚠⚠ **키가 바뀌었다 (R67)** — `benefit.rec_price` 는 더 이상 축을
+            # 못 움직인다. R67/WP-N1·N1b 로 계통 송전이 0 kWh 가 되어 `REC`
+            # 편익이 0원이고 단가를 흔들어도 `0 × n = 0` 이다. 사유 전문은
+            # `tests/app/test_ui_scenarios.py::_a_ledger_key` 독스트링이 진다.
+            # ★ **같은 `required_scalar` 통로**라 재는 것은 달라지지 않는다.
+            "key": DR_SHIFTABLE_SHARE_LEDGER_KEY,
+            "value": 50.0,
+            "reason": "검사 — 대장(10%)과 다른 값을 시나리오가 적는다",
         }
     ]
     path = tmp_path / f"{_SCENARIO}.yaml"
@@ -315,9 +321,9 @@ def test_a_scenario_that_carries_overrides_runs_on_the_changed_values(
     )
     assert report.overrides, "붙임의 「기준 전제 대비 변경 항목」이 비어 있다"
     changed = {row.key: row for row in report.overrides}
-    assert changed[REC_PRICE_LEDGER_KEY].base_value == 70
-    assert changed[REC_PRICE_LEDGER_KEY].override_value == 300.0
-    assert changed[REC_PRICE_LEDGER_KEY].reason is not None
+    assert changed[DR_SHIFTABLE_SHARE_LEDGER_KEY].base_value == 10
+    assert changed[DR_SHIFTABLE_SHARE_LEDGER_KEY].override_value == 50.0
+    assert changed[DR_SHIFTABLE_SHARE_LEDGER_KEY].reason is not None
 
 
 #: 실증단지 규모를 고르는 화면 칸의 이름 — 폼과 질의가 **같은 글자**를 써야
