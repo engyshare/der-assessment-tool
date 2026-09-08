@@ -160,6 +160,7 @@ from core.casegrid.profiles import (
     SHARE_TOLERANCE,
     DailyShape,
     Season,
+    weights_from_hour_ranges,
 )
 from core.contracts.assumptions import AssumptionProvider
 from core.contracts.validation import ValidationError
@@ -435,7 +436,93 @@ def resolve_appliance_loads(scenario: Mapping[str, object]) -> ApplianceLoads:
     )
 
 
+# ── 하루 안의 형상 — 기기마다 **자기 24스텝**을 갖는다 (R67/WP-N1b) ────────
+#
+# ## 무엇이 결함이었나 — 계절만 갈라서는 못 닫힌다
+#
+# R67/WP-N1 이 **계절 축**을 갈랐다(전기차 몫에 일수 비례를 씌운다). 그런데
+# 실측에서 태양광 자가소비율이 89% → 94% 로 오르고 **계통 송전이 0 kWh** 가
+# 되어 잉여 판매·REC 편익이 통째로 0원이 됐다. 원인은 물리가 아니라 **하루
+# 안의 형상 결손**이었다 — 성분에 씌우는 가중치가 `ApplianceSeasonShares.
+# _matched` 가 돌려주는 **가구 부하의 24스텝 형상** 하나뿐이라, 전기차 충전이
+# 「낮」에 깔려 태양광 정오 봉우리와 겹쳐 잉여를 전부 먹었다.
+#
+# ⇒ 기기마다 자기 하루 형상을 갖게 한다. **자산이 정본**이며 소스에 시각을
+# 박지 않는다(사용자 판정 `docs/decisions-2026-09-08-R67.md` · R66 §1ⓒ:
+# *「24스텝 가중치로 자산에 싣고 코드에 시각을 박지 않는다 · 구간 안은 균등」*).
+#
+# ⚠ **절이 없으면 종전대로 가구 부하 형상을 쓴다** — 그때 출력이 이 자료형이
+# 서기 전과 **원소 하나까지** 같다(`ApplianceSeasonShares._matched` 의 ⛔ 절).
+
+
+@dataclass(frozen=True)
+class ApplianceDailyShape:
+    """기기 하나가 **하루 안**에서 갖는 형상 — 계절마다 구간 목록 (R67/WP-N1b).
+
+    ⚠ **가중치가 아니라 「구간」을 갖는다.** 펴는 것은
+    `core/casegrid/profiles.py::weights_from_hour_ranges` 이고 그 함수가
+    **구간 안 균등 · 구간 사이 시간수 비례**를 짓는다 — 24개 숫자를 자산에
+    옮겨 적지 않는 사유는 그 함수의 독스트링이 갖는다.
+
+    ⚠⚠ **스텝 수를 이 자료형이 모른다** — 형상 자산의 `steps` 를 아는 것은
+    `DailyShape` 이므로 펴는 시점(`_matched`)에 그 수를 받는다. 여기서 24 를
+    박으면 자산을 15분 격자로 넓히는 날 이 자료형만 낡는다.
+    """
+
+    #: 어느 기기인가 — **대장 자리로 가리킨다**(`load.heatpump.annual` ·
+    #: `load.ev.annual`). 새 이름을 지어 붙이면 같은 기기가 두 낱말로 살고
+    #: 한쪽만 고쳐진다.
+    ledger_key: str
+    #: (계절 이름, 그 계절의 구간 목록). 비어 있으면 아래 `year_round` 다.
+    by_season: tuple[tuple[str, tuple[tuple[int, ...], ...]], ...] = ()
+    #: **모든 계절에 같은 구간**을 쓸 때의 구간 목록. 계절마다 다르면 `None`.
+    #:
+    #: ⚠ 전기차가 이 갈래다 — 같은 구간을 계절 넷에 옮겨 적으면 그것이 사본이
+    #: 되고, 자산을 월별(12)로 넓히는 날 열두 번 적어야 한다.
+    year_round: tuple[tuple[int, ...], ...] | None = None
+
+    def ranges(self, season_name: str) -> tuple[tuple[int, ...], ...] | None:
+        """그 계절의 구간 목록. **적지 않은 계절은 `None`** 이다.
+
+        ⚠ `None` 을 「구간이 없다」로 읽지 않는다 — 부르는 쪽(`_matched`)이
+        그것을 **달력 어긋남**으로 보아 거부한다. 여기서 짐작해 메우면
+        전기차의 구간이 히트펌프의 겨울에 걸린다.
+        """
+        if self.year_round is not None:
+            return self.year_round
+        for name, ranges in self.by_season:
+            if name == season_name:
+                return ranges
+        return None
+
+
+@dataclass(frozen=True)
+class ApplianceDailyShapes:
+    """자산의 `appliance_daily_shapes:` 절 한 벌 — 기기 순서대로.
+
+    ⚠ **기기를 못 찾으면 `None` 이고 그때 부르는 쪽이 가구 부하 형상으로
+    돈다** — 히트펌프만 적은 자산에서 전기차가 조용히 사라지지 않게 하는
+    갈래이며, 그 실행은 그 기기에 대해 이 절이 서기 전과 같다.
+    """
+
+    shapes: tuple[ApplianceDailyShape, ...] = ()
+
+    def of(self, ledger_key: str) -> ApplianceDailyShape | None:
+        """그 기기의 형상 — 자산이 적지 않았으면 `None`."""
+        for shape in self.shapes:
+            if shape.ledger_key == ledger_key:
+                return shape
+        return None
+
+
 # ── 계절 몫 — 냉난방 부하가 「자기」 계절 몫을 갖고 다닌다 (R64/WP-3b-1) ────
+
+
+#: `_matched` 가 계절마다 내는 **성분 하나** — (하루 스텝 가중치, 그 성분의 몫).
+#:
+#: ⚠⚠ **성분이 여럿인 것이 R67/WP-N1b 가 연 것이다.** 종전에는 계절마다 하나
+#: 였고 그 가중치가 **가구 부하의 형상**이라, 전기차 충전이 「낮」에 깔렸다.
+SeasonComponent = tuple[tuple[float, ...], float]
 
 
 @dataclass(frozen=True)
@@ -480,6 +567,14 @@ class ApplianceSeasonShares:
     #: 같다. 채우는 자리는 `ApplianceLoads.blended_season_shares` 하나다
     #: (두 수를 다 아는 곳이 거기뿐이다).
     ev_ratio: float = 0.0
+    #: ★ **기기마다 자기 「하루 안의 형상」** (R67/WP-N1b). `None` 이면 성분
+    #: 전부가 **가구 부하의 형상**으로 깔리며 그때 출력이 이 필드가 서기 전과
+    #: 원소 하나까지 같다.
+    #:
+    #: ⚠ 채우는 자리는 `with_ledger_defaults` 하나다 — 자산 경로를 아는 곳이
+    #: 거기뿐이고, 이 몫을 **화면에서 적은 실행에도** 걸려야 한다(기기의 하루
+    #: 형상은 사용자가 적은 계절 몫과 무관한 기기의 성질이다).
+    daily_shapes: ApplianceDailyShapes | None = None
 
     @staticmethod
     def of(
@@ -531,11 +626,24 @@ class ApplianceSeasonShares:
         )
         extra_total = total_kwh * shares.appliance_ratio
         built: list[tuple[Season, tuple[float, ...], int]] = []
-        for (season, day, season_days), (weights, share) in zip(base, matched, strict=True):
-            per_day = extra_total * share / season_days
+        for (season, day, season_days), components in zip(base, matched, strict=True):
+            # ⚠ `per_day` 를 **먼저** 짓고 가중치를 곱한다 — 성분이 하나뿐인
+            # 실행(기기 형상 절이 없는 자산)에서 `math.fsum` 이 항 하나를 그대로
+            # 돌려주므로 이 갈래가 종전 식과 **원소 하나까지** 같다.
+            per_day = tuple(
+                extra_total * share / season_days for _weights, share in components
+            )
             built.append((
                 season,
-                tuple(v + per_day * w for v, w in zip(day, weights, strict=True)),
+                tuple(
+                    value + math.fsum(
+                        per * weights[step]
+                        for per, (weights, _share) in zip(
+                            per_day, components, strict=True
+                        )
+                    )
+                    for step, value in enumerate(day)
+                ),
                 season_days,
             ))
         return tuple(built)
@@ -566,14 +674,32 @@ class ApplianceSeasonShares:
         day = tuple(
             value + math.fsum(
                 extra_total * share / days * weights[step]
-                for weights, share in matched
+                for components in matched
+                for weights, share in components
             )
             for step, value in enumerate(base)
         )
         return [value for _day in range(days) for value in day]
 
-    def _matched(self, shape: DailyShape) -> tuple[tuple[tuple[float, ...], float], ...]:
-        """자산의 계절 차례대로 (그 계절 가중치, **그 계절에 실제로 걸릴 몫**).
+    def _matched(self, shape: DailyShape) -> tuple[tuple[SeasonComponent, ...], ...]:
+        """자산의 계절 차례대로, 그 계절에 걸릴 **성분 목록** ((가중치, 몫), …).
+
+        ## ★★ 성분이 여럿인 이유 — 하루 안의 형상이 기기마다 다르다 (R67/WP-N1b)
+
+        종전에는 계절마다 성분이 **하나**였고 그 가중치가 **가구 부하의 24스텝
+        형상**이었다. 그러면 계절 축을 갈라 놓아도 전기차 충전이 가구 부하와
+        같은 모양으로 하루에 깔린다 — 곧 **「낮」에 깔린다.** R67/WP-N1 실측이
+        그것을 잡았다: 전기차 에너지가 봄·여름으로 옮겨 가며 태양광 정오
+        봉우리와 겹쳐 **계통 송전이 0 kWh** 가 되고 잉여 판매·REC 편익이 통째로
+        0원이 됐다.
+
+        ⇒ 계절마다 **(히트펌프 성분, 전기차 성분)** 둘을 낸다:
+
+            겨울 → ( (히트펌프_겨울_형상, 적힌 몫 × (1 − ev_ratio)),
+                     (전기차_형상,       일수 비례 몫 × ev_ratio) )
+
+        몫의 합은 종전 「섞은 몫」과 **같은 수**이며(분배법칙) 갈린 것은
+        그 몫이 하루 안에서 **어느 시각에 놓이는가** 하나다.
 
         ⚠⚠ **달력이 다르면 여기서 거부한다.** 자산 머리말이 *「부하와 발전이
         같은 달력을 적어야 한다 … 읽는 쪽이 거부한다」* 로 못 박은 것과 같은
@@ -607,6 +733,12 @@ class ApplianceSeasonShares:
         ⛔ **`ev_ratio` 가 0 이면 섞지 않고 적힌 몫을 그대로 낸다** — 다시
         계산하면 부동소수 마지막 자리가 갈릴 수 있고, 그러면 전기차를 적지
         않은 실행이 조용히 움직인다(`load_days` 의 ⛔ 절과 같은 사유).
+
+        ⛔⛔ **`daily_shapes` 가 `None` 이면 성분을 하나로 낸다** (R67/WP-N1b).
+        두 성분의 가중치가 어차피 같으므로 둘로 쪼개도 값은 같아야 하지만,
+        쪼개면 `math.fsum` 이 항 둘을 더하게 되어 **부동소수 마지막 자리가
+        갈릴 수 있다** — 기기 형상 절이 없는 자산으로 도는 실행은 이 WP 전과
+        원소 하나까지 같아야 한다(위 ⛔ 절과 같은 사유).
         """
         given = dict(self.by_season)
         names = [season.name for season in shape.seasons]
@@ -627,14 +759,79 @@ class ApplianceSeasonShares:
         declared = tuple(
             (weights, given[season.name]) for season, weights in shape.by_season
         )
-        if not self.ev_ratio:
-            return declared
+        household = tuple(weights for weights, _share in declared)
+        if self.daily_shapes is None:
+            if not self.ev_ratio:
+                return tuple((component,) for component in declared)
+            return tuple(
+                ((weights, (1.0 - self.ev_ratio) * share + self.ev_ratio * day_share),)
+                for (weights, share), day_share in zip(
+                    declared, _day_proportional(shape), strict=True
+                )
+            )
+        heatpump = _appliance_daily_weights(
+            self.daily_shapes, HEATPUMP_LOAD_LEDGER_KEY, shape, household
+        )
+        electric_vehicle = _appliance_daily_weights(
+            self.daily_shapes, EV_LOAD_LEDGER_KEY, shape, household
+        )
         return tuple(
-            (weights, (1.0 - self.ev_ratio) * share + self.ev_ratio * day_share)
-            for (weights, share), day_share in zip(
-                declared, _day_proportional(shape), strict=True
+            (
+                (heat_weights, (1.0 - self.ev_ratio) * share),
+                (ev_weights, self.ev_ratio * day_share),
+            )
+            for (_weights, share), day_share, heat_weights, ev_weights in zip(
+                declared,
+                _day_proportional(shape),
+                heatpump,
+                electric_vehicle,
+                strict=True,
             )
         )
+
+
+def _appliance_daily_weights(
+    shapes: ApplianceDailyShapes,
+    ledger_key: str,
+    shape: DailyShape,
+    fallback: tuple[tuple[float, ...], ...],
+) -> tuple[tuple[float, ...], ...]:
+    """기기 하나의 **계절별 하루 형상** — 자산이 안 적었으면 `fallback` (R67/WP-N1b).
+
+    `fallback` 은 **가구 부하의 계절별 형상**이다. 그것으로 되돌아가는 갈래가
+    이 WP 의 동일성 조건이다 — 기기 형상 절이 없는 자산으로 도는 실행은
+    이 절이 서기 전과 원소 하나까지 같아야 한다.
+
+    ⚠⚠ **달력이 다르면 거부한다.** 기기 형상이 `seasons:` 를 적었는데 그 안에
+    없는 계절이 형상 자산의 달력에 있으면, 짐작해 메우지 않고 멈춘다 —
+    `ApplianceSeasonShares._matched` 의 계절 이름 대조와 **같은 판단**이며
+    메우면 그 계절의 기기 부하가 조용히 가구 부하 모양으로 돌아간다.
+
+    ⚠ 여기서 나는 것은 `ValidationError` 가 아니라 `ValueError` 다 — 어긋난
+    두 값이 **둘 다 저장소의 자산**이고 사용자가 적은 것이 아니다. 자산끼리의
+    어긋남을 `core/casegrid/profiles.py::load_daily_shapes` 도 `ValueError` 로
+    거부한다(*「두 형상의 계절 달력이 다릅니다」*).
+    """
+    declared = shapes.of(ledger_key)
+    if declared is None:
+        return fallback
+    built: list[tuple[float, ...]] = []
+    for season in shape.seasons:
+        ranges = declared.ranges(season.name)
+        if ranges is None:
+            raise ValueError(
+                f"기기 형상 {ledger_key!r} 이 계절 {season.name!r} 의 구간을 "
+                f"적지 않았습니다 — 형상 자산의 달력은 "
+                f"{[s.name for s in shape.seasons]} 입니다. 적지 않은 계절을 "
+                "가구 부하 형상으로 메우면 그 계절만 조용히 종전 모양으로 "
+                "돌아가므로 짐작해 맞추지 않습니다"
+            )
+        built.append(
+            weights_from_hour_ranges(
+                ranges, steps=shape.steps, key=f"{ledger_key}/{season.name}"
+            )
+        )
+    return tuple(built)
 
 
 def _day_proportional(shape: DailyShape) -> tuple[float, ...]:
@@ -785,6 +982,91 @@ def asset_appliance_season_shares(
     )
 
 
+#: 기기별 **하루 안의 형상**의 자산 자리 — 형상 자산 파일의 최상위 절 이름
+#: (R67/WP-N1b).
+#:
+#: ⚠ **위 계절 몫 절과 나란히 둔다.** 한 절에 계절 몫과 하루 형상을 함께 담으면
+#: 「계절 몫은 냉난방의 것」과 「하루 형상은 기기마다 다르다」가 한 자리에서
+#: 섞이고, 그때 몫 넷을 고치려던 사람이 형상까지 만지게 된다.
+APPLIANCE_DAILY_SHAPE_ASSET_SECTION = "appliance_daily_shapes"
+
+
+def asset_appliance_daily_shapes(
+    path: Path | None = None,
+) -> ApplianceDailyShapes | None:
+    """형상 자산이 선언한 **기기별 하루 형상** — 절이 없으면 `None` 이다.
+
+    ⚠⚠ **`None` 을 메우지 않는다.** 그때 기기 부하가 종전대로 **가구 부하의
+    24스텝 형상**으로 깔리고 출력이 이 절이 서기 전과 원소 하나까지 같다 —
+    그것이 이 WP 의 동일성 조건이다(`ApplianceSeasonShares._matched` 의 ⛔⛔).
+
+    ⚠ **여기서 구간을 펴지 않는다.** 스텝 수를 아는 것은 `DailyShape` 이고 이
+    함수는 그것을 읽지 않는다 — 펴는 자리는 `_appliance_daily_weights` 하나다
+    (판정하는 자리를 늘리지 않는다는 이 모듈의 규약).
+
+    ⚠ 기기를 가리키는 것은 **대장 자리**(`load.heatpump.annual` ·
+    `load.ev.annual`)다. 자산에 없는 기기를 적으면 아무 성분에도 안 걸리는데,
+    그것을 여기서 거부하지 않는 이유는 **셋째 기기가 오는 날 자산이 먼저 적고
+    소스가 따라가는** 차례를 막지 않기 위해서다.
+    """
+    source = path or PROFILE_PATH
+    data = yaml.safe_load(source.read_text(encoding="utf-8")) or {}
+    section = data.get(APPLIANCE_DAILY_SHAPE_ASSET_SECTION)
+    if not isinstance(section, Mapping):
+        return None
+    appliances = section.get("appliances")
+    if not appliances:
+        return None
+    built: list[ApplianceDailyShape] = []
+    for entry in appliances:
+        ledger_key = str(entry["ledger_key"])
+        raw_seasons = entry.get("seasons")
+        raw_hours = entry.get("hours")
+        if raw_seasons is not None and raw_hours is not None:
+            raise ValueError(
+                f"기기 형상 {ledger_key!r} 이 `seasons:` 와 `hours:` 를 둘 다 "
+                "갖습니다 — 어느 쪽이 정본인지 말하지 않았습니다. 계절마다 "
+                "다르면 항목 수준의 `hours:` 를 지우십시오"
+            )
+        if raw_seasons is None and raw_hours is None:
+            raise ValueError(
+                f"기기 형상 {ledger_key!r} 에 `hours:` 도 `seasons:` 도 "
+                "없습니다 — 하루 안의 어디에 깔리는지 말하지 않은 것입니다"
+            )
+        if raw_hours is not None:
+            built.append(
+                ApplianceDailyShape(
+                    ledger_key=ledger_key, year_round=_hour_ranges(raw_hours)
+                )
+            )
+            continue
+        built.append(
+            ApplianceDailyShape(
+                ledger_key=ledger_key,
+                by_season=tuple(
+                    (str(season["name"]), _hour_ranges(season["hours"]))
+                    for season in raw_seasons
+                ),
+            )
+        )
+    return ApplianceDailyShapes(shapes=tuple(built))
+
+
+def _hour_ranges(raw: object) -> tuple[tuple[int, ...], ...]:
+    """자산의 `hours:` → **[첫 스텝, 마지막 스텝]** 짝의 목록.
+
+    ⚠ **값을 검사하지 않는다** — 범위·앞뒤가 옳은가는 펴는 자리
+    (`core/casegrid/profiles.py::weights_from_hour_ranges`)가 잰다. 스텝 수를
+    아는 것이 거기뿐이라 여기서 재면 24 를 이 소스에 박아야 한다.
+    """
+    if not isinstance(raw, list):
+        raise ValueError(
+            f"`hours:` 가 구간의 목록이어야 합니다 (받은 값 {raw!r}) — "
+            "[[7, 9], [19, 21]] 처럼 [첫 스텝, 마지막 스텝] 짝을 나열합니다"
+        )
+    return tuple(tuple(int(value) for value in entry) for entry in raw)
+
+
 def with_ledger_defaults(
     loads: ApplianceLoads,
     provider: AssumptionProvider,
@@ -798,10 +1080,16 @@ def with_ledger_defaults(
         ① 시나리오 yaml · 화면이 적은 수      ← `resolve_appliance_loads`
         ② 대장 `load.heatpump.annual` · `load.ev.annual`   ← 이 함수
         ③ 자산의 `appliance_season_shares:` 절             ← 이 함수
+        ④ 자산의 `appliance_daily_shapes:` 절              ← 이 함수 (R67/WP-N1b)
 
     ①이 `None`(= **적지 않았다**)인 칸만 ②·③이 채운다. 뒤집으면 사용자가
     화면에서 적은 수를 대장이 덮어쓰고, 그때 산출물이 인쇄하는 수와 사용자가
     적은 수가 갈린다.
+
+    ⚠⚠ **④ 는 그 차례를 타지 않는다 — 늘 걸린다.** 하루 안의 형상은 사용자가
+    적을 수 있는 값이 아니라 **기기의 성질**이고 통로가 자산 하나다. ③ 처럼
+    「적지 않은 칸만」으로 두면 사용자가 계절 몫을 화면에서 손보는 순간
+    전기차 충전이 조용히 「낮」으로 되돌아간다.
 
     ⚠ **칸마다 따로 본다.** 히트펌프만 적은 실행에서 전기차는 대장 값으로
     돈다 — 「하나라도 적었으면 대장을 통째로 무시한다」로 하면 사용자가 한 칸을
@@ -820,6 +1108,21 @@ def with_ledger_defaults(
     돌려준다 — 더해지는 값이 0 이고 산출물이 「미지정」을 글자로 인쇄한다.
     **기본 소비량으로 메우는 자리는 이 저장소에 없다.**
     """
+    season_shares = (
+        loads.season_shares
+        if loads.season_shares is not None
+        else asset_appliance_season_shares(profile_path)
+    )
+    # ★★ **기기별 하루 형상은 「적지 않은 칸만」의 차례를 타지 않는다**
+    # (R67/WP-N1b). 그것은 사용자가 적을 수 있는 값이 아니라 **기기의 성질**이고
+    # 통로가 자산 하나다 — 계절 몫을 화면에서 적은 실행에도 걸려야 한다. 한쪽만
+    # 걸면 사용자가 계절 몫을 손보는 순간 전기차 충전이 조용히 「낮」으로 되돌아
+    # 간다(그 결손이 R67/WP-N1 이 실측한 잉여 0 kWh 다).
+    # ⚠ **절이 없으면 아무것도 하지 않는다** — 그때 이 절이 서기 전과 원소
+    # 하나까지 같다(`asset_appliance_daily_shapes` 의 ⚠⚠).
+    daily_shapes = asset_appliance_daily_shapes(profile_path)
+    if season_shares is not None and daily_shapes is not None:
+        season_shares = replace(season_shares, daily_shapes=daily_shapes)
     return ApplianceLoads(
         heatpump_kwh=(
             loads.heatpump_kwh
@@ -831,11 +1134,7 @@ def with_ledger_defaults(
             if loads.ev_kwh is not None
             else _ledger_kwh(provider, EV_LOAD_LEDGER_KEY, EV_LOAD_TITLE)
         ),
-        season_shares=(
-            loads.season_shares
-            if loads.season_shares is not None
-            else asset_appliance_season_shares(profile_path)
-        ),
+        season_shares=season_shares,
     )
 
 

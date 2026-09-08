@@ -44,24 +44,39 @@ ID 를 짐작해 붙이면 `docs/traceability.md` 에 거짓 인용이 실린다
 from __future__ import annotations
 
 import math
+from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
+from core.assumption.provider import AssumptionSet
 from core.casegrid.appliance_load import (
     APPLIANCE_SEASON_SHARE_FIELD,
     APPLIANCE_SEASON_SHARE_FIELD_KEY,
     EV_LOAD_FIELD,
+    EV_LOAD_LEDGER_KEY,
     HEATPUMP_LOAD_FIELD,
+    HEATPUMP_LOAD_LEDGER_KEY,
+    ApplianceDailyShape,
+    ApplianceDailyShapes,
     ApplianceLoads,
     ApplianceSeasonShares,
+    asset_appliance_daily_shapes,
     asset_appliance_season_shares,
     resolve_appliance_loads,
     resolve_appliance_season_shares,
+    with_ledger_defaults,
 )
 from core.casegrid.e2e_runner import DAYS_PER_YEAR, run_single_case_e2e
 from core.casegrid.ledger_levels import build_level_map
 from core.casegrid.models import CaseOutcome
-from core.casegrid.profiles import SHARE_TOLERANCE, DailyShape, load_daily_shapes
+from core.casegrid.profiles import (
+    PROFILE_PATH,
+    SHARE_TOLERANCE,
+    DailyShape,
+    load_daily_shapes,
+    weights_from_hour_ranges,
+)
 from core.contracts.validation import ValidationError
 from tests.casegrid.test_seasonal_dispatch_run import _ASSUMPTIONS, _load_kwh
 
@@ -492,11 +507,17 @@ def _day_share() -> dict[str, float]:
 
 
 def _effective(shares: ApplianceSeasonShares) -> dict[str, float]:
-    """그 몫이 **계절마다 실제로 걸리는 값** — 형상과 맞춰 꺼낸다."""
+    """그 몫이 **계절마다 실제로 걸리는 값** — 형상과 맞춰 꺼낸다.
+
+    ⚠ `_matched` 는 계절마다 **성분 목록**을 낸다(R67/WP-N1b — 기기마다 하루
+    안의 형상이 다르다). 이 함수가 묻는 것은 *계절* 축이므로 그 계절의 성분
+    몫을 **더한다** — 성분이 하나뿐인 실행(기기 형상 절이 없는 자산)에서도
+    같은 수가 나온다.
+    """
     shape = _load_shape()
     return {
-        season.name: share
-        for season, (_weights, share) in zip(
+        season.name: math.fsum(share for _weights, share in components)
+        for season, components in zip(
             shape.seasons, shares._matched(shape), strict=True
         )
     }
@@ -622,4 +643,363 @@ def test_splitting_the_ev_out_moves_the_seasons_but_not_the_annual_total() -> No
         f"연간 부하 총량이 {math.fsum(plain.values()):,.1f} 에서 "
         f"{math.fsum(after.values()):,.1f} 로 움직였다 — 계절 사이에서 옮겨 갈 "
         f"뿐이어야 한다\n{_table(plain, after)}"
+    )
+
+# ── ⑥ 하루 안의 형상 — **기기마다 자기 24스텝을 갖는다** (R67/WP-N1b) ──────
+#
+# ①~⑤ 가 재는 것은 **계절 축**까지다. 그런데 성분에 씌우는 가중치가 여전히
+# **가구 부하의 24스텝 형상** 하나였다 — 즉 전기차 충전이 가구 부하와 같은
+# 모양으로, 곧 「낮」에 깔렸다. R67/WP-N1 실측이 그것을 잡았다: 전기차 몫이
+# 봄·여름으로 옮겨 가며 태양광 정오 봉우리와 겹쳐 **계통 송전이 0 kWh** 가
+# 되고 잉여 판매·REC 편익이 통째로 0원이 됐다.
+#
+# ⚠ **아래 어떤 검사에도 시각(7·19·14 …)이나 24개 리터럴을 박지 않는다** —
+# 기대값은 **자산이 적은 구간**에서 그 자리에서 짓는다. 박으면 자산을 갈아
+# 끼우는 날(= 그 절의 `replace_when` 이 예고한 날) 이 검사만 낡는다.
+
+
+def _daily_shapes() -> ApplianceDailyShapes:
+    """배포 자산이 선언한 **기기별 하루 형상**. 값을 여기 박지 않는다."""
+    shapes = asset_appliance_daily_shapes()
+    assert shapes is not None, (
+        "배포 자산에 `appliance_daily_shapes:` 절이 없다 — 이 아래 검사들이 "
+        "재는 것은 그 절이 있는 실행이다"
+    )
+    return shapes
+
+
+def _steps_in(ranges: tuple[tuple[int, ...], ...]) -> set[int]:
+    """자산의 구간 목록이 덮는 **스텝 집합** — 시험도 자산에서 그 자리에서 편다."""
+    return {step for first, last in ranges for step in range(first, last + 1)}
+
+
+def _provider() -> AssumptionSet:
+    """배포 대장. 기기 부하 두 칸을 늘 명시로 주므로 이 대장이 채우지 않는다."""
+    return AssumptionSet.load_from_yaml(_ASSUMPTIONS)
+
+
+def _stamped(
+    *, heatpump: float | None, ev: float | None, profile_path: Path | None = None
+) -> ApplianceSeasonShares:
+    """**배포 경로와 같은 차례로** 도장 찍은 몫 (`with_ledger_defaults` → 비중).
+
+    ⚠ 손으로 `replace(..., daily_shapes=...)` 하지 않는다 — 그러면 「배선이
+    실제로 걸리는가」를 시험이 대신 해 버리고, 배선이 끊겨도 초록불이 된다.
+    """
+    loads = with_ledger_defaults(
+        ApplianceLoads(
+            heatpump_kwh=heatpump, ev_kwh=ev, season_shares=_asset_shares()
+        ),
+        _provider(),
+        profile_path=profile_path,
+    )
+    shares = ApplianceSeasonShares.of(
+        loads.blended_season_shares, _load_kwh(), loads.total_kwh
+    )
+    assert shares is not None
+    return shares
+
+
+def _appliance_increment(
+    shares: ApplianceSeasonShares, *, total: float
+) -> dict[str, tuple[float, ...]]:
+    """계절마다 **기기 부하가 하루에 더한 몫** — 기본 부하를 뺀 나머지.
+
+    빼는 기준은 `DailyShape.representative_day_by_season` 이 기본 부하만으로
+    낸 하루이며, `load_days` 가 그 위에 더하는 것과 **같은 자리**다.
+    """
+    shape = _load_shape()
+    got = ApplianceSeasonShares.load_days(shape, total, shares, days=DAYS_PER_YEAR)
+    base = shape.representative_day_by_season(
+        total * shares.base_ratio, days=DAYS_PER_YEAR
+    )
+    return {
+        season.name: tuple(value - plain for value, plain in zip(day, base_day, strict=True))
+        for (season, day, _days), (_base_season, base_day, _base_days) in zip(
+            got, base, strict=True
+        )
+    }
+
+
+def test_an_asset_without_the_appliance_shapes_is_element_for_element_what_it_was(
+    tmp_path: Path,
+) -> None:
+    """★★★★ **기기 형상 절이 없으면 이 WP 전과 원소 하나까지 같다** (WP-N1b §2-6).
+
+    기대값을 이 시험이 **이 WP 전의 식으로 다시 짓는다** — 성분을 둘로 쪼개
+    `math.fsum` 으로 더하면 부동소수 마지막 자리가 갈릴 수 있고, 그러면 기기
+    형상 절을 두지 않은 자산으로 도는 실행이 조용히 움직인다. 그래서
+    `pytest.approx` 가 아니라 **`==`** 로 잰다.
+    """
+    text = PROFILE_PATH.read_text(encoding="utf-8")
+    head, marker, _rest = text.partition("\nappliance_daily_shapes:")
+    assert marker, (
+        "배포 자산에 `appliance_daily_shapes:` 절이 없다 — 이 검사가 「그 절을 "
+        "지운 자산」과 견주는 것이므로 지울 것이 있어야 한다"
+    )
+    stripped = tmp_path / "representative-day.yaml"
+    stripped.write_text(head + "\n", encoding="utf-8")
+
+    shape = _load_shape()
+    shares = _stamped(heatpump=_HEATPUMP, ev=_EV, profile_path=stripped)
+    assert shares.daily_shapes is None, (
+        "기기 형상 절을 지운 자산인데 형상이 실렸다 — 그때는 가구 부하 형상 "
+        "으로 돌아야 한다"
+    )
+
+    total = _load_kwh() + _HEATPUMP + _EV
+    got = ApplianceSeasonShares.load_days(shape, total, shares, days=DAYS_PER_YEAR)
+
+    # ── 기대값 — 「이 WP 전」의 식 그대로. 성분이 하나이고 가중치는 가구 부하다 ──
+    declared = dict(_asset_shares().by_season)
+    day_share = _day_share()
+    ratio = _EV / (_HEATPUMP + _EV)
+    base = shape.representative_day_by_season(
+        total * shares.base_ratio, days=DAYS_PER_YEAR
+    )
+    extra_total = total * shares.appliance_ratio
+    want = tuple(
+        (
+            season,
+            tuple(
+                value + extra_total * (
+                    (1.0 - ratio) * declared[season.name]
+                    + ratio * day_share[season.name]
+                ) / season_days * weight
+                for value, weight in zip(day, weights, strict=True)
+            ),
+            season_days,
+        )
+        for (season, day, season_days), (_season, weights) in zip(
+            base, shape.by_season, strict=True
+        )
+    )
+    assert got == want, (
+        "기기 형상 절이 없는 자산의 하루가 이 WP 전의 식과 「원소 하나까지」 "
+        "같지 않다"
+    )
+
+
+def test_the_heatpump_energy_lands_only_in_the_intervals_the_asset_declares() -> None:
+    """★★★★ **히트펌프 에너지가 자산이 적은 구간에만 모인다** (WP-N1b §4-2).
+
+    전기차를 `0.0` 으로 두면 하루의 증분이 **전부 히트펌프**다. 그 증분이
+    ⓐ 자산이 그 계절에 적은 구간 **안에서만** 0 이 아니고 ⓑ 구간 **안에서는
+    서로 같다**(「구간 안은 균등」 · 사용자 판정 §2-3)는 것을 잰다.
+
+    ⚠ 계절 이름도 시각도 박지 않는다 — **자산이 적은 계절마다** 그 계절의
+    구간을 읽어 기대값을 짓는다.
+    """
+    shape = _load_shape()
+    declared = _daily_shapes().of(HEATPUMP_LOAD_LEDGER_KEY)
+    assert declared is not None, "배포 자산이 히트펌프의 하루 형상을 적지 않았다"
+    shares = _stamped(heatpump=_HEATPUMP, ev=0.0)
+    increment = _appliance_increment(shares, total=_load_kwh() + _HEATPUMP)
+
+    for season in shape.seasons:
+        ranges = declared.ranges(season.name)
+        assert ranges is not None
+        inside = _steps_in(ranges)
+        values = increment[season.name]
+        lit = {step for step, value in enumerate(values) if abs(value) > 1e-9}
+        assert lit == inside, (
+            f"{season.name!r} 의 히트펌프 부하가 자산 구간 {sorted(inside)} 이 "
+            f"아니라 {sorted(lit)} 에 깔렸다 (자산 구간 목록 {ranges!r})"
+        )
+        first = values[min(inside)]
+        for step in sorted(inside):
+            assert values[step] == pytest.approx(first, rel=1e-12), (
+                f"{season.name!r} 구간 안이 균등하지 않다 — 스텝 {step} 이 "
+                f"{values[step]!r} 인데 {min(inside)} 는 {first!r} 다"
+            )
+
+
+def test_the_ev_energy_is_spread_flat_across_the_whole_day() -> None:
+    """★★★★ **전기차 에너지가 하루에 균등하게 깔린다** (WP-N1b §2-3 · §4-3).
+
+    히트펌프를 `0.0` 으로 두면 증분이 **전부 전기차**다. 재는 것 둘:
+      ⓐ 자산이 전기차에 적은 구간 **밖은 0** 이다
+      ⓑ ★ 지금 자산이 적은 것은 **하루 전체**이므로 24스텝이 **서로 같다**
+
+    ⚠ ⓑ 는 자산의 「현재 상태」에 걸린 검사다. **그것이 목적이다** — 충전 시각
+    자료가 오면(그 절의 `replace_when` ⓑ) 이 줄이 그 자리에서 실패해
+    *「전기차가 더 이상 균등이 아니다」* 를 말한다. 그때 함께 움직일 것은
+    **결론축의 골든**이며, 조용히 지나가면 그 사실이 묻힌다.
+    """
+    shape = _load_shape()
+    declared = _daily_shapes().of(EV_LOAD_LEDGER_KEY)
+    assert declared is not None, "배포 자산이 전기차의 하루 형상을 적지 않았다"
+    shares = _stamped(heatpump=0.0, ev=_EV)
+    increment = _appliance_increment(shares, total=_load_kwh() + _EV)
+
+    for season in shape.seasons:
+        ranges = declared.ranges(season.name)
+        assert ranges is not None
+        inside = _steps_in(ranges)
+        values = increment[season.name]
+        lit = {step for step, value in enumerate(values) if abs(value) > 1e-9}
+        assert lit == inside, (
+            f"{season.name!r} 의 전기차 부하가 자산 구간 {sorted(inside)} 이 "
+            f"아니라 {sorted(lit)} 에 깔렸다"
+        )
+        assert inside == set(range(shape.steps)), (
+            f"자산이 전기차에 적은 구간이 하루 전체가 아니다 ({ranges!r}) — "
+            "충전 시각 자료가 왔다면 골든 3종을 다시 뽑아야 한다"
+        )
+        for step, value in enumerate(values):
+            assert value == pytest.approx(values[0], rel=1e-12), (
+                f"{season.name!r} 의 전기차 부하가 스텝 {step} 에서 {value!r} "
+                f"인데 스텝 0 은 {values[0]!r} 다 — 균등이 아니다"
+            )
+
+
+def test_the_daily_shapes_move_the_hours_but_not_the_annual_total() -> None:
+    """★★★★ **형상만 갈리고 연 총량은 한 kWh 도 움직이지 않는다** (WP-N1b §4-4).
+
+    이 성질이 없으면 위 두 검사는 *「기기 부하를 덜어 냈다」* 로도 통과한다 —
+    ①~⑤ 의 `test_the_annual_total_does_not_move_when_the_seasons_do` 와 같은
+    축이며, 거기서는 **계절**이 갈렸고 여기서는 **하루 안**이 갈린다.
+
+    ★ 계절마다 따로 잰다 — 총합만 보면 계절 사이에서 옮겨 간 것과 구별되지
+    않고, 이 WP 는 계절 몫을 한 자리도 건드리지 않았다.
+    """
+    shape = _load_shape()
+    total = _load_kwh() + _HEATPUMP + _EV
+    shaped = _stamped(heatpump=_HEATPUMP, ev=_EV)
+    flat = replace(shaped, daily_shapes=None)
+
+    got = ApplianceSeasonShares.load_days(shape, total, shaped, days=DAYS_PER_YEAR)
+    plain = ApplianceSeasonShares.load_days(shape, total, flat, days=DAYS_PER_YEAR)
+
+    moved = 0
+    for (season, day, days), (_flat_season, flat_day, flat_days) in zip(
+        got, plain, strict=True
+    ):
+        assert days == flat_days
+        assert math.fsum(day) * days == pytest.approx(
+            math.fsum(flat_day) * flat_days, rel=1e-12
+        ), (
+            f"{season.name!r} 의 연간 부하가 "
+            f"{math.fsum(flat_day) * flat_days:,.4f} 에서 "
+            f"{math.fsum(day) * days:,.4f} 로 움직였다 — 하루 안에서 자리만 "
+            "바뀌어야 한다"
+        )
+        moved += sum(1 for a, b in zip(day, flat_day, strict=True) if a != b)
+    assert moved > 0, (
+        "하루 안의 형상을 실었는데 스텝이 한 칸도 안 움직였다 — 형상이 계산에 "
+        "닿지 않고 실려만 다닌다는 뜻이다"
+    )
+
+
+def test_the_asset_shapes_reach_a_calendar_the_user_typed() -> None:
+    """★★★ **화면에서 적은 계절 몫에도 기기 형상이 걸린다** (WP-N1b 배선).
+
+    기기의 하루 형상은 **기기의 성질**이지 사용자가 적은 계절 몫의 성질이
+    아니다. 한쪽만 걸면 사용자가 계절 몫을 손보는 순간 전기차 충전이 조용히
+    「낮」으로 되돌아간다 — 그 결손이 R67/WP-N1 이 실측한 잉여 0 kWh 다.
+    """
+    typed = resolve_appliance_season_shares(_winter_heavy())
+    assert typed is not None
+    assert typed.daily_shapes is None
+    loads = with_ledger_defaults(
+        ApplianceLoads(heatpump_kwh=_HEATPUMP, ev_kwh=_EV, season_shares=typed),
+        _provider(),
+    )
+    assert loads.season_shares is not None
+    assert loads.season_shares.daily_shapes == _daily_shapes()
+    assert dict(loads.season_shares.by_season) == _winter_heavy(), (
+        "기기 형상을 실으면서 사용자가 적은 계절 몫까지 갈아 끼웠다 — 통로의 "
+        "차례(①이 이긴다)가 깨졌다"
+    )
+
+
+def test_a_device_shape_that_misses_a_season_of_the_calendar_is_refused() -> None:
+    """★★★ **달력의 계절 하나를 빠뜨린 기기 형상은 거부한다** — 메우지 않는다.
+
+    메우면 그 계절만 조용히 가구 부하 형상으로 돌아가고, 그 어긋남은 아무
+    예외도 내지 않는다 — `_matched` 의 계절 이름 대조와 **같은 판단**이다.
+    ⚠ 여기서 나는 것은 `ValidationError` 가 아니라 `ValueError` 다. 어긋난 두
+    값이 **둘 다 저장소의 자산**이고 사용자가 적은 것이 아니다.
+    """
+    shape = _load_shape()
+    names = _season_names()
+    short = ApplianceDailyShapes(shapes=(
+        ApplianceDailyShape(
+            ledger_key=HEATPUMP_LOAD_LEDGER_KEY,
+            by_season=tuple((name, ((0, 0),)) for name in names[:-1]),
+        ),
+    ))
+    shares = replace(_asset_shares(), ev_ratio=0.5, daily_shapes=short)
+    with pytest.raises(ValueError, match=names[-1]):
+        shares._matched(shape)
+
+
+def test_an_interval_outside_the_step_grid_is_refused() -> None:
+    """★★ **격자 밖 구간·뒤집힌 구간은 거부한다** — 조용히 잘라 주지 않는다.
+
+    잘라 주면 `[19, 25]` 를 적었을 때 21시까지만 걸리는데 자산은 25시까지
+    적었다고 말한다. ⚠ 스텝 수를 이 시험이 박지 않는다 — 자산의 `steps` 에서
+    그 자리에서 짓는다.
+    """
+    steps = _load_shape().steps
+    for bad in ([[0, steps]], [[9, 7]], [[-1, 3]], [[1, 2, 3]], []):
+        with pytest.raises(ValueError):
+            weights_from_hour_ranges(bad, steps=steps, key="시험")
+
+
+def test_intervals_are_flat_inside_and_proportional_between() -> None:
+    """★★★ **구간 안은 균등 · 구간 사이는 시간수 비례** (WP-N1b §2-2).
+
+    합을 손으로 맞추지 않아도 **구조적으로 1** 이라는 것이 이 갈래를 고른
+    사유다 — 24개를 적어 네 자리로 끊으면 `SHARE_TOLERANCE`(1e-9)를 넘는다.
+    ⚠ 시각을 박지 않는다: 길이가 다른 두 구간을 그 자리에서 짓는다.
+    """
+    steps = _load_shape().steps
+    short, long = 2, 4
+    weights = weights_from_hour_ranges(
+        [[0, short - 1], [steps - long, steps - 1]], steps=steps, key="시험"
+    )
+    assert len(weights) == steps
+    assert math.fsum(weights) == pytest.approx(1.0, abs=SHARE_TOLERANCE)
+    assert weights[0] == pytest.approx(weights[short - 1], rel=1e-12)
+    assert math.fsum(weights[:short]) == pytest.approx(
+        short / (short + long), rel=1e-12
+    ), "구간 사이가 「시간수 비례」가 아니다"
+    assert all(value == 0.0 for value in weights[short:steps - long])
+
+
+def test_two_intervals_of_the_same_length_split_the_energy_in_half() -> None:
+    """★★★ **같은 길이의 두 봉우리는 반반이다** — 겨울 히트펌프가 그 갈래다.
+
+    사용자가 두 구간 「사이」의 배분을 정하지 않았고, 「구간 시간수 비례」로
+    두면 길이가 같은 두 구간이 반반이 된다(WP-N1b §2-2 · **새 수를 발명하지
+    않는 갈래**). ⚠ 시각을 박지 않는다 — 자산이 봉우리 둘을 적고 길이가 같은
+    계절만 재며, 그런 계절을 하나도 못 찾으면 **검사가 조용히 빠지지 않도록**
+    끝에서 실패한다.
+    """
+    shape = _load_shape()
+    declared = _daily_shapes().of(HEATPUMP_LOAD_LEDGER_KEY)
+    assert declared is not None
+    measured = 0
+    for season in shape.seasons:
+        ranges = declared.ranges(season.name)
+        assert ranges is not None
+        if len(ranges) != 2:
+            continue
+        (first_a, last_a), (first_b, last_b) = ranges
+        if last_a - first_a != last_b - first_b:
+            continue
+        weights = weights_from_hour_ranges(
+            ranges, steps=shape.steps, key=season.name
+        )
+        assert math.fsum(weights[first_a:last_a + 1]) == pytest.approx(
+            0.5, rel=1e-12
+        ), (
+            f"{season.name!r} 의 두 봉우리가 길이가 같은데 반반이 아니다 "
+            f"({ranges!r})"
+        )
+        measured += 1
+    assert measured >= 1, (
+        "봉우리 둘짜리 계절을 자산에서 하나도 찾지 못했다 — 자산이 갈렸다면 "
+        "이 검사가 무엇을 재는지 다시 정해야 한다"
     )

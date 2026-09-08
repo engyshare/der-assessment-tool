@@ -64,7 +64,7 @@ R56 이전에는 대표일 하나를 365번 되풀이하는 것이 전부여서,
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -391,6 +391,63 @@ def _normalised(raw: list[float], *, key: str) -> tuple[float, ...]:
             "그 자원의 에너지가 통째로 사라집니다"
         )
     return tuple(weight / total for weight in raw)
+
+
+def weights_from_hour_ranges(
+    ranges: Sequence[Sequence[int]], *, steps: int, key: str
+) -> tuple[float, ...]:
+    """**구간**을 스텝 가중치 한 벌로 편다 — 구간 안은 균등이다 (R67/WP-N1b).
+
+    ## 왜 24개를 적지 않고 구간을 적는가
+
+    사용자 판정(`docs/decisions-2026-09-08-R67.md` · R66 §1ⓒ)이 *「24스텝
+    가중치로 자산에 싣고 코드에 시각을 박지 않는다 · **구간 안은 균등**」* 을
+    정했다. 그 「구간 안은 균등」을 자산이 24개 숫자로 옮겨 적으면 **합을 손으로
+    1 로 맞춰야** 하고, 구간을 한 시간 넓힐 때 24개가 함께 갈려 무엇이 바뀐
+    것인지 읽히지 않는다. 구간을 적으면 이 함수가 펴고 **합이 구조적으로 1**
+    이다 — 판정하는 자리를 늘리지 않고 아래 `_normalised()` 를 그대로 지난다.
+
+    ## 꼴과 관례
+
+    `ranges` 는 `[[7, 9], [19, 21]]` 처럼 **[첫 스텝, 마지막 스텝]** 짝의
+    목록이고 **양끝을 포함한다** — `[7, 9]` 는 스텝 7·8·9 셋이며, 자산 머리말의
+    관례(*「인덱스 0 이 00~01시다」*)로 읽으면 07~08 · 08~09 · 09~10시다.
+
+    ⚠ **구간 사이는 「시간수 비례」가 된다** — 구간마다 스텝에 1 을 놓고 합으로
+    나누므로, 3시간 구간 둘은 반반이고 3시간과 6시간이면 1:2 다. 사용자가
+    구간 사이의 배분을 정하지 않았으므로 **새 수를 발명하지 않는 갈래**를
+    고른 것이다(WP-N1b §2-2).
+    ⚠ **겹친 구간은 두 번 세지 않는다.** 한 스텝은 「쓴다」 아니면 「안 쓴다」
+    이며, 겹침으로 2 를 놓으면 사람이 구간을 하나 더 적었을 뿐인데 그 시각의
+    가중치가 두 배가 된다.
+
+    ⛔ **스텝 수를 이 함수가 정하지 않는다** — 부르는 쪽이 형상 자산의
+    `steps` 를 준다. 여기서 24 를 박으면 자산을 15분(96스텝)으로 넓히는 날
+    이 함수만 낡는다.
+    """
+    if not ranges:
+        raise ValueError(
+            f"형상 {key!r} 에 구간이 하나도 없습니다 — 배분할 자리가 없어 "
+            "그 기기의 에너지가 통째로 사라집니다"
+        )
+    raw = [0.0] * steps
+    for entry in ranges:
+        bounds = [int(value) for value in entry]
+        if len(bounds) != 2:
+            raise ValueError(
+                f"형상 {key!r} 의 구간 {list(entry)!r} 이 [첫 스텝, 마지막 "
+                "스텝] 두 수가 아닙니다"
+            )
+        first, last = bounds
+        if not 0 <= first <= last < steps:
+            raise ValueError(
+                f"형상 {key!r} 의 구간 {bounds!r} 이 스텝 범위 0~{steps - 1} "
+                "안에 들어오지 않거나 앞뒤가 뒤집혔습니다 — 양끝을 포함하는 "
+                "[첫 스텝, 마지막 스텝] 꼴이어야 합니다"
+            )
+        for step in range(first, last + 1):
+            raw[step] = 1.0
+    return _normalised(raw, key=key)
 
 
 def _by_season_from(item: Mapping[str, Any], *, key: str) -> tuple[
