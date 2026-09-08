@@ -43,9 +43,17 @@ from core.report.case_report import CaseReport, build_case_report
 from core.report.dispatch_notes import DispatchHour, split_by_direction
 from core.report.ess_sizing import shortfall_kwh_by_step
 from core.report.ess_sizing_section import (
+    ADOPTED_HEAD,
+    ADOPTED_TERM,
     ANNUAL_EQUIVALENT_LABEL,
+    CAPACITY_KIND_APPLIED,
+    CAPACITY_KIND_DIAGNOSTIC,
+    CAPACITY_KIND_RUNNING,
+    SELF_SUFFICIENT_HEAD,
     ESSSizingReview,
+    binding_season,
     build_ess_sizing_review,
+    capacity_kind_lines,
     ess_daily_sizing_section,
     usable_capacity_probe,
 )
@@ -416,7 +424,7 @@ def test_the_probe_agrees_with_the_resource_it_was_opened_from(
     )
 
 
-# ── ⑤ 완화분 — 두 값이 서고 채택값이 무엇인지 적힌다 (R67/WP-N3) ──────
+# ── ⑤ 완화분 — 두 값이 서고 역산 채택안이 무엇인지 적힌다 (R67/WP-N3) ──
 
 
 def _report_with_allowance(allowance: float | None) -> CaseReport:
@@ -507,9 +515,14 @@ def test_the_section_prints_both_values_and_says_which_one_is_adopted(
     """
     review = report.ess_sizing
     body = "\n".join(ess_daily_sizing_section(review))
-    assert "완전 자립 저장용량" in body and "★ 채택 저장용량" in body
-    assert "완전 자립 정격출력" in body and "★ 채택 정격출력" in body
-    assert "채택값은 「계통 허용」 완화분" in body
+    # ⚠ **낱말을 리터럴로 적지 않는다**(R68/WP-1) — 열 이름의 정본은
+    #   `ADOPTED_HEAD` · `SELF_SUFFICIENT_HEAD` 이고 렌더러가 같은 상수를 쓴다.
+    #   박아 두면 낱말을 고치는 날 **시험이 옛 낱말을 지킨다.**
+    assert f"{SELF_SUFFICIENT_HEAD} 저장용량" in body
+    assert f"{ADOPTED_HEAD} 저장용량" in body
+    assert f"{SELF_SUFFICIENT_HEAD} 정격출력" in body
+    assert f"{ADOPTED_HEAD} 정격출력" in body
+    assert f"{ADOPTED_TERM}은 「계통 허용」 완화분" in body
     assert "`policy.grid_supply_allowance`" in body, (
         "비율의 출처(대장 키)가 적히지 않았다"
     )
@@ -602,3 +615,149 @@ def test_the_relaxation_does_not_move_the_conclusion_axis() -> None:
             f"허용 비율 {allowance} 에서 결론축이 움직였다 — 역산이 실행에 "
             "되먹여졌다"
         )
+
+
+# ── ⑥ R68/WP-1 — 「채택」이 **두 가지를 가리켰다.** 셋으로 갈라 세운다 ──────
+#
+# ③ 표의 열 이름이 「★ 채택 정격용량」이고 겨울 값이 642.07kWh 였는데, 이 실행이
+# 실제로 돌린 저장장치는 200kWh / 100kW 다(검토서 §3.2 · §6 의 1번). 한 낱말이
+# ⓐ 「역산 갈래 둘 중 답으로 고른 쪽」과 ⓑ 「진단값 중 실행에 반영하기로 결정한
+# 값」을 함께 가리켰다. ⛔ **사용자 판정(완화분이 역산의 답)은 뒤집지 않는다** —
+# 아래 검사들이 재는 것은 **낱말이 갈라져 있는가**와 **구분 표가 서는가**다.
+
+
+def test_the_adopted_column_says_what_kind_of_adoption_it_is() -> None:
+    """★★★ 열 이름이 **무엇의 채택인지** 말한다 — 「채택」 하나로 두지 않는다.
+
+    ⚠ 이 검사가 없으면 낱말이 「★ 채택」으로 되돌아가도 초록불이다. 그 낱말이
+    실제로 *「이 용량으로 돌렸다」* 로 읽혔다.
+    """
+    assert ADOPTED_TERM == "역산 채택안", (
+        "역산의 답을 부르는 낱말이 「무엇의 채택인지」를 말하지 않는다"
+    )
+    assert ADOPTED_TERM in ADOPTED_HEAD, "열 이름이 그 낱말을 쓰지 않는다"
+    assert CAPACITY_KIND_APPLIED != ADOPTED_TERM, (
+        "역산의 답과 실행 반영 결정이 같은 낱말이다 — 갈라 세운 것이 아니다"
+    )
+
+
+def test_the_appendix_table_no_longer_says_bare_adopted(report: CaseReport) -> None:
+    """★★ 붙임 10 의 표에 **맨 「★ 채택」이 한 자리도 없다.**
+
+    ⚠ 「채택」이 통째로 사라져야 하는 것은 아니다 — 표 아래 마지막 주의
+    *「채택한 것이 아니다」* 는 **실행 반영**의 뜻으로 옳게 쓴 자리다(지시문
+    §2-ⓐ). 재는 것은 **열 이름 쪽 낱말** 하나다.
+    """
+    body = "\n".join(ess_daily_sizing_section(report.ess_sizing))
+    assert "★ 채택 " not in body, (
+        "열 이름이 여전히 맨 「★ 채택」이다 — 무엇의 채택인지가 없다"
+    )
+    assert "채택한 것이 아니다" in body, (
+        "실행 반영을 부정하는 줄까지 지웠다 — 그 자리의 「채택」은 옳은 쓰임이다"
+    )
+
+
+def test_the_binding_season_is_chosen_by_the_code_not_by_a_literal(
+    report: CaseReport,
+) -> None:
+    """★★ **매는 하루를 코드가 고른다** — 계절 이름을 박지 않는다.
+
+    ⚠ 실측에서 그것은 「겨울」이지만 그 사실은 자산과 형상이 정한 것이다. 박으면
+    형상이 바뀌는 날 **틀린 계절이 매는 하루로 인쇄된다.**
+    """
+    review = report.ess_sizing
+    binding = binding_season(review)
+    assert binding.sizing.required_capacity_kwh == max(
+        season.sizing.required_capacity_kwh for season in review.seasons
+    ), "매는 하루가 가장 큰 용량을 요구하는 하루가 아니다"
+    # ★ 완화가 스텝마다 같은 상수를 곱하므로 두 값에서 같은 하루가 매야 한다.
+    assert binding.season_name == max(
+        review.seasons, key=lambda s: s.relaxed.required_capacity_kwh
+    ).season_name
+
+
+def test_the_capacity_kind_table_separates_the_three_meanings(
+    report: CaseReport,
+) -> None:
+    """★★★ **구분 표가 셋을 갈라 세운다** — 진단 · 실행 · 채택 (검토서 §3.2).
+
+    ⚠ **수를 리터럴로 적지 않는다** — 태양광은 `report.self_sufficiency`, 저장
+    장치는 매는 하루, 실행 용량은 준 조각에서 온다.
+    """
+    review = report.ess_sizing
+    binding = binding_season(review)
+    body = "\n".join(
+        capacity_kind_lines(
+            review=review,
+            pv=report.self_sufficiency,
+            run_used=["저장장치 용량 **200 kWh**"],
+        )
+    )
+    for kind in (
+        CAPACITY_KIND_DIAGNOSTIC,
+        CAPACITY_KIND_RUNNING,
+        CAPACITY_KIND_APPLIED,
+    ):
+        assert f"| **{kind}** |" in body, f"구분 표에 「{kind}」 행이 없다"
+    assert f"{binding.sizing.required_capacity_kwh:,.2f}kWh" in body, (
+        "진단 용량 칸에 완전 자립분이 없다"
+    )
+    assert f"{binding.relaxed.required_capacity_kwh:,.2f}kWh" in body, (
+        "진단 용량 칸에 역산 채택안이 없다"
+    )
+    assert binding.season_name in body, "어느 하루 기준인지가 없다"
+    assert SELF_SUFFICIENT_HEAD in body and ADOPTED_TERM in body
+    assert "저장장치 용량 **200 kWh**" in body, "실행 용량 칸이 준 값을 안 쓴다"
+
+
+def test_the_capacity_kind_table_says_the_applied_capacity_is_none(
+    report: CaseReport,
+) -> None:
+    """★★★ **「채택 용량」 칸이 「없음」이라고 말한다** — 그리고 사유가 없다고도.
+
+    이 저장소는 역산 결과를 실행에 되먹이지 않는다(모듈 머리말 ★★★). ⇒ 반영된
+    진단값은 **있을 수 없고**, 실행 용량이 진단 용량과 다른 사유는 이 리포트가
+    갖고 있지 않다 — **그 둘을 글자로 적는 것**이 이 표의 값이다.
+    """
+    body = "\n".join(
+        capacity_kind_lines(
+            review=report.ess_sizing,
+            pv=report.self_sufficiency,
+            run_used=["태양광 용량 **60 kW**"],
+        )
+    )
+    assert "**없음 — 이 실행은 진단값을 반영하지 않았다**" in body
+    assert "사람 판단 자리다" in body, (
+        "실행 용량이 진단 용량과 다른 사유가 「없다」는 진술이 빠졌다 — 빠지면 "
+        "독자가 그 사유를 리포트 안에서 찾는다"
+    )
+
+
+def test_the_capacity_kind_table_states_it_when_the_inverse_could_not_run(
+    report: CaseReport,
+) -> None:
+    """★★ 역산이 못 돈 실행에서도 **칸을 비우지 않는다**(모듈 머리말 마지막 절).
+
+    ⚠ 빈칸은 *「역산이 필요 없었다」* 와 *「역산을 싣지 못했다」* 를 가리지 않는다.
+    """
+    reason = "이 실행에는 저장장치가 없습니다 — 역산할 대상이 없습니다"
+    body = "\n".join(
+        capacity_kind_lines(
+            review=ESSSizingReview(
+                year=report.ess_sizing.year,
+                step_hours=0.0,
+                usable_per_capacity_kwh=None,
+                seasons=(),
+                unmeasurable_reason=reason,
+                search_low_kwh=report.ess_sizing.search_low_kwh,
+                search_high_kwh=report.ess_sizing.search_high_kwh,
+                grid_supply_allowance=report.ess_sizing.grid_supply_allowance,
+            ),
+            pv=report.self_sufficiency,
+            run_used=[],
+        )
+    )
+    assert f"역산하지 못했다({reason})" in body
+    assert "이 실행에는 설계 변수가 서지 않았다" in body, (
+        "실행 용량이 없는 실행에서 칸이 비었다"
+    )

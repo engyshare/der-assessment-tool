@@ -93,10 +93,13 @@ from core.report.case_report import CaseReport
 from core.report.dispatch_notes import resolved_operating_mode
 from core.report.ess_sizing_section import (
     ADOPTED_HEAD,
+    CAPACITY_KIND_APPLIED,
+    CAPACITY_KIND_DIAGNOSTIC,
     PER_HOUSEHOLD_HEAD,
     SELF_SUFFICIENT_HEAD,
     ESSSizingReview,
     adopted_value_note,
+    capacity_kind_lines,
     per_household_scaled,
     per_household_scaled_notes,
     relaxation_reach_note,
@@ -474,11 +477,11 @@ def _ess_sizing_table(
     ⚠ **못 한 것을 「없음」으로 두지 않는다** — 역산할 수 없는 실행에서는
     `ESSSizingReview.unmeasurable_reason` 이 그 사유를 글자로 갖는다.
 
-    ## ★★★ 두 값을 나란히 싣는다 — **채택값이 빠져 있었다** (R67/WP-N3-fix)
+    ## ★★★ 두 값을 나란히 싣는다 — **역산 채택안이 빠져 있었다** (R67/WP-N3-fix)
 
-    R67/WP-N3 가 완화분(채택값)을 세우고 **심의 리포트 붙임 10 에만** 실었다.
+    R67/WP-N3 가 완화분(역산 채택안)을 세우고 **심의 리포트 붙임 10 에만** 실었다.
     그동안 이 표는 완전 자립분만 실어, 두 산출물이 같은 물음에 다르게 답했다 —
-    실측: 붙임 10 은 겨울 **642.07kWh**(채택), 이 표는 **917.25kWh** 하나.
+    실측: 붙임 10 은 겨울 **642.07kWh**(역산 채택안), 이 표는 **917.25kWh** 하나.
     검증 리포트는 **사용자가 지금 읽는 산출물**이므로 그 상태는 *「ESS 적정용량이
     917 kWh 다」* 로 읽힌다.
 
@@ -509,7 +512,7 @@ def _ess_sizing_table(
     *②와 무엇이 다른지* 를 적는다(`per_household_scaled_notes`). 적지 않으면
     다음 사람은 이 열을 **역산 결과로 읽는다.**
 
-    ⚠ **채택값만 환산한다** — 이 표가 「답」이라 말하는 열이 채택값이고
+    ⚠ **역산 채택안만 환산한다** — 이 표가 「답」이라 말하는 열이 그것이고
     (`ADOPTED_HEAD`), 완전 자립분까지 환산하면 열이 열셋이 되어 읽히지 않는다.
     완전 자립분은 **견줌**이므로 단지 값 하나로 족하다.
 
@@ -541,7 +544,7 @@ def _ess_sizing_table(
     ]
     for season in review.seasons:
         sizing = season.sizing
-        # ★ **구간 판정의 대상은 채택값이다** — 붙임 10 과 같다. 완전 자립분에
+        # ★ **구간 판정의 대상은 역산 채택안이다** — 붙임 10 과 같다. 완전 자립분에
         # 붙이면 표가 「답」이 아닌 수를 구간과 견준다.
         adopted = season.relaxed
         within = _YES if adopted.within_search_range else f"{_NO} — 구간 {span} 밖"
@@ -587,6 +590,27 @@ def _ess_sizing_table(
     return rows
 
 
+def run_used_values(report: CaseReport) -> list[str]:
+    """이 실행이 **실제로 세우고 돌린** 용량 — 「설비 이름 **값 단위**」 조각들.
+
+    ⚠ **두 자리가 이 목록을 나눠 갖는다** — 구분 표의 「실행 용량」 칸
+    (`core/report/ess_sizing_section.py::capacity_kind_lines`)과 그 아래
+    `_run_configuration_lines` 의 문장이다. 베껴 적으면 한쪽만 고쳐지고, 그때
+    같은 절이 **실행 용량을 두 가지로** 말한다.
+
+    ⚠ 수를 이 파일이 갖지 않는다 — 설계 변수의 사용값은 `report.capacity_review`
+    의 `used_value` 이고 정격출력은 `report.ess_sizing.run_power_kw` 다.
+    """
+    used = [
+        f"{finding.label} **{finding.used_value:g} {finding.unit}**"
+        for finding in report.capacity_review
+    ]
+    power_kw = report.ess_sizing.run_power_kw
+    if power_kw is not None:
+        used.append(f"저장장치 정격출력 **{power_kw:g} kW**")
+    return used
+
+
 def _run_configuration_lines(report: CaseReport) -> list[str]:
     """**지금 도는 구성**을 수로 적는다 — 아래 역산값과 견줄 대상 (R67/WP-③).
 
@@ -602,17 +626,13 @@ def _run_configuration_lines(report: CaseReport) -> list[str]:
     점)이고 정격출력은 `report.ess_sizing.run_power_kw` 다. 여기 적으면
     실행이 다른 용량으로 도는 날 이 줄만 옛 수를 들고 있게 된다.
 
-    ⛔ **「채택」이라 쓰지 않는다** (판정 §4-4). 이 구성은 역산의 **결과가
+    ⛔ **그냥 「채택」이라 쓰지 않는다** (판정 §4-4). 이 구성은 역산의 **결과가
     아니고**, 역산값을 적용한 것도 아니다 — 그 둘을 한 낱말로 묶으면 산출물이
-    *「역산대로 세웠다」* 를 주장하게 된다.
+    *「역산대로 세웠다」* 를 주장하게 된다. ⇒ 이 구성을 부르는 이름은
+    `core/report/ess_sizing_section.py::CAPACITY_KIND_RUNNING`(「실행 용량」)이고
+    위 구분 표가 그것을 진단 용량·채택 용량과 갈라 세운다(R68/WP-1).
     """
-    used = [
-        f"{finding.label} **{finding.used_value:g} {finding.unit}**"
-        for finding in report.capacity_review
-    ]
-    power_kw = report.ess_sizing.run_power_kw
-    if power_kw is not None:
-        used.append(f"저장장치 정격출력 **{power_kw:g} kW**")
+    used = run_used_values(report)
     if not used:
         return [
             "⚠⚠ **지금 도는 구성** — 이 실행에는 설계 변수가 서지 않아 적을 "
@@ -653,13 +673,24 @@ def capacity_review_lines(report: CaseReport) -> list[str]:
         "않는다 — 역산 결과를 실행에 되먹이지 않으므로 8단계 지표는 이 수에 "
         "움직이지 않는다. 위 ⓐ·ⓑ 가 이 실행이 **실제로 세운** 자원이다.",
         "",
+        # ★★★ **절 머리에 구분 표가 먼저 선다** (R68/WP-1 · 검토서 §3.2).
+        # 「채택」이 ⓐ 역산 갈래 둘 중 답으로 고른 쪽과 ⓑ 실행에 반영하기로
+        # 결정한 값을 함께 가리켰고, 그래서 겨울 역산값이 *「이 용량으로
+        # 돌렸다」* 로 읽혔다. ⇒ 셋을 **읽는 순서의 맨 앞에서** 갈라 세운다.
+        # ⚠ 표의 수를 이 파일이 갖지 않는다 — 렌더러가 `report` 에서 읽는다.
+        *capacity_kind_lines(
+            review=report.ess_sizing,
+            pv=report.self_sufficiency,
+            run_used=run_used_values(report),
+        ),
+        "",
         # ★★★ **진단값과 실행값을 «한 자리에서» 갈라 적는다** (R67/WP-③ ·
         # 사용자 판정 §4-3 *「진단값과 실제 실행값을 구분한다」*). 종전에는
         # 「진단이지 결론이 아니다」만 있고 **지금 도는 구성이 수로 없어서**,
         # 검토자가 아래 역산값과 견줄 대상을 다른 절에서 찾아야 했다.
         # ⛔ **「채택했다」로 적지 않는다** — 판정 §4-4 가 *「적용 전이면 결과를
         # 만들어 낸 것처럼 표시하지 않는다」* 로 금했다. 그래서 문면은
-        # **「지금 도는 구성」**이고 「채택값」이 아니다.
+        # **「지금 도는 구성」**(= 실행 용량)이고 「역산 채택안」이 아니다.
         # ⚠ 수를 리터럴로 적지 않는다 — `capacity_review` 의 설계 변수 사용값과
         # `ess_sizing.run_power_kw` 가 정본이다.
         *_run_configuration_lines(report),
@@ -681,13 +712,14 @@ def capacity_review_lines(report: CaseReport) -> list[str]:
         "",
         *_self_sufficiency_table(report.self_sufficiency),
         "",
-        # ★ **채택값이 어느 열인지 절 머리가 먼저 말한다** (R67/WP-N3-fix).
+        # ★ **역산 채택안이 어느 열인지 절 머리가 먼저 말한다** (R67/WP-N3-fix).
         # 표만 보면 두 값 중 어느 것이 답인지 고르는 일이 독자에게 넘어간다 —
         # ⚠⚠ 위 절 머리가 이미 *「진단이지 결론이 아니다」* 를 적었으므로, 그
-        # 둘을 함께 읽어야 「채택값이지만 실행 구성은 아니다」가 성립한다.
+        # 둘을 함께 읽어야 「역산 채택안이지만 실행 구성은 아니다」가 성립한다.
         f"③ **수요 기반 적정 용량** · 경우 「ESS」 — 하루 결손을 감당하는 "
-        f"저장장치 용량 **역산**(계절별). **{ADOPTED_HEAD} 열이 채택값**이고 "
-        "완전 자립분은 견줌으로 함께 싣는다:",
+        f"저장장치 용량 **역산**(계절별). **{ADOPTED_HEAD} 열이 역산이 고른 "
+        f"답**이고 완전 자립분은 견줌으로 함께 싣는다 — 위 구분 표의 "
+        f"{CAPACITY_KIND_DIAGNOSTIC}이며 {CAPACITY_KIND_APPLIED}이 아니다:",
         "",
         *_ess_sizing_table(report.ess_sizing, report.household_count),
         "",

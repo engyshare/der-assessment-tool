@@ -54,6 +54,7 @@ from core.casegrid.household_scale import (
     HOUSEHOLD_COUNT_LEDGER_KEY,
     HOUSEHOLD_COUNT_UNSPECIFIED,
 )
+from core.casegrid.ledger_levels import LEVEL_NAMES
 from core.casegrid.profiles import load_daily_shapes
 from core.report.capacity import (
     ECONOMIC_SENSITIVITY_TITLE,
@@ -63,10 +64,15 @@ from core.report.case_report import CaseReport, build_case_report
 from core.report.dispatch_notes import NO_OPERATING_MODE
 from core.report.ess_sizing_section import (
     ADOPTED_HEAD,
+    ADOPTED_TERM,
+    CAPACITY_KIND_APPLIED,
+    CAPACITY_KIND_DIAGNOSTIC,
+    CAPACITY_KIND_RUNNING,
     PER_HOUSEHOLD_HEAD,
     PER_HOUSEHOLD_SCALED,
     SELF_SUFFICIENT_HEAD,
     adopted_value_note,
+    binding_season,
     ess_daily_sizing_section,
     relaxation_reach_note,
     within_range_head,
@@ -76,6 +82,7 @@ from core.report.verification_inputs import (
     HOUSEHOLD_LOAD_LEDGER_KEY,
     dispatch_note_rows,
     execution_input_lines,
+    run_used_values,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -1064,3 +1071,93 @@ def test_both_reports_say_the_same_adopted_winter_capacity(tmp_path: Path) -> No
             f"{adopted_power}kW 가 없다"
         )
         assert ADOPTED_HEAD in text, f"{where} 에 채택값 표시가 없다"
+
+
+# ── R68/WP-1 — 「채택」이 **두 가지를 가리켰다.** 2단계 머리가 셋을 갈라 세운다 ─
+#
+# ③ 표의 열 이름이 「★ 채택 정격용량」이고 겨울 값이 642.07kWh 였는데, 이 실행이
+# 실제로 돌린 저장장치는 200kWh / 100kW 다 — 검토서
+# `docs/verification-report-improvement-2026-09-09.md` §3.2 가 그것을 지적하고
+# 진단 용량 · 실행 용량 · 채택 용량 셋으로 갈라 세울 것을 요구했다.
+# ⛔ **사용자 판정(완화분이 역산의 답)은 뒤집지 않는다** — 낱말을 가른다.
+
+
+def test_the_capacity_review_head_carries_the_three_kinds_of_capacity(
+    tmp_path: Path,
+) -> None:
+    """★★★ **구분 표가 배포 산출물에 실린다** — 렌더러만 초록불이면 뜻이 없다.
+
+    ⚠ CLI 를 지나 파일로 뽑은 문면을 본다(모듈 머리말 ⚠).
+    ⚠ **수를 리터럴로 적지 않는다** — `report` 에서 읽어 짓는다.
+    """
+    text = _dumped(tmp_path)
+    report = _report()
+    review = report.ess_sizing
+    binding = binding_season(review)
+
+    for kind in (
+        CAPACITY_KIND_DIAGNOSTIC,
+        CAPACITY_KIND_RUNNING,
+        CAPACITY_KIND_APPLIED,
+    ):
+        assert f"| **{kind}** |" in text, (
+            f"2단계에 「{kind}」 행이 없다 — 「채택」이 두 뜻으로 읽히는 자리가 "
+            "그대로다"
+        )
+    assert "**없음 — 이 실행은 진단값을 반영하지 않았다**" in text, (
+        f"「{CAPACITY_KIND_APPLIED}」 칸이 「없음」이라고 말하지 않는다"
+    )
+    assert "사람 판단 자리다" in text, (
+        "실행 용량이 진단 용량과 다른 사유를 이 리포트가 갖고 있지 않다는 "
+        "진술이 없다"
+    )
+    # ★ 진단 용량 칸의 두 수 — 태양광(대장 기준 수준)과 매는 하루의 저장장치.
+    base_point = report.self_sufficiency.points[LEVEL_NAMES.index("base")]
+    assert f"{base_point.required_capacity_kw:,.2f}kW" in text, (
+        "진단 용량 칸의 태양광 역산값이 없다"
+    )
+    for value in (
+        binding.sizing.required_capacity_kwh,
+        binding.relaxed.required_capacity_kwh,
+    ):
+        assert f"{value:,.2f}kWh" in text, f"진단 용량 칸에 {value:,.2f}kWh 가 없다"
+    # ★ 실행 용량 칸은 **설계 변수의 사용값**에서 온다 — 리터럴이 아니다.
+    for piece in run_used_values(report):
+        assert piece in text, f"실행 용량 칸에 「{piece}」 가 없다"
+
+
+def test_the_three_kinds_stand_before_the_tables_that_use_them(
+    tmp_path: Path,
+) -> None:
+    """★★ **구분 표가 ①②③ «앞에» 선다** — 뒤에 서면 읽는 순서가 뜻을 못 고친다.
+
+    독자는 표를 위에서 아래로 읽는다. 셋을 가르는 표가 ③ 뒤에 있으면 그 낱말을
+    이미 **자기가 아는 뜻으로** 읽은 뒤다.
+    """
+    text = _dumped(tmp_path)
+    first_table = text.index("① **" + ECONOMIC_SENSITIVITY_TITLE + "**")
+    assert text.index(f"| **{CAPACITY_KIND_DIAGNOSTIC}** |") < first_table, (
+        "구분 표가 ① 뒤에 섰다"
+    )
+    assert text.index(f"| **{CAPACITY_KIND_APPLIED}** |") < first_table
+
+
+def test_the_ess_table_column_names_say_what_kind_of_adoption(tmp_path: Path) -> None:
+    """★★★ ③ 표의 열 이름이 **무엇의 채택인지** 말한다 (검토서 §6 의 1번).
+
+    ⚠ 「채택」이 통째로 사라져야 하는 것은 아니다 — *「채택한 것이 아니다」*
+    처럼 **실행 반영**의 뜻으로 옳게 쓴 자리는 그대로 둔다(지시문 §2-ⓐ).
+    재는 것은 **열 이름 쪽 낱말**이다.
+    """
+    text = _dumped(tmp_path)
+    assert f"{ADOPTED_HEAD} 정격용량" in text, "③ 표에 역산 채택안 열이 없다"
+    assert "★ 채택 정격용량" not in text, (
+        "열 이름이 여전히 맨 「★ 채택」이다 — 그 낱말이 실제로 「이 용량으로 "
+        "돌렸다」로 읽혔다"
+    )
+    assert f"{PER_HOUSEHOLD_HEAD} {ADOPTED_HEAD} 정격용량" in text, (
+        "1가구 열의 이름이 함께 가지 않았다"
+    )
+    assert within_range_head(sweep_where="①의").startswith(ADOPTED_TERM), (
+        "구간 칸이 판정 대상을 「역산 채택안」이라 부르지 않는다"
+    )
