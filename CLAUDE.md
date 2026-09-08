@@ -53,23 +53,24 @@ export PYTHONUTF8=1
 이름을 지어 쓴다**(`<시나리오>-<종류>.md` · 분할이면 `<시나리오>-<종류>-단계별/`).
 둘 다 없으면 표준출력이다 — `DER_SCENARIO_STORE` 와 같은 규약이며 결함이 아니다.
 
-★ **이 기계(사용자 지시 2026-09-08)의 값은 볼트 밑 `ai-output` 이다:**
-
 ```bash
 export PYTHONUTF8=1
-export DER_REPORT_OUT_DIR="D:/Obsidian_mirror/ai-output"
+export DER_REPORT_OUT_DIR="<이 기계의 산출물 디렉터리>"
 ./.venv/Scripts/python.exe -m app.run.report_cli --kind verification                    # 한 덩어리
 ./.venv/Scripts/python.exe -m app.run.report_cli --kind verification --split-stages     # 단계별 + 목차
 ./.venv/Scripts/python.exe -m app.run.report_cli --kind verification --scenario scenario_subsidy_20
 ```
 
+⚠⚠ **실제 값을 이 파일에 적지 마라 — 저장소 밖의 개인 디렉터리다**(사용자 판정
+2026-09-08). 이 파일은 공개 저장소에 커밋되고, 그 값은 기계마다 다르므로 여기 적으면
+**틀린 자리를 다음 기계가 그대로 쓴다.** ⇒ **값을 모르면 사용자에게 물어라.**
+
 ⚠ **`--out` 을 적었으면 환경변수가 그것을 덮지 않는다** — 덮으면 적은 경로가 조용히
 무시되고, 그 침묵이 「썼는데 없다」로 돌아온다.
-⚠ **경로를 소스에 박지 마라.** 그 폴더는 **이 기계에만 있다** — CI·Docker·다른 클론에는
-없으므로 저장소 코드가 아는 사실이 아니다. 이름은 `report_cli.py::REPORT_OUT_DIR_ENV`
-한 곳이 갖고 값은 환경이 준다.
-⚠ **볼트 자리는 `.gitignore` 밖의 남의 디렉터리다** — 리포트가 그리로 나가면 저장소
-`git status` 에 안 보인다. 「산출물이 안 생겼다」로 읽지 말고 그 폴더를 봐라.
+⚠ **경로를 소스에도 박지 마라.** 이름은 `report_cli.py::REPORT_OUT_DIR_ENV` 한 곳이
+갖고 값은 환경이 준다 — CI·Docker·다른 클론에는 그 폴더가 없다.
+⚠ **그 자리가 저장소 밖이면 리포트가 `git status` 에 안 보인다.** 「산출물이 안
+생겼다」로 읽지 말고 그 디렉터리를 봐라.
 
 ## 서버가 떴는지 확인하는 법 — **`/health` 로는 아무것도 증명되지 않는다**
 
