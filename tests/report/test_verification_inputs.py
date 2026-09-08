@@ -54,6 +54,10 @@ from core.casegrid.household_scale import (
     HOUSEHOLD_COUNT_UNSPECIFIED,
 )
 from core.casegrid.profiles import load_daily_shapes
+from core.report.capacity import (
+    ECONOMIC_SENSITIVITY_TITLE,
+    binding_constraint_text,
+)
 from core.report.case_report import CaseReport, build_case_report
 from core.report.dispatch_notes import NO_OPERATING_MODE
 from core.report.verification import render_verification_markdown
@@ -234,6 +238,77 @@ def test_the_capacity_review_and_the_two_back_calculations_are_printed(
         assert finding.label in text, f"설계 변수 {finding.label} 이 빠졌다"
     for point in report.self_sufficiency.points:
         assert point.source_label in text, f"자립 역산의 {point.source_label} 이 빠졌다"
+
+
+# ── R67/WP-N2 — ①표는 **경제성 민감도**이지 적정값을 정하는 표가 아니다 ─────
+#
+# 사용자가 산출물을 읽고 그 표를 반려했다 — *「적정용량 산정은 전력수요에 맞는
+# 설비용량을 산출하는 것이고, 용량 범위 제한이 없어야 하며, 경제성으로 평가하는
+# 것이 아님」*(`docs/decisions-2026-09-08-R67b.md` §1). 아래 둘이 그 판정을
+# 산출물에서 붙든다.
+
+
+def test_the_capacity_sweep_table_does_not_claim_to_decide_the_right_capacity(
+    tmp_path: Path,
+) -> None:
+    """★★★ ①표에 **「적정값이 이 모델 안에서 정해지는가」 칸이 없다** (판정 §2-3).
+
+    그 칸은 경제성 스윕이 적정용량을 정한다고 주장했다. 사용자 판정은 적정용량을
+    **경제성으로 평가하지 않는다**고 정했으므로, 그 칸은 이 표가 질 물음이
+    아니다. ⚠ **표를 없앤 것이 아니다** — 이름이 「경제성 민감도」로 서 있는지도
+    함께 본다(민감도로서는 값이 있다).
+    """
+    text = _dumped(tmp_path)
+
+    assert "적정값이 이 모델 안에서 정해지는가" not in text, (
+        "①표가 여전히 「적정값이 이 모델 안에서 정해지는가」를 인쇄한다 — "
+        "경제성 스윕이 적정용량을 정한다는 주장이며 사용자 판정 R67b §2-3 이 "
+        "그것을 반려했다"
+    )
+    assert ECONOMIC_SENSITIVITY_TITLE in text, (
+        f"①표가 자기 이름({ECONOMIC_SENSITIVITY_TITLE})을 말하지 않는다 — "
+        "표를 지우라는 판정이 아니라 「무엇을 묻는 표인지 말하라」는 판정이다"
+    )
+
+
+def test_the_capacity_sweep_table_prints_the_constraint_that_bound_it(
+    tmp_path: Path,
+) -> None:
+    """★★ ①표가 **「걸린 제약」**을 인쇄한다 — 「예 / 아니오」가 갈린 사유 (판정 §2-4).
+
+    실측(골든 무보조): 태양광은 구간 하단 20 kW 점에서
+    `ess.pv_surplus_profile_kwh` 에 걸려 `bounded` 가 참이었고 저장장치는
+    걸리지 않아 거짓이었다 — 같은 조건의 두 자원이 「예 / 아니오」로 갈려
+    인쇄되면 검토자는 그것을 결함으로 읽는다. **답이 틀린 것이 아니라 판정
+    근거가 표에 없었다.**
+
+    ⚠ **필드 이름을 이 파일에 베끼지 않는다** — 실행이 실제로 걸린
+    `CapacityFinding.binding_fields` 를 읽어 대조한다. 베끼면 제약이 다른 자리로
+    옮겨간 날 이 검사만 옛 이름을 기대한다.
+    ⚠ **걸린 축이 없는 실행에서는 「없음」의 갈래를 본다** — 「없음」 한 말로
+    뭉개면 *내부 최적점이 있어서 없는 것*과 *구간 끝까지 단조여서 없는 것*이
+    구별되지 않고, 그 둘은 검토자에게 반대의 뜻이다.
+    """
+    text = _dumped(tmp_path)
+    report = _report()
+
+    assert "걸린 제약" in text, "①표에 「걸린 제약」 칸이 없다"
+    bound = [f for f in report.capacity_review if f.binding_constraint is not None]
+    assert bound, (
+        "이 골든 실행에서 제약에 걸린 설계 변수가 0 건이다 — 이 검사가 "
+        "아무것도 붙들지 않는다. 걸리는 구성으로 재야 한다"
+    )
+    for finding in bound:
+        for field in finding.binding_fields:
+            assert field in text, (
+                f"{finding.label}: 거부 필드 {field!r} 가 ①표에 없다 — "
+                "「예/아니오」가 갈린 사유가 여전히 화면에서 사라진다"
+            )
+    for finding in report.capacity_review:
+        if finding.binding_constraint is None:
+            assert binding_constraint_text(finding) in text, (
+                f"{finding.label}: 제약이 없는 축의 「없음」 갈래가 표에 없다"
+            )
 
 
 def test_the_unreflected_items_are_printed_with_their_direction(

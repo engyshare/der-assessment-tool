@@ -214,6 +214,16 @@ def test_control_group_the_real_ledger_still_shows_a_shortfall() -> None:
     고치지 않았다** — 이 라운드가 세운 것은 **대장 항목이 아니라 부하의 시각별
     형상**이라 `_LEDGER_VARS` 가 요구하는 키가 늘지 않았다.
     ⚠ **오라클은 이번에도 한 자도 느슨해지지 않았다** — 여전히 완전 일치(`==`)다.
+
+    ## ⚠ R67/WP-N2 — **값은 여덟 번째로 바뀌지 «않았다». 파일만 늘었다**
+
+    태양광 이용률이 소스 상수(`PV_CAPACITY_FACTOR = 0.15`)에서 대장 항목
+    (`capacity_factor.pv_rooftop`)으로 옮겨졌다(사용자 판정 R67 §2). **같은 값을
+    같은 자리로** 옮긴 것이므로 `-199895500` 은 한 원도 움직이지 않았다.
+    ⚠ **그런데 파생 대장은 고쳐야 했다** — `_LEDGER_VARS` 의 스윕 축이 되었으므로
+    `build_level_map()` 이 그 키를 **요구**하고, 없으면 *「대장에 …
+    항목이 없습니다」* 로 거부한다(실측으로 밟았다 — R66/WP-2·WP-5 와 같은 자리).
+    진짜 대장의 항목을 **그대로 복제**했고 값도 폭도 한 자 바꾸지 않았다.
     """
     report = build_case_report(PROBE_SCENARIO_PATH, assumptions_path=REAL_ASSUMPTIONS_PATH)
 

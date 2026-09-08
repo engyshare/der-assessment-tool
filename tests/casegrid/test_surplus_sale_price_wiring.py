@@ -111,6 +111,10 @@ def _level_map(surplus_sale_price: float) -> dict[str, Mapping[str, float]]:
         # 있어야 한다. **끈 값(1.0 = 100%)을 준다** — 사유는
         # `tests/casegrid/test_coincidence_factor_wiring.py` 머리말이 갖는다.
         "coincidence_factor": MappingProxyType({"base": 1.0}),
+        # ⚠ **이용률은 탐침값이다** — R67/WP-N2 가 이 축을 대장으로 올렸다
+        # (`capacity_factor.pv_rooftop`). **종전 소스 상수와 같은 값**을 주어 이
+        # 파일의 수가 그 이동에 한 원도 움직이지 않게 한다.
+        "pv_capacity_factor": MappingProxyType({"base": 0.15}),
         **design_levels(),
     }
 

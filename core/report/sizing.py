@@ -15,20 +15,29 @@
 
 **어느 연간 사용량이 맞는가**(검토서 §7)는 물음으로 남아 있다. 사용자 예시
 (월 600kWh · 연 7,200kWh)와 대장 base(연 3,600kWh)가 두 배 가까이 다르고, 이
-모듈은 어느 쪽도 고르지 않는다 — 둘 다 역산해 나란히 낸다. 이용률도 같다 —
-지금 유일한 값(`core/casegrid/e2e_runner.py::PV_CAPACITY_FACTOR`)은 대장
-항목이 아니라 소스 상수이고(검토서 §7 부수발견), 그 값을 대장으로 올리는
-것은 조사가 선행이라 이 WP 밖이다. 그래서 이 모듈은 이용률을 **인자로만**
-받고 스스로 고르지 않는다.
+모듈은 어느 쪽도 고르지 않는다 — 둘 다 역산해 나란히 낸다. **이용률도 고르지
+않는다** — 값의 소유자는 전제 대장(`capacity_factor.pv_rooftop`)이고 이 모듈은
+그것을 **인자로만** 받는다.
 
-## 탐색 구간을 넓히지 않는다
+⚠ **R67/WP-N2 까지 그 값은 소스 상수였다**(종전 이름은 `e2e_runner` 의
+`PV_CAPACITY_FACTOR`). 역산 **전체가 그 값에 반비례**하는데 사용자가 바꿀
+통로가 없었고, 판정 `docs/decisions-2026-09-08-R67b.md` §3-4 가 그것을 지목해
+대장으로 옮겼다.
+
+## 탐색 구간을 넓히지 않는다 — **그리고 답을 구간 안으로 깎지도 않는다**
 
 역산 용량이 `core/casegrid/ledger_levels.py::_DESIGN_VARS` 의 `pv_capacity_kw`
 탐색 상한을 넘을 수 있다 — 그때 이 모듈은 구간을 넓히지 않고
 `within_search_range=False` 를 값으로 싣는다. 구간을 넓히는 것은 결론 축
 (`core/report/capacity.py` 의 4.4 적정 용량 검토)이 훑는 폭 자체를 바꾸는
-일이라 이 WP 밖이다 — 넘는 점을 지우지도 않는다(`capacity.py` 머리
-독스트링의 *「계산되지 않는 점을 버리지 않는다」* 와 같은 태도).
+일이며, 넘는 점을 지우지도 않는다(`capacity.py` 머리 독스트링의
+*「계산되지 않는 점을 버리지 않는다」* 와 같은 태도).
+
+★★ **그 구간은 «경제성 스윕»의 것이다** (R67/WP-N2 · 판정 §2-2). 사용자
+판정이 *「용량 범위 제한이 없어야 하며」* 이므로 이 역산의 답은 구간과
+무관하게 그대로 제시되고, 「구간 밖」 표시는 *그 스윕이 이 용량을 훑지
+않았다*는 뜻이다. 문면은 `capacity.py::search_range_note` 하나가 갖는다 —
+같은 표를 두 문서가 싣기 때문이다.
 """
 from __future__ import annotations
 
@@ -38,6 +47,11 @@ from typing import Final
 
 from core.contracts.units import HOURS_PER_YEAR
 from core.contracts.validation import ValidationError
+
+# ⚠ **문면 하나를 두 문서가 쓴다** — 「구간 밖」이 무슨 뜻인가를 검증 보고서
+# 2단계와 이 붙임이 같이 적어야 한다(R67/WP-N2 · 판정 §2-2). 정본은 경제성
+# 스윕을 소유한 모듈이며, 여기서 다시 적으면 한쪽만 고쳐진다.
+from core.report.capacity import search_range_note
 
 #: 사용자 예시의 월 사용량 (판정 §2-1 「가」 · 검토서 §7). **대장 값이 아니다** —
 #: 대장(`load.household.annual`)의 base 는 연 3,600kWh 이고 이 예시는 연 7,200kWh 다.
@@ -293,14 +307,19 @@ def self_sufficiency_section(sizing: SelfSufficiencySizing) -> list[str]:
     `### {label}` 소절을 쌓는 자리이므로 같은 층에 나란히 세운다.
 
     이 표는 **진단이지 답이 아니다** — 대장 세 수준과 참고 부하를 나란히
-    역산해 보일 뿐, `_DESIGN_VARS` 탐색 구간도 `PV_CAPACITY_FACTOR` 도 여기서
-    바꾸지 않는다(검토서 §1-⑥). 구간 밖 점도 지우지 않는다 — `capacity_section`
+    역산해 보일 뿐, `_DESIGN_VARS` 탐색 구간도 이용률도 여기서 바꾸지
+    않는다(검토서 §1-⑥). 구간 밖 점도 지우지 않는다 — `capacity_section`
     이 지키는 태도(「계산되지 않는 점을 버리지 않는다」)와 같다.
+
+    ⚠ **칸 이름이 그 구간의 소유자를 말한다** (R67/WP-N2). 종전에는 「탐색
+    구간 안인가」라고만 적어, 이 역산이 **본문 4.4 의 경제성 스윕과 같은
+    구간에 매인 것처럼** 읽혔다 — 사용자 판정은 그 반대다(§2-2).
     """
     lines = [
         "### 경우 「가」 — 100% 에너지 자립에 필요한 용량 (역산)",
         "",
-        "| 연간 사용량의 출처 | 연간 사용량 (kWh) | 필요 용량 (kW) | 탐색 구간 안인가 |",
+        "| 연간 사용량의 출처 | 연간 사용량 (kWh) | 필요 용량 (kW) "
+        "| 4.4 의 경제성 스윕 구간 안인가 |",
         "|---|---|---|---|",
     ]
     for point in sizing.points:
@@ -314,12 +333,15 @@ def self_sufficiency_section(sizing: SelfSufficiencySizing) -> list[str]:
         f"({HOURS_PER_YEAR:,}h × 이용률)",  # noqa: RUF001
         (
             f"- 이용률 {sizing.capacity_factor:.0%} — 출처: {sizing.capacity_factor_source}. "
-            "대장 항목이 아니라 소스 상수이며, 사용자 예시의 이용률과 값이 우연히 같다 — "
-            "그 일치를 근거로 쓸 수 없다"
+            "**그 값이 옳다는 근거는 없다** — 이 사업지의 일사량·경사·방위·음영을 "
+            "재지 않았고 실적 발전량도 없다(대장 항목의 유도 근거가 그 사실을 "
+            "적는다). 이 표의 필요 용량은 그 값에 반비례하므로, 수가 그럴듯해 "
+            "보이는 것을 근거로 쓸 수 없다"
         ),
     ]
     lines += _scale_lines(sizing)
     lines += _mismatch_lines(sizing)
+    lines.append(f"- {search_range_note(sweep_where='본문 4.4')}")
     lines.append(
         "- 이 표는 진단이다 — 이 용량을 채택한 것이 아니다. 채택하려면 탐색 구간·"
         "기준 구성을 바꿔야 하고 그것은 결론축을 움직인다"

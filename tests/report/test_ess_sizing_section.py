@@ -29,6 +29,7 @@ from core.casegrid.ledger_levels import design_variables
 from core.contracts.der import DER
 from core.der.ess import ESS, ESSOperatingMode
 from core.der.pv import PV
+from core.report.capacity import search_range_note
 from core.report.case_report import CaseReport, build_case_report
 from core.report.dispatch_notes import DispatchHour, split_by_direction
 from core.report.ess_sizing import shortfall_kwh_by_step
@@ -331,6 +332,14 @@ def test_a_capacity_beyond_the_search_range_is_printed_as_outside() -> None:
     역산 용량이 `ess_capacity_kwh` 탐색 상한을 넘을 수 있다. 그때 구간을 넓히지
     않고 **「밖이다」를 인쇄한다** — 넓히는 것은 결론축(4.4)이 훑는 폭 자체를
     바꾸는 일이고, 넘는 점을 지우지도 않는다.
+
+    ## ★★ R67/WP-N2 가 여기에 한 줄을 더했다 — **「밖」이 무슨 뜻인가**
+
+    사용자 판정이 *「용량 범위 제한이 없어야 하며」*(판정 R67b §2-2)이므로,
+    「구간 밖」 표시가 *「구간을 넘었으니 못 믿는다」* 로 읽히면 반대가 된다.
+    그 구간은 **경제성 스윕의 것**이고 이 역산의 답은 그것과 무관하게 그대로
+    제시된다 — 값을 구간 안으로 깎는 것이 결함이다. ⚠ 문면을 이 파일에 베끼지
+    않는다: 정본은 `core/report/capacity.py::search_range_note` 다.
     """
     design = next(v for v in design_variables() if v.name == "ess_capacity_kwh")
     # 상한을 확실히 넘도록 결손을 크게 잡는다 — 값이 아니라 **넘김**을 위한 탐침이다.
@@ -346,6 +355,13 @@ def test_a_capacity_beyond_the_search_range_is_printed_as_outside() -> None:
     body = "\n".join(ess_daily_sizing_section(review))
     assert f"구간 상한 {design.high:g}kWh 초과" in body
     assert f"| {ANNUAL_EQUIVALENT_LABEL} | — |" in body
+    assert search_range_note(sweep_where="본문 4.4") in body, (
+        "「구간 밖」이 무슨 뜻인지 적히지 않았다 — 그 표시가 「넘었으니 못 "
+        "믿는다」로 읽히면 사용자 판정(용량 범위 제한을 두지 않는다)과 반대가 된다"
+    )
+    assert f"{design.high:g}" in body and "깎지 않는다" in body, (
+        "역산값을 구간 안으로 깎지 않는다는 진술이 없다"
+    )
 
 
 # ── 탐침 자체 — 「자원에게 되묻는다」가 산식과 같은가 ─────────────────

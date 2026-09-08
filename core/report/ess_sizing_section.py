@@ -68,6 +68,7 @@ from typing import Final
 from core.casegrid.models import SeasonRun
 from core.contracts.der import DER
 from core.der.ess import ESS
+from core.report.capacity import search_range_note
 from core.report.dispatch_notes import (
     DispatchHour,
     build_hourly_profile,
@@ -298,7 +299,8 @@ def ess_daily_sizing_section(review: ESSSizingReview) -> list[str]:
         return lines
     lines += [
         "| 하루 | 연 일수 | 하루 결손 합 (kWh) | 첨두 결손 (kWh) | "
-        "필요 저장용량 (kWh) | 필요 정격출력 (kW) | 탐색 구간 안인가 |",
+        "필요 저장용량 (kWh) | 필요 정격출력 (kW) | "
+        "4.4 의 경제성 스윕 구간 안인가 |",
         "|---|---|---|---|---|---|---|",
     ]
     for season in review.seasons:
@@ -331,6 +333,11 @@ def ess_daily_sizing_section(review: ESSSizingReview) -> list[str]:
     ]
     lines += _binding_lines(review)
     lines += [
+        # ★ 「구간 밖」이 무슨 뜻인가 — 문면의 정본은 `capacity.py` 다
+        # (R67/WP-N2 · 판정 §2-2). 실측에서 겨울 필요 용량이 탐색 상한을 넘어
+        # 「밖」이 붙는데, 그것을 *「넘었으니 못 믿는다」* 로 읽으면 사용자 판정
+        # (*「용량 범위 제한이 없어야 하며」*)과 반대가 된다.
+        f"- {search_range_note(sweep_where='본문 4.4')}",
         "- 이 표는 진단이다 — 이 용량을 채택한 것이 아니다. 역산 결과를 실행에 "
         "되먹이지 않으므로 위 4.4 의 결론축은 이 수에 움직이지 않는다",
         "",

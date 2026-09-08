@@ -25,7 +25,7 @@ R43-F 의 첫 형태가 그 상한을 501줄로 넘겨 `check_file_size --code-s
 이 파일의 세 독스트링이 전부 그 함정을 적고 있다.
 
 ⚠ **`_resource_lines()` 는 함께 오지 않았다.** 그것이 읽는 설비 제원 상수
-(`PV_CAPACITY_FACTOR`·`ESS_RTE_PCT` 등)의 소유자를 리포트 문면이
+(`PV_SELF_CONSUMPTION_RATIO`·`ESS_RTE_PCT` 등)의 소유자를 리포트 문면이
 *「`core/casegrid/e2e_runner.py` 모듈 상수」* 라고 **이름으로 지목**하고 있고
 (`method_sections.py`·`appendix_sections.py` · `test_narrative.py` 가 그 문면을
 붙든다), 상수를 옮기면 그 문면이 거짓이 된다. 문면을 고치면 리포트 매니페스트
@@ -37,8 +37,13 @@ R43-F 의 첫 형태가 그 상한을 501줄로 넘겨 `check_file_size --code-s
 다섯(`ESS_RTE_PCT`·`ESS_SOC_MIN_PCT`·`ESS_SOC_MAX_PCT`·`ESS_EOL_SOH_PCT`·
 `ESS_CYCLES_PER_YEAR`)을 `e2e_runner.py` 가 그 모듈에서 import 해 자기
 이름공간에 두므로(재수출 규약, `check_docstring_references.py` R43·WP-F3),
-리포트 문면도 매니페스트 해시도 움직이지 않았다. `PV_CAPACITY_FACTOR` 는
-그대로 `e2e_runner.py` 것이다.
+리포트 문면도 매니페스트 해시도 움직이지 않았다.
+
+⚠⚠ **이용률은 이제 상수가 아니다** — R67/WP-N2 가 `PV_CAPACITY_FACTOR` 를
+지우고 대장 `capacity_factor.pv_rooftop` 으로 옮겼다(사용자 판정 R67 §2).
+그래서 2.1 표의 이용률 칸은 모듈 상수가 아니라 **세운 자원**에서 읽고, 위
+⚠ 절이 말하는 「옮기면 문면이 거짓이 된다」를 그 라운드가 **문면을 함께
+고쳐서** 지났다(`core/report/method_sections.py` 의 제원 소유자 줄).
 
 ⚠ **러너는 이 함수들을 `_annualise`·`_cost_lines`·`_benefit_lines`·
 `_benefit_line`·`net_operating_flows` 라는 이름으로 계속 부른다** — 밖에서

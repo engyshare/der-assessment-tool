@@ -6,11 +6,17 @@ sizing.py` 가 채웠는지를 잰다.
 """
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 import pytest
+import yaml
 
-from core.casegrid.ledger_levels import build_level_map, design_variables
+from core.casegrid.ledger_levels import (
+    build_level_map,
+    design_variables,
+    ledger_backed_variables,
+)
 from core.contracts.units import HOURS_PER_YEAR
 from core.contracts.validation import ValidationError
 from core.der.pv import PV
@@ -192,21 +198,40 @@ def test_the_report_appendix_carries_the_self_sufficiency_section() -> None:
         )
 
 
-def test_the_capacity_factor_source_prints_as_a_source_constant_not_ledger() -> None:
-    """★ **이용률의 출처가 「소스 상수」로 붙임에 인쇄된다** (R55/WP-2 지시문 5절 7번 · WP-2-fix).
+def test_the_capacity_factor_source_prints_the_ledger_key_it_actually_read() -> None:
+    """★ **이용률의 출처가 「대장 키」로 붙임에 인쇄된다** (R67/WP-N2).
 
-    문면에 `PV_CAPACITY_FACTOR` 와 「대장」이라는 말이 함께 있고, 그 일치를
-    근거로 쓸 수 없다는 경고가 있는지 본다 — 「좋아 보이는 수를 근거처럼
-    인쇄하지 않는다」를 지키는 검사다. 이 소절은 **붙임**에 있다(WP-2-fix).
+    ## 이 검사가 뒤집혔다 — 뒤집힌 것이 요점이다
+
+    R55/WP-2-fix 까지 이 자리는 *「출처가 **소스 상수**로 인쇄된다」* 를 붙들었고
+    문면에 `e2e_runner` 의 상수 이름이 있는지 보았다. R67/WP-N2 가 그 상수를
+    대장(`capacity_factor.pv_rooftop`)으로 옮겼으므로 **그 단언은 이제 거짓을
+    지킨다** — 사용자 판정 R67 §2(*「모든 수치는 추후 변경 가능」*)와
+    `docs/decisions-2026-09-08-R67b.md` §3-4 가 그 이동을 지시했다.
+
+    ⚠ **느슨하게 하지 않았다** — 지키는 것을 바꿨다: ⓐ 인쇄되는 키가 **이
+    실행이 실제로 읽은 그 키**인가(대장을 다시 읽어 대조한다 · 문자열을 여기
+    베끼지 않는다) ⓑ *「그 값이 옳다는 근거는 없다」* 는 경고가 **남아 있는가**.
+    ⓑ 를 지우면 대장으로 옮긴 것이 값의 신뢰도를 올린 것처럼 읽힌다 — 대장
+    항목 자신이 `confidence: 가정` · `source: null` 이다.
     """
     report = build_case_report(
         _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
     )
     _body, appendix = render_markdown(report).split("# 붙임", 1)
+    ledger_key = ledger_backed_variables()["pv_capacity_factor"]
 
-    assert "PV_CAPACITY_FACTOR" in appendix
-    assert "대장" in appendix
-    assert "근거로 쓸 수 없다" in appendix
+    assert ledger_key in appendix, (
+        f"이용률의 대장 키 {ledger_key!r} 가 붙임에 없다 — 출처 문면이 실행이 "
+        "읽은 자리를 가리키지 않는다"
+    )
+    assert report.self_sufficiency.capacity_factor == pytest.approx(
+        build_level_map(_ASSUMPTIONS)["pv_capacity_factor"]["base"]
+    ), "역산이 대장의 값을 쓰지 않았다 — 출처 문면만 대장을 가리킨다"
+    assert "근거로 쓸 수 없다" in appendix, (
+        "「그 값이 옳다는 근거는 없다」 경고가 사라졌다 — 대장 등재가 신뢰도를 "
+        "올린 것처럼 읽힌다"
+    )
 
 
 def test_a_point_outside_the_range_says_which_side_it_fell_off() -> None:
@@ -366,4 +391,109 @@ def test_an_unspecified_site_size_is_unchanged_to_the_last_element() -> None:
     assert after == before, "미지정 실행이 배선 전과 달라졌다"
     assert all("호" not in point.source_label for point in after.points), (
         "미지정인데 점 이름에 단지 규모가 붙었다"
+    )
+
+
+# ── R67/WP-N2 — 이용률이 **대장에서** 오는가 · 그리고 축은 움직이지 않았는가 ──
+#
+# 판정 `docs/decisions-2026-09-08-R67b.md` §3-4 가 지목한 결손: 역산 **전체가**
+# 이용률에 반비례하는데 그 값이 소스 상수라 사용자가 바꿀 통로가 없었다.
+
+
+def _report_with_capacity_factor(value: float | None):
+    """대장 **오버라이드**로 이용률을 흔들어 돌린다.
+
+    ⚠ **리터럴이나 전용 인자로 흔들지 않는다** — 사용자가 실제로 지나는 통로가
+    대장 오버라이드이고(`app/services/ui_run.py::run_ui_case`), 그 통로를 재지
+    않으면 *「대장에 올렸다」* 가 화면에서 참인지 알 수 없다. 관용구는
+    `tests/report/test_load_shift_wired.py::_report` 와 같다.
+    ⚠ **골든 픽스처를 고치지 않는다** — 쓰는 곳은 임시 디렉터리 안이다.
+    """
+    scenario = _GOLDEN / "scenario_unsubsidized.yaml"
+    fields: dict[str, object] = (
+        yaml.safe_load(scenario.read_text(encoding="utf-8")) or {}
+    )
+    if value is not None:
+        fields["assumption_overrides"] = [
+            {
+                "key": ledger_backed_variables()["pv_capacity_factor"],
+                "value": value,
+                "reason": "이 검사가 축을 흔든다",
+            }
+        ]
+    with tempfile.TemporaryDirectory() as workspace:
+        path = Path(workspace) / scenario.name
+        path.write_text(
+            yaml.safe_dump(fields, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+        return build_case_report(path, assumptions_path=_ASSUMPTIONS)
+
+
+def _base_point(report) -> float:
+    """대장 base 부하의 역산 용량(kW) — 점 이름으로 찾는다."""
+    return next(
+        point.required_capacity_kw
+        for point in report.self_sufficiency.points
+        if point.source_label.startswith("대장 base")
+    )
+
+
+def test_shaking_the_capacity_factor_in_the_ledger_moves_the_back_calculation() -> None:
+    """★★★ **대장에서 이용률을 바꾸면 역산의 답이 따라 움직인다** (R67/WP-N2).
+
+    이것이 이 이동의 요점이다 — 종전에는 소스 상수였으므로 사용자가 무엇을
+    고쳐도 147.23 kW 가 그대로 나왔다. **두 점 이상**을 재고, 방향까지 본다:
+    필요 용량은 이용률에 **반비례**하므로 이용률을 올리면 필요 용량이 줄어야
+    한다. 부호만 맞고 크기가 틀리는 배선(예: 비례로 걸린 경우)을 잡기 위해
+    **곱까지** 대조한다.
+
+    ⚠ **기대값을 여기 적지 않는다** — `연간 부하 ÷ (8,760h × 이용률)` 이
+    `required_pv_capacity_kw` 의 정의이므로, 같은 부하에서 두 점의 곱
+    (`용량 × 이용률`)이 같아야 한다. 리터럴을 적으면 대장 폭이 바뀌는 날
+    이 검사만 낡는다.
+    """
+    levels = build_level_map(_ASSUMPTIONS)["pv_capacity_factor"]
+    low, high = float(levels["low"]), float(levels["high"])
+    assert low < high, f"대장 감도 폭이 서지 않았다 — {dict(levels)}"
+
+    at_low = _report_with_capacity_factor(low)
+    at_high = _report_with_capacity_factor(high)
+
+    assert at_low.self_sufficiency.capacity_factor == pytest.approx(low)
+    assert at_high.self_sufficiency.capacity_factor == pytest.approx(high)
+
+    kw_low, kw_high = _base_point(at_low), _base_point(at_high)
+    assert kw_low > kw_high, (
+        f"이용률 {low} → {kw_low:.2f}kW · {high} → {kw_high:.2f}kW 다 — "
+        "이용률을 올렸는데 필요 용량이 줄지 않았다(반비례가 아니다)"
+    )
+    assert kw_low * low == pytest.approx(kw_high * high, rel=1e-9), (
+        "두 점의 `용량 * 이용률` 이 다르다 — 역산이 이용률에 반비례로 걸리지 "
+        "않았다(부하가 함께 움직였을 수도 있다)"
+    )
+
+
+def test_the_default_ledger_run_leaves_the_conclusion_axis_where_it_was() -> None:
+    """★★ **값을 옮겼을 뿐이므로 결론축이 움직이지 않는다** (R67/WP-N2 조건).
+
+    사용자 판정 R67 §2 는 *「현재 설정된 값을 사용하되」* 이므로 이 이동은
+    **같은 값을 같은 자리로** 옮기는 일이다. 축이 움직이면 배선이 틀린 것이다.
+
+    ⚠ **기대값을 이 파일에 베끼지 않는다** — 골든 픽스처의 `expected_values`
+    를 읽어 대조한다.
+    ⚠ **`tests/golden` 과 겹치는 것을 숨기지 않는다.** 그쪽도 같은 수를 붙들며,
+    이용률 `base` 를 고치는 라운드는 두 검사가 함께 빨간불이 된다. 이 검사가
+    더하는 것은 **사유의 이름**이다: 실패 문면이 *「이용률을 대장으로 옮긴
+    것이 축을 움직였다」* 를 가리키므로 다음 사람이 어디를 볼지 안다.
+    """
+    scenario = _GOLDEN / "scenario_unsubsidized.yaml"
+    expected = yaml.safe_load(scenario.read_text(encoding="utf-8"))["expected_values"]
+    report = _report_with_capacity_factor(None)
+
+    assert report.metrics["npv"] == pytest.approx(float(expected["npv_won"])), (
+        f"대장 기본값으로 돈 실행의 결론축이 {report.metrics['npv']:,.0f}원이다 "
+        f"— 골든은 {float(expected['npv_won']):,.0f}원이다. 이용률을 대장으로 "
+        "옮긴 배선이 값을 함께 바꿨는지 보라(같은 값을 같은 자리로 옮기는 "
+        "일이었다)"
     )

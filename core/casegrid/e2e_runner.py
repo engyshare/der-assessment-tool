@@ -159,7 +159,6 @@ __all__ = (
     "DAYS_PER_YEAR",
     "FORFEITED_SELF_CONSUMPTION_TAG",
     "HOURS_PER_YEAR",
-    "PV_CAPACITY_FACTOR",
     "net_operating_flows",
     "run_single_case_e2e",
 )
@@ -208,7 +207,13 @@ HOURS_PER_YEAR = DAYS_PER_YEAR * STEPS_PER_DAY
 # 케이스를 다 돌려도 3kW·10kWh 한 값이었다 — 리포트가 *「이 용량이 맞는가」*
 # 를 묻지도 답하지도 못한 이유다. 기본값을 여기 남기지 않는 것이 요점이다:
 # 남기면 수준표를 고쳐도 러너가 옛 용량을 쓰고 **NPV 만 조용히 달라진다**.
-PV_CAPACITY_FACTOR = 0.15
+# ⚠ **이용률도 여기 없다** — `PV_CAPACITY_FACTOR = 0.15` 모듈 상수를
+# R67/WP-N2 가 지웠다. 대장 `capacity_factor.pv_rooftop` 에서 `level_map` 으로
+# 온다(사용자 판정 R67 §2 「모든 수치는 추후 변경 가능」 ·
+# `docs/decisions-2026-09-08-R67b.md` §3-4) — 아래 고정 O&M 과 **같은 사유**로
+# 기본값을 남기지 않았다. 그 값을 읽던 자리가 셋이었고(러너의 발전량 · 2.1 표의
+# 문면 · 자립 역산의 역수) 그중 어느 것도 사용자가 바꿀 통로를 갖지 못했다.
+
 #: ⚠ **고정 O&M 은 여기 없다** — `PV_FIXED_OM_WON_PER_YEAR` 모듈 상수를
 #: R51/WP-2 가 지웠다. 대장 `opex.pv.fixed_om` 에서 `level_map` 으로 온다
 #: (사용자 판정 §2, `docs/decisions-2026-09-01-R51.md`) — 소스에 기본값을
@@ -809,10 +814,17 @@ def run_single_case_e2e(
     # `PLR0915`(이 함수의 statement 상한 50) 여유가 0 이고, 셋 다 `_resolve()`
     # 스칼라 조회다. ⚠ **여기서 곱하지 않는다** — 곱하는 자리는
     # `_site_load_kw` 하나이며 그 독스트링이 *어디에 곱하면 안 되는가*를 갖는다.
-    ess_pcs_capex, ess_pcs_share, coincidence_factor = (
+    # ★★★ **R67/WP-N2 가 태양광 이용률을 이 대입에 얹었다**
+    # (`capacity_factor.pv_rooftop` · 사용자 판정 R67 §2). 종전에는
+    # `PV_CAPACITY_FACTOR = 0.15` 모듈 상수였다 — 새 statement 를 만들지 않는
+    # 이유는 위 셋과 같고(`PLR0915` 여유가 0 이다), 넷 다 `_resolve()` 스칼라
+    # 조회다. ⚠ **여기서 곱하거나 뒤집지 않는다** — 발전량은 `PV(...)` 가
+    # 곱하고, 자립 역산의 **역수**는 `core/report/sizing.py` 가 짓는다.
+    ess_pcs_capex, ess_pcs_share, coincidence_factor, pv_capacity_factor = (
         _resolve(case_values.get("ess_pcs_unit_cost", "base"), "ess_pcs_unit_cost", level_map),
         _resolve(case_values.get("ess_pcs_share", "base"), "ess_pcs_share", level_map),
         _resolve(case_values.get("coincidence_factor", "base"), "coincidence_factor", level_map),
+        _resolve(case_values.get("pv_capacity_factor", "base"), "pv_capacity_factor", level_map),
     )
 
     # 1·2. Resources & Dispatch — ★★★ **계절 넷의 대표일을 각각 돌려 합산한다**
@@ -835,7 +847,7 @@ def run_single_case_e2e(
         engine=engine, daily_shapes=daily_shapes, case_values=case_values,
         horizon_years=horizon_years,
         steps_per_day=STEPS_PER_DAY, seconds_per_hour=SECONDS_PER_HOUR,
-        pv_capacity_kw=pv_capacity_kw, pv_capacity_factor=PV_CAPACITY_FACTOR,
+        pv_capacity_kw=pv_capacity_kw, pv_capacity_factor=pv_capacity_factor,
         pv_capex=pv_capex, pv_inverter_share=pv_inverter_share,
         pv_fixed_om=pv_fixed_om, pv_self_consumption_ratio=PV_SELF_CONSUMPTION_RATIO,
         price_escalation_rate=PRICE_ESCALATION_RATE,
@@ -1121,6 +1133,7 @@ def run_single_case_e2e(
     resource_lines = _resource_lines(
         pv, pv_capex, ess_fleet, ess_capex, benefit_lines,
         ess_pcs_capex=ess_pcs_capex, ess_pcs_share=ess_pcs_share,
+        pv_capacity_factor=pv_capacity_factor,
         self_consumption_ratio=measured_self_consumption_ratio(
             pv, ctx, run.pv_surplus_profile_kwh
         ),
@@ -1299,6 +1312,13 @@ def _resource_lines(
     #: 두 단가는 호출부에서 **이름으로 구별돼야** 서로 바뀌어도 드러난다.
     ess_pcs_capex: float,
     ess_pcs_share: float,
+    #: ★★ 태양광 이용률 — **대장에서 온 값을 호출자가 넘긴다** (R67/WP-N2).
+    #: ⚠⚠ **`pv.capacity_factor` 에서 읽으면 안 된다.** 이 러너는 PV 를 이용률이
+    #: 아니라 **8,760 발전 시계열**로 세우므로(`core/casegrid/seasonal_dispatch.py`
+    #: 가 대표일 형상을 펼친다) 그 속성은 `None` 이고, 그것을 인쇄하면 2.1 표의
+    #: 이용률 칸이 **「미지정」으로 사라진다** — R67/WP-N2 가 실물로 밟았다
+    #: (`.orch/R67/result_N2.md` ②). 시계열을 만든 수가 곧 이 값이다.
+    pv_capacity_factor: float,
     self_consumption_ratio: float,
     pv_allocation_priority: PVAllocationPriority,
 ) -> tuple[ResourceLine, ...]:
@@ -1331,13 +1351,16 @@ def _resource_lines(
             # ★ **세운 자원에서 읽는다.** 모듈 상수에서 읽으면 용량 스윕이
             # 도는 동안에도 리포트가 기준 용량을 계속 인쇄한다 — 값이 바뀌어도
             # 아무 예외가 나지 않는 형태다.
+            # ★★ **이용률은 대장에서 온 값을 인자로 받는다** (R67/WP-N2) —
+            # 위 `pv_capacity_factor` 인자의 ⚠⚠ 가 *왜 자원에서 읽지 않는가*를
+            # 갖는다(이 러너의 PV 는 시계열로 세워져 그 속성이 `None` 이다).
             # ★★ **자가소비율은 `PV_SELF_CONSUMPTION_RATIO`(모듈 상수)가 아니라
             # 본 실행의 실측치를 받는다** (판정 §4). `BATTERY_FIRST` 갈래에서만
             # 그 상수가 계속 쓰이며(`pv_allocation._resolve_ess_dispatch_inputs`
             # 독스트링), 여기 인쇄되는 값은 갈래와 무관하게 이 실행이 실제로
             # 배분한 결과다 — 「(본 실행 실측)」 문면이 그 사실을 표시한다.
             capacity=(
-                f"{pv.capacity_kw:g} kW · 이용률 {PV_CAPACITY_FACTOR:.0%} · "
+                f"{pv.capacity_kw:g} kW · 이용률 {pv_capacity_factor:.0%} · "
                 f"자가소비율 {self_consumption_ratio:.0%} (본 실행 실측)"
             ),
             # ★★ **선언(전량 판매)과 본 실행 배분 순서를 함께 적는다** (판정

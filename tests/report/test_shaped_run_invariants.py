@@ -26,7 +26,6 @@ import yaml  # type: ignore[import-untyped]
 from core.casegrid.e2e_runner import (
     DAYS_PER_YEAR,
     HOURS_PER_YEAR,
-    PV_CAPACITY_FACTOR,
     run_single_case_e2e,
 )
 from core.casegrid.ledger_levels import build_level_map
@@ -92,7 +91,16 @@ def test_a_shape_moves_energy_but_does_not_create_it() -> None:
         daily_shapes=load_daily_shapes(),
         annual_load_kwh=_load_kwh(),
     )
-    expected = levels["pv_capacity_kw"]["base"] * PV_CAPACITY_FACTOR * HOURS_PER_YEAR
+    # ⚠ **이용률도 대장에서 읽는다** (R67/WP-N2). 종전에는 러너의 모듈 상수
+    # `PV_CAPACITY_FACTOR` 를 읽었는데, 그 값이 대장 항목
+    # (`capacity_factor.pv_rooftop`)이 된 뒤로는 그 이름이 사라졌다 —
+    # 리터럴 0.15 를 여기 적으면 그것이 사본이 되고 대장을 고쳐도 이 검사만
+    # 옛 값을 기대한다.
+    expected = (
+        levels["pv_capacity_kw"]["base"]
+        * levels["pv_capacity_factor"]["base"]
+        * HOURS_PER_YEAR
+    )
 
     for tag, outcome in (("평탄", plain), ("형상", shaped)):
         daily = sum(outcome.dispatch.per_resource["e2e-pv"].electric)

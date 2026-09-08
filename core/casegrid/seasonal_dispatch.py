@@ -257,14 +257,19 @@ def build_and_dispatch_case(
 ) -> CaseDispatch:
     """자원을 세우고 **계절마다 돌려** 연간등가 하루로 접는다.
 
-    ## ⚠ 제원 상수 다섯을 인자로 받는 이유
+    ## ⚠ 제원 상수 넷을 인자로 받는 이유
 
-    `STEPS_PER_DAY`·`SECONDS_PER_HOUR`·`PV_CAPACITY_FACTOR`·
-    `PRICE_ESCALATION_RATE`·`PV_SELF_CONSUMPTION_RATIO` 는 **`e2e_runner.py` 의
-    모듈 상수**이고, 리포트 문면이 그 소유자를 *「`core/casegrid/e2e_runner.py`
-    모듈 상수」* 라고 **이름으로 지목한다**(`core/casegrid/operating_lines.py`
-    머리말의 ⚠ 절이 그 함정을 적어 두었다 — 옮기면 그 문면이 거짓이 되고 리포트
-    매니페스트 해시가 움직인다). 그래서 **옮기지 않고 받는다.**
+    `STEPS_PER_DAY`·`SECONDS_PER_HOUR`·`PRICE_ESCALATION_RATE`·
+    `PV_SELF_CONSUMPTION_RATIO` 는 **`e2e_runner.py` 의 모듈 상수**이고, 리포트
+    문면이 그 소유자를 *「`core/casegrid/e2e_runner.py` 모듈 상수」* 라고
+    **이름으로 지목한다**(`core/casegrid/operating_lines.py` 머리말의 ⚠ 절이 그
+    함정을 적어 두었다 — 옮기면 그 문면이 거짓이 되고 리포트 매니페스트 해시가
+    움직인다). 그래서 **옮기지 않고 받는다.**
+
+    ⚠⚠ **`pv_capacity_factor` 는 다섯째였고 이제 대장에서 온다** — R67/WP-N2 가
+    소스 상수를 지우고 `capacity_factor.pv_rooftop` 으로 옮겼다(사용자 판정
+    R67 §2). **이 함수의 인자는 한 줄도 바뀌지 않았다**: 러너가 `level_map`
+    에서 읽어 같은 이름으로 넘긴다.
 
     ## 도는 차례
 

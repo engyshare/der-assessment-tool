@@ -31,8 +31,9 @@
 """
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 
 from core.casegrid.ledger_levels import DesignVariable, design_variables
 from core.contracts.validation import ValidationError
@@ -107,6 +108,30 @@ class CapacityFinding:
     best_value: float | None
     #: 처음 걸린 자원 제약. 없으면 `None`.
     binding_constraint: str | None
+
+    @property
+    def binding_fields(self) -> tuple[str, ...]:
+        """제약이 **거부한 입력 필드**들 — *「무엇을 함께 바꿔야 하는가」*.
+
+        ⚠ **이 판정이 두 자리에 필요하다** — 붙임 10 의 「용량을 제한한 설계
+        제약」 줄과 2단계 ①표의 「걸린 제약」 칸이다(R67/WP-N2). 같은 집계를
+        두 곳에 적으면 한쪽만 고쳐지고, 그때 두 문서가 **서로 다른 제약을
+        말하는 것처럼** 읽힌다 — 이 저장소가 형상·기준선·REC 에서 이미 밟은
+        형태다.
+
+        ⚠ **계산 실패(`by_design=False`)의 필드는 세지 않는다** — 결함은
+        설계의 상한을 말해 주지 않는다(`build_capacity_review` 의 `except`
+        갈래 주석이 같은 판단을 적는다).
+        """
+        return tuple(
+            sorted({
+                point.blocked_field
+                for point in self.points
+                if point.conclusion is None
+                and point.by_design
+                and point.blocked_field
+            })
+        )
 
     @property
     def bounded(self) -> bool:
@@ -300,6 +325,91 @@ UNBOUNDED_NOTE = (
     "사업의 적정값이 아니다"
 )
 
+#: ★ 이 표가 **무엇을 묻는 표인가** (R67/WP-N2 · 사용자 판정
+#: `docs/decisions-2026-09-08-R67b.md` §2-3).
+#:
+#: 종전에 2단계 ①표는 「구간 내 최선」 옆에 *「적정값이 이 모델 안에서
+#: 정해지는가」* 를 인쇄했다 — 즉 **경제성 스윕이 적정용량을 정한다**고
+#: 주장했다. 사용자 판정은 *「적정용량 산정은 전력수요에 맞는 설비용량을
+#: 산출하는 것이고 … 경제성으로 평가하는 것이 아님」* 이다. 그래서 이 표의
+#: 이름과 머리말이 **경제성 민감도**임을 스스로 말한다.
+ECONOMIC_SENSITIVITY_TITLE = "경제성 민감도"
+
+#: 「구간 내 최선」이 **구간의 끝**임을 같은 칸에서 말하는 꼬리말 (판정 §2-2).
+#: 단조인 축에서 그 값은 **탐색 구간을 고른 사람의 답**이다 — 구간을 300 으로
+#: 넓히면 답이 300 이 된다. ⚠ **수를 지우는 것이 아니라 「그것이 무엇인지」를
+#: 적는다.**
+#: ⚠ **`MappingProxyType` 이다** — `NFR-205` 가 모듈 수준 가변 컨테이너를 금한다
+#: (읽기 전용으로 쓰고 있어도 위반이다 · `tests/ci/test_ci_gates.py::
+#: test_no_module_or_class_level_mutable_containers` 가 실제로 잡았다).
+_BOUND_NOTE: Mapping[str, str] = MappingProxyType(
+    {
+        SHAPE_INCREASING: "탐색 구간의 상한",
+        SHAPE_DECREASING: "탐색 구간의 하한",
+    }
+)
+
+#: 「걸린 제약」 칸에 제약이 **없을 때**. ⚠ 「없음」 한 말로 뭉개지 않는다 —
+#: 내부 최적점이 있어서 없는 것과 구간 끝까지 단조여서 없는 것은 검토자에게
+#: **반대의 뜻**이다(앞은 적정값이 정해진 것이고 뒤는 정해지지 않은 것이다).
+NO_BINDING_INTERIOR = "없음 — 구간 안에 최적점이 있다"
+NO_BINDING_MONOTONE = "없음 — 구간 끝까지 단조"
+NO_BINDING_UNDECIDED = "없음 — 계산된 점이 2개 미만이라 판정하지 못했다"
+
+
+def search_range_note(*, sweep_where: str) -> str:
+    """★ 역산 표의 「구간 안인가」 칸이 **무엇을 말하는가** (R67/WP-N2 · 판정 §2-2).
+
+    실측: 겨울 저장장치 필요 용량이 917.2 kWh 인데 경제성 스윕의 탐색 상한이
+    600 kWh 라 「구간 밖」이 붙는다. **값은 잘리지 않았고 표시만 붙는다** —
+    그 자체는 옳다. 그런데 그 표시가 *「구간을 넘었으니 못 믿는다」* 로 읽히면
+    사용자 판정(*「용량 범위 제한이 없어야 하며」*)과 반대가 된다.
+
+    ⚠ **한 문면을 두 문서가 쓴다** — 검증 보고서 2단계와 심의용 리포트 붙임
+    10 이 같은 표를 싣고, 경제성 스윕이 서는 자리만 다르다(`sweep_where`).
+    두 곳에 적으면 한쪽만 고쳐지고 그때 두 문서가 다른 말을 한다.
+    """
+    return (
+        "⚠ **역산의 답은 탐색 구간에 매이지 않는다** — 그 구간은 "
+        f"{sweep_where}({ECONOMIC_SENSITIVITY_TITLE})가 훑은 폭이고, 「밖」은 "
+        "*그 스윕이 이 용량을 훑지 않았다*는 뜻이지 이 답을 못 믿는다는 뜻이 "
+        "아니다. **답을 구간 안으로 깎지 않는다** — 용량에 범위 제한을 두지 "
+        "않는 것이 사용자 판정이다"
+    )
+
+
+def best_value_text(finding: CapacityFinding, *, missing: str) -> str:
+    """「구간 내 최선」 칸 — 단조면 **그 값이 구간의 끝임**을 함께 적는다."""
+    if finding.best_value is None:
+        return missing
+    text = f"{finding.best_value:g} {finding.unit}"
+    note = _BOUND_NOTE.get(finding.shape)
+    return f"{text} ({note})" if note else text
+
+
+def binding_constraint_text(finding: CapacityFinding) -> str:
+    """★ 「걸린 제약」 칸 — 종전 「적정값이 … 정해지는가」 자리 (판정 §2-4).
+
+    그 칸이 모순으로 읽힌 이유는 답이 틀렸기 때문이 아니라 **판정 근거가
+    표에 없었기** 때문이다: `bounded` 는 *「내부 최적점이 있거나 제약에
+    걸리면」* 참인데, 태양광은 구간 하단에서 **제약에 걸려** 참이었고
+    저장장치는 걸리지 않아 거짓이었다. 같은 조건의 두 자원이 「예 / 아니오」로
+    갈려 인쇄되면 검토자는 그것을 결함으로 읽는다.
+
+    ⚠ **필드를 먼저 적는다** — 거부 원문은 자원이 던진 문장이고, *「이 용량을
+    쓰려면 무엇을 함께 바꿔야 하는가」* 에 답하는 것은 필드다(`_blocked_note`
+    가 같은 판단을 적는다).
+    """
+    if finding.binding_constraint is None:
+        if finding.shape == SHAPE_INTERIOR:
+            return NO_BINDING_INTERIOR
+        if finding.shape == SHAPE_UNDECIDED:
+            return NO_BINDING_UNDECIDED
+        return NO_BINDING_MONOTONE
+    fields = " · ".join(f"`{name}`" for name in finding.binding_fields)
+    head = f"{fields} — " if fields else ""
+    return f"{head}{finding.binding_constraint}"
+
 
 def _won(value: float) -> str:
     return f"{value:,.0f}원"
@@ -400,15 +510,10 @@ def capacity_appendix(findings: tuple[CapacityFinding, ...]) -> list[str]:
             # 들고 있고, 같은 문장을 두 줄에 인쇄하면 검토자는 서로 다른 두
             # 제약으로 읽는다. 이 줄이 답하는 것은 *「어느 제원이 용량을
             # 제한했는가」* 이며 그것은 필드다.
-            fields = sorted(
-                {
-                    point.blocked_field
-                    for point in finding.points
-                    if point.conclusion is None
-                    and point.by_design
-                    and point.blocked_field
-                }
-            )
+            # ⚠ **집계는 `CapacityFinding.binding_fields` 가 진다** (R67/WP-N2) —
+            # 2단계 ①표의 「걸린 제약」 칸이 같은 판정을 필요로 했고, 두 곳에
+            # 적으면 한쪽만 고쳐진다(그 속성의 독스트링 ⚠ 참조).
+            fields = finding.binding_fields
             listed = " · ".join(f"`{name}`" for name in fields) if fields else "—"
             lines.append(
                 f"- 용량을 제한한 {DESIGN_CONSTRAINT} — 거부 필드 {listed} "

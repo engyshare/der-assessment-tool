@@ -32,7 +32,6 @@ from core.casegrid.e2e_runner import (
     DAYS_PER_YEAR,
     HOURS_PER_YEAR,
     PRICE_ESCALATION_RATE,
-    PV_CAPACITY_FACTOR,
     PV_SELF_CONSUMPTION_RATIO,
     SECONDS_PER_HOUR,
     STEPS_PER_DAY,
@@ -177,7 +176,11 @@ def test_the_annual_energy_is_what_the_asset_says_not_what_the_seasons_make(
         _seasonal_path(tmp_path, generation=_GENERATION_SEASONS, load=_LOAD_SEASONS)
     )
     expected = {
-        "e2e-pv": _levels()["pv_capacity_kw"]["base"] * PV_CAPACITY_FACTOR * HOURS_PER_YEAR,
+        "e2e-pv": (
+            _levels()["pv_capacity_kw"]["base"]
+            * _levels()["pv_capacity_factor"]["base"]
+            * HOURS_PER_YEAR
+        ),
         "e2e-load": -_load_kwh(),
     }
     for resource, want in expected.items():
@@ -441,7 +444,7 @@ def _deployed_case(**overrides: object) -> object:
         "steps_per_day": STEPS_PER_DAY,
         "seconds_per_hour": SECONDS_PER_HOUR,
         "pv_capacity_kw": levels["pv_capacity_kw"]["base"],
-        "pv_capacity_factor": PV_CAPACITY_FACTOR,
+        "pv_capacity_factor": levels["pv_capacity_factor"]["base"],
         "pv_capex": levels["pv_unit_cost"]["base"],
         "pv_inverter_share": levels["pv_inverter_share"]["base"],
         "pv_fixed_om": levels["pv_fixed_om"]["base"],

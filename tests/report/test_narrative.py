@@ -1305,3 +1305,36 @@ def test_appendix_one_prints_the_change_table_even_when_nothing_changed() -> Non
         "사유가 표에 없다 (FR-602-AC3)"
     )
     assert NO_OVERRIDE not in table, "변경이 1건인데 「없음」 행이 남아 있다"
+
+
+def test_the_spec_owner_line_no_longer_calls_the_capacity_factor_a_constant() -> None:
+    """★★ 붙임 4 의 **제원 소유자 줄이 이용률을 「모듈 상수」라 부르지 않는다** (R67/WP-N2).
+
+    R67/WP-N2 가 `PV_CAPACITY_FACTOR` 를 대장(`capacity_factor.pv_rooftop`)으로
+    옮겼다. 그 뒤로 이 줄이 이용률을 러너 모듈 상수의 것이라 적으면 **거짓**이며,
+    검토자는 이용률의 출처를 대장에서 찾다가 「없다」로 읽는다 — R43-H 가
+    「금액인 고정 운영비」를 이름으로 적어 넣은 것과 **같은 결함, 반대 방향**이다
+    (그 항의 경위는 `core/report/method_sections.py` 의 그 줄 옆 ★ 가 갖는다).
+
+    ⚠ **소유자 줄 자체를 지우라는 것이 아니다** — 정격출력·수명 등 순수 제원과
+    고정 운영비는 여전히 모듈 상수의 것이므로 그 줄은 남아야 한다.
+    ⚠ 이용률의 **값**이 어디서 오는지는 `tests/report/test_sizing.py` 가 붙든다.
+    여기서 재는 것은 *리포트가 소유자를 옳게 부르는가* 하나다.
+    """
+    report = build_case_report(
+        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    owner_line = next(
+        line
+        for line in resource_detail_section(report.basis)
+        if line.startswith("- 그 밖의 제원 소유자")
+    )
+
+    assert "이용률" not in owner_line, (
+        f"제원 소유자 줄이 여전히 이용률을 말한다 — {owner_line!r}. 그 값은 "
+        "이제 전제 대장 항목이다(R67/WP-N2)"
+    )
+    assert "고정 운영비" in owner_line, (
+        "소유자 줄에서 고정 운영비가 사라졌다 — 그것은 여전히 모듈 상수의 "
+        "것이며, 뭉개면 R43-H 가 고친 결함으로 되돌아간다"
+    )

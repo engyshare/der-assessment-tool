@@ -82,7 +82,13 @@ from core.casegrid.load_shift import (
 )
 from core.casegrid.models import SeasonRun
 from core.report._format import NO_VALUE, _num, _won
-from core.report.capacity import UNBOUNDED_NOTE, CapacityFinding
+from core.report.capacity import (
+    ECONOMIC_SENSITIVITY_TITLE,
+    CapacityFinding,
+    best_value_text,
+    binding_constraint_text,
+    search_range_note,
+)
 from core.report.case_report import CaseReport
 from core.report.dispatch_notes import resolved_operating_mode
 from core.report.ess_sizing_section import ESSSizingReview
@@ -330,12 +336,30 @@ def execution_input_lines(report: CaseReport) -> list[str]:
 
 
 def _capacity_table(findings: tuple[CapacityFinding, ...]) -> list[str]:
-    """설계 변수 스윕 표 — **점이 없어도 표를 지우지 않는다.**"""
+    """**경제성 민감도** 표 — 점이 없어도 표를 지우지 않는다.
+
+    ## ★★★ 이 표는 「얼마가 적정한가」에 답하지 않는다 (R67/WP-N2)
+
+    종전 마지막 칸은 *「적정값이 이 모델 안에서 정해지는가」* 였다. 사용자가
+    산출물을 읽고 그것을 반려했다 — *「적정용량 산정은 전력수요에 맞는
+    설비용량을 산출하는 것이고, 용량 범위 제한이 없어야 하며, 경제성으로
+    평가하는 것이 아님」*(`docs/decisions-2026-09-08-R67b.md` §1). 그 칸은
+    **이 표가 질 물음이 아니다.**
+
+    그 자리에 **「걸린 제약」**을 인쇄한다. 정보를 지우는 것이 아니라 *맞는
+    물음*으로 바꾸는 것이다 — 종전 「예 / 아니오」가 모순으로 읽힌 이유가
+    **판정 근거(걸린 제약)가 표에 없었던 것**이기 때문이다(판정 §2-4 ·
+    `capacity.py::binding_constraint_text` 독스트링).
+
+    ⚠ **`bounded` 속성을 지우지 않았다** — 그 판정(내부 최적점 · 제약)은
+    참이고 본문 4.4 가 계속 쓴다. 지운 것은 **그것을 「적정값」이라 부르는
+    문면**이다.
+    """
     if not findings:
         return ["- 설계 변수 — 없음 (이 실행에는 훑을 용량 축이 서지 않았다)"]
     rows = [
         "| 설계 변수 | 사용값 | 탐색 구간 | 한계 기여 | 결론 축의 형태 "
-        "| 구간 내 최선 | 적정값이 이 모델 안에서 정해지는가 |",
+        "| 구간 내 최선 (경제성) | 걸린 제약 |",
         "|---|---|---|---|---|---|---|",
     ]
     for finding in findings:
@@ -345,27 +369,29 @@ def _capacity_table(findings: tuple[CapacityFinding, ...]) -> list[str]:
             if finding.marginal_won_per_unit is not None
             else NO_VALUE
         )
-        best = (
-            f"{finding.best_value:g} {finding.unit}"
-            if finding.best_value is not None
-            else NO_VALUE
-        )
-        bounded = _YES if finding.bounded else f"{_NO} · {UNBOUNDED_NOTE}"
         rows.append(
             f"| {finding.label} (`{finding.variable}`) "
             f"| {finding.used_value:g} {finding.unit} "
             f"| {min(values):g}~{max(values):g} {finding.unit} "
-            f"({len(values)}점) | {marginal} | {finding.shape} | {best} "
-            f"| {bounded} |"
+            f"({len(values)}점) | {marginal} | {finding.shape} "
+            f"| {best_value_text(finding, missing=NO_VALUE)} "
+            f"| {binding_constraint_text(finding)} |"
         )
     return rows
 
 
 def _self_sufficiency_table(sizing: SelfSufficiencySizing) -> list[str]:
-    """100% 자립 역산 — 부하 수준마다 필요한 태양광 용량."""
+    """100% 자립 역산 — 부하 수준마다 필요한 태양광 용량.
+
+    ⚠ **이 표의 답은 ①의 탐색 구간에 매이지 않는다** (R67/WP-N2 · 판정 §2-2).
+    칸 이름이 그 구간의 **소유자**를 말하고, 표 아래 주가 *「밖」이 무슨
+    뜻인가* 를 적는다 — 종전에는 「탐색 구간 안인가」라고만 적어 두 표가
+    같은 구간을 공유하는 것처럼 읽혔다.
+    """
     span = f"{sizing.search_low_kw:g}~{sizing.search_high_kw:g}kW"
     rows = [
-        "| 부하 수준 | 연간 부하 | 100% 자립에 필요한 태양광 | 탐색 구간 안인가 |",
+        "| 부하 수준 | 연간 부하 | 100% 자립에 필요한 태양광 "
+        "| ①의 경제성 스윕 구간 안인가 |",
         "|---|---|---|---|",
     ]
     for point in sizing.points:
@@ -379,6 +405,7 @@ def _self_sufficiency_table(sizing: SelfSufficiencySizing) -> list[str]:
         "- 산식 — 필요 용량(kW) = 연간 부하(kWh) ÷ (8,760h × 이용률 "  # noqa: RUF001
         f"{sizing.capacity_factor:.0%})",
         f"- 이용률의 출처 — {sizing.capacity_factor_source}",
+        f"- {search_range_note(sweep_where='위 ①')}",
     ]
     return rows
 
@@ -394,7 +421,7 @@ def _ess_sizing_table(review: ESSSizingReview) -> list[str]:
     span = f"{review.search_low_kwh:g}~{review.search_high_kwh:g}kWh"
     rows = [
         "| 계절 | 일수 | 하루 필요 방전량 | 최대 결손(스텝) | 필요 정격용량 "
-        "| 필요 정격출력 | 탐색 구간 안인가 |",
+        "| 필요 정격출력 | ①의 경제성 스윕 구간 안인가 |",
         "|---|---|---|---|---|---|---|",
     ]
     for season in review.seasons:
@@ -419,6 +446,7 @@ def _ess_sizing_table(review: ESSSizingReview) -> list[str]:
         "× (1 − 백업 예비))",  # noqa: RUF001
         f"- 어느 해의 결손인가 — 분석기간 말({review.year}년차). 열화가 가장 "
         "진행된 해라 필요한 용량이 가장 크다",
+        f"- {search_range_note(sweep_where='위 ①')}",
     ]
     return rows
 
@@ -432,6 +460,14 @@ def capacity_review_lines(report: CaseReport) -> list[str]:
     되먹이지 않으므로 8단계 지표는 이 수에 움직이지 않으며, 그 사실을 표 위에
     글자로 적는다 — 적지 않으면 검토자가 「이 용량으로 돌렸다」로 읽는다
     (`core/report/ess_sizing_section.py` 머리말 ★★★ 이 같은 판단을 적었다).
+
+    ## ★★★ ①과 ②③ 을 **물음으로 갈랐다** (R67/WP-N2 · 판정 R67b §2)
+
+    종전에는 셋이 번호만 달고 나란히 섰고, ①이 *「적정값이 이 모델 안에서
+    정해지는가」* 를 인쇄했다 — 즉 **경제성 스윕이 적정값을 정한다고 주장**
+    했다. 사용자가 그것을 반려했다(*「경제성으로 평가하는 것이 아님」*).
+    이제 ①은 이름으로 **경제성 민감도**임을 말하고, ②③ 이 **수요 기반 적정
+    용량**임을 말한다. ⚠ **표를 없애지 않았다** — ①은 민감도로서 값이 있다.
     """
     return [
         "",
@@ -441,15 +477,25 @@ def capacity_review_lines(report: CaseReport) -> list[str]:
         "않는다 — 역산 결과를 실행에 되먹이지 않으므로 8단계 지표는 이 수에 "
         "움직이지 않는다. 위 ⓐ·ⓑ 가 이 실행이 **실제로 세운** 자원이다.",
         "",
-        "① 설계 변수를 탐색 구간에서 훑은 결과 — 1변수 스윕(나머지는 기준값 고정):",
+        f"⚠⚠ **①과 ②③ 은 서로 다른 물음에 답한다.** ①은 {ECONOMIC_SENSITIVITY_TITLE}"
+        "이고 *「용량을 흔들면 결론축이 얼마나 움직이나」* 를 재며, **얼마가 "
+        "적정한가에 답하지 않는다.** ②③ 이 적정 용량을 내고 그 축은 **전력수요와 "
+        "그 시간 분포**다 — 경제성 지표로 정하지 않는다. 나란히 서 있으므로 "
+        "적어 둔다: 어느 것이 「적정값」인지 독자가 고르게 두지 않는다.",
+        "",
+        f"① **{ECONOMIC_SENSITIVITY_TITLE}** — 설계 변수를 탐색 구간에서 훑은 "
+        "결과(1변수 스윕 · 나머지는 기준값 고정). **적정값을 정하는 표가 "
+        "아니다**:",
         "",
         *_capacity_table(report.capacity_review),
         "",
-        "② 경우 「가」 — 100% 자립에 필요한 태양광 용량 **역산**:",
+        "② **수요 기반 적정 용량** · 경우 「가」 — 100% 자립에 필요한 태양광 "
+        "용량 **역산**:",
         "",
         *_self_sufficiency_table(report.self_sufficiency),
         "",
-        "③ 경우 「ESS」 — 하루 결손을 감당하는 저장장치 용량 **역산**(계절별):",
+        "③ **수요 기반 적정 용량** · 경우 「ESS」 — 하루 결손을 감당하는 "
+        "저장장치 용량 **역산**(계절별):",
         "",
         *_ess_sizing_table(report.ess_sizing),
         "",

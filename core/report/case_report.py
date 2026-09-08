@@ -90,7 +90,7 @@ from core.casegrid.appliance_load import (
     resolve_appliance_loads,
     with_ledger_defaults,
 )
-from core.casegrid.e2e_runner import PV_CAPACITY_FACTOR, run_single_case_e2e
+from core.casegrid.e2e_runner import run_single_case_e2e
 from core.casegrid.household_scale import (
     HOUSEHOLD_COUNT_FIELD,
     HOUSEHOLD_COUNT_LEDGER_KEY,
@@ -1052,11 +1052,20 @@ def build_case_report(
     pv_design_variable = next(
         v for v in design_variables() if v.name == "pv_capacity_kw"
     )
+    # ★★★ **이용률이 대장에서 온다** (R67/WP-N2 · 사용자 판정 R67 §2). 종전에는
+    # `core/casegrid/e2e_runner.py` 의 모듈 상수였고, 이 역산 **전체가 그 값에
+    # 반비례**하는데 사용자가 바꿀 통로가 없었다(판정 `docs/decisions-2026-09-08-
+    # R67b.md` §3-4 가 그것을 지목했다). ⚠ **대장 키 문자열을 여기 적지 않는다** —
+    # 변수 → 키 짝의 정본은 `ledger_backed_variables()` 이고, 두 곳에 적으면
+    # 키를 바꾸는 날 이 출처 문면만 낡는다(`REC_PRICE_LEDGER_KEY` 옆 주석과
+    # 같은 판단이며, 여기는 이미 그 짝을 아는 함수가 있어 상수를 세우지 않았다).
+    pv_capacity_factor_key = ledger_backed_variables()["pv_capacity_factor"]
     self_sufficiency = build_self_sufficiency_sizing(
         load_levels=level_map["household_load_annual_kwh"],
-        capacity_factor=PV_CAPACITY_FACTOR,
+        capacity_factor=level_map["pv_capacity_factor"]["base"],
         capacity_factor_source=(
-            "core/casegrid/e2e_runner.py::PV_CAPACITY_FACTOR (소스 상수 · 대장 미등재)"
+            f"전제 대장 `{pv_capacity_factor_key}` (R67/WP-N2 에 등재 · "
+            "종전에는 소스 상수였다)"
         ),
         search_low_kw=pv_design_variable.low,
         search_high_kw=pv_design_variable.high,

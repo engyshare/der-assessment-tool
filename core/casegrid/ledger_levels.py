@@ -243,6 +243,25 @@ _LEDGER_VARS: tuple[tuple[str, str, float], ...] = (
     # `test_percent_per_year_is_converted_once` 가 `%` 로 시작하는 단위 전건에
     # 이 환산을 요구한다 — 여기서 `1.0` 을 주면 빨간불이다.
     ("coincidence_factor", "design.coincidence_factor", 0.01),
+    # ★★★ **태양광 이용률** — R67/WP-N2 에 올렸다 (사용자 판정 R67 §2
+    # 「모든 수치는 추후 변경 가능」 · `docs/decisions-2026-09-08-R67b.md` §3-4).
+    #
+    # 종전에는 `e2e_runner` 의 모듈 상수 `PV_CAPACITY_FACTOR = 0.15` 였다 —
+    # `PV_FIXED_OM_WON_PER_YEAR`(R51/WP-2)·`DEMAND_CHARGE_WON_PER_KW_MONTH`
+    # (R43)와 **같은 형태**이며, 대장에도 축에도 없이 결론에 들어와 있었다.
+    # 그 상수를 이 라운드가 지웠다 — 소스에 기본값을 남기면 대장 한 곳만
+    # 고쳐도 실행에 반영된다는 그 판정의 요구가 깨진다.
+    #
+    # ⚠⚠ **이 축은 발전량의 전제이지 「적정용량의 답」이 아니다.** 자립 역산
+    # (`core/report/sizing.py::required_pv_capacity_kw`)이 이 값의 **역수**로
+    # 답을 내므로 역산 전체가 여기에 매여 있는데, 사용자가 바꿀 통로가
+    # 없었다(판정 R67b §3-4 가 그것을 지목했다).
+    #
+    # ⚠ **배율 1.0 이다** — 대장·자원 둘 다 0~1 의 소수를 쓴다. 대장 항목의
+    # 주석이 *왜 `%` 로 두지 않았는가*를 갖는다(형제 항목
+    # `capacity_factor.bipv_wall.ratio` 는 `%` 이고, 그쪽은 이 값에 대한
+    # 비율이라 단위가 갈린다).
+    ("pv_capacity_factor", "capacity_factor.pv_rooftop", 1.0),
     # ⚠ **`benefit.rec_weight_pv` 는 여기 없다** — `test_levels_come_from_
     # the_ledger_not_from_a_copy` 가 모든 스윕 축에 `low < base < high` **강한
     # 부등호**를 요구하는데, 이 라운드는 가중치 폭을 조사하지 않아 세 수준이

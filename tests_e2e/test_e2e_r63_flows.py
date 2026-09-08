@@ -234,15 +234,33 @@ def test_the_run_screen_conclusion_appears_in_the_golden_report(
 
 
 @pytest.mark.req("FR-602-AC1")
-def test_an_override_of_a_ledger_price_key_moves_the_run(
+def test_an_override_of_a_directly_read_ledger_key_moves_the_run(
     page: Page, live_server: str
 ) -> None:
-    """★ **대장 단가를 고치면 결론축이 움직인다** — `benefit.rec_price` 갈래.
+    """★ **대장 항목을 고치면 결론축이 움직인다** — `load.dr_shiftable_share` 갈래.
 
     이 키는 `core/report/case_report.py` 가 **오버라이드된 대장(provider)에서**
     직접 읽는 갈래다(`required_scalar`). 그래서 화면에서 고친 값이 실행에 닿는
     통로가 **살아 있음을** 이 시험이 붙든다 — 아래 `capex` 갈래 시험(D10)과
     짝을 이뤄, 어느 쪽이 고장인지를 갈라 본다.
+
+    ## ⚠⚠ 키가 바뀌었다 — 종전 `benefit.rec_price` 는 **더 이상 축을 못 움직인다**
+
+    R67/WP-N1·N1b 가 부하의 계절·하루 축을 가르면서 **계통 송전이 0 kWh** 가
+    됐고(잉여가 없어서가 아니라 DR 이동과 ESS 충전이 먼저 다 먹는다 — 디스패치
+    차례가 `pv_self_consumption → ess_charge → v2g_charge → grid_export` 라
+    송전이 맨 끝이다), 그래서 **`REC`·`SurplusSale` 연 편익이 0원**이다.
+    단가를 70 → 140 으로 두 배 해도 `0 × 2 = 0` 이라 결론축이 한 원도 안 움직인다.
+    ⚠ **그 실행이 고장난 것이 아니다** — 그 상태 자체가 R67 이 낸 결과이며
+    `fixtures/golden/*.yaml` 의 R67 이력 블록이 그 사실을 적는다.
+
+    ★ 오케가 대장 키 넷을 흔들어 재고 골랐다(2026-09-09 · 무보조 골든 기준):
+    `benefit.rec_price` 140 · `tax.vat_rate` 0.2 · `tariff.surplus_direct_sale` 220
+    은 **셋 다 −360,695,500 그대로**였고, `load.dr_shiftable_share` 0 만
+    **−360,105,668** 로 움직였다. **같은 `required_scalar` 통로**이므로 이 시험이
+    재는 것은 한 자도 달라지지 않는다.
+    ⚠ **잉여 판매가 되살아나면 `benefit.rec_price` 로 되돌려도 된다** — 그때
+    이 시험이 더 좁은 갈래(편익 단가)를 재게 된다.
     """
     page.goto(live_server)
     unsubsidized = next(v for v in
@@ -252,11 +270,12 @@ def test_an_override_of_a_ledger_price_key_moves_the_run(
     baseline = _run_default(page, live_server, unsubsidized)
 
     applied = _save_settings_and_read_npv(
-        page, live_server, "e2e-rec-140", "benefit.rec_price", "140"
+        page, live_server, "e2e-dr-share-0", "load.dr_shiftable_share", "0"
     )
     assert applied != baseline, (
-        f"REC 단가 오버라이드(70→140)가 결론축을 움직이지 않았다: {baseline} → "
-        f"{applied}. 대장에서 직접 읽는 갈래마저 죽었다면 통로 전체가 끊긴 것이다"
+        f"대장 오버라이드(load.dr_shiftable_share 10→0)가 결론축을 움직이지 "
+        f"않았다: {baseline} → {applied}. 대장에서 직접 읽는 갈래마저 죽었다면 "
+        "통로 전체가 끊긴 것이다"
     )
 
 
