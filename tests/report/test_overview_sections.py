@@ -197,6 +197,18 @@ def test_unclassified_key_is_shown_not_absorbed() -> None:
     # `group_titles.design` 과 **같은 낱말**이며, 그 대응을 여기서 못박아 둔다 —
     # 한쪽만 바뀌면 붙임 1 과 설정 화면이 같은 무리를 다른 이름으로 부른다.
     assert topic_of("design.coincidence_factor") == "단지 설계"
+    # ★ **R67/WP-N3 도 같은 자리를 밟았다.** 대장에
+    # `policy.grid_supply_allowance`(분산특구 계통 전력공급 허용 비율 · 사용자
+    # 지시)를 세우자 이 검사가 다시 「미분류 — 1건」으로 빨간불이 됐다.
+    # ⚠ **이번에는 새 주제를 세우지 않고 기존 `제도 · 세제` 에 붙였다** —
+    # 「30% 이내에서 계통 전력공급을 허용한다」는 제도의 진술이고, 주제를
+    # 늘리면 붙임 1 에 한 건뿐인 절이 또 서며 사람이 읽는 자리에 새 낱말이
+    # 하나 더 선다(R66 이 그 낱말 하나로 e2e 를 빨간불로 만들었다).
+    # ⇒ 그러므로 여기서 못박는 대응은 **대장 `group_titles.policy` 와 이
+    # 주제가 다른 낱말이어도 된다**는 것이다: 설정 화면은 키의 첫 마디로
+    # 묶으므로 `제도 규칙`(`rule`)과 갈라 서야 하고, 붙임 1 은 주제로 묶으므로
+    # 둘이 한 절에 서는 것이 맞다.
+    assert topic_of("policy.grid_supply_allowance") == "제도 · 세제"
 
 
 def test_appendix_one_carries_no_reading_instructions() -> None:

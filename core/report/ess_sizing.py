@@ -50,6 +50,24 @@
 시각별 결손은 `max(0, 부하 − PV)` 다. 낮에 남은 PV 를 저녁 결손에서 빼면 **저장 없이
 시간을 건너뛴 것**이 되어 ESS 를 세우는 이유 자체가 사라진다 — 남은 PV 가 저녁에
 쓰이려면 그것을 담을 용량이 있어야 하고, 그 용량이 바로 여기서 구하는 값이다.
+
+## ★★★ 역산이 **두 값**을 낸다 — 완전 자립분과 「계통 허용」 완화분 (R67/WP-N3)
+
+사용자 문면: *「분산특구에서는 30% 이내에서 계통에서 전력공급을 허용하므로 ESS
+용량이 과도하게 산출된 경우 30%를 감안하여 조정할 수 있는 여지가 있음」*
+(판정 정본 `docs/decisions-2026-09-07-R66.md` §4).
+
+    ① 완전 자립분   저녁 피크를 **전량 배터리로** 덮는 용량 — 허용 비율 0
+    ② 완화분        결손의 일부를 계통에서 받는 것을 허용한 용량 — **채택값**
+
+완화는 **결손 시계열에** 걸린다: `완화 결손[스텝] = 결손[스텝] × (1 − 허용 비율)`.
+그 위에서 역산은 ①과 **같은 것**을 돌린다 — 용량은 합, 출력은 첨두다
+(`relaxed_shortfall_kwh_by_step` 독스트링이 *왜 연간 총량에 걸지 않는가* 를 갖는다).
+
+⛔ **이 모듈은 허용 비율을 «고르지» 않는다.** 「30%」는 이 저장소에 없던 값이고
+사용자 문면이 유일한 출처이므로(근거 법령·고시 미확인) 전제 대장
+`policy.grid_supply_allowance` 가 그 값을 갖고, 이 모듈은 **인자로만** 받는다 —
+겨울 프로파일에 대해 위 셋째 절이 취한 태도와 같다.
 """
 from __future__ import annotations
 
@@ -133,6 +151,50 @@ def shortfall_kwh_by_step(
     return tuple(
         max(0.0, load - pv) for load, pv in zip(load_kwh_by_step, pv_kwh_by_step, strict=True)
     )
+
+
+def relaxed_shortfall_kwh_by_step(
+    *,
+    shortfall_by_step_kwh: Sequence[float],
+    grid_supply_allowance: float,
+) -> tuple[float, ...]:
+    """계통에서 받는 몫을 뺀 **완화 결손** = 결손 × (1 − 허용 비율).
+
+    ## 왜 「결손」에 걸고 「연간 에너지」에 걸지 않는가
+
+    사용자 문면이 *「부족분의 최대 30% 를 계통에서 받는 것을 허용」* 이라 적었다
+    (머리 독스트링 ★★★). 그것을 *「연간 에너지의 30%」* 로 읽으면 완화가 **결손이
+    없는 시각까지** 덜어 낸 것이 되고, 저녁 피크 한 시각의 결손이 연간 총량의
+    30% 보다 작은 구성에서는 **필요 용량이 0** 으로 떨어진다 — 배터리를 세우는
+    이유 자체가 산식 안에서 사라진다.
+
+    ## ⚠ 그러면 용량과 출력이 **둘 다** 정확히 `1 − 허용 비율` 배가 된다
+
+    스텝마다 **같은 상수**를 곱하므로 합(→ 용량)도 첨두(→ 출력)도 같은 비율로
+    준다. 그것이 이 산식의 성질이며 **완화가 용량에만 걸리는 것이 아니다** —
+    「저녁 한 시각에 계통에서 30% 를 받는다」가 곧 「그 시각에 배터리가 낼 출력이
+    30% 적다」이므로 출력이 함께 주는 것이 맞다. 다른 답을 원하면(예: 에너지만
+    완화하고 출력은 완전 자립으로 두기) 그것은 **다른 판정**이고, 완화를 결손
+    시계열에 거는 이 산식으로는 표현되지 않는다.
+
+    허용 비율은 0 이상 1 이하여야 한다 — 못 세우는 입력은 3요소로 거부한다
+    (NFR-303). 0 이면 완화가 없고(완전 자립분과 원소 하나까지 같다), 1 이면
+    결손 전량을 계통에서 받아 필요 용량이 0 이다.
+    """
+    if not 0.0 <= grid_supply_allowance <= 1.0:
+        raise ValidationError(
+            field="policy.grid_supply_allowance",
+            reason=(
+                f"계통 전력공급 허용 비율은 0 이상 1 이하의 소수여야 합니다 "
+                f"(받은 값 {grid_supply_allowance})"
+            ),
+            action=(
+                "허용 비율을 소수(0~1)로 지정하십시오 — 「30%」는 0.30 입니다. "
+                "전제 대장 `policy.grid_supply_allowance` 가 그 값의 정본입니다"
+            ),
+        )
+    kept = 1.0 - grid_supply_allowance
+    return tuple(shortfall * kept for shortfall in shortfall_by_step_kwh)
 
 
 def required_ess_capacity_kwh(
@@ -221,14 +283,26 @@ def required_ess_power_kw(
 
 @dataclass(frozen=True)
 class ESSDailySizing:
-    """겨울 하루 결손에 대한 ESS 역산 결과 한 벌."""
+    """겨울 하루 결손에 대한 ESS 역산 결과 한 벌.
+
+    ⚠ **한 벌은 「허용 비율 하나」의 것이다** — 완전 자립분과 완화분은 이 형의
+    **인스턴스 둘**이고, 그 둘을 나란히 드는 자리는
+    `core/report/ess_sizing_section.py::ESSSeasonSizing` 이다. 한 인스턴스에
+    두 벌의 수를 담지 않는 이유는 완화분이 ①과 **같은 역산**의 결과여서 담을
+    칸 이름이 전부 같은 것으로 두 번 필요해지기 때문이다.
+    """
 
     #: 어느 해에 이 결손을 감당하는가 — SOH 가 해마다 떨어지므로 답이 달라진다.
     year: int
     #: 한 스텝의 시간(h). 24스텝 대표일이면 1.0, 48스텝이면 0.5.
     step_hours: float
+    #: 이 한 벌에 걸린 **계통 전력공급 허용 비율**(0~1). 0 이면 완전 자립분이다.
+    #: **값에 실어 나르는 이유**는 리포트가 「이 수가 어느 쪽인가」를 표에서
+    #: 말해야 하고, 그것을 호출부가 다시 기억하면 그 기억이 사본이 되기 때문이다.
+    grid_supply_allowance: float
     #: 시각별 결손. **역산에서 사라지지 않는다** — 어느 시각이 얼마나 모자랐는지를
     #: 다음 WP(배선)와 리포트가 그대로 읽는다.
+    #: ⚠ 허용 비율이 0 이 아니면 **완화된** 결손이다(`relaxed_shortfall_kwh_by_step`).
     shortfall_by_step_kwh: tuple[float, ...]
     #: 하루치 필요 방출 에너지 = 시각별 결손의 합.
     required_discharge_kwh: float
@@ -253,12 +327,18 @@ def build_ess_daily_sizing(
     year: int,
     search_low_kwh: float,
     search_high_kwh: float,
+    grid_supply_allowance: float,
 ) -> ESSDailySizing:
     """하루치 시각별 부하와 PV 발전에서 필요 저장용량과 정격출력을 한 번에 역산한다.
 
     `load_kwh_by_step` 과 `pv_kwh_by_step` 은 **같은 하루를 같은 해상도로** 적은
     시계열이고, `step_hours` 는 그 한 스텝의 길이다 — 24스텝 대표일이면 1.0 이다.
     「그 하루가 겨울인가」는 이 함수가 판정하지 않는다(머리 독스트링 셋째 절).
+
+    ⚠ **`grid_supply_allowance` 에 기본값을 두지 않는다.** 두면 호출부가 잊어도
+    아무 예외가 나지 않고 **완전 자립분이 조용히 채택값 자리에 앉는다** — 이
+    저장소가 형상(R37)·기준선 갈래(R60)에서 두 번 같은 판단을 했다. 완전
+    자립분을 원하면 **0.0 을 적어** 부른다.
     """
     if search_low_kwh > search_high_kwh:
         raise ValidationError(
@@ -268,8 +348,14 @@ def build_ess_daily_sizing(
             ),
             action="search_low_kwh 를 search_high_kwh 이하의 값으로 지정하십시오",
         )
-    shortfall = shortfall_kwh_by_step(
-        load_kwh_by_step=load_kwh_by_step, pv_kwh_by_step=pv_kwh_by_step
+    # ★ **완화를 결손에 걸고 그 위에서 역산한다** — 역산 뒤의 용량·출력에 비율을
+    # 곱하지 않는다. 곱하면 「최소 용량」의 되먹임 보정(`required_ess_capacity_kwh`
+    # 의 ULP 올림)이 **완화 뒤에 다시 미달**로 떨어질 수 있다.
+    shortfall = relaxed_shortfall_kwh_by_step(
+        shortfall_by_step_kwh=shortfall_kwh_by_step(
+            load_kwh_by_step=load_kwh_by_step, pv_kwh_by_step=pv_kwh_by_step
+        ),
+        grid_supply_allowance=grid_supply_allowance,
     )
     required_discharge_kwh = math.fsum(shortfall)
     required_power_kw = required_ess_power_kw(
@@ -283,6 +369,7 @@ def build_ess_daily_sizing(
     return ESSDailySizing(
         year=year,
         step_hours=step_hours,
+        grid_supply_allowance=grid_supply_allowance,
         shortfall_by_step_kwh=shortfall,
         required_discharge_kwh=required_discharge_kwh,
         peak_shortfall_kwh=max(shortfall),

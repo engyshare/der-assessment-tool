@@ -21,6 +21,7 @@ from core.contracts.validation import ValidationError
 from core.der.ess import ESS, ESSOperatingMode
 from core.report.ess_sizing import (
     build_ess_daily_sizing,
+    relaxed_shortfall_kwh_by_step,
     required_ess_capacity_kwh,
     required_ess_power_kw,
     shortfall_kwh_by_step,
@@ -93,6 +94,7 @@ def test_the_inverse_closes_on_both_sides_of_the_boundary(
         year=year,
         search_low_kwh=0.0,
         search_high_kwh=1_000.0,
+        grid_supply_allowance=0.0,
     )
     needed_kwh = sizing.required_discharge_kwh
     assert needed_kwh > 0.0, "탐침 하루에 결손이 없어 왕복을 잴 것이 없다"
@@ -183,6 +185,7 @@ def test_pv_covering_the_load_all_day_needs_exactly_zero() -> None:
         year=1,
         search_low_kwh=0.0,
         search_high_kwh=30.0,
+        grid_supply_allowance=0.0,
     )
 
     assert sizing.shortfall_by_step_kwh == (0.0, 0.0, 0.0, 0.0)
@@ -218,6 +221,7 @@ def test_daytime_surplus_does_not_cancel_the_evening_shortfall() -> None:
         year=1,
         search_low_kwh=0.0,
         search_high_kwh=30.0,
+        grid_supply_allowance=0.0,
     )
     assert sizing.required_capacity_kwh > 0.0, (
         "하루 총합이 잉여라는 이유로 필요 용량이 0 이 됐다 — 저녁 결손이 사라졌다"
@@ -243,6 +247,7 @@ def test_halving_the_step_keeps_the_energy_and_raises_the_power() -> None:
         year=1,
         search_low_kwh=0.0,
         search_high_kwh=1_000.0,
+        grid_supply_allowance=0.0,
     )
 
     # 각 시간의 부하·발전을 앞쪽 30분에 몰아 넣는다 — 시간별 «에너지»는 그대로다.
@@ -256,6 +261,7 @@ def test_halving_the_step_keeps_the_energy_and_raises_the_power() -> None:
         year=1,
         search_low_kwh=0.0,
         search_high_kwh=1_000.0,
+        grid_supply_allowance=0.0,
     )
 
     assert len(half_hourly.shortfall_by_step_kwh) == 2 * len(hourly.shortfall_by_step_kwh)
@@ -315,6 +321,7 @@ def test_unbuildable_inputs_are_rejected_with_field_reason_and_action() -> None:
             year=1,
             search_low_kwh=30.0,
             search_high_kwh=2.0,
+            grid_supply_allowance=0.0,
         )
 
     for excinfo, expected_field in (
@@ -360,6 +367,7 @@ def test_a_capacity_beyond_the_search_range_is_kept_not_dropped() -> None:
         year=1,
         search_low_kwh=variable.low,
         search_high_kwh=variable.high,
+        grid_supply_allowance=0.0,
     )
     inside = build_ess_daily_sizing(
         load_kwh_by_step=(inside_kwh,),
@@ -369,6 +377,7 @@ def test_a_capacity_beyond_the_search_range_is_kept_not_dropped() -> None:
         year=1,
         search_low_kwh=variable.low,
         search_high_kwh=variable.high,
+        grid_supply_allowance=0.0,
     )
 
     assert not beyond.within_search_range, "상한을 넘는 용량이 구간 안으로 세어졌다"
@@ -394,6 +403,7 @@ def test_the_shortfall_shape_survives_into_the_result() -> None:
         year=1,
         search_low_kwh=0.0,
         search_high_kwh=1_000.0,
+        grid_supply_allowance=0.0,
     )
 
     expected = shortfall_kwh_by_step(
@@ -403,3 +413,88 @@ def test_the_shortfall_shape_survives_into_the_result() -> None:
     assert sizing.peak_shortfall_kwh == max(expected)
     assert sizing.required_power_kw == max(expected) / sizing.step_hours
     assert sizing.year == 1
+
+
+# ── 성질 「마」 — 「계통 허용」 완화 (R67/WP-N3) ───────────────────────
+
+
+def _sizing(allowance: float):
+    """탐침 하루를 허용 비율 하나로 역산한다 — 그 밖의 인자는 한 값이다."""
+    return build_ess_daily_sizing(
+        load_kwh_by_step=_PROBE_LOAD_KWH,
+        pv_kwh_by_step=_PROBE_PV_KWH,
+        step_hours=1.0,
+        usable_capacity_kwh=_usable_capacity_of(),
+        year=1,
+        search_low_kwh=0.0,
+        search_high_kwh=1_000.0,
+        grid_supply_allowance=allowance,
+    )
+
+
+def test_an_allowance_of_zero_is_the_self_sufficient_sizing_element_by_element() -> None:
+    """★★★ **되돌림 성질** — 허용 비율 0 은 완전 자립분과 **원소 하나까지** 같다.
+
+    완화가 결손 시계열에 `× (1 - 비율)` 로 걸리므로 비율 0 에서는 곱이 정확히
+    1.0 이고 **부동소수 오차조차 없어야** 한다. `pytest.approx` 로 재지 않는
+    이유가 그것이다 — 근사로 재면 「비율 0 인데 결손이 미세하게 달라진다」를
+    통과시키고, 그 미세한 차이는 되먹임 보정(`required_ess_capacity_kwh` 의 ULP
+    올림)을 지나 **용량의 마지막 자리**로 나온다.
+    """
+    relaxed_zero = _sizing(0.0)
+    expected = shortfall_kwh_by_step(
+        load_kwh_by_step=_PROBE_LOAD_KWH, pv_kwh_by_step=_PROBE_PV_KWH
+    )
+    assert relaxed_zero.grid_supply_allowance == 0.0
+    assert relaxed_zero.shortfall_by_step_kwh == expected
+    assert relaxed_zero.required_discharge_kwh == math.fsum(expected)
+    assert relaxed_zero.peak_shortfall_kwh == max(expected)
+
+
+@pytest.mark.parametrize("allowance", [0.0, 0.1, 0.24, 0.3, 0.36, 1.0])
+def test_the_relaxation_scales_capacity_and_power_by_the_same_factor(
+    allowance: float,
+) -> None:
+    """★★★ **용량과 출력이 «둘 다» 정확히 `1 - 비율` 배다.**
+
+    스텝마다 같은 상수를 곱하므로 합(→ 용량)도 첨두(→ 출력)도 같은 비율로 준다.
+    그것이 이 산식의 성질이며 **완화가 용량에만 걸리는 것이 아니다** — 그 뜻은
+    `core/report/ess_sizing.py::relaxed_shortfall_kwh_by_step` 독스트링이 진다.
+
+    ⚠ **기대값을 리터럴로 적지 않는다** — 완전 자립분에 `1 - 비율` 을 곱해
+    짓는다. 0.7 을 적으면 비율이 바뀌는 날 이 검사가 낡은 수를 지킨다.
+    ⚠ 용량은 되먹임 보정으로 마지막 한 자리가 올라갈 수 있으므로 `approx` 로
+    잰다 — 위 되돌림 검사가 비율 0 에서 **정확히** 같음을 따로 붙든다.
+    """
+    kept = 1.0 - allowance
+    full = _sizing(0.0)
+    relaxed = _sizing(allowance)
+
+    assert relaxed.grid_supply_allowance == allowance
+    assert relaxed.required_discharge_kwh == pytest.approx(
+        full.required_discharge_kwh * kept
+    )
+    assert relaxed.required_power_kw == pytest.approx(full.required_power_kw * kept)
+    if allowance == 1.0:
+        # 결손 전량을 계통에서 받으면 저장할 것이 없다 — 0 은 근사값이 아니다.
+        assert relaxed.required_capacity_kwh == 0.0
+        assert relaxed.required_power_kw == 0.0
+    else:
+        assert relaxed.required_capacity_kwh == pytest.approx(
+            full.required_capacity_kwh * kept
+        )
+
+
+@pytest.mark.parametrize("allowance", [-0.01, 1.01, 30.0])
+def test_an_allowance_outside_zero_to_one_is_refused(allowance: float) -> None:
+    """★ 소수(0~1) 밖의 허용 비율은 **3요소로 거부한다** (NFR-303).
+
+    `30` 을 그대로 넘기면 완화 결손이 **음수**가 되어 필요 용량이 조용히 0 이
+    된다 — 「30% 를 30 으로 적었다」가 *「배터리가 필요 없다」* 로 돌아온다.
+    """
+    with pytest.raises(ValidationError) as excinfo:
+        relaxed_shortfall_kwh_by_step(
+            shortfall_by_step_kwh=(1.0, 2.0), grid_supply_allowance=allowance
+        )
+    assert excinfo.value.field == "policy.grid_supply_allowance"
+    assert excinfo.value.reason and excinfo.value.action

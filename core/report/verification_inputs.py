@@ -91,7 +91,14 @@ from core.report.capacity import (
 )
 from core.report.case_report import CaseReport
 from core.report.dispatch_notes import resolved_operating_mode
-from core.report.ess_sizing_section import ESSSizingReview
+from core.report.ess_sizing_section import (
+    ADOPTED_HEAD,
+    SELF_SUFFICIENT_HEAD,
+    ESSSizingReview,
+    adopted_value_note,
+    relaxation_reach_note,
+    within_range_head,
+)
 from core.report.sizing import SelfSufficiencySizing
 from core.report.unreflected import build_unreflected, unreflected_direction_tally
 
@@ -415,24 +422,48 @@ def _ess_sizing_table(review: ESSSizingReview) -> list[str]:
 
     ⚠ **못 한 것을 「없음」으로 두지 않는다** — 역산할 수 없는 실행에서는
     `ESSSizingReview.unmeasurable_reason` 이 그 사유를 글자로 갖는다.
+
+    ## ★★★ 두 값을 나란히 싣는다 — **채택값이 빠져 있었다** (R67/WP-N3-fix)
+
+    R67/WP-N3 가 완화분(채택값)을 세우고 **심의 리포트 붙임 10 에만** 실었다.
+    그동안 이 표는 완전 자립분만 실어, 두 산출물이 같은 물음에 다르게 답했다 —
+    실측: 붙임 10 은 겨울 **642.07kWh**(채택), 이 표는 **917.25kWh** 하나.
+    검증 리포트는 **사용자가 지금 읽는 산출물**이므로 그 상태는 *「ESS 적정용량이
+    917 kWh 다」* 로 읽힌다.
+
+    ## ⚠⚠ 같은 자료를 그리는 렌더러가 **둘로 남아 있다**
+
+    `core/report/ess_sizing_section.py::ess_daily_sizing_section` 이 그 짝이다.
+    ⛔ **한쪽만 고치지 마라.** 합치지 않은 이유는 표 자체가 다르기 때문이다 —
+    이 표는 **단위를 값에 붙여** 쓰고(`564.17kWh`) 절 번호가 `①` 다.
+    ⇒ **낱말은 합쳐 두었다**: `ADOPTED_HEAD` · `SELF_SUFFICIENT_HEAD` ·
+    `within_range_head` · `adopted_value_note` · `relaxation_reach_note` 가
+    그 파일 머리에 있고 여기서 들여와 쓴다. **베껴 적지 않는다.**
     """
     if review.unmeasurable_reason is not None:
         return [f"- 역산하지 못했다 — {review.unmeasurable_reason}"]
     span = f"{review.search_low_kwh:g}~{review.search_high_kwh:g}kWh"
     rows = [
-        "| 계절 | 일수 | 하루 필요 방전량 | 최대 결손(스텝) | 필요 정격용량 "
-        "| 필요 정격출력 | ①의 경제성 스윕 구간 안인가 |",
-        "|---|---|---|---|---|---|---|",
+        f"| 계절 | 일수 | 하루 필요 방전량 | 최대 결손(스텝) "
+        f"| {SELF_SUFFICIENT_HEAD} 정격용량 | {SELF_SUFFICIENT_HEAD} 정격출력 "
+        f"| {ADOPTED_HEAD} 정격용량 | {ADOPTED_HEAD} 정격출력 "
+        f"| {within_range_head(sweep_where='①의')} |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for season in review.seasons:
         sizing = season.sizing
-        within = _YES if sizing.within_search_range else f"{_NO} — 구간 {span} 밖"
+        # ★ **구간 판정의 대상은 채택값이다** — 붙임 10 과 같다. 완전 자립분에
+        # 붙이면 표가 「답」이 아닌 수를 구간과 견준다.
+        adopted = season.relaxed
+        within = _YES if adopted.within_search_range else f"{_NO} — 구간 {span} 밖"
         rows.append(
             f"| {season.season_name} | {season.days}일 "
             f"| {sizing.required_discharge_kwh:,.2f}kWh "
             f"| {sizing.peak_shortfall_kwh:,.2f}kWh "
             f"| {sizing.required_capacity_kwh:,.2f}kWh "
-            f"| {sizing.required_power_kw:,.2f}kW | {within} |"
+            f"| {sizing.required_power_kw:,.2f}kW "
+            f"| {adopted.required_capacity_kwh:,.2f}kWh "
+            f"| {adopted.required_power_kw:,.2f}kW | {within} |"
         )
     per_capacity = (
         f"{review.usable_per_capacity_kwh:,.4f}"
@@ -444,6 +475,9 @@ def _ess_sizing_table(review: ESSSizingReview) -> list[str]:
         f"- 산식 — 필요 정격용량(kWh) = 하루 필요 방전량 ÷ {per_capacity} "
         f"(정격용량 1kWh 가 {review.year}년차에 낼 수 있는 양 = SOC 창 × SOH "  # noqa: RUF001
         "× (1 − 백업 예비))",  # noqa: RUF001
+        # ★ 완화 비율의 **출처**를 잃지 않는다 — 문면의 정본은 그 함수다.
+        f"- {adopted_value_note(review)}",
+        f"- {relaxation_reach_note(review)}",
         f"- 어느 해의 결손인가 — 분석기간 말({review.year}년차). 열화가 가장 "
         "진행된 해라 필요한 용량이 가장 크다",
         f"- {search_range_note(sweep_where='위 ①')}",
@@ -494,8 +528,13 @@ def capacity_review_lines(report: CaseReport) -> list[str]:
         "",
         *_self_sufficiency_table(report.self_sufficiency),
         "",
-        "③ **수요 기반 적정 용량** · 경우 「ESS」 — 하루 결손을 감당하는 "
-        "저장장치 용량 **역산**(계절별):",
+        # ★ **채택값이 어느 열인지 절 머리가 먼저 말한다** (R67/WP-N3-fix).
+        # 표만 보면 두 값 중 어느 것이 답인지 고르는 일이 독자에게 넘어간다 —
+        # ⚠⚠ 위 절 머리가 이미 *「진단이지 결론이 아니다」* 를 적었으므로, 그
+        # 둘을 함께 읽어야 「채택값이지만 실행 구성은 아니다」가 성립한다.
+        f"③ **수요 기반 적정 용량** · 경우 「ESS」 — 하루 결손을 감당하는 "
+        f"저장장치 용량 **역산**(계절별). **{ADOPTED_HEAD} 열이 채택값**이고 "
+        "완전 자립분은 견줌으로 함께 싣는다:",
         "",
         *_ess_sizing_table(report.ess_sizing),
         "",

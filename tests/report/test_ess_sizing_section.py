@@ -21,15 +21,24 @@ R64/WP-8a 가 산식(`core/report/ess_sizing.py`)을 세웠으나 **부르는 �
 from __future__ import annotations
 
 import math
+import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
+import yaml
 
-from core.casegrid.ledger_levels import design_variables
+from core.assumption.provider import AssumptionSet
+from core.casegrid.ledger_levels import (
+    design_variables,
+    ledger_backed_variables,
+    required_scalar,
+)
 from core.contracts.der import DER
 from core.der.ess import ESS, ESSOperatingMode
 from core.der.pv import PV
 from core.report.capacity import search_range_note
+from core.report.case_influences import CONCLUSION_METRIC
 from core.report.case_report import CaseReport, build_case_report
 from core.report.dispatch_notes import DispatchHour, split_by_direction
 from core.report.ess_sizing import shortfall_kwh_by_step
@@ -279,7 +288,14 @@ def _review(
     *,
     resources: tuple[DER, ...] | None = None,
     search_high_kwh: float = 30.0,
+    grid_supply_allowance: float = 0.0,
 ) -> ESSSizingReview:
+    """손으로 지은 탐침 하나.
+
+    ⚠ **허용 비율의 기본값을 0 으로 둔 것은 탐침의 편의다** — 배포 경로는
+    대장에서 읽어 넘긴다(`core/report/case_report.py`). 완화 자체를 재는 검사는
+    아래 「⑤ 완화분」 무리이며 그것들이 비율을 **적어** 넘긴다.
+    """
     return build_ess_sizing_review(
         hours=hours,
         seasons=(),
@@ -287,6 +303,7 @@ def _review(
         year=20,
         search_low_kwh=2.0,
         search_high_kwh=search_high_kwh,
+        grid_supply_allowance=grid_supply_allowance,
     )
 
 
@@ -397,3 +414,191 @@ def test_the_probe_agrees_with_the_resource_it_was_opened_from(
     assert probe(capacity_kwh=25.0, year=year) == pytest.approx(
         bigger.usable_capacity_kwh(year=year)
     )
+
+
+# ── ⑤ 완화분 — 두 값이 서고 채택값이 무엇인지 적힌다 (R67/WP-N3) ──────
+
+
+def _report_with_allowance(allowance: float | None) -> CaseReport:
+    """골든 시나리오를 그대로, 또는 **허용 비율만 오버라이드해** 돌린다.
+
+    ⚠ **골든 픽스처를 고치지 않는다.** 읽기만 하고 쓰는 곳은
+    `tempfile.TemporaryDirectory()` 안이다 — 관용구의 정본은
+    `tests/report/test_load_shift_wired.py::_report` 이며, 그래야 이 검사가
+    사용자가 실제로 지나는 통로(**전용 필드가 아니라 대장 오버라이드**)를 잰다.
+    """
+    fields: dict[str, Any] = yaml.safe_load(_GOLDEN.read_text(encoding="utf-8")) or {}
+    if allowance is not None:
+        fields["assumption_overrides"] = [
+            {
+                "key": ledger_backed_variables()["grid_supply_allowance"],
+                "value": allowance,
+                "reason": "이 검사가 축을 흔든다",
+            }
+        ]
+    with tempfile.TemporaryDirectory() as workspace:
+        path = Path(workspace) / _GOLDEN.name
+        path.write_text(
+            yaml.safe_dump(fields, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+        return build_case_report(path, assumptions_path=_ASSUMPTIONS)
+
+
+def _ledger_allowance() -> float:
+    """대장이 정한 허용 비율. **여기에 수를 적지 않는다** — 대장이 정본이다.
+
+    키도 손으로 적지 않는다 — `ledger_backed_variables()` 가 케이스 변수와
+    대장 키의 짝을 갖는 자리이며, `core/report/case_report.py` 가 같은 자리에서
+    같은 짝을 읽어 배선한다.
+    """
+    key = ledger_backed_variables()["grid_supply_allowance"]
+    provider = AssumptionSet.load_from_yaml(str(_ASSUMPTIONS))
+    return required_scalar(provider, key, note="이 검사")
+
+
+def test_the_deployment_path_carries_the_ledger_allowance(report: CaseReport) -> None:
+    """★★★ **배선** — 소절의 허용 비율이 **대장에서** 왔다.
+
+    소절이 그 비율을 스스로 고르면 대장을 고쳐도 채택값이 안 움직이고, 그
+    어긋남은 아무 예외도 내지 않는다 — 이 저장소가 형상(R37)·기준선
+    갈래(R60)·이용률(R67/WP-N2)에서 세 번 밟은 형태다.
+    """
+    assert report.ess_sizing.grid_supply_allowance == pytest.approx(
+        _ledger_allowance()
+    )
+    assert report.ess_sizing.grid_supply_allowance > 0.0, (
+        "대장 비율이 0 이다 — 채택값이 완전 자립분과 같아져 「완화분이 채택값」이 "
+        "사실상 꺼진다"
+    )
+
+
+def test_the_adopted_value_is_the_relaxed_one_and_is_exactly_the_kept_share(
+    report: CaseReport,
+) -> None:
+    """★★★ **계절마다 채택값이 완전 자립분의 정확히 `1 - 비율` 배다.**
+
+    ⚠ **기대값을 리터럴(0.7)로 적지 않는다** — 대장에서 읽은 비율로 짓는다.
+    산식 자체의 성질은 `tests/report/test_ess_sizing.py` 가 탐침 하루로 재고,
+    여기서 재는 것은 **배포 실행이 그 성질을 그대로 낸다**는 것이다.
+    """
+    kept = 1.0 - _ledger_allowance()
+    assert report.ess_sizing.seasons, "계절이 서지 않아 잴 것이 없다"
+    for season in report.ess_sizing.seasons:
+        assert season.sizing.grid_supply_allowance == 0.0
+        assert season.relaxed.grid_supply_allowance == pytest.approx(
+            _ledger_allowance()
+        )
+        assert season.relaxed.required_capacity_kwh == pytest.approx(
+            season.sizing.required_capacity_kwh * kept
+        )
+        assert season.relaxed.required_power_kw == pytest.approx(
+            season.sizing.required_power_kw * kept
+        )
+
+
+def test_the_section_prints_both_values_and_says_which_one_is_adopted(
+    report: CaseReport,
+) -> None:
+    """★★ **두 값을 나란히 싣고 채택값이 완화분임을 적는다** (판정 §4).
+
+    한 값만 실으면 검토자가 *「917kWh 가 필요하다」* 와 *「642kWh 가 필요하다」*
+    중 어느 것이 이 평가의 답인지 고르게 된다.
+    """
+    review = report.ess_sizing
+    body = "\n".join(ess_daily_sizing_section(review))
+    assert "완전 자립 저장용량" in body and "★ 채택 저장용량" in body
+    assert "완전 자립 정격출력" in body and "★ 채택 정격출력" in body
+    assert "채택값은 「계통 허용」 완화분" in body
+    assert "`policy.grid_supply_allowance`" in body, (
+        "비율의 출처(대장 키)가 적히지 않았다"
+    )
+    assert "근거 법령·고시는 **확인되지 않았다**" in body, (
+        "없는 근거를 있는 것처럼 두었다 — 「30%」의 출처는 사용자 문면 하나다"
+    )
+    for season in review.seasons:
+        row = next(
+            line for line in ess_daily_sizing_section(review)
+            if line.startswith(f"| {season.season_name} |")
+        )
+        assert f"| {season.sizing.required_capacity_kwh:,.2f} |" in row
+        assert f"| {season.relaxed.required_capacity_kwh:,.2f} |" in row
+
+
+def test_the_section_says_the_relaxation_hits_power_too(report: CaseReport) -> None:
+    """★★ **완화가 용량에만 걸리는가 출력에도 걸리는가** — 표가 답한다.
+
+    다음 사람이 반드시 묻는 물음이고, 적지 않으면 표의 두 열(용량·출력)이 같은
+    비율로 준 것을 보고 *「출력까지 깎은 것은 실수」* 로 읽을 수 있다.
+    """
+    body = "\n".join(ess_daily_sizing_section(report.ess_sizing))
+    assert "완화는 용량과 출력에 «둘 다» 걸린다" in body
+
+
+def test_the_section_still_says_it_is_a_diagnosis_not_an_applied_result(
+    report: CaseReport,
+) -> None:
+    """★★★ **「채택값」이 실행 구성이 되지 않는다** (사용자 판정 R67 §4-4).
+
+    *「적용 전이면 결과를 만들어 낸 것처럼 표시하지 않는다」* — ★ 열이 붙었으니
+    그 표시가 더 필요해졌다. 지우면 검토자가 ★ 를 *「이 용량으로 돌렸다」* 로
+    읽는다. ⚠ 실행이 실제로 쓴 용량은 `_run_capacity_kwh()` 가 답한다.
+    """
+    body = "\n".join(ess_daily_sizing_section(report.ess_sizing))
+    assert "진단이다" in body and "적용 전이다" in body
+    assert "채택한 것이 아니다" in body
+    binding = max(
+        report.ess_sizing.seasons, key=lambda s: s.relaxed.required_capacity_kwh
+    )
+    assert binding.relaxed.required_capacity_kwh != pytest.approx(
+        _run_capacity_kwh()
+    ), "채택값과 실행 용량이 같아 「되먹였는가」를 가릴 수 없다"
+
+
+def test_shaking_the_ledger_allowance_moves_the_adopted_value() -> None:
+    """★★★ **대장을 흔들면 채택값이 따라 움직인다** — 값이 소스에 없다.
+
+    ⚠ **골든 픽스처를 고치지 않는다.** 대장 오버라이드(`assumption_overrides`)로
+    흔든다 — 사용자가 실제로 지나는 통로이며 관용구는
+    `tests/report/test_load_shift_wired.py::_report` 의 것이다.
+
+    ★ **완전 자립분은 움직이지 않아야 한다** — 그것은 허용 비율 0 의 역산이고,
+    함께 움직이면 완화가 「두 값」이 아니라 한 값을 옮긴 것이 된다.
+    """
+    shaken = _report_with_allowance(0.10)
+    kept = 0.90
+    assert shaken.ess_sizing.grid_supply_allowance == pytest.approx(0.10)
+    for season in shaken.ess_sizing.seasons:
+        assert season.relaxed.required_capacity_kwh == pytest.approx(
+            season.sizing.required_capacity_kwh * kept
+        )
+    base = _report_with_allowance(None)
+    for shook, plain in zip(
+        shaken.ess_sizing.seasons, base.ess_sizing.seasons, strict=True
+    ):
+        assert shook.sizing.required_capacity_kwh == pytest.approx(
+            plain.sizing.required_capacity_kwh
+        ), "허용 비율을 흔들었는데 완전 자립분이 함께 움직였다"
+        assert shook.relaxed.required_capacity_kwh != pytest.approx(
+            plain.relaxed.required_capacity_kwh
+        ), "허용 비율을 흔들었는데 채택값이 그대로다 — 배선이 닿지 않았다"
+
+
+def test_the_relaxation_does_not_move_the_conclusion_axis() -> None:
+    """★★★ **결론축은 한 원도 움직이지 않는다** — 이 절은 진단이다.
+
+    허용 비율을 끝에서 끝까지 흔들어도 순현재가치가 그대로여야 한다. 움직이면
+    역산이 실행에 되먹여진 것이고, 그때 *어느 수가 입력이고 어느 수가 결과인지*
+    말할 수 없게 된다(`core/report/ess_sizing_section.py` 머리말 ★★★).
+    ⚠ 세 시나리오의 `npv` 자체는 `tests/golden/` 이 잰다 — 여기서는 **이 축을
+    흔들어도** 그 수가 같다는 것만 본다.
+    """
+    plain = _report_with_allowance(None)
+    for allowance in (0.0, 0.10, 0.50):
+        shaken = _report_with_allowance(allowance)
+        assert shaken.metrics[CONCLUSION_METRIC] == pytest.approx(
+            plain.metrics[CONCLUSION_METRIC]
+        ), (
+            f"허용 비율 {allowance} 에서 결론축이 움직였다 — 역산이 실행에 "
+            "되먹여졌다"
+        )

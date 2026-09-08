@@ -60,6 +60,14 @@ from core.report.capacity import (
 )
 from core.report.case_report import CaseReport, build_case_report
 from core.report.dispatch_notes import NO_OPERATING_MODE
+from core.report.ess_sizing_section import (
+    ADOPTED_HEAD,
+    SELF_SUFFICIENT_HEAD,
+    adopted_value_note,
+    ess_daily_sizing_section,
+    relaxation_reach_note,
+    within_range_head,
+)
 from core.report.verification import render_verification_markdown
 from core.report.verification_inputs import (
     HOUSEHOLD_LOAD_LEDGER_KEY,
@@ -703,3 +711,82 @@ def test_the_cli_writes_the_same_text_the_renderer_makes(tmp_path: Path) -> None
             build_case_report(scenario, assumptions_path=_ASSUMPTIONS)
         )
     assert target.read_text(encoding="utf-8") == expected
+
+
+# ── R67/WP-N3-fix — **검증 리포트에도 채택값이 실린다** ──────────────────────
+#
+# WP-N3 가 완화분(채택값)을 세우고 **심의 리포트 붙임 10 에만** 실었다. 그 사이
+# 이 산출물은 완전 자립분만 실어 **두 문서가 같은 물음에 다르게 답했다** —
+# 실측: 붙임 10 은 겨울 채택 642.07kWh, 검증 리포트는 917.25kWh 하나.
+# 검증 리포트는 **사용자가 지금 읽는 산출물**이므로 그 상태는 *「ESS 적정용량이
+# 917 kWh 다」* 로 읽힌다. 아래 둘이 그 어긋남을 붙든다.
+
+
+def test_the_verification_ess_table_carries_the_adopted_value(tmp_path: Path) -> None:
+    """★★★ 검증 리포트 2단계 ESS 표에 **채택값이 있다.**
+
+    ⚠ **기대값을 리터럴로 적지 않는다** — `report.ess_sizing` 에서 읽어 짓는다.
+    박으면 대장의 허용 비율이 바뀌는 날 이 검사가 조용히 낡은 수를 지킨다.
+    ⚠ **완전 자립분도 함께 있어야 한다** — 채택값만 실으면 *「저녁 피크를 전량
+    배터리로 덮으려면 얼마인가」* 를 검토자가 읽을 자리가 사라진다.
+    """
+    text = _dumped(tmp_path)
+    review = _report().ess_sizing
+    assert review.unmeasurable_reason is None, review.unmeasurable_reason
+    assert review.seasons, "계절이 서지 않아 잴 것이 없다"
+
+    assert ADOPTED_HEAD in text, "채택값 열이 없다"
+    assert SELF_SUFFICIENT_HEAD in text, "완전 자립분 열이 없다"
+    assert within_range_head(sweep_where="①의") in text, (
+        "구간 칸이 「채택값을 판정한다」고 말하지 않는다"
+    )
+    for season in review.seasons:
+        assert f"{season.relaxed.required_capacity_kwh:,.2f}kWh" in text, (
+            f"{season.season_name} 의 채택 정격용량이 빠졌다"
+        )
+        assert f"{season.relaxed.required_power_kw:,.2f}kW" in text, (
+            f"{season.season_name} 의 채택 정격출력이 빠졌다"
+        )
+        assert f"{season.sizing.required_capacity_kwh:,.2f}kWh" in text, (
+            f"{season.season_name} 의 완전 자립 정격용량이 빠졌다"
+        )
+
+    # ★ 비율의 **출처**를 잃지 않는다 — 문면의 정본은 그 함수다.
+    assert adopted_value_note(review) in text, (
+        "완화 비율이 어디서 왔는지(대장 `policy.grid_supply_allowance` · 근거 "
+        "법령·고시 미확인)가 검증 리포트에 없다"
+    )
+    assert relaxation_reach_note(review) in text
+    # ⚠ 「진단이지 채택 구성이 아니다」를 지우지 않는다 — 실행은 여전히 수준표의
+    #   용량으로 돈다(`core/report/ess_sizing_section.py` 머리말 ★★★).
+    assert "진단이지 결론이 아니다" in text
+
+
+def test_both_reports_say_the_same_adopted_winter_capacity(tmp_path: Path) -> None:
+    """★★★ **심의 붙임 10 과 검증 2단계가 같은 채택값을 말한다.**
+
+    이 교정이 막으려는 어긋남을 바로 이 검사가 붙든다 — 한쪽 렌더러만 고치면
+    여기서 빨간불이 된다. ⛔ 두 렌더러를 하나로 합치지 않았으므로(표기 관례와
+    절 번호가 다르다) **문면이 아니라 «수»를 대조한다.**
+
+    ⚠ 「겨울」이라는 낱말을 박지 않는다 — 매는 하루를 채택값으로 골라 그 계절의
+    수를 두 문서에서 찾는다(자산의 계절 이름은 `load_daily_shapes()` 것이다).
+    """
+    review = _report().ess_sizing
+    binding = max(review.seasons, key=lambda s: s.relaxed.required_capacity_kwh)
+    adopted_capacity = f"{binding.relaxed.required_capacity_kwh:,.2f}"
+    adopted_power = f"{binding.relaxed.required_power_kw:,.2f}"
+
+    verification = _dumped(tmp_path)
+    appraisal = "\n".join(ess_daily_sizing_section(review))
+
+    for where, text in (("검증 리포트", verification), ("심의 붙임 10", appraisal)):
+        assert adopted_capacity in text, (
+            f"{where} 에 매는 하루({binding.season_name})의 채택 저장용량 "
+            f"{adopted_capacity}kWh 가 없다 — 두 산출물이 같은 물음에 다르게 답한다"
+        )
+        assert adopted_power in text, (
+            f"{where} 에 매는 하루({binding.season_name})의 채택 정격출력 "
+            f"{adopted_power}kW 가 없다"
+        )
+        assert ADOPTED_HEAD in text, f"{where} 에 채택값 표시가 없다"

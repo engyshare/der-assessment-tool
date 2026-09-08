@@ -262,6 +262,26 @@ _LEDGER_VARS: tuple[tuple[str, str, float], ...] = (
     # `capacity_factor.bipv_wall.ratio` 는 `%` 이고, 그쪽은 이 값에 대한
     # 비율이라 단위가 갈린다).
     ("pv_capacity_factor", "capacity_factor.pv_rooftop", 1.0),
+    # ★★★ **계통 전력공급 허용 비율** — R67/WP-N3 에 올렸다 (사용자 지시 ·
+    # 판정 정본 `docs/decisions-2026-09-07-R66.md` §4).
+    #
+    # ⚠⚠ **이 축은 결론축(순현재가치)을 한 원도 움직이지 않는다** — 걸리는 자리가
+    # 붙임 10 의 ESS 역산 소절 하나이고(`core/report/ess_sizing_section.py`) 그
+    # 소절은 **진단**이라 결과를 실행에 되먹이지 않는다. 그래서 5.1 영향도 표에
+    # 「미반영 — 측정 안 됨」으로 오른다(`core/report/case_influences.py::
+    # InfluenceEntry.unread_by_pipeline`).
+    #
+    # ★ **그런데 그것이 이 줄을 빼야 할 사유가 아니다.** 이 값이 정하는 것은
+    # 역산의 **채택값**이며(완전 자립분 917kWh → 채택값 642kWh · 실측), 축에
+    # 없으면 *「0.30 을 골랐다」가 그 채택값에 얼마를 넣었는지* 를 검토자가
+    # 어디서도 읽을 수 없다 — `capex.replacement_real_trend`(R41→R42) ·
+    # `capex.pv.inverter_share`(R43) 가 지났던 자리와 같은 형태다.
+    # ⚠ 「미반영」 라벨은 **결함이 아니라 사실**이다: 결론축과 채택값은 다른
+    # 축이고, 이 라벨이 그 둘을 갈라 준다.
+    #
+    # ⚠ **배율 1.0 이다** — 대장·산식 둘 다 0~1 의 소수를 쓴다. 대장 항목의
+    # 주석이 *왜 `%` 로 두지 않았는가*를 갖는다.
+    ("grid_supply_allowance", "policy.grid_supply_allowance", 1.0),
     # ⚠ **`benefit.rec_weight_pv` 는 여기 없다** — `test_levels_come_from_
     # the_ledger_not_from_a_copy` 가 모든 스윕 축에 `low < base < high` **강한
     # 부등호**를 요구하는데, 이 라운드는 가중치 폭을 조사하지 않아 세 수준이

@@ -92,7 +92,16 @@ TOPIC_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("운영비", ("opex.",)),
     ("설비 성능 · 수요", ("capacity_factor.", "load.")),
     ("요금 · 정산 단가", ("tariff.", "escalation.", "fee.")),
-    ("제도 · 세제", ("rule.", "tax.", "benefit.", "cost.")),
+    # ★ `policy.` 는 R67/WP-N3 가 처음 연 이름공간이다 —
+    # `docs/assumptions.yaml::policy.grid_supply_allowance`(분산특구 계통
+    # 전력공급 허용 비율 · 사용자 지시). 선언하지 않으면 위 `opex.`·`design.`
+    # 과 **같은 자리**에서 `test_unclassified_key_is_shown_not_absorbed` 가
+    # 「미분류」로 드러낸다(실측으로 밟았다).
+    # ⚠ **새 주제를 세우지 않고 이 주제에 넣었다.** 「30% 이내에서 계통
+    # 전력공급을 허용한다」는 **제도**의 진술이고, 이 주제가 이미 제도 값
+    # (`rule.`)을 담는다 — 주제를 늘리면 붙임 1 에 한 건뿐인 절이 또 서고
+    # 사람이 읽는 자리에 새 낱말이 하나 더 선다.
+    ("제도 · 세제", ("rule.", "tax.", "benefit.", "cost.", "policy.")),
     ("분석 조건 · 운영", ("analysis.", "ops.")),
     # ★ `design.` 은 R66/WP-5 가 처음 연 이름공간이다 —
     # `docs/assumptions.yaml::design.coincidence_factor`(단지 설비 동시율 · 사용자

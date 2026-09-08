@@ -1102,6 +1102,11 @@ def build_case_report(
         year=outcome.basis.horizon_years,
         search_low_kwh=ess_design_variable.low * ess_scale,
         search_high_kwh=ess_design_variable.high * ess_scale,
+        # ★★★ **계통 허용 완화분의 비율** (R67/WP-N3). 위 `pv_capacity_factor`
+        # 와 **같은 통로**로 읽는다 — 수준표의 `base` 이며, 소절에 리터럴 0.30
+        # 을 적으면 대장을 고쳐도 그 소절만 낡는다.
+        # ⚠ **탐색 구간과 달리 단지 규모를 곱하지 않는다** — 비율이다.
+        grid_supply_allowance=level_map["grid_supply_allowance"]["base"],
     )
 
     manifest = create_manifest({
