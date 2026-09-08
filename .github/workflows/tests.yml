@@ -339,7 +339,7 @@ jobs:
 
       - name: pytest + 커버리지 (NFR-203 85%)
         run: |
-          python -m pytest --cov=core --cov-branch --cov-report=xml \
+          python -m pytest --cov=core -n auto --dist loadfile --cov-branch --cov-report=xml \
             --cov-report=term --cov-fail-under=85
 
       # ── 게이트 ① 변경분 커버리지 ≥ 95% (작업 2.5) ─────────────────
