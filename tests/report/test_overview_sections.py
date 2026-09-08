@@ -350,8 +350,9 @@ def test_body_stays_within_the_form_length_budget() -> None:
 
     ★ **지운 것이 아니라 옮긴 것이다** — 6.3 은 미반영 항목 **행을 그대로 두고**
     건수와 「전문이 있는 자리」를 적는다. 항목명·방향·판정은 3.4 표가 그대로
-    싣고(그 절충안을 `test_unreflected.py::test_body_carries_only_the_name_and_
-    direction` 이 붙든다), 크기·사유·해소 조건은 붙임 8 이 진다.
+    싣고, 크기·사유·해소 조건은 붙임 8 이 진다. 그 절충안을 붙드는 것은
+    `tests/report/test_unreflected.py` 의
+    `test_body_carries_only_the_name_and_direction` 이다.
     ⚠⚠ **양식 안에 어긋난 자리가 있다** — 같은 문서 `:266` 은 6.3 을 「미반영
     항목의 해소 조건」으로도 적는다. `:143`·`:286` 과 `:266` 중 어느 쪽을
     정본으로 둘지는 **양식 개정 판정 자리**이며(spec §16.5) 이 라운드는 양식을
