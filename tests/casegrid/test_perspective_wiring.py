@@ -109,12 +109,21 @@ def test_operator_perspective_keeps_the_conclusion_axis(report) -> None:
     전기가 늘고 잉여판매·REC 가 줄었다(**−19,367,215**) ⓑ 대장에 **동시율
     80%** 가 서서 첨두 저감이 3,993,600 → 3,424,374원/년이 됐다
     (**−7,404,454**). 손계산은 그 골든 파일의 **R66/WP-5 블록**이 갖는다.
+
+    ⚠⚠⚠⚠⚠ **R67/WP-N1·N1b 가 −355,028,932 → −360,695,500원으로 옮겼다**
+    (누적 **−5,666,568**). ★ **이번에도 초기투자는 1원도 안 움직였다** — 둘 다
+    고친 것이 **부하의 「하루 안 자리」**다: ⓐ **N1** 은 전기차 충전에 히트펌프의
+    겨울 몫(0.4714)이 씌워지던 것을 끊고 일수 비례를 씌웠다(**−423,435**)
+    ⓑ **N1b** 는 기기마다 하루 안의 형상을 갖게 했다(겨울 히트펌프 7~9·19~21시 ·
+    전기차 24시간 균등 · **−5,243,133**). 나빠진 몫은 **첨두 절감 하나**이며
+    (3,424,374 → 3,362,048 → **2,957,522원/년**), 분해와 손계산은 그 골든 파일의
+    **R67/WP-N1·N1b 블록**이 갖는다.
     """
     operator = next(
         r for r in report.perspectives.results if r.perspective is Perspective.OPERATOR
     )
     assert int(operator.npv_value) == int(report.metrics[CONCLUSION_METRIC])
-    assert int(operator.npv_value) == -355_028_932
+    assert int(operator.npv_value) == -360_695_500
 
 
 @pytest.mark.req("FR-402-AC7")
@@ -195,7 +204,9 @@ def test_npv_row_prints_no_number_for_perspectives_without_cost_basis(report) ->
     # ⚠⚠⚠⚠ R66/WP-5 가 히트펌프 부하(2,675 → 3,289.0 · 급탕 신설)와 동시율
     # 80% 를 함께 세우며 −328,257,263 → −355,028,932원이 됐다 (같은 함수의
     # ⚠⚠⚠⚠ 절이 분해와 손계산을 갖는다).
-    assert "-355,028,932원" in npv_line, npv_line
+    # ⚠⚠⚠⚠⚠ R67/WP-N1·N1b 가 부하의 「하루 안 자리」를 고치며 −355,028,932 →
+    # −360,695,500원이 됐다 (같은 함수의 ⚠⚠⚠⚠⚠ 절 참조).
+    assert "-360,695,500원" in npv_line, npv_line
     cells = [cell.strip() for cell in npv_line.strip().strip("|").split("|")]
     assert "0원" not in cells, npv_line
     assert "0" not in cells, npv_line
@@ -237,7 +248,15 @@ def test_cost_total_row_prints_not_allocated_for_perspectives_without_cost_basis
     # 전기의 kWh 가 한 자리도 안 바뀐다(판정 §3 · `tests/casegrid/
     # test_coincidence_factor_wiring.py` 가 그 동일성을 잰다). 동시율이 지는
     # 몫은 아래 편익 합계 쪽이다.
-    assert "501,150,578원" in cost_line, cost_line
+    # ⚠⚠⚠⚠⚠ R67/WP-N1·N1b — 이번에는 이 칸이 **내려갔다.** 초기투자는 또 1원도
+    # 안 움직였고 **전력 구매 비용만** 줄었다: 1년차 운영비가 14,080,292 →
+    # 14,015,113원(N1 · **−65,179**) → 14,013,659원(N1b · **−1,454**)이고, 20년
+    # 단순 누계 **−1,332,660** 이 그대로 이 칸에 실려 501,150,578 →
+    # **499,817,918원**이 됐다.
+    # ★ **비용이 내려갔는데 결론축은 나빠졌다** — 첨두 절감이 더 크게 줄었기
+    # 때문이며, 그 분해는 아래 `test_benefit_total_row_always_prints_a_real_number`
+    # 와 그 골든 파일의 R67 블록이 갖는다.
+    assert "499,817,918원" in cost_line, cost_line
 
 
 def test_benefit_total_row_always_prints_a_real_number(report) -> None:
@@ -292,12 +311,27 @@ def test_benefit_total_row_always_prints_a_real_number(report) -> None:
     × 20 = **69,195,580원**.
     ★ 그래서 이 칸이 **두 지시가 서로 다른 관점에 실린다**는 것을 보인다 —
     동시율은 주민·사업자 **둘 다**에, 히트펌프의 역송 감소는 **사업자만**에.
+
+    ⚠⚠⚠⚠ **R67/WP-N1·N1b 가 둘을 «같은 수»로 만들었다** — 참여 주민 68,487,480 ·
+    사업자 69,195,580 → **둘 다 59,150,440원**.
+    ⓐ **N1 이 잉여판매·REC 를 0원으로 만들었다** — 전기차 충전에 히트펌프의 겨울
+    몫이 씌워지던 것을 끊자 낮의 부하 형상이 바뀌어 **계통으로 나가는 kWh 가
+    사라졌다**(잉여판매 21,535 → 0 · REC 13,870 → 0). 사업자가 주민보다 더 지던
+    갈래가 그 둘이었으므로 **두 칸이 같아진다.**
+    ⓑ **N1b 는 남은 한 갈래(첨두 절감)를 깎았다** — 겨울 히트펌프가 저녁 봉우리를
+    따라 깔리던 것이 7~9·19~21시 두 봉우리로 옮겨 가며 방전창(18~21시) 안의
+    첨두가 낮아져 3,362,048 → **2,957,522원/년**이 됐고, 20년 단순 누계가
+    **59,150,440**(= 2,957,522 × 20)이다.
+    ⚠⚠ **그래서 아래 단언이 「같은 문자열 둘」이 됐다** — 두 칸이 같은 수를 싣게
+    된 것이지 한 칸이 사라진 것이 아니므로, **오라클을 느슨하게 하지 않으려고
+    「그 수가 이 줄에 «두 번» 실렸는가」로 센다.** 종전 두 줄(주민 하나 · 사업자
+    하나)과 같은 세기다 — `in` 두 번으로 두면 한 칸만 맞아도 통과한다.
     """
     text = render_markdown(report)
     benefit_line = next(line for line in text.splitlines() if line.startswith("| 편익 합계 |"))
     assert "미산출" not in benefit_line and "미배분" not in benefit_line
-    assert "68,487,480원" in benefit_line  # 참여 주민
-    assert "69,195,580원" in benefit_line  # 사업자
+    # 참여 주민 · 사업자 두 칸이다 (윗 독스트링 ⚠⚠ 참조)
+    assert benefit_line.count("59,150,440원") == 2, benefit_line
 
 
 def test_header_row_pairs_repository_and_user_vocabulary(report) -> None:

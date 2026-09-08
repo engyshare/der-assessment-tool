@@ -123,9 +123,12 @@ def test_control_group_the_real_ledger_still_shows_a_shortfall() -> None:
     이 대조군이 없으면 「흑자 경로가 돈다」와 「늘 그 문면이 나온다」가
     구별되지 않는다(모듈 독스트링 참조). `fixtures/golden/
     scenario_subsidy_80.yaml`(기존 골든)이 같은 `subsidy_rate=0.80` 을
-    진짜 대장으로 매 회귀에서 재는 값(`npv_won: -167457263`)과 일치해야
+    진짜 대장으로 매 회귀에서 재는 값(`npv_won: -199895500`)과 일치해야
     한다 — 이 실측이 그 값과 어긋나면 이 파일이 아니라 진짜 대장이나
     `core/` 가 움직인 것이다.
+    ⚠ **이 도입부의 수는 R66/WP-5 때 갱신이 빠져 `-167457263` 에 멈춰 있었다**
+    (아래 「여섯 번째」 절은 그 라운드가 제대로 적었다). R67/WP-N1c 가 아래
+    단언과 같은 수로 맞춰 두었다 — **아래 이력 절의 맨 마지막 수가 이 자리다.**
 
     ## ⚠ 값이 한 번 바뀌었다 — **재는 것은 그대로다** (R64/WP-4)
 
@@ -194,13 +197,30 @@ def test_control_group_the_real_ledger_still_shows_a_shortfall() -> None:
     `_LEDGER_VARS` 의 스윕 축이므로 `build_level_map()` 이 그 키를 요구한다.
     ⛔ **`load.heatpump.annual` 은 그 파일에 아예 없다**(종전부터 없었다) —
     그래서 위쪽 흑자 시험의 부하는 여전히 히트펌프 없이 돌고 값이 안 움직인다.
+
+    ## ⚠ 값이 일곱 번째로 바뀌었다 — **역시 재는 것은 그대로다** (R67/WP-N1·N1b)
+
+    R67 이 **부하의 「하루 안 자리」**를 두 번 고쳤고, 중간 상태를 회귀 기준선에
+    박지 않으려고 **재채취를 한 번에** 했다 — ⓐ **WP-N1** 이 전기차 충전에
+    히트펌프의 겨울 몫(0.4714)이 씌워지던 것을 끊고 일수 비례를 씌웠고
+    (**−423,435원**) ⓑ **WP-N1b** 가 기기마다 하루 안의 형상을 갖게 했다(겨울
+    히트펌프 7~9·19~21시 · 전기차 24시간 균등 · **−5,243,133원**).
+    `-194228932` → **`-199895500`**(누적 **−5,666,568**). 나빠진 몫은 **첨두 절감
+    하나**(3,424,374 → 3,362,048 → 2,957,522원/년)이고, 산식·손계산·「무엇이 안
+    움직였나」는 그 골든 파일의 **R67/WP-N1·N1b 블록**이 갖는다.
+    ⚠ **이번에도 세 시나리오의 이동 폭이 «같다»** — 둘 다 **부하**를 고쳤고
+    설비를 안 건드려 초기투자가 1원도 안 움직였다(보조율이 나눌 대상이 없다).
+    ⚠ **파생 대장(`fixtures/probe/assumptions_probe_gap_margin.yaml`)은 한 자도
+    고치지 않았다** — 이 라운드가 세운 것은 **대장 항목이 아니라 부하의 시각별
+    형상**이라 `_LEDGER_VARS` 가 요구하는 키가 늘지 않았다.
+    ⚠ **오라클은 이번에도 한 자도 느슨해지지 않았다** — 여전히 완전 일치(`==`)다.
     """
     report = build_case_report(PROBE_SCENARIO_PATH, assumptions_path=REAL_ASSUMPTIONS_PATH)
 
     assert report.recovers_within_horizon is False
-    assert report.metrics["npv"] == -194228932.0, (
+    assert report.metrics["npv"] == -199895500.0, (
         "대조군의 순현재가치가 fixtures/golden/scenario_subsidy_80.yaml 의 "
-        "실측(-194228932)과 어긋난다 — 진짜 대장이나 core/ 가 움직였다는 뜻이다"
+        "실측(-199895500)과 어긋난다 — 진짜 대장이나 core/ 가 움직였다는 뜻이다"
     )
 
     rendered = render_markdown(report)
