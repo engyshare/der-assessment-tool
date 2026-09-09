@@ -158,10 +158,8 @@
 >
 > **⑤ 푸시·CI** — 세는 명령 `git log --oneline origin/r64-demand-supply..HEAD | wc -l` ·
 > `gh run list --branch r64-demand-supply`. **PR #31** · ⚠ `tests` 는 **PR 실행만** 보고 **약 1시간**이다.
-> ★ **`7608cb5` 까지는 `tests`·`source-rules` 가 CI 에서 «success 로 확인»됐다.**
-> ★ **`7c46520`(WP-9)의 `tests` 도 17:32 에 success 로 확인됐다**(1시간 7분 38초).
-> ⚠ **그 뒤 문서 커밋 둘(`234082b`·`b4baa81`)의 `tests` 는 확인하지 못했다** — `status.md` ·
-> `status-history.md` 만 바뀌었고 코드는 한 줄도 안 바뀌었다. **다음 사람이 한 번 확인하라.**
+> ★★ **R68 의 «마지막 커밋 `bbde568` 까지» `tests`·`source-rules` 가 CI 에서 전부
+> success 다**(2026-09-09 20:56 확인 · `tests` 1시간 6분 56초). **미확인 커밋은 없다.**
 >
 > **⑥ 전문** — **`status-history.md` R68 블록**(WP 표 아홉 · 멈춘 자리 여섯 · 오케 판정 ·
 > **워커가 오케를 정정한 일곱** · 자리 운영 판독 · 새로 연 것 여섯).
