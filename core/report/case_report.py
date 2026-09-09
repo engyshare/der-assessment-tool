@@ -286,6 +286,19 @@ class AssumptionRow:
     source: str
     confidence: str
     verified_at: date | None
+    #: ★ **계측 경계** — 부기 7종의 `applicable_scope` (R68/WP-7 · 검토서 §3.1).
+    #:
+    #: ## 왜 뒤늦게 붙었나
+    #:
+    #: 검토서 §3.1 이 *「모든 수요 입력에 `값`·`단위`·`출처`·**`계측 경계`**·
+    #: `산출식`·`변경 경로` 를 둔다」* 를 요구한다. 여섯 중 다섯은 이 행이 이미
+    #: 날랐고 **계측 경계만 없었다** — 대장(`AssumptionItem.applicable_scope`)에는
+    #: 처음부터 있었으나 리포트 경계를 넘지 못했다. 그래서 *「이 값이 무엇을 재고
+    #: 무엇을 재지 않는가」* 는 대장 파일을 열어야만 답되는 물음이었다.
+    #:
+    #: ⚠ **빈 문자열이 「경계가 없다」가 아니다** — 대장이 그 칸을 비운 항목이라는
+    #: 뜻이며, 대장 검사기(`scripts/check_assumptions.py`)가 그것을 따로 잡는다.
+    applicable_scope: str = ""
 
 
 @dataclass(frozen=True)
@@ -684,6 +697,10 @@ def _appendix(provider: AssumptionSet) -> tuple[AssumptionRow, ...]:
                 source=item.source or "출처 미기재",
                 confidence=item.confidence.value,
                 verified_at=item.verified_at,
+                # ⚠ 오버라이드가 걸려도 **경계는 대장의 것**이다 — 값을 덮어쓰는
+                # 것과 그 값이 무엇을 재는가는 다른 축이고, 시나리오는 앞의 것만
+                # 바꾼다(`AssumptionSet.get()` 이 부기를 짓지 않는다).
+                applicable_scope=item.applicable_scope,
             )
         )
     return tuple(rows)

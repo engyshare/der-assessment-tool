@@ -47,6 +47,7 @@ from core.report.verification_chain import (
     handoff_text,
     named_stages,
 )
+from core.report.verification_demand import DEMAND_ATTRIBUTE_HEAD
 from core.report.verification_dispatch import (
     DISPATCH_TABLE_HEAD,
     LINKAGE_NOTE,
@@ -487,6 +488,31 @@ def test_the_stage_two_file_carries_the_scale_up_rule(tmp_path: Path) -> None:
             f"동시율을 걸지 않는 자리 「{where}」가 「제외」로 서 있지 않다 — "
             "누락으로 읽히면 다음 사람이 넣고 결론축이 조용히 좋아진다"
         )
+
+
+def test_the_stage_one_file_carries_the_six_attributes_of_every_demand_input(
+    tmp_path: Path,
+) -> None:
+    """★★★ **CLI 산출물의 1단계 파일이 수요 입력의 여섯 속성을 싣는다** (검토서 §3.1).
+
+    검토서 문면: *「모든 수요 입력에 `값`, `단위`, `출처`, `계측 경계`, `산출식`,
+    `변경 경로`를 둔다」*.
+
+    ★ **렌더러를 직접 부르지 않는다** — 배선이 끊기면 다른 검사가 초록불이어도
+    사용자는 그 표를 못 본다. 표의 속살(대장 문면과 글자로 같은가 · 충전효율이
+    곱해지지 않는가 · 멈춘 자리 둘)은 `tests/report/test_verification_demand.py`
+    가 잰다 — 여기서는 **1단계 파일에 실려 나가는가**만 본다.
+
+    ⚠ 「전제」를 세지 않는다 — 그 검사는 `test_the_stage_frame_adds_no_premise_word
+    _and_no_new_stage` 와 화면 낱말 검사가 각자 지고 있다.
+    """
+    stage1 = split_stages(_verification_text(tmp_path))[0].body
+    for line in DEMAND_ATTRIBUTE_HEAD:
+        assert line in stage1, "1단계에 여섯 속성 표의 머리가 없다"
+    # 멈춘 자리 둘이 **글자로** 서 있다 — 빈칸은 「없다」와 「싣지 못했다」를 가르지
+    # 못하고, 이 둘은 사람의 판정을 기다리는 자리다(검토서 §3.1 · §4.4).
+    assert "난방·냉방·급탕 분해는 이 표에 없다" in stage1
+    assert "검증 상태(계산됨 · 출처 확인 · 조사 인용 · 가정)는 대장이 갖고 있지 않다" in stage1
 
 
 # ── WP-4-fix — 목차의 의존 연결표 (검토서 §2.2) ─────────────────────────────

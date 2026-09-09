@@ -1312,3 +1312,30 @@ def test_the_seasonal_day_tables_reach_stage_three(tmp_path: Path) -> None:
         f"이 실행의 대조가 어긋났다 — 하루 표와 계절 연간값이 다른 실행을 보고 "
         f"있다: {diverged}"
     )
+
+
+def test_the_seasonal_annual_table_carries_its_unit_in_both_titles(
+    tmp_path: Path,
+) -> None:
+    """★ **계절 연간표의 단위가 표 제목과 열 제목 둘 다에 선다** (검토서 §4.2).
+
+    검토서 문면: *「특히 3단계의 대표일 표와 계절 연간표는 같은 파일에 있으므로
+    단위가 제목에 반드시 있어야 한다」*. 두 표의 축이 다르다 — 대표일은
+    `kWh/스텝`, 이 표는 `kWh/년`. 제목이 그 말을 하지 않으면 읽는 눈이 두 표의
+    수를 같은 축으로 읽고, **하루치를 연간값으로 읽는 오독**이 거기서 난다.
+
+    ⚠ **수를 재지 않는다** — R68/WP-7 이 바꾼 것은 제목뿐이고 칸의 문면은 그대로다.
+    """
+    stage3 = split_stages(_dumped(tmp_path))[2].body
+    title = "**계절별 운전 — 계절마다 따로 돌린 결과** (사용자 요구 3·6 · 단위 `kWh/년`)"
+    assert title in stage3, "계절 연간표의 제목에 단위가 없다"
+    head = next(
+        line for line in stage3.splitlines() if line.startswith("| 계절 | 일수")
+    )
+    columns = [cell.strip() for cell in head.strip().strip("|").split("|")]
+    assert columns[1] == "일수 (일)"
+    assert sum("(kWh/년)" in column for column in columns) == 3, (
+        f"연간 수량 세 열이 단위를 갖지 않는다: {head}"
+    )
+    # ⚠ 그 위 대표일 표는 **다른 축**이며 그 사실이 제목에 남아 있어야 한다.
+    assert "단위 kWh/스텝" in stage3, "대표일 표의 단위 제목이 사라졌다"

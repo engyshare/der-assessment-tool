@@ -56,6 +56,7 @@ from core.report.case_report import (
     MAX_SUBSIDY_RATE,
     CaseReport,
 )
+from core.report.verification_demand import demand_attribute_lines
 from core.report.verification_dispatch import (
     DISPATCH_TABLE_HEAD,
     SIGN_CONVENTION_NOTE,
@@ -183,6 +184,11 @@ def _stage1_ledger(report: CaseReport) -> StageBlock:
         "값·단위·기준연도·출처·신뢰도·최종확인일을 각 행이 함께 나른다. "
         "**대장 파일의 항목 수가 아니다** — 값이 비어 있는 항목은 여기 없다.",
         *execution_input_lines(report),  # ★ 요구 1·2·3 — 대장 밖에서 온 실행 입력
+        # ★ 수요 입력의 여섯 속성 (R68/WP-7 · 검토서 §3.1) — 위 표가 「값과 통로」를
+        # 적고 이것이 「그 값이 무엇을 재고 어디서 왔는가」를 적는다. 두 표를 합치지
+        # 않는 이유: 위 표에는 대장 항목이 «아닌» 행(가구 수 · 계절 몫 · 할인율)이
+        # 함께 서고, 그 행들에 계측 경계·출처를 요구하면 빈 칸이 다섯 열 생긴다.
+        *demand_attribute_lines(report),
     ]
     b = [
         "| 키 | 값 | 단위 | 기준연도 | 출처 | 신뢰도 | 최종확인일 |",
