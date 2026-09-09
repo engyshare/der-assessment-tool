@@ -39,7 +39,7 @@ from core.casegrid.load_shift import (
     DR_SHIFTABLE_SHARE_UNIT,
 )
 from core.casegrid.models import SeasonRun
-from core.report._format import NO_VALUE, _date, _num, _unit_head, _won
+from core.report._format import NO_VALUE, _cell, _date, _num, _unit_head, _won
 from core.report.case_report import AssumptionRow, CaseReport, OverrideRow
 
 #: 산출 방법 표기 — 「단독 기여」를 문장 대신 이 라벨이 말한다 (`FR-1002-AC2`).
@@ -287,11 +287,19 @@ def _first_sentence(text: str) -> str:
 
 
 def _appendix_row(row: AssumptionRow) -> str:
-    """붙임 1 의 한 행. **신뢰도가 열로 들어온다** — 주제별로 묶기 때문이다."""
+    """붙임 1 의 한 행. **신뢰도가 열로 들어온다** — 주제별로 묶기 때문이다.
+
+    ⚠⚠ **산문 칸을 접어서 넣는다** (R68/WP-8). 이 행은 검증 보고서 1단계 ⓑ 표와
+    **같은 함정**을 갖고 있었다 — `docs/assumptions.yaml::load.heatpump.annual`
+    의 `source` 에 줄바꿈이 있어 그 행이 표에서 튕겨 나간다. 대장은 고치지
+    않는다(값의 문제가 아니라 «인쇄»의 문제다 · `.orch/R68/JUDGMENT-wp7.md`).
+    접는 자리는 `core/report/_format.py::_cell` **하나**이며 여기서 새로 짓지
+    않는다 — 두 벌이면 한쪽만 고쳐지는 날 같은 결함이 되살아난다.
+    """
     return (
-        f"| `{row.key}` | {row.value} | {row.value_unit or NO_VALUE} | "
-        f"{row.confidence} | {row.source} | {row.base_year or NO_VALUE} | "
-        f"{_date(row.verified_at)} |"
+        f"| `{row.key}` | {_cell(str(row.value))} | {_cell(row.value_unit or '')} | "
+        f"{_cell(row.confidence)} | {_cell(row.source or '')} | "
+        f"{_cell(str(row.base_year or ''))} | {_date(row.verified_at)} |"
     )
 
 

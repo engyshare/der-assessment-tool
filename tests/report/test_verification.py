@@ -33,6 +33,7 @@ from app.run.report_cli import (
     main,
 )
 from app.services.verify_steps import STAGE_COUNT, split_stages
+from core.report.appendix_sections import appendix_section
 from core.report.case_report import CONCLUSION_METRIC, build_case_report
 from core.report.verification import (
     StageBlock,
@@ -872,3 +873,89 @@ def test_a_stage_number_outside_the_nine_stops() -> None:
         stage_question(STAGE_COUNT + 1)
     with pytest.raises(ValueError, match="판정 규칙이 없는 단계 번호"):
         stage_gate(report, 0)
+
+
+def test_every_ledger_row_is_one_line_in_both_tables() -> None:
+    """★★★ **대장의 산문이 표를 깨지 않는다** — 1단계 ⓑ 와 붙임 1 둘 다 (R68/WP-8).
+
+    ## 무엇이 실제로 깨져 있었나
+
+    `docs/assumptions.yaml::load.heatpump.annual` 의 `source` 에 **줄바꿈이 들어
+    있어**, 그 행이 마크다운 표에서 **여러 줄로 쪼개져 표 밖으로 튕겨 나갔다**
+    (R68/WP-7 실측). 값은 옳고 인쇄가 틀린 자리다 — 그래서 판정
+    (`.orch/R68/JUDGMENT-wp7.md`)은 *「대장을 고치지 말고 표시 층에서 접어라」*
+    였고, **접는 자리를 여러 벌 만들지 말라**는 조건이 붙었다.
+
+    ## 왜 두 표를 한 검사가 보는가
+
+    같은 함정을 **두 산출물이 함께** 갖고 있었다 — 검증 1단계 ⓑ 와 심의 붙임 1.
+    한쪽만 재면 다른 쪽이 조용히 깨진 채 남고, 그것이 이 저장소가 반복해 만난
+    「같은 사실을 두 자리가 각자 인쇄한다」의 한 얼굴이다. 접는 자리는
+    `core/report/_format.py::_cell` **하나**다.
+
+    ⚠ **자르는 것이 아니다** — 값이 줄어들면 그것은 다른 결함이다. 그래서 접힌
+    행이 원문의 **첫 조각과 마지막 조각을 둘 다** 갖는지 함께 잰다.
+    """
+    report = build_case_report(
+        _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    multiline = [row for row in report.assumptions if "\n" in (row.source or "")]
+    assert multiline, (
+        "대장에 줄바꿈을 가진 `source` 가 0건이다 — 이 검사가 0회 순회로 통과한다"
+    )
+    stage1 = next(block for block in stage_blocks(report) if block.number == 1)
+    for surface, lines in (
+        ("검증 1단계 ⓑ", stage1.lines),
+        ("심의 붙임 1", tuple(appendix_section(report))),
+    ):
+        for row in multiline:
+            hits = [line for line in lines if line.startswith(f"| `{row.key}` |")]
+            assert len(hits) == 1, (
+                f"{surface} 에서 `{row.key}` 행이 {len(hits)}줄이다 — 대장의 "
+                "줄바꿈이 표를 깼다"
+            )
+            head, tail = row.source.split("\n")[0], row.source.split("\n")[-1]
+            assert head.strip() in hits[0] and tail.strip() in hits[0], (
+                f"{surface} 의 `{row.key}` 행이 출처를 **잘랐다** — 접는 것이지 "
+                "줄이는 것이 아니다"
+            )
+
+
+def test_the_money_and_time_columns_name_their_unit() -> None:
+    """★★ **금액·연차 열이 단위를 제목에 싣는다** (검토서 §4.2 · R68/WP-8).
+
+    ⚠ **이 규칙은 열마다 단위가 다른 표에만 건다.** 한 표의 열이 전부 같은
+    단위면 제목이 지는 것이 이 저장소의 판정이고, 그 자리는
+    `core/report/dispatch_sections.py` 의 `LOAD_HEAD` 위 주석이다 — 3단계 스텝
+    표가 그 갈래다(표 제목이 `단위 kWh/스텝` 을 진다).
+
+    ⛔ **값을 재지 않는다** — 제목만 보는 검사이며, 값이 움직이면 그것은 이
+    변경의 결함이다(사다리 L0 이 그 자리를 진다).
+    """
+    report = build_case_report(
+        _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    text = render_verification_markdown(report)
+    heads = [
+        line
+        for line in text.splitlines()
+        if line.startswith("|") and not line.startswith("|---")
+    ]
+    for wanted in (
+        "| 자원 | 취득비 (원) | 고정 O&M (원/년) |",
+        "| 편익 | 1년차 금액 (원) | 만든 자원 |",
+        "| 비용 | 1년차 금액 (원) | 자원 |",
+        "| 자원 | 수명 (년) |",
+        "| 자원 | 종류 | 계상 연차 (년차) | 금액 (원) |",
+        "| 행 | 발생 연차 (년차) | 그 연차 금액 (원) |",
+    ):
+        assert wanted in heads, f"열 제목이 단위를 잃었다 — 「{wanted}」가 없다"
+    variants = next(
+        line for line in heads if line.startswith("| 변형 | ")
+    )
+    for unit in ("물리 충족률 (%)", "연간 수전량 (kWh/년)", "초기투자 (원)",
+                 "할인 회수기간 (년)", "순현재가치 (원)"):
+        assert unit in variants, (
+            f"9단계 비교표의 「{unit}」 열 제목이 단위를 잃었다 — 이 표는 열마다 "
+            "단위가 다르므로 표 제목이 질 수 없다"
+        )

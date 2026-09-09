@@ -24,12 +24,15 @@ from pathlib import Path
 
 import pytest
 
+from core.casegrid.appliance_load import APPLIANCE_LOAD_UNIT
 from core.casegrid.household_scale import HOUSEHOLD_COUNT_UNSPECIFIED
 from core.report.case_report import CaseReport, build_case_report
 from core.report.verification_scaleup import (
     COINCIDENCE_EXCLUDED,
     COINCIDENCE_FACTOR_LEDGER_KEY,
+    ESTATE_LOAD_UNIT,
     EXCLUDED_BY_DECISION,
+    NO_CHANGE_PATH_NOTE,
     NOT_MULTIPLIED,
     SAME_AS_HOUSEHOLD,
     estate_load_kwh,
@@ -263,3 +266,49 @@ def test_the_section_stands_no_new_premise_word_and_no_new_stage(
     lines = scaleup_lines(report)
     assert "전제" not in "\n".join(lines)
     assert not any(line.startswith("## ") for line in lines)
+
+
+def test_the_estate_unit_says_it_is_the_estate_not_one_household() -> None:
+    """★★ **단지 합계의 단위가 「호당」과 낱말로 갈린다** (R68/WP-8 · 검토서 §4.2).
+
+    이 표는 한 호 값과 단지 값을 **나란히** 싣는다. 그때 단지 칸이 맨 `kWh/년`
+    이면 그 수가 호당인지 단지인지 **낱말이 말하지 않는다** — 20호 단지에서
+    그 오독은 20배다. 판정(`.orch/R68/JUDGMENT-wp7.md` ⓔ-1)이 검토서의 낱말
+    (`kWh/단지·년`)로 맞추기로 했다.
+
+    ⚠ **분모가 바뀐 것이 아니라 이름이 바뀐 것**이다 — 그래서 이 검사는 낱말만
+    보고 수는 보지 않는다(수는 위 검사들이 이미 잰다).
+    """
+    assert "단지" in ESTATE_LOAD_UNIT, (
+        f"단지 합계의 단위 「{ESTATE_LOAD_UNIT}」가 «단지»라고 말하지 않는다"
+    )
+    assert ESTATE_LOAD_UNIT != APPLIANCE_LOAD_UNIT, (
+        "단지 합계와 호당 값의 단위 낱말이 같다 — 두 열이 나란히 서면 구별되지 않는다"
+    )
+
+
+def test_the_axes_with_no_change_path_are_reported_in_words(
+    report: CaseReport,
+) -> None:
+    """★★★ **바꾸는 통로가 「없다」를 산출물이 글자로 신고한다** (R68/WP-8).
+
+    ## 왜 이 줄이 필요한가 — **「미반영 항목」 표가 이 둘을 못 센다**
+
+    그 표(`core/report/unreflected.py::_unread_items`)는 *대장 스윕 축인데
+    파이프라인이 안 읽는 것*만 센다. 저장장치 용량·정격출력은 **대장에 아예
+    없어서** 그 판정에 들지 않는다 — 감시의 사각지대다. 검토서 §4.5 는 그 둘을
+    *「하나씩 바꿨을 때 움직이는지 테스트해야 한다」* 의 목록에 넣었으므로,
+    적지 않으면 산출물이 *「모든 수치는 변경 가능」* 을 **말없이 참으로 만든다.**
+
+    ⛔ **통로를 세우는 것은 이 검사의 몫이 아니다** — 대장에 올리면 `sensitivity`
+    삼수를 지어야 하고 그 근거가 없다. 여기서 붙드는 것은 **없다는 사실이 인쇄되는가**다.
+    """
+    lines = scaleup_lines(report)
+    assert NO_CHANGE_PATH_NOTE in lines, (
+        "「바꾸는 통로가 없다」 줄이 2단계에 없다 — 그러면 산출물이 「모든 수치는 "
+        f"변경 가능」을 말없이 참으로 만든다. 실린 줄: {lines}"
+    )
+    assert "ESS_POWER_KW" in NO_CHANGE_PATH_NOTE, (
+        "신고가 **어디에 있는 값인지**를 가리키지 않는다 — 가리키지 않으면 "
+        "읽는 사람이 그것을 찾을 수 없다"
+    )

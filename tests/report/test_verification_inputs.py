@@ -1339,3 +1339,60 @@ def test_the_seasonal_annual_table_carries_its_unit_in_both_titles(
     )
     # ⚠ 그 위 대표일 표는 **다른 축**이며 그 사실이 제목에 남아 있어야 한다.
     assert "단위 kWh/스텝" in stage3, "대표일 표의 단위 제목이 사라졌다"
+
+
+def test_the_two_sizing_tables_name_the_unit_of_every_column(tmp_path: Path) -> None:
+    """★★ **2단계 역산 두 표의 열 제목이 단위를 진다** (R68/WP-8 · 검토서 §4.2).
+
+    ## ⚠ 규칙은 「모든 표에 단위를 박아라」가 아니다
+
+    한 표의 열이 **전부 같은 단위**면 표 제목이 지는 것이 이 저장소의 판정이고
+    (`core/report/dispatch_sections.py` 의 `LOAD_HEAD` 위 주석 · 3단계 스텝 표가
+    그 갈래다), 그때 열마다 되풀이하면 표가 읽기 어려워진다. **열마다 단위가
+    다른 표에서만** 열 제목이 진다 — 아래 둘이 그 갈래다:
+
+        ② 자립 PV 역산   kWh/호·년 · kW · kWh/단지·년 · kW  ← 넷이 다르다
+        ③ ESS 역산        일 · kWh · kW · kWh/일 · kWh/스텝  ← 다섯이 다르다
+
+    ②에서 특히 큰 자리는 **「1가구」와 「20호」가 나란히 서는 것**이다. 두 열이
+    맨 `kWh` 면 어느 쪽이 호당인지 낱말이 말하지 않고, 그 오독은 가구 수만큼
+    틀린다.
+
+    ⛔ **수를 재지 않는다** — 제목만 보는 검사다. 칸의 값은 위 검사들이 잰다.
+    """
+    stage2 = split_stages(_dumped(tmp_path))[1].body
+    pv_head = next(
+        line for line in stage2.splitlines() if line.startswith("| 부하 수준 |")
+    )
+    for unit in (APPLIANCE_LOAD_UNIT, ESTATE_LOAD_UNIT, "(kW)"):
+        assert unit in pv_head, f"② 자립 PV 표의 열 제목에 「{unit}」가 없다: {pv_head}"
+    ess_head = next(
+        line for line in stage2.splitlines() if line.startswith("| 계절 | 일수")
+    )
+    columns = [cell.strip() for cell in ess_head.strip().strip("|").split("|")]
+    assert columns[1] == "일수 (일)", f"③ ESS 표의 일수 열이 단위를 잃었다: {ess_head}"
+    # 정격용량 세 열(1가구 환산 · 완전 자립 · 역산 채택안)과 정격출력 세 열이
+    # 짝을 이룬다. ⚠ 수를 리터럴로 박는 대신 **짝의 수가 같은가**를 함께 잰다 —
+    # 열이 늘어도 짝이 맞으면 통과하고, 한쪽만 늘면 걸린다.
+    capacity = sum(column.endswith("(kWh)") for column in columns)
+    power = sum(column.endswith("(kW)") for column in columns)
+    assert capacity >= 3 and capacity == power, (
+        f"③ ESS 표의 정격용량·정격출력 열이 단위로 짝지어지지 않는다 "
+        f"(용량 {capacity} · 출력 {power}): {ess_head}"
+    )
+
+
+def test_the_seasonal_resource_table_names_its_unit_in_the_title(
+    tmp_path: Path,
+) -> None:
+    """★ **자원별 계절 표는 «표 제목»이 단위를 진다** — 열이 전부 같은 단위다.
+
+    종전 제목은 맨 `몫(kWh)` 였고, 바로 아래 주석은 *「대표일 표는 kWh/일 ·
+    이 표는 kWh/년」* 이라 적었다 — **제목이 그 둘을 가르지 않았다.** 열마다
+    붙이지 않는 이유는 위 검사의 ⚠ 절과 같다(열이 전부 같은 단위다).
+    """
+    stage3 = split_stages(_dumped(tmp_path))[2].body
+    assert "자원별 — 그 계절이 한 해에 보태는 몫(kWh/년):" in stage3, (
+        "자원별 계절 표의 제목이 `kWh/년` 을 말하지 않는다 — 맨 `kWh` 는 하루치와 "
+        "한 해치를 가르지 않는다"
+    )

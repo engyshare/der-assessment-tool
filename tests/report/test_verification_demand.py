@@ -40,7 +40,11 @@ from core.report.verification_demand import (
     HOUSEHOLD_LOAD_TITLE,
     demand_attribute_lines,
 )
-from core.report.verification_scaleup import HOUSEHOLD_LOAD_LEDGER_KEY, household_base_kwh
+from core.report.verification_scaleup import (
+    ESTATE_LOAD_UNIT,
+    HOUSEHOLD_LOAD_LEDGER_KEY,
+    household_base_kwh,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -243,3 +247,29 @@ def test_the_unit_note_is_measured_rather_than_asserted(
     else:
         assert "같다" in note
         assert APPLIANCE_LOAD_UNIT in note
+
+
+def test_the_estate_unit_line_states_the_word_instead_of_deferring_it(
+    report: CaseReport,
+) -> None:
+    """★★ **단지 합계의 단위를 「사람이 정할 일」로 미루지 않는다** (R68/WP-8).
+
+    R68/WP-7 은 저장소의 낱말(`kWh/년`)과 검토서의 낱말(`kWh/단지·년`)이 갈린
+    것을 **드러내고 멈췄다** — 그 줄은 *「맞추지 않았다 … 어느 낱말을 정본으로
+    삼을지는 사람이 정한다」* 였고, 그것이 그 자리에서는 옳은 이행이었다.
+    판정(`.orch/R68/JUDGMENT-wp7.md` ⓔ-1)이 검토서 쪽으로 정했으므로 그 줄은
+    이제 **정해진 사실**을 적어야 한다.
+
+    ⚠ 값도 곱하는 자리도 움직이지 않았다 — 낱말만이다. 그래서 이 검사도
+    낱말만 본다.
+    """
+    note = next(
+        line for line in demand_attribute_lines(report) if ESTATE_LOAD_UNIT in line
+    )
+    assert "맞추지 않았다" not in note, (
+        "판정이 난 뒤에도 「맞추지 않았다」가 남아 있다 — 산출물이 해결된 일을 "
+        "미해결로 인쇄한다"
+    )
+    assert APPLIANCE_LOAD_UNIT in note, (
+        "단지 단위를 호당 단위와 나란히 놓지 않았다 — 그 대비가 이 줄의 요점이다"
+    )

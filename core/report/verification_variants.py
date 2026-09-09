@@ -73,23 +73,28 @@ _CONFIGURATION, _NEEDED_RATE = "구성", "필요한 지원율"
 #: (`core/report/verification_inputs.py::run_used_values` 가 설비마다 「이름 값
 #: 단위」 한 조각을 낸다). 열을 셋으로 벌리면 같은 수가 세 칸에 서고, 그때
 #: 한 칸만 고쳐진다.
+#: ★ **단위를 열 제목이 진다** (R68/WP-8 · 검토서 §4.2). 이 표는 열마다 단위가
+#: 다르므로(%· kWh/년 · 원 · 년) 표 제목이 질 수 없다 — 한 표의 열이 전부 같은
+#: 단위일 때만 표 제목이 지며, 그 판정은
+#: `core/report/dispatch_sections.py` 의 `LOAD_HEAD` 위에 있다.
+#: ⛔ **값은 건드리지 않는다** — 칸을 짓는 `_cells()` 는 그대로다.
 _COLUMNS: tuple[_Column, ...] = (
     _Column(_CONFIGURATION),
     _Column(
-        "물리 충족률",
+        "물리 충족률 (%)",
         "physical_sufficiency_rate",
         "이 실행이 «충족률»을 내는 계산을 갖고 있지 않다 — 3단계가 싣는 것은 "
         "계통 수전·송전 수량이다",
     ),
     _Column(
-        "연간 수전량",
+        "연간 수전량 (kWh/년)",
         "annual_grid_import_kwh",
         "변형별로 갈리지 않는다 — 지원은 t=0 초기지출 감액이라 운전을 바꾸지 "
         "않으며, 이 실행의 수전량은 3단계가 계절별로 싣는다",
     ),
-    _Column("초기투자", "initial_outlay_won"),
-    _Column("할인 회수기간", HEADLINE_METRIC),
-    _Column("순현재가치", CONCLUSION_METRIC),
+    _Column("초기투자 (원)", "initial_outlay_won"),
+    _Column("할인 회수기간 (년)", HEADLINE_METRIC),
+    _Column("순현재가치 (원)", CONCLUSION_METRIC),
     _Column(_NEEDED_RATE),
 )
 

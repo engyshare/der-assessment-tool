@@ -808,3 +808,36 @@ def test_the_step_table_always_closes_with_a_total_row() -> None:
     assert lines[2].startswith("| 0 |"), (
         f"24스텝이 아닌 하루를 시각으로 적었다 — {lines[2]}"
     )
+
+
+def test_the_seasonal_annual_table_puts_the_unit_where_it_belongs() -> None:
+    """★ **단위가 「표 제목」과 「열 제목」 중 어디에 서는가** (R68/WP-8 · 검토서 §4.2).
+
+    ## 이 저장소가 이미 내린 판정을 그대로 잰다
+
+    `core/report/dispatch_sections.py` 의 `LOAD_HEAD` 위 주석(R68/WP-3):
+
+        ⚠ 머리글에 단위를 적지 않는다 — **표 제목이 진다**(검토서 §4.2 · 한 표
+        안에서 여섯 열이 같은 단위이므로 열마다 되풀이하면 표가 읽기 어려워진다)
+
+    ⇒ 규칙은 *「모든 열에 단위를 박아라」*가 아니라 **「같은 단위면 표 제목이,
+    다른 단위면 열 제목이 진다」**다. 이 표가 그 규칙의 두 얼굴을 한 줄에 갖는다 —
+    자원 열과 계통 두 열은 전부 `kWh/년` 이라 **표 제목**이 지고, 「일수」만
+    단위가 달라 **열 제목**이 진다.
+
+    ⛔ **수를 재지 않는다** — 제목만 보는 검사다.
+    """
+    report = build_case_report(
+        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    lines = dispatch_profile_section(report)
+    title = "#### 계절별 연간 기여 (kWh/년)"
+    assert title in lines, "표 제목이 단위를 잃었다 — 열 제목이 지지 않으므로 여기가 정본이다"
+    head = lines[lines.index(title) + 2]
+    columns = [cell.strip() for cell in head.strip().strip("|").split("|")]
+    assert columns[1] == "일수 (일)", (
+        f"「일수」 열이 단위를 갖지 않는다 — 이 열만 단위가 다르다: {head}"
+    )
+    assert not any("kWh" in column for column in columns), (
+        f"자원·계통 열이 단위를 되풀이한다 — 그 판정은 표 제목이 진다이다: {head}"
+    )

@@ -174,8 +174,8 @@ def _estate_total_cell(estate_kwh: float | None, missing: tuple[str, ...]) -> st
     `HOUSEHOLD_COUNT_UNSPECIFIED` 문면으로 채운다. 부하 쪽 미지정은 위
     `_stated_sum` 과 같은 괄호를 얹는다.
 
-    ⚠ 단위가 위 칸들과 다르다 — `kWh/호·년` 이 아니라 **`kWh/년`**(단지의
-    합계)이다. 가구 수를 곱하는 순간 «호당» 이 아니다.
+    ⚠ 단위가 위 칸들과 다르다 — `kWh/호·년` 이 아니라 **`ESTATE_LOAD_UNIT`**
+    (단지의 합계)이다. 가구 수를 곱하는 순간 «호당» 이 아니다.
 
     ⚠ **곱은 여기 없다** (R68/WP-4) —
     `core/report/verification_scaleup.py::estate_load_kwh` 가 갖는다. 2단계의
@@ -416,11 +416,19 @@ def _self_sufficiency_table(sizing: SelfSufficiencySizing) -> list[str]:
     """
     span = f"{sizing.search_low_kw:g}~{sizing.search_high_kw:g}kW"
     estate = sizing.scales_to_estate
-    head = ["부하 수준", "연간 부하(1가구)", "필요 태양광(1가구)"]
+    # ★ **단위를 열 제목이 진다** (R68/WP-8 · 검토서 §4.2). 칸에는 이미
+    # 붙어 있으나(`8,773kWh`), 「1가구」와 「20호」가 나란히 선 표에서 맨
+    # `kWh` 는 호당인지 단지인지 말하지 않는다 — 그 애매함이 §4.2 가 겨냥한
+    # 것이다. ⛔ 값은 건드리지 않는다.
+    head = [
+        "부하 수준",
+        f"연간 부하(1가구) ({APPLIANCE_LOAD_UNIT})",
+        "필요 태양광(1가구) (kW)",
+    ]
     if estate:
         head += [
-            f"연간 부하({sizing.estate_label})",
-            f"필요 태양광({sizing.estate_label})",
+            f"연간 부하({sizing.estate_label}) ({ESTATE_LOAD_UNIT})",
+            f"필요 태양광({sizing.estate_label}) (kW)",
         ]
     head.append("①의 경제성 스윕 구간 안인가")
     rows = [
@@ -510,19 +518,22 @@ def _ess_sizing_table(
         return [f"- 역산하지 못했다 — {review.unmeasurable_reason}"]
     span = f"{review.search_low_kwh:g}~{review.search_high_kwh:g}kWh"
     scaled = household_count is not None and household_count > 1
-    head = ["계절", "일수"]
+    # ★ **단위를 열 제목이 진다** (R68/WP-8 · 검토서 §4.2). 열이 열하나라
+    # 칸의 인라인 단위만으로는 kWh 열과 kW 열이 훑어 읽히지 않는다.
+    # ⛔ 값은 건드리지 않는다 — 제목만이다.
+    head = ["계절", "일수 (일)"]
     if scaled:
         head += [
-            f"{PER_HOUSEHOLD_HEAD} {ADOPTED_HEAD} 정격용량",
-            f"{PER_HOUSEHOLD_HEAD} {ADOPTED_HEAD} 정격출력",
+            f"{PER_HOUSEHOLD_HEAD} {ADOPTED_HEAD} 정격용량 (kWh)",
+            f"{PER_HOUSEHOLD_HEAD} {ADOPTED_HEAD} 정격출력 (kW)",
         ]
     head += [
-        "하루 필요 방전량",
-        "최대 결손(스텝)",
-        f"{SELF_SUFFICIENT_HEAD} 정격용량",
-        f"{SELF_SUFFICIENT_HEAD} 정격출력",
-        f"{ADOPTED_HEAD} 정격용량",
-        f"{ADOPTED_HEAD} 정격출력",
+        "하루 필요 방전량 (kWh/일)",
+        "최대 결손(스텝) (kWh/스텝)",
+        f"{SELF_SUFFICIENT_HEAD} 정격용량 (kWh)",
+        f"{SELF_SUFFICIENT_HEAD} 정격출력 (kW)",
+        f"{ADOPTED_HEAD} 정격용량 (kWh)",
+        f"{ADOPTED_HEAD} 정격출력 (kW)",
         within_range_head(sweep_where="①의"),
     ]
     rows = [
@@ -804,7 +815,13 @@ def season_lines(report: CaseReport) -> list[str]:
         f"| **{_num(sum(s.grid_import_annual_kwh for s in seasons))}kWh** "
         f"| **{_num(sum(s.load_shift_annual_kwh for s in seasons))}kWh** |",
         "",
-        "자원별 — 그 계절이 한 해에 보태는 몫(kWh):",
+        # ★ 단위를 «표 제목»이 진다 (R68/WP-8 · 검토서 §4.2) — 이 표는 열이
+        # 전부 같은 단위라 열마다 되풀이하면 읽기 어려워진다(같은 판정이
+        # `core/report/dispatch_sections.py` 의 `LOAD_HEAD` 위에 있다).
+        # ⚠ 종전 문면은 맨 `(kWh)` 였고, 바로 아래 주석이 «대표일 표는
+        # kWh/일 · 이 표는 kWh/년» 이라 적는데 제목이 그 둘을 가르지
+        # 않았다 — 값은 그대로이고 낱말만 그 사실에 맞춘다.
+        "자원별 — 그 계절이 한 해에 보태는 몫(kWh/년):",
         "",
         # ★ **사람용 이름을 앞에 · 조인 키를 뒤에** (R68/WP-2 · 검토서 §3.3
         # 마지막 항목). `e2e-pv` 는 조인 키이고 심의자가 읽을 이름이 아니다 —

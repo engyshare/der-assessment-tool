@@ -84,6 +84,7 @@ from core.casegrid.appliance_load import (
     HEATPUMP_LOAD_LEDGER_KEY,
     HEATPUMP_LOAD_TITLE,
 )
+from core.report._format import _cell
 from core.report.case_report import AssumptionRow, CaseReport
 from core.report.verification_scaleup import (
     ESTATE_LOAD_UNIT,
@@ -119,20 +120,6 @@ DEMAND_ATTRIBUTE_HEAD: tuple[str, ...] = (
     "| 출처 | 계측 경계 | 산출식 | 변경 경로 |",
     "|---|---|---|---|---|---|---|",
 )
-
-
-def _cell(text: str) -> str:
-    """산문 한 덩이를 **표 한 칸에** 넣는다 — 줄바꿈과 `|` 를 무해하게 만든다.
-
-    ⚠ **자르지 않는다.** 대장의 계측 경계·출처는 길지만, 줄여 실으면 *「무엇을
-    재지 않는가」*가 잘려 나가고 그것이 이 표가 세워진 이유다. 여기서 하는 일은
-    **접기**뿐이다 — 줄바꿈이 표를 깨고 `|` 가 열을 하나 더 만든다.
-
-    ⛔ 이것은 산문 「파싱」이 아니다 — 무엇도 뽑아내지 않고 문면 전체를 나른다.
-    """
-    if not text.strip():
-        return "—"
-    return " ".join(text.split()).replace("|", r"\|")
 
 
 def _value_cell(value: float | None) -> str:
@@ -244,9 +231,10 @@ def demand_attribute_lines(report: CaseReport) -> list[str]:
         "- 「값」은 **이 실행이 쓴 값**이고 「단위 · 출처 · 계측 경계」는 **대장이 적은 "
         "것**이다 — 시나리오가 값을 덮어써도 그 값이 무엇을 재는가는 대장이 정한다",
         _unit_note(rows, keys),
-        f"- ⚠ 단지 합계의 단위는 이 저장소가 `{ESTATE_LOAD_UNIT}` 으로 적고 검토서 "
-        "§4.2 는 `kWh/단지·년` 으로 적는다 — **맞추지 않았다.** 인쇄되는 것은 러너와 "
-        "리포트가 실제로 쓰는 쪽이며, 어느 낱말을 정본으로 삼을지는 사람이 정한다",
+        f"- 단지 합계의 단위는 `{ESTATE_LOAD_UNIT}` 이다 — 위 칸들의 "
+        f"`{APPLIANCE_LOAD_UNIT}` 과 나란히 서므로 **호당인지 단지인지**를 낱말이 "
+        "스스로 말한다(검토서 §4.2). ⚠ **분모가 바뀐 것이 아니라 이름이 바뀐 "
+        "것**이다 — 값도 곱하는 자리도 그대로다",
         "",
         *_ev_boundary_lines(ev_total),
         *_heatpump_breakdown_lines(),

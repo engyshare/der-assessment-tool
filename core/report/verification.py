@@ -49,13 +49,14 @@ from core.casegrid.models import (
     OneOffLine,
 )
 from core.contracts.schemas import CashFlowRow
-from core.report._format import _date, _num, _won, _years
+from core.report._format import _cell, _date, _num, _won, _years
 from core.report.case_report import (
     CONCLUSION_METRIC,
     HEADLINE_METRIC,
     MAX_SUBSIDY_RATE,
     CaseReport,
 )
+from core.report.verification_benefit import benefit_pair_lines
 from core.report.verification_demand import demand_attribute_lines
 from core.report.verification_dispatch import (
     DISPATCH_TABLE_HEAD,
@@ -190,14 +191,22 @@ def _stage1_ledger(report: CaseReport) -> StageBlock:
         # 함께 서고, 그 행들에 계측 경계·출처를 요구하면 빈 칸이 다섯 열 생긴다.
         *demand_attribute_lines(report),
     ]
+    # ★★ **산문 칸을 접어서 넣는다** (R68/WP-8 · 판정 `.orch/R68/JUDGMENT-wp7.md`).
+    # `docs/assumptions.yaml::load.heatpump.annual` 의 `source` 에 **줄바꿈이 들어
+    # 있어** 이 표의 그 행이 마크다운에서 여러 줄로 쪼개져 **표에서 튕겨 나갔다**
+    # (R68/WP-7 실측). 대장은 고치지 않는다 — 값의 문제가 아니라 «인쇄»의 문제이고,
+    # 접는 자리는 `core/report/_format.py::_cell` 하나다(여러 벌 만들지 않는다).
+    # ⚠ 값 칸에도 건다 — 대장의 값은 스칼라이나 참조형이 문자열로 올 수 있고,
+    # 그 문자열이 `|` 를 물면 같은 자리에서 표가 깨진다.
     b = [
         "| 키 | 값 | 단위 | 기준연도 | 출처 | 신뢰도 | 최종확인일 |",
         "|---|---|---|---|---|---|---|",
         *(
             f"| `{row.key}` | "
-            f"{_num(row.value) if isinstance(row.value, int | float) else row.value} "
-            f"| {row.value_unit or '—'} | {row.base_year or '—'} | "
-            f"{row.source or '—'} | {row.confidence} | {_date(row.verified_at)} |"
+            f"{_num(row.value) if isinstance(row.value, int | float) else _cell(str(row.value))} "
+            f"| {_cell(row.value_unit or '')} | {_cell(str(row.base_year or ''))} | "
+            f"{_cell(row.source or '')} | {_cell(row.confidence)} | "
+            f"{_date(row.verified_at)} |"
             for row in report.assumptions
         ),
     ]
@@ -234,7 +243,7 @@ def _stage2_resources(report: CaseReport) -> StageBlock:
         *scaleup_lines(report),
     ]
     b = [
-        "| 자원 | 취득비 | 고정 O&M(연) |",
+        "| 자원 | 취득비 (원) | 고정 O&M (원/년) |",
         "|---|---|---|",
         *(
             f"| {r.kind} | {_won(r.capex_won)} | {_won(r.fixed_om_won_per_year)} |"
@@ -297,9 +306,16 @@ def _stage3_dispatch(report: CaseReport) -> StageBlock:
 def _stage4_benefits(report: CaseReport) -> StageBlock:
     # ⚠ `report` 를 받는다 — 머리말 한 줄과 판단 게이트가 실행을 읽는다(`_stage`).
     basis = report.basis
-    a = ["1단계 단가 대장 + 3단계 운전결과(자가소비·송전 수량)."]
+    a = [
+        "1단계 단가 대장 + 3단계 운전결과(자가소비·송전 수량).",
+        # ★★ **수량과 금액을 가른다** (R68/WP-8 · 검토서 §3.6). 종전 ⓑ 표는
+        # 금액 셋뿐이라 「0원」이 *「팔 것이 없었다」* 인지 *「값이 0이었다」* 인지
+        # 갈리지 않았고, 그 둘은 고치는 사람이 다르다(운전 · 단가).
+        # ⛔ 여기서 곱하거나 나누지 않는다 — 그 모듈이 `report` 에서 읽는다.
+        *benefit_pair_lines(report),
+    ]
     b = [
-        "| 편익 | 1년차 금액 | 만든 자원 |",
+        "| 편익 | 1년차 금액 (원) | 만든 자원 |",
         "|---|---|---|",
         *(
             f"| {line.label} | {_won(line.annual_won)} | {line.resource_code or '—'} |"
@@ -313,7 +329,7 @@ def _stage4_benefits(report: CaseReport) -> StageBlock:
             "",
             "자원별 몫(`benefit_attributions`):",
             "",
-            "| 편익 | 자원 | 몫 |",
+            "| 편익 | 자원 | 몫 (원) |",
             "|---|---|---|",
             *(
                 f"| {attr.tag} | {attr.resource_name or '(귀속 없음)'} | "
@@ -334,7 +350,7 @@ def _stage5_costs(report: CaseReport) -> StageBlock:
     a = ["3단계 운전결과(계통 수전 수량) + 1단계 요금 단가."]
     subtotal = sum(line.annual_won for line in basis.costs)
     b = [
-        "| 비용 | 1년차 금액 | 자원 |",
+        "| 비용 | 1년차 금액 (원) | 자원 |",
         "|---|---|---|",
         *(
             f"| {line.label} | {_won(line.annual_won)} | {line.resource_code or '—'} |"
@@ -358,13 +374,13 @@ def _stage6_lifecycle(report: CaseReport) -> StageBlock:
         f"자원별 수명(`ResourceLine.lifetime_years`) + 분석기간"
         f"({basis.horizon_years}년):",
         "",
-        "| 자원 | 수명 |",
+        "| 자원 | 수명 (년) |",
         "|---|---|",
         *(f"| {r.kind} | {r.lifetime_years}년 |" for r in basis.resources),
     ]
     if basis.one_off_flows:
         b = [
-            "| 자원 | 종류 | 연차 | 금액 |",
+            "| 자원 | 종류 | 계상 연차 (년차) | 금액 (원) |",
             "|---|---|---|---|",
             *(
                 f"| {f.resource_name} | "
@@ -393,7 +409,7 @@ def _row_table(rows: tuple[CashFlowRow, ...]) -> list[str]:
     if not rows:
         return ["없음"]
     return [
-        "| 행 | 1년차 금액 |",
+        "| 행 | 1년차 금액 (원) |",
         "|---|---|",
         *(f"| {row.label} | {_won(_row_year1(row))} |" for row in rows),
     ]
@@ -426,7 +442,7 @@ def _lifecycle_row_table(
     """
     if not basis.one_off_flows:
         return ["없음"]
-    lines = ["| 행 | 발생 연차 | 그 연차 금액 |", "|---|---|---|"]
+    lines = ["| 행 | 발생 연차 (년차) | 그 연차 금액 (원) |", "|---|---|---|"]
     for f in basis.one_off_flows:
         amount = year_amounts.get((f.tag, f.year))
         cell = _won(amount) if amount is not None else "⚠ 대응 행 없음"
