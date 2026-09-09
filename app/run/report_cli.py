@@ -46,6 +46,7 @@ from core.report.case_report import CaseReport, build_case_report
 from core.report.narrative import render_markdown
 from core.report.verification import render_verification_markdown, stage_blocks
 from core.report.verification_chain import dependency_chain_lines
+from core.report.verification_variants import policy_variant_sentence
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _GOLDEN_DIR = _REPO_ROOT / "fixtures" / "golden"
@@ -173,6 +174,14 @@ def _index_markdown(stages: tuple[VerifyStage, ...], report: CaseReport) -> str:
         f"| 전제 대장 | `{report.assumption_set_name}` 판 "
         f"{report.assumption_set_version} |",
         f"| 실행 매니페스트 | `{report.manifest_hash[:16]}` |",
+        "",
+        # ★ **이 실행이 무슨 «정책 변형»인가** (R68/WP-9 · 검토서 §3.7 마지막).
+        # 머리표의 「평가 대상」은 평가 «대상»이지 지원 조건이 아니다 — 세
+        # 시나리오가 이 목차를 함께 쓰므로 문면은 실행에서 온다.
+        # ⚠ 문면을 여기서 짓지 않는다(아래 의존 연결표와 같은 사유) —
+        # `core/report/verification_variants.py::policy_variant_sentence` 가
+        # 정본이고, 그 함수가 9단계 비교표와 같은 낱말·같은 상한을 쓴다.
+        policy_variant_sentence(report),
         "",
         "| 단계 | 제목 | 파일 |",
         "| --- | --- | --- |",

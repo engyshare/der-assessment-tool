@@ -63,6 +63,7 @@ from core.report.verification_dispatch import (
     SIGN_CONVENTION_NOTE,
     declaration_lines,
     dispatch_note_rows,
+    resource_label,
 )
 from core.report.verification_gates import (
     QUESTION_HEAD,
@@ -93,6 +94,23 @@ def _row_year1(row: CashFlowRow) -> int:
 def _year1_sum(rows: Iterable[CashFlowRow]) -> int:
     """행 목록의 1년차 금액 합 — 표시용 재집계다(위 머리말 참조)."""
     return sum(_row_year1(row) for row in rows)
+
+
+def _named(name: str, basis: CaseBasis) -> str:
+    """조인 키 → **「사람 이름 (`키`)」** — 4·6·7단계가 3단계와 같은 말을 쓴다.
+
+    ## ★ R68/WP-9 — **한 산출물 안에서 같은 자원이 두 이름으로 불리던 것**
+
+    검토서 §3.3(*「내부 식별자는 사람용 명칭과 함께」*)을 R68/WP-2·3 이 3단계에만
+    걸었고, 그 결과 같은 `e2e-ess` 가 3단계에서는 「에너지저장장치 (신품)
+    (`e2e-ess`)」인데 4단계 「자원별 몫」 표·6단계 일회성 흐름·7단계 대조 줄에서는
+    **맨 키**였다(독립 검증 `.orch/R68/result_V.md` 결함 #1-b). 이 함수는 그 셋을
+    같은 규약으로 데려올 뿐이며 **규칙 자체는 `resource_label()` 하나가 갖는다.**
+
+    ⛔ **키를 갈아 끼우지 않는다 — 병기다.** 사유는 `resource_label()` 의 ⛔ 절이
+    갖는다(같은 종류 자원이 둘이면 이름이 겹친다).
+    """
+    return resource_label(name, {r.name: r.kind for r in basis.resources})
 
 
 def _match_note(label_a: str, value_a: int, label_b: str, value_b: int) -> str:
@@ -332,7 +350,8 @@ def _stage4_benefits(report: CaseReport) -> StageBlock:
             "| 편익 | 자원 | 몫 (원) |",
             "|---|---|---|",
             *(
-                f"| {attr.tag} | {attr.resource_name or '(귀속 없음)'} | "
+                f"| {attr.tag} | "
+                f"{_named(attr.resource_name, basis) if attr.resource_name else '(귀속 없음)'} | "
                 f"{_won(attr.annual_won)} |"
                 for attr in basis.benefit_attributions
             ),
@@ -383,7 +402,7 @@ def _stage6_lifecycle(report: CaseReport) -> StageBlock:
             "| 자원 | 종류 | 계상 연차 (년차) | 금액 (원) |",
             "|---|---|---|---|",
             *(
-                f"| {f.resource_name} | "
+                f"| {_named(f.resource_name, basis)} | "
                 f"{'교체비' if f.kind == ONE_OFF_REPLACEMENT else '잔존가치'} | "
                 f"{f.year}년차 | {_won(f.amount_won)} |"
                 for f in basis.one_off_flows
@@ -399,7 +418,7 @@ def _stage6_lifecycle(report: CaseReport) -> StageBlock:
         "한다.",
     ]
     d = [
-        f"- {f.resource_name} {f.year}년차: {f.formula}"
+        f"- {_named(f.resource_name, basis)} {f.year}년차: {f.formula}"
         for f in basis.one_off_flows
     ] or ["해당 없음 — 일회성 흐름이 없다."]
     return _stage(report, 6, "생애주기(교체·잔존)", a=a, b=b, c=c, d=d)
@@ -450,14 +469,22 @@ def _lifecycle_row_table(
     return lines
 
 
-def _lifecycle_match_note(item: OneOffLine, actual: int | None) -> str:
+def _lifecycle_match_note(
+    item: OneOffLine, actual: int | None, basis: CaseBasis
+) -> str:
+    """⚠ `basis` 는 **이름을 인쇄하려고만** 받는다 — 대조는 여전히 조인 키가 한다.
+
+    6단계가 「에너지저장장치 (신품) (`e2e-ess`)」로 부르는 자원을 이 줄만 맨
+    `e2e-ess` 로 부르던 것을 R68/WP-9 가 닫았다(`_named()` 참조).
+    """
+    named = _named(item.resource_name, basis)
     if actual is None:
         return (
-            f"⚠ 불일치 — 6단계 {item.resource_name} {item.year}년차 "
+            f"⚠ 불일치 — 6단계 {named} {item.year}년차 "
             f"{_won(item.amount_won)}에 대응하는 7단계 생애주기 행을 찾지 못했다"
         )
     return _match_note(
-        f"6단계 {item.resource_name} {item.year}년차", item.amount_won,
+        f"6단계 {named} {item.year}년차", item.amount_won,
         f"7단계 생애주기 행 {item.year}년차", actual,
     )
 
@@ -484,7 +511,9 @@ def _stage7_cashflow(report: CaseReport) -> StageBlock:
         "입력이다.",
     ]
     lifecycle_matches = [
-        _lifecycle_match_note(f, lifecycle_year_amounts.get((f.tag, f.year)))
+        _lifecycle_match_note(
+            f, lifecycle_year_amounts.get((f.tag, f.year)), basis
+        )
         for f in basis.one_off_flows
     ] or ["해당 없음 — 일회성 흐름이 없다."]
     d = [

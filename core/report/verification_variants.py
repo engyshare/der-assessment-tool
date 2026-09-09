@@ -108,6 +108,43 @@ STAGE8_FORMULA_POINTER = (
 )
 
 
+def policy_variant_sentence(report: CaseReport) -> str:
+    """목차 머리표에 설 **한 문장** — 「이 실행이 무슨 정책 변형인가」
+    (R68/WP-9 · 검토서 §3.7 마지막 · 독립 검증 결함 #2).
+
+    검토서 문면: *「이 시나리오가 어떤 정책 변형을 의미하는지 목차에서 한
+    문장으로 설명할 필요가 있다」*. 착수 시점의 목차 머리표는 「평가 대상
+    energy_independent_household」만 실었고 — 그것은 **평가 «대상»**이지
+    **정책 «갈래»**가 아니다 — 지원 조건을 한 자도 적지 않았다.
+
+    ## ⛔ 시나리오 이름을 글자로 박지 않는다
+
+    이 목차는 **세 시나리오가 모두 쓴다**(`scenario_unsubsidized` ·
+    `scenario_subsidy_20` · …). 그러므로 이 문장이 드는 수와 이름은 전부
+    실행에서 온다 — 지원율은 `CaseReport.subsidy_rate`, 시나리오 슬러그는
+    `scenario_name_slug`, 견주는 갈래의 이름은 `variant_labels` 다.
+    ⛔ 한 시나리오의 말(「무지원」)을 여기서 지어 붙이면 지원 20% 실행의 목차가
+    자기를 무지원이라고 적는다.
+
+    ⚠ **낱말** — 이 문장은 사람이 읽는 자리이므로 「전제」를 쓰지 않는다
+    (판정 R63b §1). 대장을 부르는 말은 머리표의 「전제 대장」이 이미 갖는다.
+    """
+    if report.subsidy_rate <= 0.0:
+        stance = (
+            "**지원이 없는 갈래**다 — 초기투자를 사업자가 전액 진다"
+        )
+    else:
+        stance = (
+            f"초기투자의 **{report.subsidy_rate:.0%}** 를 지원받는 갈래다"
+        )
+    compared = " · ".join(f"「{label}」" for _, label in report.variant_labels)
+    return (
+        f"이 실행(`{report.scenario_name_slug}`)은 {stance}. 9단계가 이것을 "
+        f"{compared} · 「{_FULL_SUPPORT} (지원율 {MAX_SUBSIDY_RATE:.0%})」 와 "
+        "견주고, 결론축을 0 으로 만드는 지원율은 8단계 ⓓ 가 환산한다."
+    )
+
+
 def unbuilt_variant_columns(report: CaseReport) -> tuple[str, ...]:
     """검토서가 요구한 열 중 **변형 지표가 나르지 않는** 것의 이름.
 
@@ -200,9 +237,75 @@ def _sameness_line(report: CaseReport, rows: dict[str, list[str]]) -> list[str]:
             "같다 — **사유를 이 리포트가 갖고 있지 않다.** 지원이 결론축에 닿는 "
             "경로를 확인해야 한다"
         )
+    # ⚠ 「위 N개 행」이라고만 적으면 그 아래 「전액 지원」 환산 행이 표에 함께
+    #   서므로 어느 둘을 견준 것인지 갈리지 않는다 — **돌린 변형끼리**임을 적는다.
     return [
-        f"- **위 {len(rows)}개 행의 수가 전부 같다** — {why}. 같은 수를 여러 "
-        "줄로 인쇄하고 아무 말도 안 하면 독자가 오류로 읽으므로 적어 둔다",
+        f"- **위 표의 «돌린» 변형 {len(rows)}개 행의 수가 전부 같다** — {why}. "
+        "같은 수를 여러 줄로 인쇄하고 아무 말도 안 하면 독자가 오류로 읽으므로 "
+        "적어 둔다",
+    ]
+
+
+#: 세 번째 행의 이름 — 검토서 §3.7 이 요구한 세 갈래의 마지막이다.
+#: ⚠ 낱말을 한 자리에서만 정한다(위 `_CONFIGURATION` 과 같은 사유).
+_FULL_SUPPORT = "전액 지원"
+
+
+def _full_support_row(report: CaseReport, configuration: str) -> list[str]:
+    """검토서 §3.7 의 세 번째 갈래 — **「전액 지원」 행** (R68/WP-9 · 결함 #3).
+
+    ## ⛔ 이 수를 여기서 «다시 세우지» 않는다
+
+    「전액 지원 시 잔여 결손」은 **8단계 ⓓ 가 이미 싣는 수**이고, 그 환산은
+    `core/report/case_influences.py::residual_gap_at_full_support_won` **한
+    곳**이 한다. 이 행의 순현재가치 칸은 그것을 `CaseReport` 의 같은 이름
+    프로퍼티로 **읽어 올 뿐**이다 — 두 곳이 같은 수를 따로 지으면 산식이 바뀌는
+    날 한쪽만 고쳐지고, 그때 8단계와 9단계가 서로 다른 결손을 말한다.
+    필요한 지원율 칸도 마찬가지로 `break_even_subsidy_rate()` 를 부른다(다른
+    두 행이 `_needed_rate()` 로 부르는 바로 그 함수다).
+
+    ## ⚠⚠ 이 행은 **실행이 아니라 환산**이다 — 그래서 칸 둘이 「미산출」이다
+
+    「무지원 기준선」·「입력 지원안」은 파이프라인이 **돌린** 변형이라 지표가
+    딸려 있다(`CaseReport.variants`). 전액 지원은 그 변형이 아니고 8단계
+    산식이 결론축 하나만 옮긴 것이므로, **초기투자와 할인 회수기간은 이 환산이
+    내지 않는다.** 그 두 칸을 「0원」·「즉시」로 채우면 돌리지 않은 수를 돌린 수
+    옆에 나란히 세우는 것이 되고, 독자는 그것을 실행 결과로 읽는다.
+    ⇒ 「미산출」로 세우고 사유를 표 아래가 든다.
+    """
+    residual = report.residual_gap_at_full_support_won
+    needed = break_even_subsidy_rate(
+        subsidy_rate=MAX_SUBSIDY_RATE,
+        npv_won=residual,
+        total_project_cost_won=report.total_project_cost_won,
+    )
+    unbuilt = set(unbuilt_variant_columns(report))
+    cells: list[str] = []
+    for column in _COLUMNS:
+        if column.name == _CONFIGURATION:
+            cells.append(configuration)
+        elif column.name == _NEEDED_RATE:
+            cells.append(f"{needed:.1%}")
+        elif column.metric_key == CONCLUSION_METRIC:
+            cells.append(_won(residual))
+        elif column.name in unbuilt:
+            cells.append("미산출")
+        else:
+            cells.append("미산출(환산)")
+    return [f"{_FULL_SUPPORT} (지원율 {MAX_SUBSIDY_RATE:.0%})", *cells]
+
+
+def _full_support_notes(report: CaseReport) -> list[str]:
+    """「전액 지원」 행이 **무엇이고 무엇이 아닌가** — 표 아래 두 줄."""
+    return [
+        f"- **「{_FULL_SUPPORT}」 행은 돌린 변형이 아니라 «환산»이다** — 위 두 "
+        "행은 파이프라인이 실제로 돌린 변형이고, 이 행은 **8단계 ⓓ 의 "
+        "「전액 지원 시 잔여 결손」 산식**이 결론축 하나를 옮긴 값이다. "
+        f"순현재가치 칸 {_won(report.residual_gap_at_full_support_won)}은 "
+        "그 산식이 낸 바로 그 수이며 여기서 다시 세우지 않는다",
+        "- **「미산출(환산)」 칸 둘** — 초기투자와 할인 회수기간은 그 환산이 "
+        "내지 않는다(결론축만 옮긴다). 0원·즉시로 채우면 돌리지 않은 수가 "
+        "돌린 수 옆에 실행 결과처럼 선다",
     ]
 
 
@@ -220,13 +323,18 @@ def variant_comparison_lines(report: CaseReport) -> list[str]:
         if tag in report.variants
     }
     head = ["변형", *(column.name for column in _COLUMNS)]
+    # ★ 「전액 지원」 행은 `rows` **밖**에 세운다 — `_sameness_line()` 이 견주는
+    #   것은 「돌린 변형끼리 같은 수인가」이고, 환산 행을 그 비교에 넣으면
+    #   지원율 0% 실행에서 늘 「같지 않다」가 되어 그 사유 줄이 통째로 사라진다.
     lines = [
         "| " + " | ".join(head) + " |",
         "|" + "---|" * len(head),
         *("| " + " | ".join(cells) + " |" for cells in rows.values()),
+        "| " + " | ".join(_full_support_row(report, configuration)) + " |",
     ]
     notes = [
         *_sameness_line(report, rows),
+        *_full_support_notes(report),
         "- 「구성」 칸이 검토서 §3.7 의 **PV 용량·ESS 용량 열을 함께 나른다** — "
         "이 실행의 변형들은 지원율만 다르고 물리 구성은 하나이므로 그 칸이 "
         "행마다 같다",

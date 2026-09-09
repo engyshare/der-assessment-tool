@@ -190,6 +190,34 @@ def test_the_boundary_section_says_the_value_is_smaller_than_metered_purchase(
     assert "작다" in text
 
 
+def test_the_charging_efficiency_gap_names_the_number_it_refuses_to_borrow(
+    report: CaseReport,
+) -> None:
+    """★ **문면을 좁혔다** — 「재료가 없다」가 저장소의 같은 이름을 가리지 않는다.
+
+    독립 검증(`.orch/R68/result_V.md` 결함 #5)이 짚은 자리다. R68 은
+    *「이 단지의 완속·급속 비율과 충전기 효율을 아무도 모른다」* 로 「닫을 수
+    없다」를 세웠고 **그 판단 자체는 옳다** — `core/der/ev_v2g.py` 의
+    `charge_efficiency` 는 V2G 자원의 **배터리 왕복** 파라미터이지 이 단지
+    충전기 실측이 아니고 대장 항목도 아니다. 다만 *「재료가 없다」* 라는 넓은
+    문면이 **저장소에 같은 이름의 수가 있다는 사실을 가렸다.**
+
+    ⇒ 산출물이 그 사실을 적되 **경계가 다르므로 끌어다 쓰지 않는다**고 함께
+    적어야 한다. ⛔ 그 수(0.92)를 산식에 곱하기 시작하면 이 검사가 아니라
+    바로 위 `test_the_ev_formula_shows_the_charging_loss_term_without_
+    multiplying_it` 이 빨간불이 된다 — 둘은 다른 자리를 붙든다.
+    """
+    text = "\n".join(demand_attribute_lines(report))
+    # ⓐ 「없다」를 **이 단지로** 좁혔다 — 저장소 전체를 말하지 않는다.
+    assert "**이 단지의** 충전 손실을 잰 값이 없다" in text, text
+    # ⓑ 같은 이름의 수가 어디 있는지 **짚는다** — 가리지 않는다.
+    assert "core/der/ev_v2g.py" in text
+    assert "charge_efficiency" in text
+    # ⓒ 그러나 **왜 못 쓰는지**를 함께 적는다. 짚기만 하고 사유가 없으면
+    #    다음 사람이 그것을 「쓰면 되는 수」로 읽는다.
+    assert "왕복" in text and "계측 경계가 아니" in text, text
+
+
 def test_the_heatpump_breakdown_is_pointed_at_not_tabulated(
     report: CaseReport, ledger: AssumptionSet
 ) -> None:

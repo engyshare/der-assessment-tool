@@ -959,3 +959,45 @@ def test_the_money_and_time_columns_name_their_unit() -> None:
             f"9단계 비교표의 「{unit}」 열 제목이 단위를 잃었다 — 이 표는 열마다 "
             "단위가 다르므로 표 제목이 질 수 없다"
         )
+
+
+def test_stages_four_six_and_seven_name_resources_the_way_stage_three_does() -> None:
+    """★★ **한 산출물 안에서 같은 자원이 두 이름으로 불리지 않는다** (R68/WP-9).
+
+    검토서 §3.3 의 *「내부 식별자는 사람용 명칭과 함께」* 를 R68/WP-2·3 이
+    3단계에만 걸었고, 그래서 같은 `e2e-ess` 가 3단계에서는 「에너지저장장치
+    (신품) (`e2e-ess`)」인데 4단계 「자원별 몫」 표·6단계 일회성 흐름·7단계
+    대조 줄에서는 **맨 키**였다(독립 검증 `.orch/R68/result_V.md` 결함 #1-b).
+
+    ## 무엇을 재는가 — **키가 남아 있는가가 아니라 «혼자 서 있는가»**
+
+    ⛔ 키를 갈아 끼우는 것이 아니라 **병기**이므로(`resource_label()` 의 ⛔ 절 —
+    같은 종류 자원이 둘이면 이름이 겹친다) 키는 그대로 인쇄돼야 한다. 그래서
+    이 검사는 「키가 보이면 빨간불」이 아니라 **「키가 사람 이름 없이 보이면
+    빨간불」** 이다.
+
+    ⛔ 값은 재지 않는다 — 표시층만 만졌고, 축이 움직였다면 그것은 사다리 L0 와
+    `tests/golden` 이 잡는다.
+    """
+    report = build_case_report(
+        _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    stages = {stage.number: stage.body for stage in split_stages(
+        render_verification_markdown(report)
+    )}
+    # 그 실행이 실제로 든 자원의 키와 사람 이름 — 리터럴로 적지 않는다.
+    named = {
+        line.name: f"{line.kind} (`{line.name}`)"
+        for line in report.basis.resources
+        if line.kind
+    }
+    assert named, "이 실행에 사람 이름을 가진 자원이 없다 — 검사가 아무것도 못 잰다"
+
+    for number in (4, 6, 7):
+        body = stages[number]
+        for key, label in named.items():
+            bare = body.replace(label, "")
+            assert f"`{key}`" not in bare and key not in bare, (
+                f"{number}단계가 «{key}» 를 사람 이름 없이 인쇄한다 — 같은 "
+                f"산출물의 3단계는 「{label}」로 부른다 (검토서 §3.3)"
+            )
