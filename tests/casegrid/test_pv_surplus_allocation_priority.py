@@ -413,3 +413,40 @@ def test_pv_operating_mode_shows_declaration_and_actual_allocation() -> None:
             f"{priority.value} 로 돌렸는데 「운전 방식」 칸이 그 배분을 보이지 "
             f"않는다: {operating_mode!r}"
         )
+
+
+def test_the_allocation_piece_also_stands_in_its_own_field() -> None:
+    """★★★ **합친 칸의 뒷조각이 «자기 칸»에도 실려 온다** (R68/WP-2).
+
+    검증 3단계는 선언과 실제 배분을 **두 열로** 갈라 그려야 한다(검토서 §3.3 —
+    한 칸에 함께 적힌 「전량 판매 (선언) · 본 실행 배분: 집 우선」이 같은 문서의
+    「자가소비율 … (본 실행 실측)」과 모순으로 읽혔다). 그런데 합친 문면을 표시
+    층에서 ` · ` 로 쪼개 가르면 **조용히 틀린다** — 배분 문면 안에도 그 구분자가
+    있다(저장장치의 「방전 배분: 부하 추종 (방전창 18~21시 안)」).
+
+    ⇒ 러너가 두 조각을 **각자의 칸에도** 싣는다. 이 검사가 붙드는 것은 셋이다:
+
+    1. `applied_allocation` 이 **비어 있지 않다** (빈 칸이면 3단계의 그 열이
+       「이 실행은 배분을 따로 고르지 않았다」라는 거짓을 인쇄한다)
+    2. 그 값이 이 실행이 **실제로 고른 배분**을 든다
+    3. 합친 칸이 **그 조각으로 끝난다** — 두 칸이 갈라지면 붙임 6(합친 칸)과
+       검증 3단계(가른 칸)가 같은 물음에 다르게 답한다
+
+    ⚠ 위 `test_pv_operating_mode_shows_declaration_and_actual_allocation` 이
+    합친 칸의 문면을 따로 붙든다 — 그 칸은 **바꾸지 않았다.**
+    """
+    for priority in (PVAllocationPriority.HOUSEHOLD_FIRST, PVAllocationPriority.BATTERY_FIRST):
+        outcome = _run(_CROSS_PRIORITY_LOAD_KWH, priority=priority)
+        line = _pv_resource_line(outcome)
+        assert line.applied_allocation, (
+            f"{priority.value}: PV 행의 `applied_allocation` 이 비어 있다 — "
+            "검증 3단계의 「실제로 적용한 배분」 열이 거짓을 인쇄한다"
+        )
+        assert priority.value in line.applied_allocation, (
+            f"{priority.value} 로 돌렸는데 그 배분이 `applied_allocation` 에 "
+            f"없다: {line.applied_allocation!r}"
+        )
+        assert line.operating_mode.endswith(line.applied_allocation), (
+            f"{priority.value}: 합친 칸이 뒷조각으로 끝나지 않는다 — 두 칸이 "
+            f"갈렸다: {line.operating_mode!r} / {line.applied_allocation!r}"
+        )

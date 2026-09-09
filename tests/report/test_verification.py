@@ -35,6 +35,11 @@ from app.run.report_cli import (
 from app.services.verify_steps import split_stages
 from core.report.case_report import build_case_report
 from core.report.verification import render_verification_markdown
+from core.report.verification_dispatch import (
+    DISPATCH_TABLE_HEAD,
+    LINKAGE_NOTE,
+    SIGN_CONVENTION_NOTE,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -299,3 +304,73 @@ def test_env_var_absent_still_goes_to_stdout(
     monkeypatch.delenv(REPORT_OUT_DIR_ENV, raising=False)
     assert main(["--kind", "verification"]) == 0
     assert "# 계산 검증 보고서" in capsys.readouterr().out
+
+
+def test_the_sign_convention_moved_from_the_numbers_cell_to_the_formula_cell(
+    tmp_path: Path,
+) -> None:
+    """★★★ **부호 규약이 ⓑ 에서 ⓓ 로 내려갔다** (R68/WP-2 · 검토서 §4.3).
+
+    검토서 문면: *「현재는 양수·음수 부호 규칙을 읽어야 한다. 사람용 표에서는
+    한전 수전·역송을 양의 수량으로 별도 열에 두고, **내부 부호는 수식 설명에만**
+    남기는 편이 안전하다」*. 종전에는 그 규약 줄이 계절 기여 표 바로 아래
+    (ⓑ 계산된 수치)에 있었고, 그래서 **표를 읽기 전에 규약을 먼저 읽어야** 했다.
+
+    ⚠ **표 자체의 부호는 그대로다** — 자원 수지는 부호가 뜻이며(충전과 방전이
+    한 열에 서야 스텝 합계를 눈으로 셀 수 있다) 옮긴 것은 규약 줄이다. 그래서
+    이 검사는 「부하가 음수로 남아 있는가」까지 함께 잰다.
+    """
+    stage3 = split_stages(_verification_text(tmp_path))[2]
+    cells = stage3.body.split("**ⓓ 계산 수식**")
+    assert len(cells) == 2, f"3단계에 ⓓ 칸이 하나가 아니다 — {stage3.title}"
+    before, formula = cells
+    assert SIGN_CONVENTION_NOTE in formula, (
+        f"부호 규약 줄이 ⓓ(계산 수식) 칸에 없다 — 「{SIGN_CONVENTION_NOTE[:30]}…」"
+    )
+    assert "부호 규약" not in before, (
+        "부호 규약이 아직 ⓓ 앞(ⓐ·ⓑ·ⓒ)에 남아 있다 — 사람이 읽는 표를 규약보다 "
+        "먼저 읽을 수 있어야 한다"
+    )
+    report = build_case_report(
+        _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    negatives = [
+        name
+        for season in report.seasons
+        for name, kwh in season.per_resource_annual_kwh.items()
+        if kwh < 0.0
+    ]
+    assert negatives, (
+        "픽스처 전제가 깨졌다 — 음수로 실리는 자원이 하나도 없어 부호 규약이 "
+        "가리킬 것이 없다"
+    )
+    assert f"| {min(negatives)} |" not in stage3.body, (
+        "계절 기여 표가 조인 키만으로 서 있다 — 사람용 이름을 병기해야 한다"
+    )
+
+
+def test_the_dispatch_table_splits_the_declaration_from_the_applied_allocation(
+    tmp_path: Path,
+) -> None:
+    """★★★ **3단계 ⓐ 표가 선언 열과 실제 배분 열 «둘»을 갖는다** (검토서 §3.3).
+
+    한 칸에 「전량 판매 (선언) · 본 실행 배분: 집 우선」이 함께 적혀, 같은
+    문서의 「자가소비율 … (본 실행 실측)」과 **모순으로 읽혔다.** 두 축은 실제로
+    둘 다 참이므로(선언은 잉여의 처분 방침 · 배분은 낮 동안 잉여의 행선지)
+    없애지 않고 **가른다.**
+
+    ⚠ 표 아래 세 줄이 함께 서 있어야 한다 — 갈렸다는 사실과 그것이 결함이
+    아닌 사유, 이 실행에서 그 선언이 실현됐는가, 그리고 4단계와의 연결이다.
+    적지 않으면 두 열이 「표기 문제」로만 읽힌다.
+    """
+    stage3 = split_stages(_verification_text(tmp_path))[2].body
+    assert "\n".join(DISPATCH_TABLE_HEAD) in stage3, (
+        "3단계 ⓐ 표의 머리가 두 열로 갈리지 않았다"
+    )
+    assert LINKAGE_NOTE in stage3, "4단계와의 연결 줄이 없다"
+    assert "선언과 본 실행 배분이 갈린 자원" in stage3, (
+        "선언과 실제가 갈렸는지를 말하는 줄이 없다"
+    )
+    assert "이 실행에서 그 선언이 실현됐는가" in stage3, (
+        "그 선언이 이 실행에서 실현됐는지를 말하는 줄이 없다"
+    )

@@ -55,9 +55,14 @@ from core.report.case_report import (
     MAX_SUBSIDY_RATE,
     CaseReport,
 )
+from core.report.verification_dispatch import (
+    DISPATCH_TABLE_HEAD,
+    SIGN_CONVENTION_NOTE,
+    declaration_lines,
+    dispatch_note_rows,
+)
 from core.report.verification_inputs import (
     capacity_review_lines,
-    dispatch_note_rows,
     execution_input_lines,
     season_lines,
     unreflected_lines,
@@ -176,18 +181,23 @@ def _stage2_resources(report: CaseReport) -> list[str]:
 
 def _stage3_dispatch(report: CaseReport) -> list[str]:
     basis = report.basis
-    a = [
-        "2단계 자원 목록(용량·운전방식) + 엔진 규칙 순서:",
-        "",
-        "| 자원 | 운전방식 | 디스패치 규칙 | 우선순위 | 가격신호 필요 |",
-        "|---|---|---|---|---|",
-        # ★ 운전방식 칸은 **선언 라벨이 아니라 본 실행의 배분**까지 싣는다
-        # (요구 5) — 그 판단과 짝짓기 규칙은 `dispatch_note_rows` 가 갖는다.
-        *dispatch_note_rows(report),
-    ]
     hours = report.dispatch_hours
     total_export = sum(h.grid_export for h in hours)
     total_import = sum(h.grid_import for h in hours)
+    a = [
+        "2단계 자원 목록(용량·운전방식) + 엔진 규칙 순서:",
+        "",
+        # ★★ **선언과 실제가 두 열로 갈린다** (R68/WP-2 · 검토서 §3.3).
+        # 종전에는 한 칸에 「전량 판매 (선언) · 본 실행 배분: 집 우선」이 함께
+        # 적혀, 같은 문서의 「자가소비율 … (본 실행 실측)」과 **모순으로
+        # 읽혔다.** 두 축은 실제로 둘 다 참이며 판정과 짝짓기 규칙은
+        # `core/report/verification_dispatch.py` 가 갖는다.
+        *DISPATCH_TABLE_HEAD,
+        *dispatch_note_rows(report),
+        # ★ 표 아래 세 줄 — 갈렸는가 · 이 실행에서 실현됐는가 · 무엇과
+        # 이어지는가. **수는 실행에서 읽는다**(리터럴 0 을 박지 않는다).
+        *declaration_lines(report, grid_export_kwh=total_export),
+    ]
     b = [
         f"대표일 {len(hours)}스텝 운전 — 계통 송전 합계 {_num(total_export)}kWh · "
         f"계통 수전 합계 {_num(total_import)}kWh (붙임 7 이 스텝별 표를 싣는다).",
@@ -197,7 +207,8 @@ def _stage3_dispatch(report: CaseReport) -> list[str]:
         "이 운전 결과의 스텝별 자가소비·송전·수전 수량이 4단계 편익 계산과 "
         "5단계 운영비 계산의 수량 근거다.",
     ]
-    d = [basis.dispatch_note or "—"]
+    # ★ 부호 규약은 **ⓑ 에서 내려와 이 칸에 선다** (R68/WP-2 · 검토서 §4.3).
+    d = [basis.dispatch_note or "—", "", SIGN_CONVENTION_NOTE]
     return _stage(3, "대표일 운전(디스패치)", a=a, b=b, c=c, d=d)
 
 

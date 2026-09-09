@@ -25,6 +25,8 @@ from core.report.narrative import render_markdown
 from core.report.sizing import (
     MONTHS_PER_YEAR,
     USER_EXAMPLE_MONTHLY_KWH,
+    SelfSufficiencySizing,
+    base_level_point,
     build_self_sufficiency_sizing,
     required_pv_capacity_kw,
     self_sufficiency_section,
@@ -497,3 +499,50 @@ def test_the_default_ledger_run_leaves_the_conclusion_axis_where_it_was() -> Non
         "옮긴 배선이 값을 함께 바꿨는지 보라(같은 값을 같은 자리로 옮기는 "
         "일이었다)"
     )
+
+
+def test_the_base_level_point_is_picked_by_name_not_by_position() -> None:
+    """★★ **기준 수준(`base`) 점을 고르는 규칙의 정본** (R68/WP-2 부수 정리).
+
+    이 규칙이 `_mismatch_lines` 안의 사적 상수로만 있어서, R68/WP-1 이 붙임 10 의
+    「진단 용량」 칸을 세울 때 `core/casegrid/ledger_levels.py::LEVEL_NAMES` 로
+    **같은 규칙을 다시 썼다** — 사본이 하나 생겼다. 지금은 두 자리가 이 접근자
+    하나를 부른다.
+
+    ⚠ **차례를 세어 고르지 않는다.** 그 사실을 이 검사가 실물로 붙든다: 부하
+    수준 셋의 `source_label` 에서 `base` 를 찾아 그 점과 같은지 대조하며,
+    「둘째 점」을 기대하지 않는다.
+    """
+    load_levels = build_level_map(_ASSUMPTIONS)["household_load_annual_kwh"]
+    sizing = build_self_sufficiency_sizing(
+        load_levels=load_levels,
+        capacity_factor=0.15,
+        capacity_factor_source="시험 탐침값",
+        search_low_kw=0.0,
+        search_high_kw=1_000.0,
+    )
+    picked = base_level_point(sizing)
+    assert picked is not None, "대장 세 수준이 다 있는데 기준 점을 못 골랐다"
+    expected = next(p for p in sizing.points if p.source_label.endswith("base"))
+    assert picked is expected, (
+        f"기준 점을 이름으로 고르지 않았다 — 고른 것은 {picked.source_label!r}, "
+        f"이름으로 찾은 것은 {expected.source_label!r}"
+    )
+
+
+def test_a_sizing_without_that_point_says_so_instead_of_inventing_one() -> None:
+    """★ 점이 모자라면 **`None`** 이다 — 부르는 쪽이 그 사실을 글자로 적는다.
+
+    ⚠ 빈 점을 지어내면 붙임 10 의 「진단 용량」 칸이 **아무 예외 없이 거짓
+    수치**를 인쇄한다(`_pv_diagnostic_cell` 의 「역산한 점이 없다」가 그 자리다).
+    """
+    empty = SelfSufficiencySizing(
+        points=(),
+        capacity_factor=0.15,
+        capacity_factor_source="시험 탐침값",
+        search_low_kw=0.0,
+        search_high_kw=1.0,
+        household_count=None,
+        extra_appliance_load_kwh=0.0,
+    )
+    assert base_level_point(empty) is None

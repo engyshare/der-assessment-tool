@@ -80,6 +80,44 @@ def resolved_operating_mode(note: DispatchNote, modes: Mapping[str, str]) -> str
     return modes.get(note.resource_name) or note.operating_mode or NO_OPERATING_MODE
 
 
+#: 이 실행이 **배분을 따로 고르지 않은** 자원의 「실제로 적용한 배분」 칸.
+#:
+#: ⚠⚠ **빈칸이 아니라 진술이다** — 위 `NO_OPERATING_MODE` 와 같은 판단이다.
+#: 「고를 배분이 없다」(부하처럼 운전 방법을 고르지 않는 자원)이며 「아직 안
+#: 적었다」가 아니다. 그 뜻은 표 아래 한 줄이 함께 적는다
+#: (`core/report/verification_dispatch.py::declaration_lines`).
+NO_APPLIED_ALLOCATION = "—"
+
+
+def declared_operating_mode(note: DispatchNote) -> str:
+    """자원이 **선언한** 짧은 라벨 — 두 열 중 「선언」 칸 (R68/WP-2).
+
+    `resolved_operating_mode()` 는 선언과 배분을 **합친** 문면을 돌려주고 그
+    형태를 심의 리포트 붙임 6 이 읽는다(`dispatch_sections.py`). 검증 3단계는
+    같은 재료를 **두 열로** 가르므로 조각마다 접근자가 하나씩 필요하다 — 이
+    함수와 아래 `applied_allocation()` 이 그 짝이다.
+
+    ⛔ **합친 문면을 ` · ` 로 쪼개 가르지 않는다** — 배분 문면 «안에도» 그
+    구분자가 있다(「자가소비 우선 · 방전 배분: 부하 추종 (방전창 18~21시 안)」).
+    쪼개면 조용히 틀린다. ⇒ 두 조각을 **각자의 칸에서** 읽는다.
+    """
+    return note.operating_mode or NO_OPERATING_MODE
+
+
+def applied_allocation(note: DispatchNote, allocations: Mapping[str, str]) -> str:
+    """이 실행이 **실제로 적용한 배분** — 두 열 중 「실제」 칸 (R68/WP-2).
+
+    ⚠ **이름으로 맞춘다 — 차례로 맞추지 않는다.** 두 목록의 길이가 다르다
+    (부하는 `dispatch_notes` 에만 있고 `CaseBasis.resources` 에는 없다).
+    못 찾으면 위 `NO_APPLIED_ALLOCATION` 이 그 사실을 적는다.
+
+    Args:
+        note: 그 자원의 디스패치 표기.
+        allocations: 자원 이름 → `ResourceLine.applied_allocation`.
+    """
+    return allocations.get(note.resource_name) or NO_APPLIED_ALLOCATION
+
+
 def build_dispatch_notes(
     resources: list[DER],
     *,

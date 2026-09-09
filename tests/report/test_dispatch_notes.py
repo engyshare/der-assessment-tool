@@ -15,8 +15,12 @@ from core.der.pv import PV
 from core.der.pv import OperatingMode as PVOperatingMode
 from core.engine.rule_based import DEFAULT_RULE_ORDER, DispatchRule
 from core.report.dispatch_notes import (
+    NO_APPLIED_ALLOCATION,
     DispatchHour,
+    applied_allocation,
     build_dispatch_notes,
+    declared_operating_mode,
+    resolved_operating_mode,
     split_by_direction,
 )
 
@@ -174,3 +178,44 @@ def test_a_resource_that_is_flat_zero_is_in_neither_side() -> None:
 def test_an_empty_day_splits_into_nothing() -> None:
     """★ 잴 하루가 없으면 **빈 짝**이다 — 부르는 쪽이 「없다」를 판정한다."""
     assert split_by_direction([]) == ((), ())
+
+
+def test_the_declaration_and_the_allocation_have_one_accessor_each() -> None:
+    """★★ **짝 함수 둘** — 합친 문면을 쪼개지 않고 조각마다 하나씩 (R68/WP-2).
+
+    `resolved_operating_mode()` 는 선언과 배분을 **합친** 문면을 돌려주고 그
+    형태를 심의 붙임 6 이 읽는다 — 반환형을 바꾸면 그 붙임이 함께 바뀐다.
+    검증 3단계는 같은 재료를 **두 열로** 그려야 하므로, 합친 함수를 고치지 않고
+    조각을 읽는 접근자를 둘 세웠다.
+
+    ⛔ **` · ` 로 쪼개 가르지 않는다** — 배분 문면 «안에도» 그 구분자가 있다.
+    이 검사가 그 함정을 실물로 붙든다: 배분 조각 자체가 구분자를 품은 자원을
+    넣고, 쪼개는 구현이라면 반드시 틀리는 값을 기대한다.
+    """
+    note = build_dispatch_notes([make_ess_tou()])[0]
+    allocation = "방전 배분: 부하 추종 (방전창 18~21시 안) · 창 밖은 대기"
+    combined = f"{note.operating_mode} · {allocation}"
+
+    assert declared_operating_mode(note) == note.operating_mode, (
+        "선언 칸이 자원이 선언한 짧은 라벨이 아니다"
+    )
+    assert applied_allocation(note, {note.resource_name: allocation}) == allocation, (
+        "배분 칸이 그 조각을 그대로 나르지 않았다 — 쪼개는 구현이면 여기서 "
+        f"「{combined.split(' · ')[1]}」 로 잘린다"
+    )
+    assert resolved_operating_mode(note, {note.resource_name: combined}) == combined, (
+        "합친 문면이 바뀌었다 — 심의 붙임 6 이 그것을 읽는다"
+    )
+
+
+def test_a_resource_with_no_allocation_gets_a_statement_not_a_blank() -> None:
+    """★★ 못 찾은 배분은 **빈칸이 아니라 「—」**다 (R68/WP-2).
+
+    ⚠ 이름으로 맞추므로 두 목록의 길이가 다를 수 있다(부하는 `dispatch_notes`
+    에만 있다). 빈 문자열을 인쇄하면 표에서 「아직 안 적었다」와 구별되지 않는다
+    — 이 모듈의 `NO_OPERATING_MODE` 와 같은 판단이다.
+    """
+    note = build_dispatch_notes([make_ess_tou()])[0]
+    assert applied_allocation(note, {}) == NO_APPLIED_ALLOCATION
+    assert applied_allocation(note, {note.resource_name: ""}) == NO_APPLIED_ALLOCATION
+    assert NO_APPLIED_ALLOCATION, "빈 문면은 「진술」이 아니다"

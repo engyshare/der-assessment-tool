@@ -58,6 +58,7 @@ from core.report.ess_sizing_section import (
     usable_capacity_probe,
 )
 from core.report.narrative import render_markdown
+from core.report.sizing import base_level_point
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -760,4 +761,39 @@ def test_the_capacity_kind_table_states_it_when_the_inverse_could_not_run(
     assert f"역산하지 못했다({reason})" in body
     assert "이 실행에는 설계 변수가 서지 않았다" in body, (
         "실행 용량이 없는 실행에서 칸이 비었다"
+    )
+
+
+def test_the_diagnostic_pv_cell_reads_the_base_point_from_one_rule(
+    report: CaseReport,
+) -> None:
+    """★★★ **기준 수준 점을 고르는 규칙의 사본을 닫았다** (R68/WP-2 부수 정리).
+
+    R68/WP-1 이 이 칸을 세울 때 `core/casegrid/ledger_levels.py::LEVEL_NAMES` 에서
+    `index("base")` 로 규칙을 다시 썼는데, 같은 규칙이 `core/report/sizing.py::
+    _mismatch_lines` 에도 있었다 — **사본이 하나 생겼다.** 규칙이 둘이면 한쪽만
+    고쳐지는 날 두 표가 서로 다른 점을 「기준」이라 부르고 둘 다 그럴듯해 보인다.
+
+    ⚠ **고른 값이 바뀌면 안 된다** — 이 검사가 그 불변을 잰다: 구분 표가 인쇄한
+    태양광 수가 `base_level_point()` 가 고른 점의 수와 같아야 한다.
+    """
+    pv = report.self_sufficiency
+    point = base_level_point(pv)
+    assert point is not None, "픽스처 전제가 깨졌다 — 대장 기준 수준 점이 없다"
+    body = "\n".join(
+        capacity_kind_lines(
+            review=report.ess_sizing, pv=pv, run_used=["태양광 용량 **60 kW**"]
+        )
+    )
+    expected = (
+        f"{point.required_capacity_kw:,.2f}kW"
+        if pv.scales_to_estate
+        else f"{point.household_capacity_kw:,.2f}kW"
+    )
+    assert expected in body, (
+        f"구분 표의 태양광 진단 값이 기준 수준 점의 수가 아니다 — 「{expected}」 를 "
+        f"찾지 못했다"
+    )
+    assert point.source_label in body, (
+        f"어느 부하 수준의 점인지가 없다 — 「{point.source_label}」"
     )

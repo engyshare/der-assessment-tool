@@ -61,7 +61,7 @@ from core.report.capacity import (
     binding_constraint_text,
 )
 from core.report.case_report import CaseReport, build_case_report
-from core.report.dispatch_notes import NO_OPERATING_MODE
+from core.report.dispatch_notes import NO_APPLIED_ALLOCATION, NO_OPERATING_MODE
 from core.report.ess_sizing_section import (
     ADOPTED_HEAD,
     ADOPTED_TERM,
@@ -78,9 +78,9 @@ from core.report.ess_sizing_section import (
     within_range_head,
 )
 from core.report.verification import render_verification_markdown
+from core.report.verification_dispatch import dispatch_note_rows
 from core.report.verification_inputs import (
     HOUSEHOLD_LOAD_LEDGER_KEY,
-    dispatch_note_rows,
     execution_input_lines,
     run_used_values,
 )
@@ -873,24 +873,68 @@ def test_the_discount_rate_is_in_stage_one_where_stage_eight_points(
 def test_the_resource_table_carries_the_allocation_not_only_the_label(
     tmp_path: Path,
 ) -> None:
-    """★★★ 결함 2 — 3단계 운전방식 칸이 **본 실행의 배분**까지 싣는다 (요구 5).
+    """★★★ 결함 2 — 3단계에 **본 실행의 배분**이 실린다 (요구 5).
 
     종전에는 `dispatch_notes` 의 짧은 선언 라벨(「전량 판매」)만 실렸고, 그래서
     *「ESS 가 가구 부하를 보고 방전한다」* 를 이 문서 어디에서도 가릴 수 없었다
     (`부하 추종` 0건). 3단계 「전량 판매」와 2단계 「자가소비율」의 병치도 그
     때문에 초독자에게 모순으로 읽혔다.
+
+    ## ⚠⚠ R68/WP-2 가 **모양을 바꿨다 — 요구는 그대로다**
+
+    종전 이 검사는 *합친 긴 문면(`ResourceLine.operating_mode`)이 3단계에
+    «통째로» 있는가* 를 쟀다. 두 열로 가른 뒤 통째로는 없으므로 **그 잼은
+    반드시 빨간불이 된다 — 결함이 아니라 WP-2 가 한 일이다**(검토서 §3.3:
+    선언된 운영모드와 실제 적용된 운영모드를 별도 열로 둔다).
+
+    ⛔ **그렇다고 잼을 느슨하게 하지 않는다.** 이 검사가 지키던 것은
+    *「이 실행이 실제로 무엇을 배분했는지가 3단계에 인쇄된다」* 이고 **그 요구는
+    두 열로 갈라도 그대로다.** 그래서 셋을 잰다 — 선언이 있는가 · 실제 배분이
+    있는가 · 둘이 **다른 열**에 있는가. 셋째가 빠지면 합쳐 인쇄해도 통과하고,
+    그러면 WP-2 가 무의미하다.
     """
     stage3 = split_stages(_dumped(tmp_path))[2].body
     resources = _report().basis.resources
     assert resources, "픽스처 전제가 깨졌다 — 자원이 하나도 없다"
-    for line in resources:
-        assert line.operating_mode in stage3, (
-            f"자원 {line.name} 의 운전방식 긴 문면이 3단계에 없다 — "
-            f"「{line.operating_mode}」"
-        )
-    assert any("배분: " in line.operating_mode for line in resources), (
-        "픽스처 전제가 깨졌다 — 「본 실행 배분」을 적는 자원이 하나도 없다"
+    assert any(line.applied_allocation for line in resources), (
+        "픽스처 전제가 깨졌다 — 배분을 적는 자원이 하나도 없다"
     )
+    # ⚠ 「선언」 열의 정본은 `DispatchNote.operating_mode` 다 — 합친 문면을 이
+    # 검사가 쪼개 되짓지 않는다(쪼개는 것이 WP-2 가 금지한 바로 그 형태다).
+    notes = {n.resource_name: n.operating_mode for n in _report().dispatch_notes}
+    # ⚠ 행을 **디스패치 규칙 칸으로** 고른다 — 그 칸만 백틱으로 싸인 규칙
+    # 이름을 갖는다(`_stage3_dispatch` 의 표 머리). 「백틱이 있는 줄」로 고르면
+    # 계절 기여 표의 머리(조인 키를 병기한다)가 함께 걸린다.
+    rules = {n.dispatch_rule.value for n in _report().dispatch_notes}
+    table = [
+        [cell.strip() for cell in row.split("|")]
+        for row in stage3.splitlines()
+        if row.startswith("| ") and any(f"`{rule}`" in row for rule in rules)
+    ]
+    for line in resources:
+        cells = next(
+            (cells for cells in table if f"`{line.name}`" in cells[1]), None
+        )
+        assert cells is not None, (
+            f"자원 {line.name} 의 행이 3단계 ⓐ 표에 없다 — 조인 키로 찾는다"
+        )
+        declared, applied = cells[2], cells[3]
+        assert declared == notes[line.name], (
+            f"자원 {line.name} 의 **선언** 라벨이 선언 열에 없다 — "
+            f"「{declared}」 ≠ 「{notes[line.name]}」"
+        )
+        assert applied == line.applied_allocation, (
+            f"자원 {line.name} 이 **실제로 배분한 것**이 실제 열에 없다 — "
+            f"「{applied}」 ≠ 「{line.applied_allocation}」"
+        )
+        assert declared != applied, (
+            f"자원 {line.name} 의 선언과 실제가 **같은 글자로** 실렸다 — 두 열로 "
+            "가른 뜻이 없다"
+        )
+        assert line.operating_mode not in stage3, (
+            f"자원 {line.name} 의 **합친** 문면이 3단계에 그대로 남아 있다 — "
+            f"두 열로 갈랐으면 한 칸에 함께 서 있을 수 없다: 「{line.operating_mode}」"
+        )
 
 
 def test_a_resource_only_in_the_notes_falls_back_instead_of_going_blank() -> None:
@@ -906,11 +950,17 @@ def test_a_resource_only_in_the_notes_falls_back_instead_of_going_blank() -> Non
     assert orphans, "픽스처 전제가 깨졌다 — `dispatch_notes` 에만 있는 자원이 없다"
     rows = dispatch_note_rows(report)
     for note in orphans:
-        row = next(r for r in rows if r.startswith(f"| {note.resource_name} |"))
-        cell = row.split("|")[2].strip()
-        assert cell, f"{note.resource_name} 의 운전방식 칸이 빈칸이다 — 「{row}」"
-        assert cell == (str(note.operating_mode) or NO_OPERATING_MODE), (
-            f"{note.resource_name} 이 종전 값으로 떨어지지 않았다 — 「{cell}」"
+        row = next(r for r in rows if f"`{note.resource_name}`" in r.split("|")[1])
+        declared, applied = row.split("|")[2].strip(), row.split("|")[3].strip()
+        assert declared, f"{note.resource_name} 의 선언 칸이 빈칸이다 — 「{row}」"
+        assert declared == (str(note.operating_mode) or NO_OPERATING_MODE), (
+            f"{note.resource_name} 이 종전 값으로 떨어지지 않았다 — 「{declared}」"
+        )
+        # ★ **두 칸에 같은 문장을 되풀이하지 않는다** (R68/WP-2 §2ⓐ). 운전
+        # 방법을 고르지 않는 자원은 선언 칸이 그 문장을 갖고 실제 칸은 「—」다.
+        assert applied == NO_APPLIED_ALLOCATION, (
+            f"{note.resource_name} 의 실제 배분 칸이 「{NO_APPLIED_ALLOCATION}」이 "
+            f"아니다 — 「{applied}」"
         )
 
 
@@ -1161,3 +1211,36 @@ def test_the_ess_table_column_names_say_what_kind_of_adoption(tmp_path: Path) ->
     assert within_range_head(sweep_where="①의").startswith(ADOPTED_TERM), (
         "구간 칸이 판정 대상을 「역산 채택안」이라 부르지 않는다"
     )
+
+
+def test_the_season_columns_carry_the_human_name_beside_the_join_key(
+    tmp_path: Path,
+) -> None:
+    """★★★ **계절 기여 표의 열이 조인 키만으로 서 있지 않다** (검토서 §3.3 마지막).
+
+    `e2e-pv`·`e2e-ess`·`e2e-load` 는 리포트·귀속 행·시험이 서로를 맞추는 **조인
+    키**이고 심의자가 읽을 이름이 아니다. 그렇다고 키를 **갈아 끼우면** 같은
+    종류 자원이 둘인 실행에서 두 열이 한 이름이 되고 계열 하나가 사라진다
+    (`core/report/charts/seasonal_operation.py` 독스트링). ⇒ **병기**다.
+
+    ⚠ 이름을 이 검사에 박지 않는다 — `ResourceLine.kind` 가 정본이다. 박으면
+    자원 제원이 바뀌는 날 이 검사가 「리포트가 틀렸다」로 빨간불이 된다.
+    """
+    stage3 = split_stages(_dumped(tmp_path))[2].body
+    header = next(
+        (row for row in stage3.splitlines() if row.startswith("| 계절 | ") and "`" in row),
+        None,
+    )
+    assert header is not None, (
+        "계절 기여 표의 머리를 찾지 못했다 — 조인 키를 병기하는 그 표다"
+    )
+    for line in _report().basis.resources:
+        assert line.kind, f"자원 {line.name!r} 의 kind 가 비어 있다"
+        assert line.kind in header, (
+            f"자원 {line.name!r} 의 사람용 이름 {line.kind!r} 이 열 이름에 없다: "
+            f"{header}"
+        )
+        assert f"`{line.name}`" in header, (
+            f"조인 키 {line.name!r} 가 열 이름에서 사라졌다 — 갈아 끼우지 않고 "
+            f"병기해야 한다: {header}"
+        )

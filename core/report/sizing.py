@@ -296,11 +296,38 @@ def _range_note(sizing: SelfSufficiencySizing, point: SelfSufficiencyPoint) -> s
     return f"아니오 — 구간 하한 {sizing.search_low_kw:g}kW 미만"
 
 
+def base_level_point(sizing: SelfSufficiencySizing) -> SelfSufficiencyPoint | None:
+    """대장 **기준 수준(`base`)** 의 역산 점 — 없으면 `None` (R68/WP-2 부수 정리).
+
+    ## 왜 공개 접근자가 필요했나 — **규칙의 사본이 하나 생겼다**
+
+    이 점을 고르는 규칙(`base` 를 **이름으로** 찾고 그 차례의 점을 든다)이
+    아래 `_mismatch_lines` 안에 사적 상수·사적 함수로만 있었다. 그래서 R68/WP-1
+    이 구분 표의 「진단 용량」 태양광 값을 채울 때 그것을 재수출할 수 없어
+    `core/casegrid/ledger_levels.py::LEVEL_NAMES` 에서 **같은 규칙을 다시
+    썼다**(`core/report/ess_sizing_section.py::_pv_diagnostic_cell`). 규칙이 둘이
+    되면 한쪽만 고쳐지는 날 두 표가 **다른 점을 「기준」이라 부르고**, 둘 다
+    그럴듯해 보인다 — 이 저장소가 형상·기준선·REC·가구 수에서 이미 네 번 밟은
+    형태다.
+
+    ⚠ **차례를 세어 고르지 않는다 — 이름으로 고른다.** `_LOAD_LEVEL_NAMES` 의
+    차례가 곧 `points` 앞머리의 차례이고(`build_self_sufficiency_sizing` 이 그
+    이름 차례로 쌓는다), 참고 부하는 그 뒤에 붙는다.
+
+    ⚠ 점이 모자라면 `None` 이다 — **빈 점을 지어내지 않는다.** 부르는 쪽이 그
+    사실을 글자로 적는다(`_pv_diagnostic_cell` 의 「역산한 점이 없다」).
+    """
+    index = _LOAD_LEVEL_NAMES.index("base")
+    if index >= len(sizing.points):
+        return None
+    return sizing.points[index]
+
+
 def _mismatch_lines(sizing: SelfSufficiencySizing) -> list[str]:
     """대장 base 와 참고 부하(있으면 첫째)의 필요 용량을 **원문 값 그대로** 나란히 낸다."""
-    base_point = sizing.points[_LOAD_LEVEL_NAMES.index("base")]
+    base_point = base_level_point(sizing)
     reference_points = sizing.points[len(_LOAD_LEVEL_NAMES):]
-    if not reference_points:
+    if base_point is None or not reference_points:
         return []
     reference_point = reference_points[0]
     return [

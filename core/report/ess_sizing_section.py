@@ -86,7 +86,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final
 
-from core.casegrid.ledger_levels import LEVEL_NAMES
 from core.casegrid.models import SeasonRun
 from core.contracts.der import DER
 from core.der.ess import ESS
@@ -97,7 +96,7 @@ from core.report.dispatch_notes import (
     split_by_direction,
 )
 from core.report.ess_sizing import ESSDailySizing, UsableCapacityKwh, build_ess_daily_sizing
-from core.report.sizing import SelfSufficiencySizing
+from core.report.sizing import SelfSufficiencySizing, base_level_point
 
 #: 하루의 시각 수. `core/report/dispatch_sections.py::_hour_label` 이 같은 층에서
 #: 같은 수를 갖는다 — `core/contracts/units.py` 는 이 값을 내놓지 않고(`HOURS_PER_YEAR`
@@ -567,19 +566,22 @@ def relaxation_reach_note(review: ESSSizingReview) -> str:
 def _pv_diagnostic_cell(pv: SelfSufficiencySizing) -> tuple[str, str | None]:
     """진단 용량 칸의 **태양광 조각**과 그 부하 수준의 이름.
 
-    ⚠ **수준을 이름으로 고른다** — `core/casegrid/ledger_levels.py::LEVEL_NAMES`
-    의 `base` 이고 차례를 세어 고르지 않는다. `core/report/sizing.py` 의
-    `_mismatch_lines` 가 같은 규칙으로 같은 점을 고른다. ② 표가 부하 수준 넷을
-    다 싣고 이 칸은 **대장 기준 수준 하나**를 대표로 든다 — 넷을 다 들면 한
-    칸이 표를 넘는다.
+    ⚠ **수준을 이름으로 고른다** — `core/report/sizing.py::base_level_point` 의
+    `base` 이고 차례를 세어 고르지 않는다. ② 표가 부하 수준 넷을 다 싣고 이
+    칸은 **대장 기준 수준 하나**를 대표로 든다 — 넷을 다 들면 한 칸이 표를 넘는다.
+
+    ⚠⚠ **그 규칙을 여기서 다시 쓰지 않는다**(R68/WP-2 부수 정리). R68/WP-1 이
+    이 칸을 세울 때 `core/casegrid/ledger_levels.py::LEVEL_NAMES` 에서
+    `index("base")` 로 규칙을 다시 썼는데, 같은 규칙이 `sizing.py` 의
+    `_mismatch_lines` 에도 있었다 — **사본이 하나 생긴 것**이다. 지금은 그
+    모듈이 공개 접근자를 갖고 두 자리가 **그 하나**를 부른다.
 
     ⚠ 20호 실행에서는 **단지 값**을 든다. 아래 실행 용량이 단지 값이므로 같은
     규모끼리 견줘야 하고, 1가구 값은 ② 표가 싣는다.
     """
-    index = LEVEL_NAMES.index("base")
-    if index >= len(pv.points):
+    point = base_level_point(pv)
+    if point is None:
         return ("태양광 — 역산한 점이 없다", None)
-    point = pv.points[index]
     if pv.scales_to_estate:
         capacity = f"{point.required_capacity_kw:,.2f}kW({pv.estate_label})"
     else:

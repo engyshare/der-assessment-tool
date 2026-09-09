@@ -109,6 +109,10 @@ def _resource(name: str, *, produces: tuple[str, ...] = ()) -> ResourceLine:
         kind=name,
         capacity="—",
         operating_mode="—",
+        # ⚠ 이 검사가 보는 칸이 아니다 — 그래도 값을 정해야 한다(R68/WP-2 ·
+        # `ResourceLine.applied_allocation` 은 기본값이 없다). 「배분을 따로
+        # 고르지 않았다」를 뜻하는 「—」를 적는다.
+        applied_allocation="—",
         lifetime_years=20,
         unit_capex="—",
         capex_won=0,

@@ -1299,6 +1299,21 @@ def _hours_text(hours: Sequence[int]) -> str:
     )
 
 
+def _ess_allocation_text(ess: ESS) -> str:
+    """저장장치가 이 실행에서 **실제로 적용한 방전 배분** 한 조각 (R68/WP-2).
+
+    ⚠ **함수로 둔 이유** — 이 조각은 `ResourceLine` 의 «두» 칸이 읽는다:
+    합친 `operating_mode`(붙임 6 과 골든이 보는 문면 · ⛔ 바꾸지 않는다)와
+    뒷조각만 나르는 `applied_allocation`(검증 3단계의 「실제 배분」 열)이다.
+    저장장치 줄은 몫마다 서는 **생성식** 안에서 만들어져 지역 변수를 둘 수
+    없으므로, 같은 f-문자열을 두 번 적는 대신 여기서 한 번 짓는다.
+    """
+    return (
+        f"방전 배분: {ess.discharge_allocation} "
+        f"(방전창 {_hours_text(ess.discharge_hours)} 안)"
+    )
+
+
 def _resource_lines(
     pv: PV,
     pv_capex: float,
@@ -1344,6 +1359,11 @@ def _resource_lines(
             line.tag for line in benefits if line.resource_code == resource
         )
 
+    # ★★ **배분 조각을 «한 번» 짓는다** (R68/WP-2). 합친 칸과 `applied_
+    # allocation` 칸이 같은 지역 변수를 읽으므로 둘이 갈라질 수 없다 — 두 곳에
+    # 같은 f-문자열을 적으면 한쪽만 고쳐지는 날 검증 3단계의 「실제 배분」 열이
+    # 붙임 6 의 합친 칸과 다른 말을 하고, 아무 예외도 나지 않는다.
+    pv_allocation_text = f"본 실행 배분: {pv_allocation_priority}"
     return (
         ResourceLine(
             name=pv.name,
@@ -1369,9 +1389,10 @@ def _resource_lines(
             # allocation_priority` 축이 낮 동안 따로 정한다(같은 뿌리, 판정
             # §4 ⚠). 배분 순서는 실행이 실제로 고른 값(`resolved_pv_allocation_
             # priority`)에서 읽는다 — 지어내지 않는다.
-            operating_mode=(
-                f"{pv.operating_mode} (선언) · 본 실행 배분: {pv_allocation_priority}"
-            ),
+            operating_mode=f"{pv.operating_mode} (선언) · {pv_allocation_text}",
+            # ★ 위 합친 칸의 **뒷조각만** — 검증 3단계가 파싱 없이 「선언」과
+            # 「실제 배분」을 두 열로 가른다(`ResourceLine.applied_allocation`).
+            applied_allocation=pv_allocation_text,
             lifetime_years=int(pv.lifetime),
             unit_capex=f"{pv_capex:,.0f}원/kW",
             capex_won=int(pv.capex(year=1)),
@@ -1400,11 +1421,11 @@ def _resource_lines(
                 # 창 **안에서만** 나눈다(창을 부하로 정하면 충전 계획과
                 # 순환한다 — `ess_schedule.pv_surplus_charge_kwh_by_hour`).
                 # 창 밖 수요의 크기는 붙임 8 이 재어 신고한다.
-                operating_mode=(
-                    f"{ess.operating_mode} · 방전 배분: "
-                    f"{ess.discharge_allocation} (방전창 "
-                    f"{_hours_text(ess.discharge_hours)} 안)"
-                ),
+                operating_mode=f"{ess.operating_mode} · {_ess_allocation_text(ess)}",
+                # ★ 위 합친 칸의 **뒷조각만** — 검증 3단계가 파싱 없이 「선언」과
+                # 「실제 배분」을 두 열로 가른다. 같은 함수를 읽으므로 두 칸이
+                # 갈라질 수 없다(`_ess_allocation_text` 독스트링의 ⚠).
+                applied_allocation=_ess_allocation_text(ess),
                 lifetime_years=int(ess.lifetime),
                 # ★★★ **두 축을 함께 인쇄한다** (R66/WP-2-fix). R66/WP-2 가
                 # 초기투자에 `PCS 단가 × 정격출력` 항을 세우면서 이 칸이

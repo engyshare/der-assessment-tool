@@ -90,7 +90,6 @@ from core.report.capacity import (
     search_range_note,
 )
 from core.report.case_report import CaseReport
-from core.report.dispatch_notes import resolved_operating_mode
 from core.report.ess_sizing_section import (
     ADOPTED_HEAD,
     CAPACITY_KIND_APPLIED,
@@ -110,6 +109,7 @@ from core.report.sizing import (
     household_first_notes,
 )
 from core.report.unreflected import build_unreflected, unreflected_direction_tally
+from core.report.verification_dispatch import resource_labels
 
 #: 「그렇다/아니다」 두 글자를 한 자리에서만 정한다 — 표마다 다른 낱말을 쓰면
 #: 훑는 눈이 다른 판정으로 읽는다(`core/report/_format.py::_recovery` 와 같은
@@ -735,29 +735,14 @@ def capacity_review_lines(report: CaseReport) -> list[str]:
 # `resolved_operating_mode()` 다. 붙임의 「자원별 배정」 표가 **같은 판정**을
 # 필요로 했고, 문면을 두 곳에 두면 **한쪽만 고쳐진다** — 이 저장소가 형상·
 # 기준선·REC·가구 수에서 이미 네 번 밟은 형태다.
-
-
-def dispatch_note_rows(report: CaseReport) -> list[str]:
-    """3단계 ⓐ 자원 표의 **데이터 행** — 운전방식 칸이 배분까지 싣는다 (요구 5).
-
-    `DispatchNote.operating_mode` 는 자원이 **선언한** 짧은 라벨이고(「전량
-    판매」), 이 실행이 실제로 무엇을 우선했는지는 `CaseBasis.resources` 의 긴
-    문면에만 있다 — 「전량 판매 (선언) · **본 실행 배분: 집 우선**」·「자가소비
-    우선 · **방전 배분: 부하 추종 (방전창 …)**」(`e2e_runner.py` 가 짓는다).
-    짧은 라벨만 실으면 ① 요구 5(ESS 가 가구 부하를 보고 방전한다)를 이 문서
-    어디에서도 가릴 수 없고 ② 3단계 「전량 판매」와 2단계 「자가소비율 56%」가
-    초독자에게 **모순으로 읽힌다**(R64/WP-FIX 결함 2).
-
-    ⚠ **이름으로 맞춘다 — 차례로 맞추지 않는다**(두 목록의 길이가 다르다).
-    못 찾으면 **종전 값**으로 떨어지고, 그마저 비면 위 상수가 문장을 적는다.
-    """
-    modes = {line.name: line.operating_mode for line in report.basis.resources}
-    return [
-        f"| {n.resource_name} | {resolved_operating_mode(n, modes)} "
-        f"| `{n.dispatch_rule.value}` | {n.dispatch_priority} "
-        f"| {'예' if n.price_linked else '아니오'} |"
-        for n in report.dispatch_notes
-    ]
+#
+# ⚠⚠ **3단계 ⓐ 자원 표를 짓는 `dispatch_note_rows()` 도 여기 있었다가
+# 옮겨졌다**(R68/WP-2) — 정본은 `core/report/verification_dispatch.py` 다.
+# R68 이 그 한 칸을 **선언 열과 실제 배분 열 둘로** 가르면서 표 아래 세 줄까지
+# 함께 서야 했고, 이 파일은 그 시점에 코드 **486/500** 줄이라(NFR-206 ·
+# `scripts/check_file_size.py --code-strict`) 새 코드를 쌓을 자리가 없었다.
+# ⚠ 이 파일이 그 모듈에서 가져오는 것은 **열 이름 규칙**(`resource_labels`)
+# 하나이며, 아래 계절 기여 표가 그것으로 사람용 이름과 조인 키를 병기한다.
 
 
 def _moved_cell(season: SeasonRun) -> str:
@@ -830,7 +815,11 @@ def season_lines(report: CaseReport) -> list[str]:
         "",
         "자원별 — 그 계절이 한 해에 보태는 몫(kWh):",
         "",
-        "| 계절 | " + " | ".join(names) + " |",
+        # ★ **사람용 이름을 앞에 · 조인 키를 뒤에** (R68/WP-2 · 검토서 §3.3
+        # 마지막 항목). `e2e-pv` 는 조인 키이고 심의자가 읽을 이름이 아니다 —
+        # ⚠ 그렇다고 키를 **갈아 끼우지** 않는다(같은 종류 자원이 둘이면 이름이
+        # 겹쳐 열 하나가 사라진다). 값을 찾는 것은 여전히 아래 `names` 의 키다.
+        "| 계절 | " + " | ".join(resource_labels(names, report.basis.resources)) + " |",
         "|---|" + "---|" * len(names),
         *(
             f"| {s.name} | "
@@ -844,8 +833,11 @@ def season_lines(report: CaseReport) -> list[str]:
             for s in seasons
         ),
         "",
-        "- 부호 규약 — **양수는 내보냄 · 음수는 받아들임**이다(부하는 음수로 "
-        "나타난다)",
+        # ⚠ **부호 규약 줄은 여기 있었다가 ⓓ(계산 수식) 칸으로 내려갔다**
+        # (R68/WP-2 · 검토서 §4.3). 사람이 읽는 표를 **규약을 먼저 읽지 않고**
+        # 읽을 수 있어야 한다는 요구이며, **표 자체의 부호는 그대로다** —
+        # 자원 수지는 부호가 뜻이다. 정본은
+        # `core/report/verification_dispatch.py::SIGN_CONVENTION_NOTE` 다.
         "- ⚠ **위 대표일 표와 단위가 다르다** — 저것은 하루의 합(kWh/일)이고 "
         "이것은 한 해의 합(kWh/년)이다. 연간등가 하루가 계절별 하루를 계절 "
         "일수로 가중 평균한 것이므로 **대표일 합 × 365 와 이 표의 합이 같은 "  # noqa: RUF001
