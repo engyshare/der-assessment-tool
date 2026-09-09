@@ -32,13 +32,30 @@ from app.run.report_cli import (
     REPORT_OUT_DIR_ENV,
     main,
 )
-from app.services.verify_steps import split_stages
+from app.services.verify_steps import STAGE_COUNT, split_stages
 from core.report.case_report import build_case_report
-from core.report.verification import render_verification_markdown
+from core.report.verification import (
+    StageBlock,
+    render_verification_markdown,
+    stage_blocks,
+)
+from core.report.verification_chain import (
+    CHAIN_NODES,
+    CHAIN_TITLE,
+    NO_STAGE_NAMED,
+    dependency_chain_lines,
+    handoff_text,
+    named_stages,
+)
 from core.report.verification_dispatch import (
     DISPATCH_TABLE_HEAD,
     LINKAGE_NOTE,
     SIGN_CONVENTION_NOTE,
+)
+from core.report.verification_scaleup import (
+    COINCIDENCE_EXCLUDED,
+    EXCLUDED_BY_DECISION,
+    SCALEUP_TITLE,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -416,3 +433,170 @@ def test_the_stage_three_file_carries_a_full_day_for_every_season(
         assert annual in stage3, (
             f"{season.name} 의 대조에 러너가 실어 온 연간 수전량 {annual} 이 없다"
         )
+
+
+def test_the_stage_two_file_carries_the_scale_up_rule(tmp_path: Path) -> None:
+    """★★★ **CLI 산출물의 2단계 파일이 확대 규칙 표를 싣는다** (검토서 §3.5).
+
+    검토서 문면: *「현재 20가구 총수요 = 가구당 총수요 × 20 은 표시되지만, 자원
+    구성과 시간대 피크의 확대 규칙이 같은 수준으로 설명되지 않는다」*.
+
+    ★ **렌더러를 직접 부르지 않는다** — 이 파일 머리말의 사유이며, 배선이
+    끊기면 다른 검사가 초록불이어도 사용자는 그 표를 못 본다. 표의 축과 판정은
+    `tests/report/test_verification_scaleup.py` 가 잰다 — 여기서는 **그 표가
+    2단계 파일에 실려 나가는가**와 **단지 값이 실행값 그대로인가**만 본다.
+
+    ⚠ 수를 리터럴로 박지 않는다 — 리포트가 실어 온 것으로 기대를 만든다.
+    """
+    report = build_case_report(
+        _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    count = report.household_count
+    assert count is not None and count > 1, "이 시나리오가 단지 규모로 돌지 않았다"
+
+    stage2 = split_stages(_verification_text(tmp_path))[1].body
+    assert SCALEUP_TITLE in stage2, "2단계에 확대 규칙 표의 제목이 없다"
+    assert f"| 무엇 | 한 호 기준값 | 배수를 곱하는 자리 | {count}호 값 |" in stage2, (
+        "표 머리가 없거나 단지 열이 실행의 가구 수를 이름으로 갖지 않는다"
+    )
+    for finding in report.capacity_review:
+        assert f"| {finding.used_value:g} {finding.unit} |" in stage2, (
+            f"{finding.label} 의 단지 값이 실행값({finding.used_value:g})과 다르다"
+        )
+    power_kw = report.ess_sizing.run_power_kw
+    assert power_kw is not None, "이 실행이 저장장치를 세우지 않았다"
+    assert f"| {power_kw:g} kW |" in stage2, "저장장치 정격출력 행이 없다"
+    for where, _why in COINCIDENCE_EXCLUDED:
+        assert f"| {where} | {EXCLUDED_BY_DECISION} |" in stage2, (
+            f"동시율을 걸지 않는 자리 「{where}」가 「제외」로 서 있지 않다 — "
+            "누락으로 읽히면 다음 사람이 넣고 결론축이 조용히 좋아진다"
+        )
+
+
+# ── WP-4-fix — 목차의 의존 연결표 (검토서 §2.2) ─────────────────────────────
+
+
+def _block(number: int, handoff: tuple[str, ...]) -> StageBlock:
+    """시험용 단계 하나 — **ⓒ 만 다르다.** 본문은 이 검사들이 보지 않는다."""
+    return StageBlock(number=number, title=f"{number}번", lines=(), handoff=handoff)
+
+
+def _nine(handoff: tuple[str, ...]) -> tuple[StageBlock, ...]:
+    """사슬이 가리키는 단계가 **다 있는** 아홉 — 그중 첫 단계만 ⓒ 를 바꾼다."""
+    return tuple(
+        _block(number, handoff if number == 1 else ("—",))
+        for number in range(1, STAGE_COUNT + 1)
+    )
+
+
+def test_stage_blocks_carry_the_very_lines_the_stage_body_prints() -> None:
+    """★★★ **ⓒ 는 사본이 아니라 같은 조각이다** (WP-4-fix).
+
+    목차가 ⓒ 문면을 따로 적으면 단계가 바뀌는 날 목차만 옛말을 한다. 그래서
+    렌더러가 단계를 지을 때 손에 있던 `c` 를 **그대로** 함께 낸다 — 이 검사는
+    `handoff` 가 그 단계 본문의 ⓒ 절 **자리에 그대로 들어 있는지**를 잰다.
+    """
+    report = build_case_report(
+        _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    blocks = stage_blocks(report)
+    assert [block.number for block in blocks] == list(range(1, STAGE_COUNT + 1))
+    for block in blocks:
+        assert block.lines[0] == f"## {block.number}단계 — {block.title}"
+        head = block.lines.index("**ⓒ 다음 단계로 넘긴 값**")
+        # 머리글 · 빈 줄 다음이 ⓒ 줄들이다 — 조각이 같은지 그 자리에서 본다.
+        start = head + 2
+        assert block.lines[start : start + len(block.handoff)] == block.handoff, (
+            f"{block.number}단계의 ⓒ 가 본문과 다른 조각이다"
+        )
+        assert block.handoff, f"{block.number}단계의 ⓒ 가 비어 있다"
+
+
+def test_the_index_dependency_table_is_collected_not_rewritten(tmp_path: Path) -> None:
+    """★★★ **목차의 연결표가 각 단계의 ⓒ 에서 온다** (검토서 §2.2).
+
+    ★ 렌더러를 직접 부르는 것으로 끝내지 않는다 — 목차 파일을 CLI 로 뽑아
+    **그 파일 안에** 아홉 행이 있는지 본다(배선이 끊기면 사용자는 그 표를 못 본다).
+    """
+    index = (_stage_dir(tmp_path) / INDEX_FILENAME).read_text(encoding="utf-8")
+    report = build_case_report(
+        _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    assert f"## {CHAIN_TITLE}" in index, "목차에 의존 연결 절이 없다"
+    for block in stage_blocks(report):
+        row = (
+            f"| {block.number}단계 | {handoff_text(block)} "
+            f"| {named_stages(block)} |"
+        )
+        assert row in index, f"{block.number}단계의 인계 행이 목차에 없다"
+
+
+def test_the_chain_line_and_the_node_table_come_from_one_source(
+    tmp_path: Path,
+) -> None:
+    """사슬 한 줄과 마디 표가 **같은 자료**에서 온다 — 마디를 두 번 적지 않는다."""
+    index = (_stage_dir(tmp_path) / INDEX_FILENAME).read_text(encoding="utf-8")
+    chain = " → ".join(label for label, _stages in CHAIN_NODES)
+    assert f"`{chain}`" in index, "사슬 한 줄이 마디 표와 다른 낱말을 쓴다"
+    for label, numbers in CHAIN_NODES:
+        cell = " · ".join(f"{number}단계" for number in numbers)
+        assert f"| {label} | {cell} |" in index, f"마디 「{label}」 행이 없다"
+    # 사슬이 이름 부르지 않은 단계도 **세어서** 적는다 — 손으로 적지 않는다.
+    mapped = {number for _label, numbers in CHAIN_NODES for number in numbers}
+    unnamed = [n for n in range(1, STAGE_COUNT + 1) if n not in mapped]
+    assert unnamed, "이 검사의 전제가 깨졌다 — 사슬이 아홉 단계를 다 이름 부른다"
+    assert " · ".join(f"{n}단계" for n in unnamed) in index
+
+
+def test_the_named_stage_column_follows_the_prose_not_a_hand_list() -> None:
+    """오른쪽 칸은 **ⓒ 가 스스로 이름 부른 단계**다 — 자기 단계는 세지 않는다."""
+    named = named_stages(_block(2, ("이 값은 4단계와 7단계가 받는다.",)))
+    assert named == "4단계 · 7단계"
+    # ⚠ **부정문을 읽지 못한다** — 적힌 이름을 그대로 센다. 그래서 칸 이름이
+    # 「받는 단계」가 아니라 **「ⓒ 가 이름 부른 단계」**다(그 낱말이 이 한계를
+    # 산출물에 적어 둔다). 이 검사가 그 한계를 «고정»한다.
+    assert named_stages(_block(2, ("1단계가 아니라 4단계가 받는다.",))) == "1단계 · 4단계"
+    assert "2단계" not in named_stages(_block(2, ("2단계 안에서만 쓰인다.",)))
+    assert named_stages(_block(9, ("이후 단계로 넘기는 값이 없다.",))) == NO_STAGE_NAMED
+    # 범위 문면(`2~9단계`)을 두 수로 쪼개 읽지 않는다 — 적힌 대로 싣는다.
+    assert named_stages(_block(1, ("2~9단계 전체에서 쓰인다.",))) == "2~9단계"
+
+
+def test_a_table_row_in_the_handoff_does_not_land_in_the_cell() -> None:
+    """⚠ **칸에 표를 넣을 수 없다** — 1단계의 ⓒ 는 문장 하나 + 표 열일곱 행이다.
+
+    표 행을 그대로 밀어 넣으면 목차의 표가 깨지고, 깨진 표는 「연결이 없다」로
+    읽힌다. 그래서 문장만 싣고 **표는 그 단계 파일이 진다**(그 사실을 표 아래
+    글자로 적는다).
+    """
+    block = _block(1, ("문장이다.", "", "| 변수 | 값 |", "|---|---|", "| a | 1 |"))
+    assert handoff_text(block) == "문장이다."
+    # 문장 «안에» 파이프가 있으면 탈출시킨다 — 그때도 표가 깨지지 않는다.
+    assert handoff_text(_block(1, ("a | b 를 넘긴다.",))) == r"a \| b 를 넘긴다."
+
+
+def test_a_chain_node_pointing_at_a_missing_stage_stops() -> None:
+    """⚠ 사슬이 **없는 단계**를 가리키면 멈춘다 — 빈 칸으로 지나가지 않는다.
+
+    빈 칸이면 검토자는 *「그 마디는 어디서도 안 나온다」* 로 읽는다.
+    """
+    missing = max(number for _label, numbers in CHAIN_NODES for number in numbers)
+    blocks = tuple(block for block in _nine(("—",)) if block.number != missing)
+    with pytest.raises(ValueError, match="사슬이 없는 단계를 가리킨다"):
+        dependency_chain_lines(blocks)
+
+
+def test_the_dependency_table_adds_no_stage_and_no_premise_word() -> None:
+    """⛔ 단계를 늘리지 않고 ⛔ 사람이 읽는 자리에 「전제」를 새로 세우지 않는다.
+
+    ⚠ 「전제」는 **이 모듈이 짓는 자리**(절 제목·표 머리)에서 잰다 — 가운데 칸은
+    각 단계의 ⓒ 문면이고 그 낱말의 책임은 그 단계에 있다.
+    """
+    lines = dependency_chain_lines(_nine(("4단계가 받는다.",)))
+    assert not any(line.startswith("## ") and "단계 — " in line for line in lines)
+    authored = [f"## {CHAIN_TITLE}"] + [
+        line for line in lines if line.startswith("| 사슬의 마디") or line.startswith("| 단계 |")
+    ]
+    assert len(authored) == 3, authored
+    for line in authored:
+        assert "전제" not in line

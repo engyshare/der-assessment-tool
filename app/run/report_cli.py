@@ -44,7 +44,8 @@ from pathlib import Path
 from app.services.verify_steps import VerifyStage, split_stages
 from core.report.case_report import CaseReport, build_case_report
 from core.report.narrative import render_markdown
-from core.report.verification import render_verification_markdown
+from core.report.verification import render_verification_markdown, stage_blocks
+from core.report.verification_chain import dependency_chain_lines
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _GOLDEN_DIR = _REPO_ROOT / "fixtures" / "golden"
@@ -180,6 +181,14 @@ def _index_markdown(stages: tuple[VerifyStage, ...], report: CaseReport) -> str:
         f"| {stage.number} | {stage.title} | {_stage_filename(stage)} |"
         for stage in stages
     )
+    # ★★ **의존 연결표** (R68/WP-4-fix · 검토서 §2.2 *「어떤 계산이 어떤 값에
+    # 의존하는지 한눈에 보이는 연결표가 없다 … 최소한 목차에 표시해야 한다」*).
+    # ⚠ **문면을 여기서 짓지 않는다** — 재료는 각 단계의 ⓒ 절이고 그것을
+    # `core/report/verification.py::StageBlock` 이 실어 온다. 이 파일이 다시
+    # 적으면 단계가 바뀌는 날 목차만 옛말을 한다.
+    # ⚠ 표의 위 `stages`(마크다운에서 쪼갠 것)와 아래 블록(렌더러가 낸 자료)은
+    # 같은 아홉이다 — 어긋나면 `split_stages` 가 이미 멈춘다(`STAGE_COUNT`).
+    lines += ["", *dependency_chain_lines(stage_blocks(report))]
     return "\n".join(lines) + "\n"
 
 

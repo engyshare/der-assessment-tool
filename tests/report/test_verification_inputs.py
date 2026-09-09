@@ -84,8 +84,11 @@ from core.report.ess_sizing_section import (
 from core.report.verification import render_verification_markdown
 from core.report.verification_dispatch import dispatch_note_rows
 from core.report.verification_inputs import (
+    ESTATE_LOAD_UNIT,
     HOUSEHOLD_LOAD_LEDGER_KEY,
+    estate_load_kwh,
     execution_input_lines,
+    household_total_load_kwh,
     run_used_values,
 )
 
@@ -701,7 +704,32 @@ def test_the_estate_total_multiplies_the_household_total_by_count(
         line for line in text.splitlines() if line.startswith("| 단지 총 전력 |")
     )
     expected = (_general_load_kwh(report) + loads.total_kwh) * _HOUSEHOLDS
-    assert f"{expected:,.0f} kWh/년" in row, "단지 총 전력이 곱한 값이 아니다"
+    assert f"{expected:,.0f} {ESTATE_LOAD_UNIT}" in row, "단지 총 전력이 곱한 값이 아니다"
+
+
+def test_the_estate_total_is_multiplied_in_one_place_only(tmp_path: Path) -> None:
+    """★★ **단지 총부하를 곱하는 자리가 하나다** (R68/WP-4).
+
+    같은 수를 1단계의 「단지 총 전력」 칸과 2단계의 확대 규칙 표가 함께 싣는다.
+    두 자리에서 각자 곱하면 한쪽만 고쳐지고, 그때 같은 문서가 단지 총부하를 두
+    수로 말한다 — 그래서 곱은 `core/report/verification_scaleup.py::
+    estate_load_kwh` 하나가 갖고 두 표가 그것을 부른다.
+
+    ⚠ 값을 여기 박지 않는다 — 리포트가 읽은 대장 값과 기기 부하로 대조한다.
+    """
+    fields = {HOUSEHOLD_COUNT_FIELD: _HOUSEHOLDS}
+    report = _report(**fields)
+    stages = split_stages(_dumped(tmp_path, **fields))
+    assert len(stages) == STAGE_COUNT, "표가 늘어 단계가 갈렸다"
+    per_household = household_total_load_kwh(report)
+    assert per_household == pytest.approx(
+        _general_load_kwh(report) + report.appliance_loads.total_kwh
+    ), "가구 총 전력이 «더한 뒤에 곱한다» 순서를 벗어났다"
+    estate = estate_load_kwh(report)
+    assert estate == pytest.approx(per_household * _HOUSEHOLDS)
+    cell = f"{estate:,.0f} {ESTATE_LOAD_UNIT}"
+    assert cell in stages[0].body, "1단계의 단지 총 전력 칸이 그 수가 아니다"
+    assert cell in stages[1].body, "2단계 확대 규칙 표가 그 수를 싣지 않았다"
 
 
 def test_unspecified_heatpump_prints_differently_from_zero_heatpump(

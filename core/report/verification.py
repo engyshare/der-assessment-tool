@@ -40,6 +40,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 from decimal import Decimal
 
 from core.casegrid.models import (
@@ -67,6 +68,7 @@ from core.report.verification_inputs import (
     season_lines,
     unreflected_lines,
 )
+from core.report.verification_scaleup import scaleup_lines
 
 
 def _row_year1(row: CashFlowRow) -> int:
@@ -87,6 +89,35 @@ def _match_note(label_a: str, value_a: int, label_b: str, value_b: int) -> str:
     )
 
 
+@dataclass(frozen=True)
+class StageBlock:
+    """단계 하나 — **완성된 줄들**과 그 단계의 **ⓒ 절** (R68/WP-4-fix · 검토서 §2.2).
+
+    ## 왜 ⓒ 를 따로 나르는가
+
+    목차(`00-목차.md`)가 **의존 연결표**를 세워야 하는데, 그 재료는 *「각 단계의
+    ⓒ 다음 단계로 넘긴 값」* 이다(검토서 §2.2). 목차가 그 문면을 **다시 적으면**
+    단계가 바뀌는 날 목차만 옛말을 한다 — 두 곳에 같은 말이 있으면 한쪽만
+    고쳐진다.
+
+    ⇒ 그래서 **완성된 마크다운을 되읽지 않는다**(그 갈래는 정규식으로 ⓒ 절을
+    찾아야 하고, 절 이름을 고치는 날 조용히 빈 표가 된다). 단계를 지을 때 이미
+    손에 있는 `c` 를 **그대로 함께 내보낸다** — 아래 `_stage()` 가 그 자리다.
+
+    ⚠ **`lines` 안에 그 ⓒ 가 이미 들어 있다.** 둘은 사본이 아니라 **같은 조각**
+    이며(`_stage()` 가 한 번 받아 두 자리에 넣는다), 시험이 그 동일성을 잰다
+    (`tests/report/test_verification.py`).
+    """
+
+    number: int
+    title: str
+    #: 이 단계의 마크다운 전문 — `## N단계 — 제목` 부터.
+    lines: tuple[str, ...]
+    #: **ⓒ 다음 단계로 넘긴 값** 절의 줄들. 표 행(`|` 로 시작)도 그대로 든다 —
+    #: 거르는 판단은 **읽는 쪽**이 한다(`core/report/verification_chain.py`).
+    handoff: tuple[str, ...]
+
+
 def _stage(
     number: int,
     title: str,
@@ -95,16 +126,18 @@ def _stage(
     b: list[str],
     c: list[str],
     d: list[str],
-) -> list[str]:
+) -> StageBlock:
     lines = [f"## {number}단계 — {title}", ""]
     lines += ["**ⓐ 전제한 수치**", "", *a, ""]
     lines += ["**ⓑ 계산된 수치**", "", *b, ""]
     lines += ["**ⓒ 다음 단계로 넘긴 값**", "", *c, ""]
     lines += ["**ⓓ 계산 수식**", "", *d, ""]
-    return lines
+    return StageBlock(
+        number=number, title=title, lines=tuple(lines), handoff=tuple(c)
+    )
 
 
-def _stage1_ledger(report: CaseReport) -> list[str]:
+def _stage1_ledger(report: CaseReport) -> StageBlock:
     a = [
         f"외부 대장 파일 `{report.assumption_set_name}` 판 "
         f"{report.assumption_set_version}(`docs/assumptions.yaml`).",
@@ -143,13 +176,19 @@ def _stage1_ledger(report: CaseReport) -> list[str]:
     return _stage(1, "전제 대장에서 읽은 값", a=a, b=b, c=c, d=d)
 
 
-def _stage2_resources(report: CaseReport) -> list[str]:
+def _stage2_resources(report: CaseReport) -> StageBlock:
     basis = report.basis
     total_capex = sum(r.capex_won for r in basis.resources)
     a = [
         "| 자원 | 용량 | 단가 문면 |",
         "|---|---|---|",
         *(f"| {r.kind} | {r.capacity} | {r.unit_capex} |" for r in basis.resources),
+        # ★★ **위 용량이 어떻게 단지 규모가 되었는가** (R68/WP-4 · 검토서 §3.5).
+        # 종전에는 단지 값만 서 있고 **확대 규칙이 산출물에 없었다** — 부하의
+        # 확대는 1단계가 적고 설비의 확대는 어느 단계도 적지 않았다. 판정과
+        # 문면의 정본은 `core/report/verification_scaleup.py` 가 갖는다.
+        # ⛔ 여기서 곱하거나 나누지 않는다 — 그 모듈이 `report` 에서 읽는다.
+        *scaleup_lines(report),
     ]
     b = [
         "| 자원 | 취득비 | 고정 O&M(연) |",
@@ -179,7 +218,7 @@ def _stage2_resources(report: CaseReport) -> list[str]:
     return _stage(2, "자원 구성과 초기투자", a=a, b=b, c=c, d=d)
 
 
-def _stage3_dispatch(report: CaseReport) -> list[str]:
+def _stage3_dispatch(report: CaseReport) -> StageBlock:
     basis = report.basis
     hours = report.dispatch_hours
     total_export = sum(h.grid_export for h in hours)
@@ -212,7 +251,7 @@ def _stage3_dispatch(report: CaseReport) -> list[str]:
     return _stage(3, "대표일 운전(디스패치)", a=a, b=b, c=c, d=d)
 
 
-def _stage4_benefits(basis: CaseBasis) -> list[str]:
+def _stage4_benefits(basis: CaseBasis) -> StageBlock:
     a = ["1단계 단가 대장 + 3단계 운전결과(자가소비·송전 수량)."]
     b = [
         "| 편익 | 1년차 금액 | 만든 자원 |",
@@ -245,7 +284,7 @@ def _stage4_benefits(basis: CaseBasis) -> list[str]:
     return _stage(4, "편익 화폐화", a=a, b=b, c=c, d=d)
 
 
-def _stage5_costs(basis: CaseBasis) -> list[str]:
+def _stage5_costs(basis: CaseBasis) -> StageBlock:
     a = ["3단계 운전결과(계통 수전 수량) + 1단계 요금 단가."]
     subtotal = sum(line.annual_won for line in basis.costs)
     b = [
@@ -267,7 +306,7 @@ def _stage5_costs(basis: CaseBasis) -> list[str]:
     return _stage(5, "운영비", a=a, b=b, c=c, d=d)
 
 
-def _stage6_lifecycle(basis: CaseBasis) -> list[str]:
+def _stage6_lifecycle(basis: CaseBasis) -> StageBlock:
     a = [
         f"자원별 수명(`ResourceLine.lifetime_years`) + 분석기간"
         f"({basis.horizon_years}년):",
@@ -360,7 +399,7 @@ def _lifecycle_match_note(item: OneOffLine, actual: int | None) -> str:
     )
 
 
-def _stage7_cashflow(report: CaseReport) -> list[str]:
+def _stage7_cashflow(report: CaseReport) -> StageBlock:
     basis = report.basis
     cf = report.cashflows
     benefit_year1 = _year1_sum(cf.benefit)
@@ -406,7 +445,7 @@ def _stage7_cashflow(report: CaseReport) -> list[str]:
     return _stage(7, "현금흐름 행 — 이 보고서의 심장", a=a, b=b, c=c, d=d)
 
 
-def _stage8_metrics(report: CaseReport) -> list[str]:
+def _stage8_metrics(report: CaseReport) -> StageBlock:
     basis = report.basis
     metrics = report.metrics
     a = [
@@ -431,7 +470,7 @@ def _stage8_metrics(report: CaseReport) -> list[str]:
     return _stage(8, "지표", a=a, b=b, c=c, d=d)
 
 
-def _stage9_variants(report: CaseReport) -> list[str]:
+def _stage9_variants(report: CaseReport) -> StageBlock:
     a = [
         f"8단계 지표(무지원 기준선) + 현재 지원율 {report.subsidy_rate:.0%} + "
         f"지원 상한 {MAX_SUBSIDY_RATE:.0%}(사업비 전액).",
@@ -465,11 +504,43 @@ def _stage9_variants(report: CaseReport) -> list[str]:
     return _stage(9, "변형(지원율)", a=a, b=b, c=c, d=d)
 
 
+def stage_blocks(report: CaseReport) -> tuple[StageBlock, ...]:
+    """아홉 단계를 **자료로** 낸다 — 문서와 목차가 같은 것에서 온다 (WP-4-fix).
+
+    ## 왜 이 함수가 생겼나
+
+    목차의 의존 연결표가 **각 단계의 ⓒ 절**을 재료로 쓴다(검토서 §2.2). 그
+    문면을 목차가 다시 적으면 사본이 되고, 완성된 마크다운을 되읽으면 절
+    이름에 매인다 — 그래서 **단계를 지은 그 자리에서 자료로 낸다.**
+
+    ⚠ **순서가 문서의 순서다.** 아래 `render_verification_markdown` 이 이
+    순서대로 이어 붙이므로 여기서 순서를 바꾸면 문서의 단계 순서가 바뀐다.
+    단계 수는 `app/services/verify_steps.py::STAGE_COUNT`(9)와 짝이며,
+    어긋나면 `app/services/verify_steps.py::split_stages` 가 멈춘다.
+
+    ⚠ **엔진을 다시 돌리지 않는다** — 아홉 함수는 `CaseReport` 를 읽어 문면을
+    짓기만 한다. 그래서 목차가 이 함수를 한 번 더 불러도 결론축이 움직일 수
+    없다(값은 `report` 안에 이미 있다).
+    """
+    basis = report.basis
+    return (
+        _stage1_ledger(report),
+        _stage2_resources(report),
+        _stage3_dispatch(report),
+        _stage4_benefits(basis),
+        _stage5_costs(basis),
+        _stage6_lifecycle(basis),
+        _stage7_cashflow(report),
+        _stage8_metrics(report),
+        _stage9_variants(report),
+    )
+
+
 def render_verification_markdown(report: CaseReport) -> str:
     """검증 보고서 — 9단계 전제·계산·인계·수식 (판정 §2).
 
     ⚠ **해설을 붙이지 않는다** — 판정 문장은 이 문서의 대상이 아니다(판정
-    §6). 절 구성은 이 함수의 단계 순서 자체가 양식이다.
+    §6). 절 구성은 위 `stage_blocks` 의 단계 순서 자체가 양식이다.
     """
     lines = [
         f"# 계산 검증 보고서 — {report.scenario_name}",
@@ -488,23 +559,10 @@ def render_verification_markdown(report: CaseReport) -> str:
         "---",
         "",
     ]
-    lines += _stage1_ledger(report)
-    lines += ["---", ""]
-    lines += _stage2_resources(report)
-    lines += ["---", ""]
-    lines += _stage3_dispatch(report)
-    lines += ["---", ""]
-    lines += _stage4_benefits(report.basis)
-    lines += ["---", ""]
-    lines += _stage5_costs(report.basis)
-    lines += ["---", ""]
-    lines += _stage6_lifecycle(report.basis)
-    lines += ["---", ""]
-    lines += _stage7_cashflow(report)
-    lines += ["---", ""]
-    lines += _stage8_metrics(report)
-    lines += ["---", ""]
-    lines += _stage9_variants(report)
+    # ★ 단계마다 `---` 를 뒤에 둔다 — 종전에 아홉 번 손으로 적던 그 구분선이며
+    # 문면은 한 글자도 바뀌지 않는다(9단계 뒤의 `---` 도 그대로 선다).
+    for block in stage_blocks(report):
+        lines += [*block.lines, "---", ""]
     # ★ 미반영 항목 — 새 단계가 아니라 9단계 뒤의 `###` 절이다(단계 정규식 밖).
-    lines += ["---", "", *unreflected_lines(report)]
+    lines += unreflected_lines(report)
     return "\n".join(lines)

@@ -111,19 +111,25 @@ from core.report.sizing import (
 from core.report.unreflected import build_unreflected, unreflected_direction_tally
 from core.report.verification_dispatch import resource_labels, season_step_tables
 
+# ★ **일반용 전력의 대장 열쇠와 그 값·합계는 R68/WP-4 가 옮겼다** —
+# `core/report/verification_scaleup.py` 가 갖는다(그 모듈 머리말 ⇒ 절). 2단계의
+# 확대 규칙 표와 아래 1단계 표가 **같은 합계**를 쓰기 때문이고, 각자 더하면
+# 한쪽만 고쳐져 같은 문서가 가구 총 전력을 두 수로 말한다. **이름은 그대로이고
+# 이 파일이 재수출한다** — 그 이름을 가리키는 문면과 시험
+# (`tests/report/test_verification_inputs.py`)은 그래서 여전히 참이다.
+from core.report.verification_scaleup import (
+    ESTATE_LOAD_UNIT,
+    HOUSEHOLD_LOAD_LEDGER_KEY,
+    estate_load_kwh,
+    household_base_kwh,
+    household_total_load_kwh,
+)
+
 #: 「그렇다/아니다」 두 글자를 한 자리에서만 정한다 — 표마다 다른 낱말을 쓰면
 #: 훑는 눈이 다른 판정으로 읽는다(`core/report/_format.py::_recovery` 와 같은
 #: 사유다).
 _YES = "예"
 _NO = "아니오"
-
-#: 일반용 전력의 **대장 자리** — 가구가 기본으로 쓰는 전기, 추가 전력사용기기
-#: 이전의 기본 소비(대장 제목 «가구당 연간 전력사용량»). `HEATPUMP_LOAD_LEDGER_KEY`
-#: · `EV_LOAD_LEDGER_KEY` 와 같은 규약의 열쇠인데 정본 상수가 아직
-#: `core/casegrid/` 에 없어 여기서 정의한다 — 같은 형태의 전례가
-#: `tests/report/test_shaped_run_invariants.py::_LOAD_LEDGER_KEY` 다.
-#: ⚠ 값은 대장이 갖는다 — 이 모듈이 수를 세우는 것이 아니다.
-HOUSEHOLD_LOAD_LEDGER_KEY = "load.household.annual"
 
 
 # ── 1단계 — 대장이 갖지 않는 실행 입력 (사용자 요구 1·2·3) ─────────────────
@@ -146,27 +152,6 @@ def _appliance_cell(value: float | None) -> str:
     return f"{value:,.0f} {APPLIANCE_LOAD_UNIT}"
 
 
-def _household_base_kwh(report: CaseReport) -> float | None:
-    """일반용 전력 — 이 실행이 읽은 대장 값, 행이 없으면 `None`(미지정).
-
-    ## 왜 대장 행에서 읽나
-
-    일반용은 히트펌프·전기차와 달리 **실행 입력의 칸이 없다** — 값은 대장
-    `load.household.annual` 이 갖고, 바꾸는 통로는 오버라이드(시나리오 yaml 의
-    `assumption_overrides` · 설정 화면의 대장 항목 칸)다. `report.assumptions`
-    의 행은 **실행이 쓴 값**을 싣는(R48-E1 — `case_report.py::_appendix`) —
-    그대로 읽으면 이 표의 「이 실행의 값」 칸과 어긋나지 않는다.
-
-    ⚠ 여기서 판정을 새로 세우지 않는다 — 러너가 이미 같은 대장 축으로
-    돌았고(`case_report.py` 의 `household_load_annual_kwh`), 이 함수는 그
-    사실을 인쇄할 뿐이다. 행이 없으면 `None` 이고 칸은 문장이 된다(모듈 머리말 ★★).
-    """
-    for row in report.assumptions:
-        if row.key == HOUSEHOLD_LOAD_LEDGER_KEY:
-            return float(row.value)
-    return None
-
-
 def _stated_sum(number: str, missing: tuple[str, ...]) -> str:
     """합계 칸에 「미지정」 진술을 얹는다 — 미지정이 없으면 그대로 둔다.
 
@@ -181,9 +166,7 @@ def _stated_sum(number: str, missing: tuple[str, ...]) -> str:
     return f"{number} ({' · '.join(missing)}: {APPLIANCE_LOAD_UNSPECIFIED})"
 
 
-def _estate_total_cell(
-    per_household_kwh: float, count: int | None, missing: tuple[str, ...]
-) -> str:
+def _estate_total_cell(estate_kwh: float | None, missing: tuple[str, ...]) -> str:
     """단지 총 전력 칸 — 가구 수가 미지정이면 **곱하지 않고 진술을 적는다.**
 
     미지정에 곱할 수를 지으면 «모든 가구가 같다»는 뜻이 되고, 이 보고서의
@@ -193,11 +176,17 @@ def _estate_total_cell(
 
     ⚠ 단위가 위 칸들과 다르다 — `kWh/호·년` 이 아니라 **`kWh/년`**(단지의
     합계)이다. 가구 수를 곱하는 순간 «호당» 이 아니다.
+
+    ⚠ **곱은 여기 없다** (R68/WP-4) —
+    `core/report/verification_scaleup.py::estate_load_kwh` 가 갖는다. 2단계의
+    확대 규칙 표가 같은 수를 싣기 때문이고, 두 자리에서 곱하면 한쪽만 고쳐진다.
+    `None` 이 「가구 수 미지정」이며 그 판정도 그 함수가 한다.
     """
-    if count is None:
-        number: str = HOUSEHOLD_COUNT_UNSPECIFIED
-    else:
-        number = f"{per_household_kwh * count:,.0f} kWh/년"
+    number = (
+        HOUSEHOLD_COUNT_UNSPECIFIED
+        if estate_kwh is None
+        else f"{estate_kwh:,.0f} {ESTATE_LOAD_UNIT}"
+    )
     return _stated_sum(number, missing)
 
 
@@ -241,7 +230,8 @@ def execution_input_lines(report: CaseReport) -> list[str]:
 
     가구 수·히트펌프·전기차는 화면(`/ui/run`)에도 칸이 있고, **계절 몫은
     시나리오 yaml 에만 있다.** 일반용 전력은 둘 다 아니다 — 대장 항목이라
-    오버라이드로만 바꾼다(위 `_household_base_kwh`). 「시나리오에서도 못
+    오버라이드로만 바꾼다(그 값을 읽는 함수는
+    `core/report/verification_scaleup.py::household_base_kwh` 다). 「시나리오에서도 못
     바꾼다」로 적으면 거짓이므로 통로 칸이 그 차이를 그대로 나른다.
 
     ## ★★ 할인율이 **여기** 있는 이유 (R64/WP-FIX 결함 1)
@@ -263,7 +253,7 @@ def execution_input_lines(report: CaseReport) -> list[str]:
     «단지 총 전력» 은 거기에 가구 수를 곱한 것이다.
     """
     loads = report.appliance_loads
-    base_kwh = _household_base_kwh(report)
+    base_kwh = household_base_kwh(report)
     # 합계 칸에 얹을 「미지정」 항목 이름 — 짝 지어 늦추지 않는다: 이름과
     # `is None` 판정이 어긋나면 없는 항목을 미지정으로 인쇄한다.
     missing_extra = tuple(
@@ -272,16 +262,13 @@ def execution_input_lines(report: CaseReport) -> list[str]:
         if value is None
     )
     missing_total = (("일반용",) if base_kwh is None else ()) + missing_extra
-    household_total_kwh = (base_kwh or 0.0) + loads.total_kwh
     subtotal_cell = _stated_sum(
         f"{loads.total_kwh:,.0f} {APPLIANCE_LOAD_UNIT}", missing_extra
     )
     household_total_cell = _stated_sum(
-        f"{household_total_kwh:,.0f} {APPLIANCE_LOAD_UNIT}", missing_total
+        f"{household_total_load_kwh(report):,.0f} {APPLIANCE_LOAD_UNIT}", missing_total
     )
-    estate_total_cell = _estate_total_cell(
-        household_total_kwh, report.household_count, missing_total
-    )
+    estate_total_cell = _estate_total_cell(estate_load_kwh(report), missing_total)
     return [
         "",
         "**이 실행이 받은 입력 — 실행 입력이 정하는 값** (사용자 요구 1·2·3)",
