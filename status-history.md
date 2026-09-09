@@ -23,6 +23,103 @@
 
 ---
 
+> # ⏹ 2026-09-10 **R69 진행 중 — WP-1·WP-2 닫음 (아직 라운드 종료 아님, 사용자 인터랙티브 세션이 이어감)**
+>
+> ⚠ 이 블록은 R69 가 **완전히 닫히기 전** 중간 체크포인트로 옮겨 적은 것이다 —
+> `status.md` 「지금 할 일」이 40줄을 넘지 않게 하려고 여기부터 전문을 둔다.
+> 라운드가 실제로 끝나면 이 블록을 갱신해 최종 종료 사실을 반영한다.
+>
+> ## WP-1 — 검증 리포트 단계 승격 9→10 (커밋 `7bce242`)
+>
+> `_stage1_ledger()` 를 새 1단계(가구 수요)·새 4단계(경제성 입력)로 분할하고 나머지
+> 단계를 하나씩 밀었다. 새 모듈 둘(`verification_ledger.py`·`verification_economics.py`)
+> + 동반 시험 둘 신설. `scripts/verify_ladder.py` 의 층 재배열과 함께 그 파일이
+> 「10단계」를 「1단계」로 잘못 읽던 정규식 버그(`(\d)`→`(\d+)`)를 찾아 고쳤다.
+> **결론축 — 안 움직였다**(이 WP 는 표시층, 사다리 L0 동일 확인함). 워커 `cl3`.
+> 검수: 오케스트레이터가 ruff·mypy·lint-imports·check_file_size·ladder·신규 테스트
+> 모듈을 전부 직접 재실행해 결과 일치 확인. `source-rules`·`tests` CI 둘 다 success
+> (`tests` 1h8m17s). PR #31.
+>
+> ## WP-2 — 끊긴 축 `escalation.electricity_tariff` 를 잇는다 (커밋 `77c777e`)
+>
+> ★★★ **오케스트레이터의 최초 지시가 틀렸었다 — 워커가 실측으로 잡고 멈췄다.**
+> 최초 WP-2 는 「계수를 `TariffEngine`/`_net_metering` 에 걸어라」였는데, 워커가
+> 골든 실행 계측으로 **배포 경로가 그 모듈들을 아예 안 지난다**(`TariffEngine`
+> 생성 0회)는 것을 찾아 코드를 한 줄도 안 고치고 `result_2.md` 에 막힌 이유와
+> 갈래 둘(A: 지시대로 하되 결론축 0원 움직임 / B: 실제 배포 경로에 배선하되
+> 지시를 다시 정함)을 적어 돌려줬다. 오케스트레이터가 `WP-2-fix.md` 로 판정
+> 셋을 내렸다 — ① 갈래 B ② 대칭 항은 `PeakShaving`(회피 기본요금, 상계 크레딧이
+> 아니다) ③ 골든 재생성 허용(§4 금지 철회, 이 WP 의 목적 자체가 결론축을
+> 움직이는 것이므로).
+>
+> 구현: `core/cba/proforma.py::escalation_factor(rate, year)` 신설(계수 산식
+> 한 곳) → `energy_purchase_row`(비용)와 `core/casegrid/e2e_runner.py` 의
+> `benefit_row` 첨두 절감 몫(편익) 양쪽에서 호출. `core/casegrid/perspectives.py`
+> 도 범위를 넓혀 고쳤다(§5 목록 밖 — 안 고치면 관점 표에 같은 편익이 두 수로
+> 인쇄됨, 실물로 만들어 확인 후 판단). 새 시험
+> `tests/casegrid/test_tariff_escalation_wiring.py`(4건, 비용·편익 반쪽씩 따로
+> 재는 대칭 검사) + `tests/cba/test_proforma.py` 3건 신설.
+>
+> **결론축 — 움직였다.** 세 골든 시나리오 전부 −32,785,896원
+> (무보조 −360,695,500→−393,481,396 · 보조20 −320,495,500→−353,281,396 ·
+> 보조80 −199,895,500→−232,681,396). 손계산(연금현가계수 아닌 증분 현가계수
+> 3.0200332)이 실측과 2원 이내로 일치 확인. 1년차는 바이트까지 불변(계수
+> `(1+r)^0=1`) — 세 방향(전용 테스트·행 값 단언·실행 결과)으로 확인.
+> `DEAD_AXES` 셋→둘(`tariff.surplus_direct_sale`·`policy.grid_supply_allowance`
+> 는 각각 정산구조 선택·용량변경통로 부재라는 별도 이유로 범위 밖 유지 —
+> 손대지 않음). `DER_RUN_WEB_TESTS=1` 로 웹 293건 켜서 훑다가 `_DEFAULT_NPV`
+> 리터럴이 낡은 것을 그 자리에서 찾아 고쳤다(이 저장소 세 번째 반복 패턴을
+> 이번엔 피함). 전건(`fast_pytest.sh`) rc=0. 워커 `cl3`(같은 워커 — 교정은
+> `/clear` 전에 이어서).
+>
+> 검수: 오케스트레이터가 `escalation_factor`·`energy_purchase_row`·
+> `e2e_runner.py` diff 를 직접 읽어 설계 대칭성 확인, ladder check --deep 재실행
+> (L0 상이 — 정확히 같은 −32,785,896원 확인), 신규 wiring 테스트 4/4 재실행,
+> `DEAD_AXES` 전 파일 48/48 재실행, ruff·mypy·lint-imports·check_file_size 전부
+> 재실행 — 전부 일치. 새 테스트 헬퍼의 `# type: ignore[arg-type]` 하나 발견 —
+> `**kwargs` 전달용 mypy 한계 우회로 확인, 프로덕션 코드 아님. `source-rules`
+> CI success(push), `tests` 진행 중.
+>
+> ## 함정 — 이 라운드가 밟은 것
+>
+> - **pre-commit 훅의 `ruff` 단계가 시스템 `python`(PATH 최상단이 miniconda 가
+>   아니라 다른 인터프리터)을 잡아 `No module named ruff` 로 실패했다** — 커밋
+>   전에 `.venv/Scripts` 를 PATH 맨 앞에 둬야 한다(`export
+>   PATH="$(pwd)/.venv/Scripts:$PATH"`). CLAUDE.md 의 "모든 파이썬 호출은
+>   `.venv` 로" 가 커밋 훅 실행 셸에도 적용된다는 것을 이번에 처음 실측했다.
+> - **`herdr agent prompt cl3 ... --wait --timeout 3600000` 이 워커가 아직
+>   한창 작업 중인데 조기 반환했다**(WP-2-fix 다이스패치 후) — `agent get` 의
+>   `revision` 이 계속 오르는 것으로 실제 작업 중임을 확인하고 파일 기반 감시로
+>   전환했다. 4절 함정 5(「즉시 done」)의 변형이며 배경 dispatch 에서도 일어난다.
+> - **PowerShell `Start-Job` 으로 백그라운드에 낸 `herdr agent prompt` 가 그
+>   PowerShell 프로세스 종료와 함께 조용히 죽었다** — cl3 가 WP-1 을 40분 넘게
+>   못 받고 있었던 원인. `Bash` 도구의 `run_in_background: true`(하니스가 직접
+>   추적)로 재발행해 해결했다 — **PowerShell 스크립트를 Bash 의
+>   `run_in_background` 로 감싸는 것이 안전하다**(herdr 는 PowerShell 로만 부르되,
+>   백그라운드 유지는 Bash 가 한다).
+> - **Agent(fork) 서브에이전트 하나가 명백히 오작동**했다 — 세 축 조사를 지시했는데
+>   완료 알림마다 `result` 필드가 오케스트레이터 자신의 최근 대화 문구를 그대로
+>   반복했다(`tool_uses` 는 3에 고정, `duration_ms` 만 계속 늘어남). 조사를 직접
+>   수행하는 것으로 우회했고 `TaskStop` 으로 종료했다.
+>
+> ## 자리 운영
+>
+> 오케스트레이터 `cl4`(이 인터랙티브 세션 자체 — herdr `/goal` 체인이 아니라
+> 사용자가 직접 이 세션에 `/goal` 을 걸었다). 워커 `cl3` 단독, WP-1 착수 시
+> 5h 99%→75%(WP-1 하나) → WP-2(+fix) 진행 중 75%→38%(교체선 밑) 그대로 WP-2
+> 끝까지 진행(스킬 6절 "진행 중인 WP는 끝내게 둔다"). WP-2 종료 시 `/clear`.
+> 다음 WP 부터는 새 워커 필요(`cl5` 5h 99% 유력 · `agy` 도 99.96%).
+>
+> ## 다음에 남은 것
+>
+> `status.md` 「다음에 집을 것」 ② (§7 후보군 엔진 신설 — 규모가 크고 후보
+> 격자·Pareto 목적함수 등 설계 판단이 더 필요, 이번 라운드에서 착수 안 함) ·
+> ④ (사람 몫, 손대지 않음). `tariff.surplus_direct_sale`·
+> `policy.grid_supply_allowance` 두 축은 여전히 죽어 있고 각각 정산구조 선택과
+> 용량변경통로 부재가 원인 — 둘 다 이번 라운드의 실측으로 사유가 더 분명해졌다.
+
+---
+
 ## ⏹ 2026-09-09 R68 — **검토서 개선: 검증 리포트가 「무엇을 답하는 문서」가 됐다**
 
 > 사용자 지시(2026-09-09) — *「`docs/verification-report-improvement-2026-09-09.md` 내용
