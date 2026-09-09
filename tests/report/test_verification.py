@@ -33,7 +33,7 @@ from app.run.report_cli import (
     main,
 )
 from app.services.verify_steps import STAGE_COUNT, split_stages
-from core.report.case_report import build_case_report
+from core.report.case_report import CONCLUSION_METRIC, build_case_report
 from core.report.verification import (
     StageBlock,
     render_verification_markdown,
@@ -52,10 +52,26 @@ from core.report.verification_dispatch import (
     LINKAGE_NOTE,
     SIGN_CONVENTION_NOTE,
 )
+from core.report.verification_gates import (
+    GATE_NONE,
+    GATE_ROW_NAMES,
+    GATE_TITLE,
+    QUESTION_HEAD,
+    STAGE_QUESTIONS,
+    gate_lines,
+    run_identity_line,
+    run_identity_rows,
+    stage_gate,
+    stage_question,
+)
 from core.report.verification_scaleup import (
     COINCIDENCE_EXCLUDED,
     EXCLUDED_BY_DECISION,
     SCALEUP_TITLE,
+)
+from core.report.verification_variants import (
+    STAGE8_FORMULA_POINTER,
+    unbuilt_variant_columns,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -600,3 +616,233 @@ def test_the_dependency_table_adds_no_stage_and_no_premise_word() -> None:
     assert len(authored) == 3, authored
     for line in authored:
         assert "전제" not in line
+
+
+# ── WP-5 — 단계의 물음 · 실행 식별자 · 판단 게이트 (검토서 §2.1 · §4.1 · §4.7) ──
+
+
+def test_every_stage_opens_with_the_question_it_answers(tmp_path: Path) -> None:
+    """★★★ **아홉 단계가 저마다 답하는 물음을 첫 줄에 세운다** (검토서 §2.1).
+
+    검토서 문면: *「각 파일은 ⓐ→ⓑ→ⓒ→ⓓ 틀을 반복한다. 이 형식은 계산 검증에는
+    유용하지만, 각 단계가 **답하는 사업 질문을 드러내지 못한다**」*.
+
+    ⚠ 물음의 문면을 이 검사가 다시 적지 않는다 — `STAGE_QUESTIONS` 에서 읽어
+    맞댄다. 여기 베끼면 물음을 고치는 날 검사만 옛말을 한다.
+    """
+    stages = split_stages(_verification_text(tmp_path))
+    assert len(STAGE_QUESTIONS) == STAGE_COUNT, "물음이 단계 수와 다르다"
+    assert len(set(STAGE_QUESTIONS)) == STAGE_COUNT, "두 단계가 같은 물음을 적었다"
+    for stage in stages:
+        lines = stage.body.splitlines()
+        assert lines[0].startswith(f"## {stage.number}단계"), lines[0]
+        assert lines[2] == f"{QUESTION_HEAD} — {stage_question(stage.number)}", (
+            f"{stage.number}단계의 첫 줄이 그 단계의 물음이 아니다: {lines[2]!r}"
+        )
+        assert lines[2].endswith("?"), (
+            f"{stage.number}단계의 물음이 물음으로 끝나지 않는다 — 「답해야 할 "
+            "질문」이 아니라 설명이 됐다"
+        )
+
+
+def test_every_stage_names_the_run_it_came_from(tmp_path: Path) -> None:
+    """★★★ **단계 파일 하나만 열어도 어느 실행인지 안다** (검토서 §4.1).
+
+    종전에는 평가 대상·대장 판·매니페스트가 `00-목차.md` 에만 있어, 단계 파일을
+    폴더 밖으로 꺼내면 어느 실행의 수인지 알 수 없었다.
+
+    ⚠ 한 파일에 **두 번 서지 않는다** — 되풀이가 늘면 그 줄이 읽히지 않는다.
+    """
+    out_dir = _stage_dir(tmp_path)
+    report = build_case_report(
+        _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    line = run_identity_line(report)
+    assert report.manifest_hash[:16] in line, "머리말 줄이 매니페스트를 안 나른다"
+    assert report.assumption_set_version in line, "머리말 줄이 대장 판을 안 나른다"
+    for path in sorted(out_dir.iterdir()):
+        if path.name == INDEX_FILENAME:
+            continue
+        body = path.read_text(encoding="utf-8")
+        assert body.count(line) == 1, (
+            f"{path.name} 에 실행 식별자 줄이 하나가 아니다({body.count(line)}개)"
+        )
+
+
+def test_the_index_and_the_report_head_print_one_identity(tmp_path: Path) -> None:
+    """★★ **목차와 문서 머리말이 같은 자리에서 온다** — 두 벌로 짓지 않는다.
+
+    목차는 `app/run/report_cli.py::_index_markdown` 이 짓고 문서 머리말은
+    `core/report/verification_gates.py::run_identity_rows` 가 짓는다. 두 곳이
+    갈라지면 **같은 것이 두 해시를 인쇄한다** — 이 검사가 그 드리프트를 잡는다.
+
+    ⚠ 한 덩어리 산출물에서도 그 세 행이 **한 번씩만** 선다.
+    """
+    index = (_stage_dir(tmp_path) / INDEX_FILENAME).read_text(encoding="utf-8")
+    single = _verification_text(tmp_path)
+    report = build_case_report(
+        _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    for row in run_identity_rows(report):
+        assert row in index, f"목차가 이 행을 잃었거나 다르게 적었다: {row}"
+        assert single.count(row) == 1, f"문서 머리말의 행이 하나가 아니다: {row}"
+
+
+def test_every_stage_ends_with_a_judgement_gate(tmp_path: Path) -> None:
+    """★★★ **단계 끝에 판정 네 줄이 선다** (검토서 §4.7 의 표 그대로).
+
+    ⚠ 게이트는 ⓓ **뒤**에 온다 — 판정은 그 단계가 낸 것을 다 읽은 뒤의 물음이다.
+    """
+    text = _verification_text(tmp_path)
+    assert text.count(GATE_TITLE) == STAGE_COUNT, (
+        "게이트가 아홉 단계에 하나씩 서지 않았다"
+    )
+    for stage in split_stages(text):
+        body = stage.body
+        assert body.index("**ⓓ 계산 수식**") < body.index(GATE_TITLE), (
+            f"{stage.number}단계의 게이트가 ⓓ 앞에 있다"
+        )
+        for name in GATE_ROW_NAMES:
+            assert body.count(f"| {name} | ") == 1, (
+                f"{stage.number}단계 게이트에 「{name}」 행이 하나가 아니다"
+            )
+
+
+def test_the_gate_is_judged_from_the_run_and_not_stamped(tmp_path: Path) -> None:
+    """★★★ **아홉에 「가능 / 없음 / 적용 / 불필요」를 찍어 두면 이 표는 무의미하다.**
+
+    이 게이트의 값은 *「불가」가 나올 수 있다* 는 데 있다(WP-5 §1ⓒ). 그래서
+    이 검사는 문면이 아니라 **판정의 다양성**을 잰다 — 넷 중 어느 축도 아홉이
+    같은 답이면 그것은 규칙이 아니라 도장이다.
+
+    ⚠ 그리고 그 판정이 **실행에서** 왔는지 한 자리를 짚어 대조한다: 이 저장소는
+    역산 결과를 실행에 되먹이지 않으므로(`core/report/ess_sizing_section.py`
+    머리말) 2단계는 「진단만」이고, 그 사실을 리포트에서 독립적으로 읽는다.
+    """
+    report = build_case_report(
+        _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    gates = [stage_gate(report, number) for number in range(1, STAGE_COUNT + 1)]
+    assert any(gate.blocking for gate in gates), "「불가」가 한 건도 나오지 않는다"
+    assert any(gate.diagnostic_only for gate in gates), "「진단만」이 한 건도 없다"
+    assert any(gate.human for gate in gates), "「사람 판단 필요」가 한 건도 없다"
+    assert any(
+        not gate.blocking and not gate.unmet and not gate.human for gate in gates
+    ), "아홉이 전부 걸렸다 — 그것도 판정이 아니라 도장이다"
+
+    assert report.ess_sizing.unmeasurable_reason is None, (
+        "픽스처 전제가 깨졌다 — 역산이 서지 않으면 2단계에 진단값이 없다"
+    )
+    assert stage_gate(report, 2).diagnostic_only, "2단계가 「진단만」이 아니다"
+    text = _verification_text(tmp_path)
+    assert f"| {GATE_ROW_NAMES[0]} | 불가 |" in text, (
+        "「불가」가 배포 경로(CLI 산출물)에는 나가지 않는다"
+    )
+    assert f"| {GATE_ROW_NAMES[1]} | {GATE_NONE} |" in text, (
+        "미충족이 없는 단계가 빈칸이 아니라 「없음」으로 서야 한다"
+    )
+
+
+def test_stage_nine_stops_reprinting_stage_eights_formulas(tmp_path: Path) -> None:
+    """★★★ **8·9단계의 되풀이를 끊었다** (검토서 §3.7).
+
+    실물이 그랬다 — 두 단계가 「결론 전환 지원율」과 「전액 지원 시 잔여 결손」을
+    **자연어·표현식·대입 문면 세 줄까지 똑같이** 실었다. 산식은 8단계에 남기고
+    9단계는 그것을 **가리킨다.**
+    """
+    stages = split_stages(_verification_text(tmp_path))
+    eight, nine = stages[7].body, stages[8].body
+    report = build_case_report(
+        _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    repeated = [
+        formula
+        for formula in report.formulas
+        if formula.label in {"결론 전환 지원율", "전액 지원 시 잔여 결손"}
+    ]
+    assert repeated, "픽스처 전제가 깨졌다 — 되풀이를 잴 산식이 이 실행에 없다"
+    for formula in repeated:
+        assert f"`{formula.expression}`" in eight, (
+            f"8단계가 「{formula.label}」 산식을 잃었다 — 남기기로 한 자리다"
+        )
+        assert formula.substituted not in nine, (
+            f"9단계가 「{formula.label}」 의 대입 문면을 다시 인쇄한다"
+        )
+    assert STAGE8_FORMULA_POINTER in nine, "9단계가 8단계를 가리키지 않는다"
+
+
+def test_stage_nine_compares_the_variants_row_by_row(tmp_path: Path) -> None:
+    """★★★ **9단계는 비교표만 갖는다** — 행마다 구성·초기투자·NPV·필요한 지원율.
+
+    ⚠ 재료가 없는 열은 **「미산출」로 글자로** 선다(지어내지 않는다). ⚠ 두 변형의
+    수가 같으면 「같다」와 그 사유가 함께 선다 — 같은 수를 두 줄로 인쇄하고 아무
+    말도 안 하면 독자가 오류로 읽는다.
+    """
+    nine = split_stages(_verification_text(tmp_path))[8].body
+    report = build_case_report(
+        _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    for tag, label in report.variant_labels:
+        if tag not in report.variants:
+            continue
+        outlay = report.variants[tag]["initial_outlay_won"]
+        npv = report.variants[tag][CONCLUSION_METRIC]
+        row = next(
+            line for line in nine.splitlines() if line.startswith(f"| {label} |")
+        )
+        assert f"{outlay:,.0f}원" in row, f"{label} 행에 초기투자가 없다"
+        assert f"{npv:,.0f}원" in row, f"{label} 행에 순현재가치가 없다"
+        assert f"{report.break_even_subsidy_rate:.1%}" in row, (
+            f"{label} 행에 필요한 지원율이 없다"
+        )
+    for name in unbuilt_variant_columns(report):
+        assert f"**{name} — 미산출.**" in nine, f"미산출 열 「{name}」의 사유가 없다"
+    assert report.subsidy_rate == 0.0, "픽스처 전제가 깨졌다 — 무지원 시나리오다"
+    assert "수가 전부 같다" in nine, (
+        "지원율 0% 실행이라 두 행의 수가 같은데 그 사실을 적지 않았다"
+    )
+    assert f"| 현재 지원율 | {report.subsidy_rate:.1%} |" in nine, (
+        "현재 지원율과 결론 전환 지원율이 한 표에서 갈리지 않았다"
+    )
+
+
+def test_the_stage_frame_adds_no_premise_word_and_no_new_stage() -> None:
+    """⛔ 이 틀이 새로 짓는 문면에 **「전제」가 없고** ⛔ 단계를 늘리지 않는다.
+
+    이 WP 는 아홉 단계 **전부의 머리와 꼬리**를 만진다 — 사람이 읽는 자리로
+    새는 자리가 가장 넓다(판정 R63b §1). ⚠ 머리말 표의 행 이름(`전제 대장`)은
+    **종전 문면을 그대로 나른 것**이라 이 검사의 대상이 아니다.
+    """
+    report = build_case_report(
+        _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    authored = [
+        QUESTION_HEAD,
+        GATE_TITLE,
+        *GATE_ROW_NAMES,
+        *STAGE_QUESTIONS,
+        run_identity_line(report),
+        *(
+            line
+            for number in range(1, STAGE_COUNT + 1)
+            for line in gate_lines(stage_gate(report, number))
+        ),
+    ]
+    for line in authored:
+        assert "전제" not in line, f"사람이 읽는 자리에 「전제」를 새로 세웠다: {line}"
+        assert not line.startswith("## "), f"이 틀이 단계를 늘렸다: {line}"
+
+
+def test_a_stage_number_outside_the_nine_stops() -> None:
+    """⚠ 물음도 판정 규칙도 **없는 번호로는 단계를 짓지 못한다.**
+
+    빈 물음·빈 게이트를 내면 「판정할 것이 없다」와 「규칙을 안 썼다」가
+    구별되지 않고, 그때 이 표가 무의미해진다.
+    """
+    report = build_case_report(
+        _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    with pytest.raises(ValueError, match="물음이 없는 단계 번호"):
+        stage_question(STAGE_COUNT + 1)
+    with pytest.raises(ValueError, match="판정 규칙이 없는 단계 번호"):
+        stage_gate(report, 0)

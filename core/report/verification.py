@@ -62,6 +62,14 @@ from core.report.verification_dispatch import (
     declaration_lines,
     dispatch_note_rows,
 )
+from core.report.verification_gates import (
+    QUESTION_HEAD,
+    gate_lines,
+    run_identity_line,
+    run_identity_rows,
+    stage_gate,
+    stage_question,
+)
 from core.report.verification_inputs import (
     capacity_review_lines,
     execution_input_lines,
@@ -69,6 +77,11 @@ from core.report.verification_inputs import (
     unreflected_lines,
 )
 from core.report.verification_scaleup import scaleup_lines
+from core.report.verification_variants import (
+    STAGE8_FORMULA_POINTER,
+    subsidy_axis_lines,
+    variant_comparison_lines,
+)
 
 
 def _row_year1(row: CashFlowRow) -> int:
@@ -119,6 +132,7 @@ class StageBlock:
 
 
 def _stage(
+    report: CaseReport,
     number: int,
     title: str,
     *,
@@ -127,11 +141,34 @@ def _stage(
     c: list[str],
     d: list[str],
 ) -> StageBlock:
+    """단계 하나의 **틀** — 아홉 단계가 전부 이 한 함수를 지난다.
+
+    ## 무엇이 ⓐⓑⓒⓓ 를 둘러싸는가 (R68/WP-5)
+
+        머리   그 단계가 **답하는 물음** 한 줄 (검토서 §2.1)
+               이 단계가 나온 **실행 식별자** 한 줄 (검토서 §4.1)
+        꼬리   **판단 게이트** 네 줄 (검토서 §4.7)
+
+    셋 다 문면과 판정을 `core/report/verification_gates.py` 가 갖고 이 함수는
+    **자리만 정한다.** ⛔ 아홉 군데에 같은 모양을 따로 쓰지 않는다 — 그러면 한
+    단계만 게이트가 빠져도 조용히 지나간다.
+
+    ⚠ **물음과 게이트를 인자로 받지 않고 번호로 조회한다.** 아홉 함수가 각자
+    넘기게 하면 이 파일의 아홉 자리가 같은 모양을 되풀이하고, 빠뜨린 자리가
+    보이지 않는다. 아홉을 한 줄로 세워 둔 자리는 그 모듈의 `_GATE_RULES` ·
+    `STAGE_QUESTIONS` 이며 **번호가 아홉 밖이면 그쪽이 멈춘다.**
+
+    ⚠ `report` 를 받는 이유는 머리말 한 줄과 게이트가 그 실행을 읽기 때문이다 —
+    `basis` 만으로는 매니페스트도 대장 판도 알 수 없다.
+    """
     lines = [f"## {number}단계 — {title}", ""]
+    lines += [f"{QUESTION_HEAD} — {stage_question(number)}", ""]
+    lines += [run_identity_line(report), ""]
     lines += ["**ⓐ 전제한 수치**", "", *a, ""]
     lines += ["**ⓑ 계산된 수치**", "", *b, ""]
     lines += ["**ⓒ 다음 단계로 넘긴 값**", "", *c, ""]
     lines += ["**ⓓ 계산 수식**", "", *d, ""]
+    lines += [*gate_lines(stage_gate(report, number)), ""]
     return StageBlock(
         number=number, title=title, lines=tuple(lines), handoff=tuple(c)
     )
@@ -173,7 +210,7 @@ def _stage1_ledger(report: CaseReport) -> StageBlock:
         ),
     ]
     d = ["해당 없음 — 원시 입력이므로 이 단계에는 산식이 없다."]
-    return _stage(1, "전제 대장에서 읽은 값", a=a, b=b, c=c, d=d)
+    return _stage(report, 1, "전제 대장에서 읽은 값", a=a, b=b, c=c, d=d)
 
 
 def _stage2_resources(report: CaseReport) -> StageBlock:
@@ -215,7 +252,7 @@ def _stage2_resources(report: CaseReport) -> StageBlock:
         "자원별로 먼저 일어나는가 합산 뒤에 일어나는가의 차이이며, 둘 다 "
         "부가세·지원 반영 전 금액이다.",
     ]
-    return _stage(2, "자원 구성과 초기투자", a=a, b=b, c=c, d=d)
+    return _stage(report, 2, "자원 구성과 초기투자", a=a, b=b, c=c, d=d)
 
 
 def _stage3_dispatch(report: CaseReport) -> StageBlock:
@@ -248,10 +285,12 @@ def _stage3_dispatch(report: CaseReport) -> StageBlock:
     ]
     # ★ 부호 규약은 **ⓑ 에서 내려와 이 칸에 선다** (R68/WP-2 · 검토서 §4.3).
     d = [basis.dispatch_note or "—", "", SIGN_CONVENTION_NOTE]
-    return _stage(3, "대표일 운전(디스패치)", a=a, b=b, c=c, d=d)
+    return _stage(report, 3, "대표일 운전(디스패치)", a=a, b=b, c=c, d=d)
 
 
-def _stage4_benefits(basis: CaseBasis) -> StageBlock:
+def _stage4_benefits(report: CaseReport) -> StageBlock:
+    # ⚠ `report` 를 받는다 — 머리말 한 줄과 판단 게이트가 실행을 읽는다(`_stage`).
+    basis = report.basis
     a = ["1단계 단가 대장 + 3단계 운전결과(자가소비·송전 수량)."]
     b = [
         "| 편익 | 1년차 금액 | 만든 자원 |",
@@ -281,10 +320,11 @@ def _stage4_benefits(basis: CaseBasis) -> StageBlock:
         "현금흐름 행의 1년차 합계와 같아야 한다 — 아래 7단계 ⓓ 에서 대조한다.",
     ]
     d = [f"- {line.label}: {line.formula}" for line in basis.benefits] or ["없음"]
-    return _stage(4, "편익 화폐화", a=a, b=b, c=c, d=d)
+    return _stage(report, 4, "편익 화폐화", a=a, b=b, c=c, d=d)
 
 
-def _stage5_costs(basis: CaseBasis) -> StageBlock:
+def _stage5_costs(report: CaseReport) -> StageBlock:
+    basis = report.basis
     a = ["3단계 운전결과(계통 수전 수량) + 1단계 요금 단가."]
     subtotal = sum(line.annual_won for line in basis.costs)
     b = [
@@ -303,10 +343,11 @@ def _stage5_costs(basis: CaseBasis) -> StageBlock:
         "1년차 합계와 같아야 한다 — 아래 7단계 ⓓ 에서 대조한다.",
     ]
     d = [f"- {line.label}: {line.formula}" for line in basis.costs] or ["없음"]
-    return _stage(5, "운영비", a=a, b=b, c=c, d=d)
+    return _stage(report, 5, "운영비", a=a, b=b, c=c, d=d)
 
 
-def _stage6_lifecycle(basis: CaseBasis) -> StageBlock:
+def _stage6_lifecycle(report: CaseReport) -> StageBlock:
+    basis = report.basis
     a = [
         f"자원별 수명(`ResourceLine.lifetime_years`) + 분석기간"
         f"({basis.horizon_years}년):",
@@ -339,7 +380,7 @@ def _stage6_lifecycle(basis: CaseBasis) -> StageBlock:
         f"- {f.resource_name} {f.year}년차: {f.formula}"
         for f in basis.one_off_flows
     ] or ["해당 없음 — 일회성 흐름이 없다."]
-    return _stage(6, "생애주기(교체·잔존)", a=a, b=b, c=c, d=d)
+    return _stage(report, 6, "생애주기(교체·잔존)", a=a, b=b, c=c, d=d)
 
 
 def _row_table(rows: tuple[CashFlowRow, ...]) -> list[str]:
@@ -442,7 +483,7 @@ def _stage7_cashflow(report: CaseReport) -> StageBlock:
         "(항목별 대조):",
         *lifecycle_matches,
     ]
-    return _stage(7, "현금흐름 행 — 이 보고서의 심장", a=a, b=b, c=c, d=d)
+    return _stage(report, 7, "현금흐름 행 — 이 보고서의 심장", a=a, b=b, c=c, d=d)
 
 
 def _stage8_metrics(report: CaseReport) -> StageBlock:
@@ -467,7 +508,7 @@ def _stage8_metrics(report: CaseReport) -> StageBlock:
     d = []
     for f in report.formulas:
         d += [f"**{f.label}**", f"- {f.natural}", f"- `{f.expression}`", f"- {f.substituted}", ""]
-    return _stage(8, "지표", a=a, b=b, c=c, d=d)
+    return _stage(report, 8, "지표", a=a, b=b, c=c, d=d)
 
 
 def _stage9_variants(report: CaseReport) -> StageBlock:
@@ -475,33 +516,25 @@ def _stage9_variants(report: CaseReport) -> StageBlock:
         f"8단계 지표(무지원 기준선) + 현재 지원율 {report.subsidy_rate:.0%} + "
         f"지원 상한 {MAX_SUBSIDY_RATE:.0%}(사업비 전액).",
     ]
+    # ★★ **비교표만 갖는다** (R68/WP-5 · 검토서 §3.7). 종전에는 이 칸이
+    # 「변형 | 할인 회수기간 | 순현재가치」 세 열이었고, ⓓ 가 8단계의 산식 둘을
+    # **글자까지 똑같이** 되풀이했다. 판정과 문면의 정본은
+    # `core/report/verification_variants.py` 가 갖는다 — 행마다 구성·초기투자·
+    # 순현재가치·필요한 지원율이 함께 서고, 재료가 없는 열은 「미산출」로 선다.
     b = [
-        "| 변형 | 할인 회수기간 | 순현재가치 |",
-        "|---|---|---|",
-        *(
-            f"| {label} | {_years(report.variants[tag][HEADLINE_METRIC])} | "
-            f"{_won(report.variants[tag][CONCLUSION_METRIC])} |"
-            for tag, label in report.variant_labels
-            if tag in report.variants
-        ),
+        *variant_comparison_lines(report),
+        "",
+        # ★ 「현재 지원율」과 「결론 전환 지원율」을 **한 표에서 가른다**(§3.7).
+        *subsidy_axis_lines(report),
     ]
     c = [
         "이 보고서의 마지막 단계다 — 이후 단계로 넘기는 값이 없다. 결과는 "
         "심의용 리포트 본문 4.2 절의 지원 비교로 나간다.",
     ]
-    d = [
-        line
-        for f in report.formulas
-        if f.label in {"결론 전환 지원율", "전액 지원 시 잔여 결손"}
-        for line in (
-            f"**{f.label}**", f"- {f.natural}", f"- `{f.expression}`",
-            f"- {f.substituted}", "",
-        )
-    ] or [
-        "지원 상한 내에서 결론이 서므로 「전액 지원 시 잔여 결손」 산식은 이 "
-        "실행에 없다.",
-    ]
-    return _stage(9, "변형(지원율)", a=a, b=b, c=c, d=d)
+    # ★ 산식을 **다시 인쇄하지 않고 가리킨다** — 8단계 ⓓ 가 `report.formulas`
+    #   전건을 이미 편다(그 둘이 거기 있다).
+    d = [STAGE8_FORMULA_POINTER]
+    return _stage(report, 9, "변형(지원율)", a=a, b=b, c=c, d=d)
 
 
 def stage_blocks(report: CaseReport) -> tuple[StageBlock, ...]:
@@ -522,14 +555,13 @@ def stage_blocks(report: CaseReport) -> tuple[StageBlock, ...]:
     짓기만 한다. 그래서 목차가 이 함수를 한 번 더 불러도 결론축이 움직일 수
     없다(값은 `report` 안에 이미 있다).
     """
-    basis = report.basis
     return (
         _stage1_ledger(report),
         _stage2_resources(report),
         _stage3_dispatch(report),
-        _stage4_benefits(basis),
-        _stage5_costs(basis),
-        _stage6_lifecycle(basis),
+        _stage4_benefits(report),
+        _stage5_costs(report),
+        _stage6_lifecycle(report),
         _stage7_cashflow(report),
         _stage8_metrics(report),
         _stage9_variants(report),
@@ -551,10 +583,11 @@ def render_verification_markdown(report: CaseReport) -> str:
         "",
         "| 항목 | 값 |",
         "|---|---|",
-        f"| 평가 대상 | {report.scenario_name} |",
-        f"| 전제 대장 | `{report.assumption_set_name}` 판 "
-        f"{report.assumption_set_version} |",
-        f"| 실행 매니페스트 | `{report.manifest_hash[:16]}` |",
+        # ★ 이 세 행과 **단계마다 서는 머리말 한 줄**이 같은 자리에서 온다
+        #   (R68/WP-5 · 검토서 §4.1). 문면은 종전 그대로다 — 목차
+        #   (`app/run/report_cli.py::_index_markdown`)가 같은 세 행을 손으로
+        #   갖고 있고, 갈라지면 같은 것이 두 해시를 인쇄한다.
+        *run_identity_rows(report),
         "",
         "---",
         "",

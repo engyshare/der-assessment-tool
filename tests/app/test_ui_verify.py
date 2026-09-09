@@ -78,6 +78,12 @@ from core.casegrid.household_scale import ledger_household_count
 from core.report._format import _num, _won
 from core.report.case_report import CaseReport
 from core.report.verification import render_verification_markdown
+from core.report.verification_gates import (
+    GATE_ROW_NAMES,
+    GATE_TITLE,
+    QUESTION_HEAD,
+    stage_question,
+)
 
 #: 대조에 쓰는 골든 시나리오 — `/ui/run` 쪽 검사와 **같은 것**을 써야 두 화면의
 #: 수를 맞댈 수 있다.
@@ -776,3 +782,30 @@ def test_the_chart_src_carries_the_query_of_this_run(client: TestClient) -> None
     assert f"scenario={_SCENARIO}" in src, (
         f"그림 주소에 이 실행의 시나리오가 안 실렸다: {src!r}"
     )
+
+
+def test_each_stage_on_screen_carries_its_question_and_its_gate(body: str) -> None:
+    """★★ **화면에도 물음과 판단 게이트가 함께 나간다** (R68/WP-5 · 검토서 §2.1·§4.7).
+
+    ⚠ 화면은 렌더러 문면을 **고정폭 그대로** 싣는다 — 그래서 이 검사가 재는
+    것은 「화면이 그 줄을 지웠는가」다. 리포트에만 서고 화면에 안 나가면
+    사용자는 단계마다의 물음과 판정을 못 본다(배선이 끊기는 자리는 늘
+    산출물과 화면 사이였다 — 이 파일 머리말).
+
+    ⚠ 문면을 여기 베끼지 않는다 — `verification_gates.py` 에서 읽어 맞댄다.
+    ⚠⚠ **화면의 차례가 단계 번호가 아니다** — 걸음이 계산 순서를 가르므로
+    5단계(운영비)가 4단계(편익)보다 먼저 그려진다(`web/templates/verify.html`
+    의 안내문). 그래서 번호를 `data-stage` 에서 **읽어** 짝짓는다.
+    """
+    numbers = [int(n) for n in _STAGE.findall(body)]
+    bodies = [html.unescape(raw) for raw in _STAGE_BODY.findall(body)]
+    assert len(bodies) == STAGE_COUNT == len(numbers)
+    for number, printed in zip(numbers, bodies, strict=True):
+        assert f"{QUESTION_HEAD} — {stage_question(number)}" in printed, (
+            f"{number}단계 화면에 그 단계가 답하는 물음이 없다"
+        )
+        assert GATE_TITLE in printed, f"{number}단계 화면에 판단 게이트가 없다"
+        for name in GATE_ROW_NAMES:
+            assert f"| {name} | " in printed, (
+                f"{number}단계 화면의 게이트에 「{name}」 행이 없다"
+            )
