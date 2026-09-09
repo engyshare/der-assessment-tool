@@ -47,6 +47,31 @@ export PYTHONUTF8=1
 인메모리로 동작하고 프로세스가 끝나면 사라진다 — 결함이 아니라 규약이다
 (`DER_DB_URL` 이 없으면 DB 가 인메모리가 되는 것과 같다. README 「로컬 실행」 절).
 
+## 리포트 산출물을 둘 자리 — **이 기계는 `DER_REPORT_OUT_DIR` 를 쓴다**
+
+`app/run/report_cli.py` 는 `--out` 을 안 주면 **이 환경변수가 가리키는 디렉터리에
+이름을 지어 쓴다**(`<시나리오>-<종류>.md` · 분할이면 `<시나리오>-<종류>-단계별/`).
+둘 다 없으면 표준출력이다 — `DER_SCENARIO_STORE` 와 같은 규약이며 결함이 아니다.
+
+```bash
+export PYTHONUTF8=1
+export DER_REPORT_OUT_DIR="<이 기계의 산출물 디렉터리>"
+./.venv/Scripts/python.exe -m app.run.report_cli --kind verification                    # 한 덩어리
+./.venv/Scripts/python.exe -m app.run.report_cli --kind verification --split-stages     # 단계별 + 목차
+./.venv/Scripts/python.exe -m app.run.report_cli --kind verification --scenario scenario_subsidy_20
+```
+
+⚠⚠ **실제 값을 이 파일에 적지 마라 — 저장소 밖의 개인 디렉터리다**(사용자 판정
+2026-09-08). 이 파일은 공개 저장소에 커밋되고, 그 값은 기계마다 다르므로 여기 적으면
+**틀린 자리를 다음 기계가 그대로 쓴다.** ⇒ **값을 모르면 사용자에게 물어라.**
+
+⚠ **`--out` 을 적었으면 환경변수가 그것을 덮지 않는다** — 덮으면 적은 경로가 조용히
+무시되고, 그 침묵이 「썼는데 없다」로 돌아온다.
+⚠ **경로를 소스에도 박지 마라.** 이름은 `report_cli.py::REPORT_OUT_DIR_ENV` 한 곳이
+갖고 값은 환경이 준다 — CI·Docker·다른 클론에는 그 폴더가 없다.
+⚠ **그 자리가 저장소 밖이면 리포트가 `git status` 에 안 보인다.** 「산출물이 안
+생겼다」로 읽지 말고 그 디렉터리를 봐라.
+
 ## 서버가 떴는지 확인하는 법 — **`/health` 로는 아무것도 증명되지 않는다**
 
 `/health` 는 의존성이 빠져 있어도 200 을 낸다. 화면 여덟을 전부 때려라.
@@ -87,8 +112,18 @@ netstat -ano | grep ":8000 .*LISTENING"          # → PID
 
 ⚠ **`ExecutablePath` 를 보지 마라 — venv 가 아니라 base 인터프리터 경로가 나온다.**
 `.venv\Scripts\python.exe` 는 uv 의 트램폴린 바이너리라 WMI 가 해석된 base 이미지를
-보고한다. **이것을 「시스템 파이썬이 떴다」로 읽으면 오진이다.** 믿을 것은
-`CommandLine` 과 적재 모듈 경로(`(Get-Process -Id <PID>).Modules`)다.
+보고한다. **이것을 「시스템 파이썬이 떴다」로 읽으면 오진이다.**
+
+⚠⚠ **`Modules` 도 «그냥 찍으면» 같은 함정이다**(2026-09-07 R65 실측). 앞머리가
+**base 인터프리터(miniconda)의 `python.exe` · `python3xx.dll`** 로 나온다 — **적재 모듈
+목록은 base 이미지부터 싣기 때문**이다. 그 앞머리만 보고 판정하면 `ExecutablePath` 와
+**똑같은 오진**이다. ⇒ **거른 뒤에 본다:**
+
+```powershell
+(Get-Process -Id <PID>).Modules | Where-Object { $_.FileName -like '*\.venv\Lib\site-packages\*' }
+```
+
+**비어 있지 않아야** 한다(실측: 총 89개 중 `.venv` 밑이 **22개**). 믿을 것은 이것과 `CommandLine` 둘이다.
 
 ## 게이트
 
@@ -98,11 +133,132 @@ netstat -ano | grep ":8000 .*LISTENING"          # → PID
 `core/der/temp_acceptance2_bad_import.py` 를 `ruff` 가 잡아 `rc=1` 이 나는데,
 그것은 **위반이 아니라 남의 임시 파일을 본 것**이다.
 
+### ⚠⚠ 게이트 ①(변경분 커버리지)은 **로컬에서 재지 마라 — `pull_request` 에서만 돈다**
+
+`.github/workflows/tests.yml` 실측(2026-09-07): `diff-cover … --fail-under=95` 단계가
+**`if: github.event_name == 'pull_request'`** 이고 `push` 에서는 「건너뜀」 단계가 돈다.
+**초안 PR 도 `pull_request` 실행이 뜬다** — 밀면 실행이 둘 뜬다.
+
+⇒ ★ **밀고 `gh run list --branch <브랜치>` 로 읽어라.** 로컬 계측은 약 8분이 드는데
+**그동안 워커를 띄울 수 없다**(겹치면 1단계가 5분 → **23분 52초**가 되고 저장소 훑기
+시험이 남의 임시 파일을 보고 실패한다). CI 로 옮기면 그 8분이 **워커 시간과 겹친다**.
+
+### ⚠⚠⚠ 게이트 ②(테스트 동반 · NFR-105)도 **`pull_request` 에서만 돈다 — 그런데 이것은 로컬에서 «잴 수 있다»**
+
+**2026-09-07 R65 가 실물로 밟았다.** `core/report/sizing.py` 에 배수를 넣고 동반 시험을
+안 데려왔는데 **`fast_pytest.sh` 전건이 초록불**이었고 CI 만 빨간불이었다:
+
+```
+동반 테스트가 없는 구현 변경 1건 — NFR-105 위반
+  · core/report/sizing.py
+```
+
+★ **게이트 ①과 달리 이것은 몇 초에 로컬에서 돈다.** ⇒ **`core/` 를 고쳤으면 «커밋한 뒤»
+밀기 «전에» 이 한 줄을 돌려라** (⚠ **커밋 전에는 못 잡는다** — 이 검사는 «커밋된 diff»를 본다):
+
+```bash
+git fetch origin main
+./.venv/Scripts/python.exe scripts/check_test_accompaniment.py --base origin/main
+```
+
+인정되는 동반은 둘 — ⓐ 그 모듈을 **`import` 하는** 시험 ⓑ 파일명 규약 `tests/<구획>/test_<모듈>.py`.
+⚠ **시험 파일이 「있다」로는 안 된다 — 같은 diff 안에서 «함께 바뀌어야» 한다.**
+
+⚠ 다만 **전체 커버리지 85%(`--cov-fail-under=85`)는 `push` 에서도 돈다.**
+⚠ **CI 의 `tests` 잡은 pytest 를 직렬로 부른다 — 그 단계만 26분이다**(로컬 병렬 8분).
+기다릴 시간을 그렇게 잡아라.
+
+### 시험을 돌리는 법 — **전건은 마지막 수단이다** (2026-09-06 실측)
+
+**먼저 「무엇을 확인하려는가」를 정한다.** 목적이 무엇이든 전건을 도는 것이 이 저장소가
+반복해 밟은 낭비다 — 전건은 **직렬 약 13분 · 병렬 약 8분**이다(2026-09-07 실측 · 2,572건).
+
+| 확인하려는 것 | 도는 것 |
+|---|---|
+| **결론축이 움직였나 · 움직였으면 «어느 층»인가** | ★ `scripts/verify_ladder.py check --deep` — **14초** |
+| 결론축(골든값)이 움직였나 | `pytest tests/golden` (약 23초 · 위 사다리의 독립 증거) |
+| 내가 고친 모듈이 깨졌나 | **파일을 지목한** 표적 시험 |
+| 저장소 규약을 어겼나 | 정적 게이트 (`ruff`·`mypy`·`lint-imports`·`scripts/check_*`) |
+| 아무것도 안 깨졌나 | **CI 가 돈다.** 로컬 전건은 그 중복이다 |
+
+#### ★ 「축이 움직였나」는 **사다리**로 묻는다 — 전건 452초 → **14초** (R64 신설)
+
+```bash
+export PYTHONUTF8=1
+./.venv/Scripts/python.exe scripts/verify_ladder.py snapshot     # 고치기 «전에» 기준선
+./.venv/Scripts/python.exe scripts/verify_ladder.py check --deep # 14초 · L0~L6
+```
+
+L0(결론축) → L1(지표·지원율) → L2(현금흐름) → L3(편익·운영비·생애주기) → L4(운전) →
+L5(자원·초기투자) → L6(전제 대장). **갈린 «층»을 짚어 주므로 「어디부터 볼지」가 나온다.**
+⚠ **화면·계약·회귀는 안 잰다** — 「축이 움직였나」 전용이다.
+⚠⚠ **단계 「글자」를 늘린 뒤에는 `snapshot` 을 다시 찍어라** — 안 찍으면 그 층이 계속
+「상이」로 나오고, 그것을 결함으로 읽게 된다(R64 가 두 번 겪었다).
+
+⚠⚠ **넓게 돌아야 하면 맨손 `pytest` 가 아니라 `bash .orch/R64/fast_pytest.sh` 다**
+(병렬 · 워커 = 코어−4 · `--dist loadfile`). ⛔ **`-n auto` 를 맨손으로 붙이지 마라** —
+12코어를 다 먹어 **사람의 터미널이 밀린다**(이 저장소는 사람과 에이전트가 같은 기계를 쓴다).
+⛔ `pytest tests/report tests/casegrid tests/web tests/app` 를 **직렬로 돌리지 마라** —
+사실상 전건이며 실측 **40분**이었다.
+
+⚠ **`pytest` 에 `-q` 를 겹쳐 주지 마라.** `addopts` 가 이미 `-q` 라 `-qq` 가 되어
+**`N passed` 요약 줄이 사라진다.** `rc` 는 옳으므로 **조용히** 판정할 근거를 잃는다.
+⚠ **명령에 `| tail` 을 붙이지 마라** — `rc` 가 `tail` 의 것이 된다.
+
+### ⚠⚠ `tests_e2e/` 는 **로컬 전건에 들어가지 않는다**
+
+`[tool.pytest.ini_options]` 의 `testpaths = ["tests"]` 가 그것을 수집하지 않는다.
+⇒ **화면(`web/` · `app/`)을 만졌으면 로컬이 초록불이어도 CI 가 빨간불일 수 있다.**
+2026-09-06 실측: 그래서 e2e 회귀 둘을 **여섯 커밋 동안 아무도 몰랐다.**
+
+⚠⚠⚠ **「화면을 만졌으면」으로 읽지 마라 — 「사람이 읽는 자리에 «새 낱말»을 세웠으면」이다**
+(2026-09-07 R66 실측). R66 은 **화면을 한 줄도 안 만지고** `docs/assumptions.yaml` 에 주제
+이름 `단지 설계 **전제**` 하나를 세웠는데, 그것이 **설정 화면의 `<legend>` 로 새어** e2e 를
+빨간불로 만들었다(대장을 부르는 말은 「분석 설정 대장」이고 *「사람이 읽는 자리의 「전제」는
+**0건**」* 이 규약이다 — 판정 R63b §1). **대장 항목명·주제 이름·라벨이 전부 그 자리다.**
+⚠⚠ **웹 시험이 꺼진 지금 이 위험이 더 크다**(`DER_RUN_WEB_TESTS`) — `tests/web`·`tests/app`
+297건도 안 도니 사람이 읽는 자리를 건드리는 변경은 **CI 의 `e2e` 잡만이 잡는다.**
+
+★ **밀기 전에 브라우저 없이 그 검사를 재현하라 — 39분짜리 CI 왕복을 아낀다:**
+
+```python
+from fastapi.testclient import TestClient; import app.main as m
+c = TestClient(m.app)
+for path in ("/ui/scenarios", "/ui/settings", "/ui/verify"):
+    html = c.get(path).text     # h1,h2,h3,legend,label,th,dt 안의 「전제」를 센다 — 0건이어야 한다
+```
+
+### ⛔⛔ 그렇다고 **로컬에서 `pytest tests_e2e` 전건으로 판정하지 마라** (2026-09-07 실측)
+
+| | 로컬 | **같은 커밋의 CI** |
+|---|---|---|
+| 결과 | `10 failed, 12 passed` | ★ **`2 failed, 20 passed`** |
+| 시간 | **555초** | 333초 |
+
+**차이 여덟은 전부 `Locator.click`·`Page.goto` 의 30초 시간초과**다 — 단언 실패가 0건이다.
+**사람과 에이전트가 같은 기계를 쓰기 때문**이며, 혼자 돌려도 시간초과가 난다.
+⇒ ★ **e2e 의 판정은 CI 가 한다.** 로컬에서는 **이름을 지목한 시험만** 돌린다:
+
+```bash
+export PYTHONUTF8=1
+./.venv/Scripts/python.exe -m pytest "tests_e2e/파일.py::시험이름" ...
+```
+
+⚠ R64 가 화면 하나의 비용을 **49.85초 → 7.46초**로 줄여(`a475b91`) 그 예산이 나아졌으나,
+**로컬 전건이 판정 도구가 되지는 않는다.**
+
 ## 하지 말 것
 
 - ⛔ **`pyproject.toml` 을 편집하지 마라.** 명세 §16.4 가 그 파일을 **WP-15 단독 소유·
   append-only** 로 못 박았다. 의존성이 빠져 있다고 판단되면 고치지 말고 **요청**한다.
-- ⛔ `docs/traceability.md` 는 **CI 자동 생성**이다. 수동 편집 금지 (NFR-107).
+- ⛔ `docs/traceability.md` 를 **손으로 고치지 마라** (NFR-107). ⚠ 다만 **시험을 더했으면
+  생성기를 돌려 그 결과를 커밋해야 한다** — 그 파일은 **시험 목록을 훑어 만들어지므로
+  시험이 늘면 낡고, 그러면 CI 의 `source-rules` 가 빨간불이 된다**(2026-09-06 실측:
+  여섯 커밋 동안 빨간불이었다). 손편집 금지와 어긋나지 않는다 — CI 오류 문면이 이 조치를
+  그대로 지시한다:
+  ```bash
+  ./.venv/Scripts/python.exe scripts/gen_traceability.py   # 그리고 결과를 커밋한다
+  ```
 - ⛔ `.venv/` · `.orch/` 는 `.gitignore` 안이다. 커밋에 끌어들이지 않는다.
 
 ---

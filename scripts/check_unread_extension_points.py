@@ -91,7 +91,15 @@ KNOWN_UNREAD: frozenset[str] = frozenset({
     "exclusions",
     "fuel_price_signal_won_per_kwh",
     "is_full_year",
-    "notes",
+    # ⚠ `notes` 는 **R64/WP-4 에 목록에서 빠졌다** — `core/casegrid/
+    # season_blend.py::_blend_result` 가 계절별 운전을 연간등가 하루로
+    # 접으면서 `DispatchResult.notes` 를 읽어 **버리지 않고 모은다**(계절 하나가
+    # 낸 진단 문구를 떨어뜨리면 그 계절이 무엇을 못 했는지가 접힌 하루에서
+    # 사라지고, 그 소멸은 아무 예외도 내지 않는다). 곧 계약이 내놓은 이름을
+    # 배포 코드가 실제로 읽기 시작한 것이며, 이 검사가 「읽히기 시작했다」로
+    # rc=1 을 냈고 그것이 옳은 판정이라 지웠다 — `value_streams`(R57/WP-4)와
+    # 같은 갈래다. ⛔ 통과시키려고 지운 것이 아니다: 되돌리려면 그 자리에서
+    # 읽기를 **없애야** 하고, 그것은 진단 문구를 버리는 일이다.
     "order",
     "payer_by_structure",
     # R42 신설. **접근자를 통해서만 읽는 속성**이며 `end_of_life_action` 과 같은

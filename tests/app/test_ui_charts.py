@@ -22,15 +22,24 @@
 """
 from __future__ import annotations
 
+import dataclasses
 import re
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.services.ui_charts import chart_data, unwired_reason
+from app.services.ui_charts import (
+    _DEMAND_LABEL,
+    chart_data,
+    resource_labels,
+    unwired_reason,
+)
 from app.services.ui_run import run_ui_case
+from core.contracts.validation import ValidationError
 from core.report.charts import chart_registry
+from core.report.charts.seasonal_operation import _DEMAND_LABEL as _CHART_DEMAND_LABEL
+from core.report.dispatch_notes import DEMAND_LABEL
 
 #: PNG 파일 서명. **이것으로 「그렸다」와 「200 을 냈다」가 갈린다** —
 #: `tests/contract/test_chart_contract.py` 가 같은 상수를 같은 이유로 쓴다.
@@ -228,3 +237,186 @@ def test_the_picture_follows_the_arrangement_the_screen_chose(
         answer = client.get(source.replace("&amp;", "&"))
         assert answer.status_code == 200, f"{source}: {answer.text}"
         assert answer.content.startswith(PNG_MAGIC), f"{source}: PNG 가 아니다"
+
+
+# ── ★ R64/WP-5: 계절별 그림 (사용자 요구 6) ────────────────────────────────
+#
+# 위 두 검사가 레지스트리를 **열거**하므로 새 차트는 자동으로 「200 인가 · 진짜
+# PNG 인가」에 걸린다. 여기서 따로 재는 것은 그 열거가 말하지 못하는 둘이다:
+# **그림이 리포트의 계절을 그대로 그리는가**, 그리고 **계절이 없는 실행에서
+# 조용히 빈 그림을 내지 않는가**.
+
+_SEASONAL_TAG = "seasonal_operation"
+
+
+@pytest.mark.req("FR-1004-AC1")
+def test_the_seasonal_picture_draws_the_seasons_the_report_ran() -> None:
+    """★★★ **그림의 계절이 리포트의 계절과 같다** — 이름·일수·스텝까지.
+
+    화면이 계절을 다시 나누거나 연간등가 하루를 넷으로 복제하면 인쇄된 계절과
+    결론이 선 계절이 갈리고, **갈려도 둘 다 그럴듯해 보인다**
+    (`core/report/case_report.py::CaseReport.seasons` 가 같은 사유를 적는다).
+
+    ⚠ 계절 이름·일수를 소스에 박지 않는다 — 자산이 정본이고 리포트가 나른다.
+    """
+    report = run_ui_case(_SCENARIO).report
+    assert report.seasons, "이 시나리오가 계절을 하나도 돌지 않았다"
+
+    drawn = chart_data(report, _SEASONAL_TAG)["seasons"]
+
+    assert [season["name"] for season in drawn] == [s.name for s in report.seasons]
+    assert [season["days"] for season in drawn] == [s.days for s in report.seasons]
+    for season, ran in zip(drawn, report.seasons, strict=True):
+        assert len(season["load"]) == len(ran.dispatch.grid_export), (
+            f"계절 {ran.name}: 그림의 하루가 실행의 하루와 스텝 수가 다르다"
+        )
+        for name, series in season["resource_dispatch"].items():
+            assert series == list(ran.dispatch.per_resource[name].electric), (
+                f"계절 {ran.name} 의 자원 {name} 이 실행 값과 다르다 — 표시 층이 "
+                "수를 고쳤다"
+            )
+
+
+# ── ★★★ R65/WP-4: 범례가 **사람 말인가** (독립 검증 `.orch/R65/result_V.md`
+#    ③-3) ────────────────────────────────────────────────────────────────────
+#
+# 검증자가 잡은 것: 그림의 범례가 `e2e-ess`·`e2e-pv` 를 그대로 싣고 점선 곡선
+# **「수요」만 한글**이라 표기가 갈렸다. 표와 그림이 같은 실행을 그리는데 글자가
+# 갈리면 맞대 볼 수 없다.
+#
+# ⚠ 범례는 PNG 안의 글자라 응답 본문에서 셀 수 없다. 그래서 여기서 재는 것은
+# **그림에 들어가는 입력**이다 — 화면의 열 이름과 같은 함수가 지었는가, 그리고
+# 수요 곡선의 글자가 표의 수요 열과 같은가.
+
+
+def test_the_seasonal_picture_gets_human_words_for_its_legend() -> None:
+    """★★★ **범례에 들어갈 글자가 조인 키가 아니다** — `kind` 다.
+
+    ⛔ 사전의 **키**는 그대로 조인 키여야 한다. 라벨로 갈아 끼우면 종류가 같은
+    자원이 둘인 실행에서 키가 겹쳐 **계열 하나가 사전에서 사라진다** — 그림은
+    멀쩡해 보이고 아무 오류도 나지 않는다.
+    """
+    report = run_ui_case(_SCENARIO).report
+    kinds = {line.name: line.kind for line in report.basis.resources}
+
+    data = chart_data(report, _SEASONAL_TAG)
+    labels = data["resource_labels"]
+    drawn = tuple(data["seasons"][0]["resource_dispatch"])
+
+    assert drawn, "그림에 자원 계열이 하나도 없다"
+    for name in drawn:
+        assert name in labels, f"계열 {name!r} 에 인쇄할 글자가 없다"
+        assert labels[name] == kinds[name], (
+            f"계열 {name!r} 의 범례가 대장의 이름과 다르다: "
+            f"{labels[name]!r} ≠ {kinds[name]!r}"
+        )
+        assert name not in labels[name], (
+            f"범례에 조인 키가 그대로 남았다: {labels[name]!r}"
+        )
+
+
+def test_the_demand_curve_is_named_the_same_in_the_table_and_the_picture() -> None:
+    """★★★ **표와 그림이 수요를 «같은 상수»로 부른다** — 글자를 맞대던 자리다.
+
+    ## 무엇이 바뀌었나 (R68/WP-3)
+
+    종전에는 같은 글자가 **두 파일에 따로** 적혀 있었다 — 그림은 `core.report`
+    안이고 표는 `app` 안이라 계층이 import 를 막았다(`lint-imports` 의 `layers`
+    계약: `core` 가 `app` 을 알 수 없다). 그래서 이 검사는 **두 글자를 맞대는**
+    수밖에 없었고, 붙들 수 있는 것은 *「지금 같다」* 뿐이었다.
+
+    R68/WP-3 이 검증 3단계 표에도 같은 낱말을 세우며 자리가 **셋**이 되었고,
+    정본을 `core/report/dispatch_notes.py::DEMAND_LABEL` 로 내렸다(`app` →
+    `core` 는 허용 방향이라 사본이 사라진다).
+
+    ⚠ **이 검사를 지우지 않았다.** 그것이 지키던 요구는 *「표와 그림의 글자가
+    같다」* 이고 그 요구는 그대로다 — 다만 지금 재는 것은 **둘이 정본을
+    가리키는가**다. 누군가 어느 한쪽에 글자를 다시 적어 넣으면(값이 같아도)
+    사본이 되살아나고, 그 순간부터 한쪽만 고쳐질 수 있다 — `is` 로 재는 이유가
+    그것이다.
+    """
+    assert _CHART_DEMAND_LABEL is DEMAND_LABEL, (
+        "그림이 정본 상수를 쓰지 않는다 — 글자를 다시 적어 두면 사본이 되살아난다: "
+        f"{_CHART_DEMAND_LABEL!r}"
+    )
+    assert _DEMAND_LABEL is DEMAND_LABEL, (
+        "화면 표가 정본 상수를 쓰지 않는다: " f"{_DEMAND_LABEL!r}"
+    )
+
+
+def test_resource_labels_keeps_every_column_named_and_told_apart() -> None:
+    """★★ **이름이 없거나 겹치는 갈래에서도 열이 사라지지 않는다.**
+
+    셋을 한 번에 잰다. ⓐ `kind` 가 빈 자원은 **키를 그대로** 인쇄한다(빈 글자를
+    내면 열이 이름 없이 선다). ⓑ 종류가 같은 자원이 둘이면 **키를 덧붙여**
+    가른다(안 가르면 두 열이 화면에서 한 이름이 되고, 그림에서는 사전 키가
+    겹쳐 계열 하나가 사라진다). ⓒ 대장에 없는 키는 수요다.
+
+    ⚠ 실행을 새로 돌리지 않고 대장의 자원 행만 갈아 끼운다 — 이 함수가 보는
+    것은 `basis.resources` 뿐이다.
+    """
+    report = run_ui_case(_SCENARIO).report
+    lines = report.basis.resources
+    assert len(lines) >= 2, "이 실행의 자원이 둘 미만이라 겹침을 만들 수 없다"
+
+    nameless = dataclasses.replace(lines[0], kind="")
+    twin = dataclasses.replace(lines[1], name=f"{lines[1].name}-2")
+    doubled = dataclasses.replace(
+        report,
+        basis=dataclasses.replace(
+            report.basis, resources=(nameless, lines[1], twin)
+        ),
+    )
+    keys = (nameless.name, lines[1].name, twin.name, "없는-키")
+    labels = resource_labels(doubled, keys)
+
+    assert labels[0] == nameless.name, "kind 가 빈 자원의 열이 이름을 잃었다"
+    assert labels[1] != labels[2], f"종류가 같은 두 자원이 한 이름이다: {labels}"
+    assert lines[1].name in labels[1] and twin.name in labels[2], (
+        f"겹친 이름을 조인 키로 가르지 않았다: {labels}"
+    )
+    assert labels[3] == _DEMAND_LABEL, (
+        f"대장에 없는 키가 수요로 적히지 않았다: {labels[3]!r}"
+    )
+
+
+def test_the_seasonal_picture_refuses_a_run_without_seasons() -> None:
+    """★★ **계절이 없으면 빈 그림이 아니라 3요소 거부다** (`NFR-303`).
+
+    형상 자산 없이 도는 경로(케이스 그리드·성능 측정)에서는 `seasons` 가 비어
+    있다. 그때 연간등가 하루를 넷으로 복제해 그리면 네 계절이 전부 같은 그림이
+    되고 **그 그림은 「계절 변동이 없다」를 결과로 주장한다** — 착수 순서 41번이
+    `energy_balance` 에서 만난 바로 그 함정이다.
+    """
+    report = dataclasses.replace(run_ui_case(_SCENARIO).report, seasons=())
+
+    with pytest.raises(ValidationError) as caught:
+        chart_data(report, _SEASONAL_TAG)
+
+    err = caught.value
+    assert err.field == f"chart.{_SEASONAL_TAG}"
+    assert err.reason, "사유가 비어 있다"
+    assert err.action, "조치가 비어 있다"
+
+
+def test_the_month_chart_stays_unwired_and_says_why_in_the_new_words() -> None:
+    """★★★ **계절 넷이 섰다고 월 열둘이 선 것이 아니다** (판정 ①).
+
+    `energy_balance` 는 축에 **월**을 적는다. 계절 넷을 그 축에 얹으면 그림이
+    「1월~4월」을 주장하므로 이 차트는 `501` 로 남는다. 다만 옛 사유
+    (*「운전 해상도는 대표일 24스텝 하나」*)는 계절 축이 서면서 **거짓**이 됐다.
+
+    ⚠ 여기서 재는 것은 「501 인가」가 아니라 **사유가 지금 참인가**다 —
+    거짓이 된 사유를 그대로 두면 다음 사람이 없는 결손을 고치러 간다.
+    """
+    reason = unwired_reason("energy_balance")
+
+    assert reason is not None, "월별 차트가 배선됐다고 답한다 — 재료가 있는가"
+    assert "월" in reason, f"사유가 월 축을 말하지 않는다: {reason}"
+    assert "24스텝 하나" not in reason, (
+        "계절 넷이 선 지금도 「운전 해상도는 대표일 24스텝 하나」라고 적혀 있다 "
+        f"— 그 문면은 거짓이다: {reason}"
+    )
+    assert unwired_reason(_SEASONAL_TAG) is None, (
+        "계절별 그림이 배선되지 않았다고 답한다"
+    )

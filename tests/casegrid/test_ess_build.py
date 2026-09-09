@@ -33,6 +33,7 @@ import pytest
 from core.casegrid import e2e_runner, ess_build
 from core.casegrid.ess_build import build_case_ess
 from core.der.ess import ESSChargeSource, ESSOperatingMode
+from core.der.ess_schedule import ESSDischargeAllocation
 
 #: 조립 함수가 **대장·해석에서 받는** 인자들. 값은 골든의 사본이 아니다 —
 #: 이 파일은 금액을 재지 않으므로 대장과 같을 필요가 없고, 같게 두면 대장이
@@ -56,11 +57,19 @@ def _built(
     charge_source: ESSChargeSource,
     profile: list[float] | None,
     mode: ESSOperatingMode = ESSOperatingMode.PEAK_SHAVING,
+    discharge_allocation: ESSDischargeAllocation = ESSDischargeAllocation.FIXED_WINDOW,
+    load_profile: list[float] | None = None,
 ):
+    """⚠ **방전 배분 짝을 여기 기본값으로 둔 것은 이 헬퍼의 편의다** (R64/WP-6b).
+    조립 함수 자신은 그 둘을 **필수 인자**로 받는다 — `pv_surplus_profile_kwh`
+    와 같은 이유이며, 기본값을 주면 배선이 끊겨도 조용히 「고정 창」으로 선다.
+    """
     return build_case_ess(
         operating_mode=mode,
         charge_source=charge_source,
         pv_surplus_profile_kwh=profile,
+        discharge_allocation=discharge_allocation,
+        load_profile_kwh=load_profile,
         **_ARGS,
     )
 

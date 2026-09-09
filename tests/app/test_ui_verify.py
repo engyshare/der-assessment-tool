@@ -60,6 +60,7 @@ from __future__ import annotations
 
 import html
 import re
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -72,9 +73,17 @@ from app.services.verify_steps import (
     VerificationStageError,
     split_stages,
 )
+from core.assumption.provider import AssumptionSet
+from core.casegrid.household_scale import ledger_household_count
 from core.report._format import _num, _won
 from core.report.case_report import CaseReport
 from core.report.verification import render_verification_markdown
+from core.report.verification_gates import (
+    GATE_ROW_NAMES,
+    GATE_TITLE,
+    QUESTION_HEAD,
+    stage_question,
+)
 
 #: 대조에 쓰는 골든 시나리오 — `/ui/run` 쪽 검사와 **같은 것**을 써야 두 화면의
 #: 수를 맞댈 수 있다.
@@ -250,6 +259,17 @@ def test_net_demand_stands_step_by_step_from_the_report(
 
     ⚠ 「대표일 하루」임이 캡션에 글자로 있어야 한다. 없으면 그 표가
     「계절 변동이 없다」를 결과로 주장한다(착수 순서 41번이 만난 함정).
+
+    ## ★ 캡션이 말해야 하는 것 **셋을 각각** 잰다 (R64/WP-WEB ⓓ)
+
+    같은 취지를 브라우저에서 재는 것이
+    `tests_e2e/test_e2e_r63_flows.py::test_the_verify_screen_carries_four_
+    steps_nine_stages_and_reasoned_gaps` 이고 **그 파일은 로컬 전건에 들어가지
+    않는다**(`testpaths = ["tests"]`). 이 라운드가 그것을 몰라 e2e 회귀 둘을
+    여섯 커밋 동안 안고 갔다 — 그래서 **같은 셋을 여기서도** 잰다.
+
+    ⚠ 뭉뚱그리지 않는다. 실패 문면이 *무엇이 없어서* 실패했는지 말해야 한다.
+    ⚠ 캡션 전문을 박지 않는다 — 문면이 다듬어져도 취지가 남으면 통과한다.
     """
     section = _group_slice(body, 3)
     rows = _NET_ROW.findall(section)
@@ -259,7 +279,29 @@ def test_net_demand_stands_step_by_step_from_the_report(
         assert _num(hour.grid_import) in cells, (
             f"{hour.step}스텝의 순수요가 리포트 값과 다르다"
         )
-    assert "대표일" in _text(section)
+    caption = _text(section)
+    assert "대표일" in caption
+    silent = [
+        f"{phrase!r} 가 없다: {why}"
+        for phrase, why in (
+            (
+                "연간등가 하루",
+                "24행이 접힌 한 벌이라는 것을 말하지 않는다",
+            ),
+            (
+                "「계절 변동이 없다」로 읽으면",
+                "그 오독을 막는 경고가 없다",
+            ),
+            (
+                "① 걸음의 계절별 표",
+                "계절이 갈린 것을 어디서 보는지 가리키지 않는다",
+            ),
+        )
+        if phrase not in caption
+    ]
+    assert not silent, (
+        "③ 순수요 표의 캡션이 그 표의 오독을 막지 못한다:\n  " + "\n  ".join(silent)
+    )
 
 
 def test_year_by_year_rows_agree_with_the_proforma(
@@ -283,6 +325,141 @@ def test_year_by_year_rows_agree_with_the_proforma(
         )
 
 
+#: ★★ 가구 수를 **준** 실행의 화면 — 아래 갈래 검사 넷이 함께 쓴다.
+#: 값은 「잉여가 남는 규모」이며 사유는
+#: `tests/casegrid/test_household_count.py::_COUNT` 가 갖는다.
+_HOUSEHOLD_COUNT = 2
+
+_FILL_BLOCK = re.compile(r'<section class="verify-fill"(.*?)</section>', re.DOTALL)
+_FILL_TAG = re.compile(r'data-fill="([^"]+)"')
+_FILL_VALUE = re.compile(r'<p class="fill-value">(.*?)</p>', re.DOTALL)
+
+
+def _ledger_household_count() -> int | None:
+    """대장이 답하는 가구 수 (R65) — **여기 리터럴로 적지 않는다.**"""
+    return ledger_household_count(
+        AssumptionSet.load_from_yaml(
+            str(Path(__file__).resolve().parents[2] / "docs" / "assumptions.yaml")
+        )
+    )
+
+
+@pytest.fixture(scope="module")
+def sized_body(client: TestClient) -> str:
+    """가구 수를 **준** 실행의 화면 — 위 `body` 와 같은 시나리오·다른 갈래."""
+    response = client.get(
+        _VERIFY_PATH,
+        params={"scenario": _SCENARIO, "household_count": _HOUSEHOLD_COUNT},
+    )
+    assert response.status_code == 200, response.text[:400]
+    return response.text
+
+
+def test_without_a_household_count_the_screen_shows_the_ledger_number(
+    body: str,
+) -> None:
+    """★★★ **화면에 안 적은 실행은 「대장이 답한 수」를 보인다** (R65).
+
+    ## ⚠⚠ 이 시험이 재던 것이 뒤집혔다 — **낡은 것이 아니라 반대 사실이었다**
+
+    옛 이름은 `test_without_a_household_count_the_screen_stands_no_number` 였고
+    *「값이 선 칸이 하나도 없다」* 를 쟀다. 그때는 그것이 옳았다: 대장의
+    `load.household.count` 가 `track: blocked` 였으므로 **거기에 값이 서면 그것은
+    저장소가 지어낸 세대 수**였고, 그 수가 단지 총부하를 통째로 정했다.
+
+    **R65 에 그 사실을 정하는 쪽이 값을 주었다** — 사용자 요구 원문
+    *「가구수를 20가구로 설정」*(2026-09-07). 저장소가 고른 수가 아니므로
+    §13.0.2 자기충족이 아니다. ⇒ 이제 화면에 안 적은 실행도 **20호로 돌고**,
+    그때 칸을 비우면 화면이 **자기가 돌린 규모를 감추는 것**이 된다.
+
+    ⇒ 재는 것을 *「값이 없다」* 에서 **「실제로 돈 수를 보이고, 그 수가 어디서
+    왔는지 함께 적는가」** 로 옮겼다. ⚠ 저장소가 지어내지 않는다는 성질은
+    그대로이며, 그 감시는 대장 쪽(`tests/assumption/test_ledger_titles.py`)이
+    이어 진다.
+    """
+    blocks = _FILL_BLOCK.findall(body)
+    ledger_count = _ledger_household_count()
+    assert ledger_count is not None, (
+        "대장이 가구 수를 갖지 않는다 — 그러면 화면에 값이 설 이유가 없고, "
+        "옛 단언(값이 선 칸이 하나도 없다)으로 되돌려야 한다"
+    )
+    tags = [_FILL_TAG.search(block).group(1) for block in blocks]
+    assert tags == ["households"], f"값이 선 칸 목록이 다르다: {tags}"
+    value = _FILL_VALUE.search(blocks[0])
+    assert value is not None, "값이 선 칸에 값 문단이 없다"
+    assert f"{ledger_count:,}호" in _text(value.group(1)), (
+        f"화면이 대장의 {ledger_count}호를 보이지 않는다: {value.group(1)!r}"
+    )
+    # ★ **어디서 왔는지**가 함께 실린다 — 「실행 입력이 정했다」만 적으면
+    # 화면에 아무것도 안 적은 이 실행에서 그 문장이 거짓이다
+    # (`app/services/verify_steps.py::_household_count_fill` 의 ⚠⚠).
+    assert "load.household.count" in body, (
+        "대장이 답한 수인데 화면이 그 통로를 적지 않는다"
+    )
+
+
+def test_giving_a_household_count_turns_the_blank_into_a_number(
+    sized_body: str,
+) -> None:
+    """★★★ **47ⓐ — 값이 지정된 실행에서는 칸이 아니라 수를 보인다** (판정 ④).
+
+    ⚠ 수를 리터럴로 대조하지 않는다 — 질의로 보낸 값을 그대로 되찾는다.
+    """
+    blocks = _FILL_BLOCK.findall(sized_body)
+    tags = [_FILL_TAG.search(block).group(1) for block in blocks]
+    assert tags == ["households"], f"값이 선 칸 목록이 다르다: {tags}"
+    value = _FILL_VALUE.search(blocks[0])
+    assert value is not None, "값이 선 칸에 값 문단이 없다"
+    assert f"{_HOUSEHOLD_COUNT:,}호" in _text(value.group(1)), (
+        f"화면이 {_HOUSEHOLD_COUNT}호를 보이지 않는다: {value.group(1)!r}"
+    )
+    assert 'data-filled="true"' in blocks[0], (
+        "값이 선 칸이 「빈 칸」으로 표시됐다"
+    )
+
+
+def test_the_household_type_stays_a_blank_cell_even_with_a_count(
+    sized_body: str,
+) -> None:
+    """★★ **칸이 사라지지 않고 좁아진다** — 가구 유형은 여전히 재료가 없다.
+
+    수가 왔다고 칸을 통째로 지우면 사용자가 요구한 「가구 유형」이 화면에서
+    사라지고, 사라진 것은 아무도 못 본다. 대장의 `load.household.type_mix` 는
+    아직 `track: blocked` 이며 **표현할 자료형조차 정해지지 않았다.**
+    """
+    blocks = _GAP_BLOCK.findall(sized_body)
+    tags = [_GAP_TAG.search(b).group(1) for b in blocks if _GAP_TAG.search(b)]
+    assert sorted(tags) == sorted(GAP_TAGS), (
+        f"가구 수를 준 실행에서 빈 칸 목록이 달라졌다: {tags}"
+    )
+    households = next(
+        b for b in blocks if _GAP_TAG.search(b).group(1) == "households"
+    )
+    assert "가구 유형" in _text(households), (
+        "가구 수를 주었는데 남은 빈 칸이 가구 유형을 가리키지 않는다"
+    )
+    filled = _GAP_FILLED.search(households)
+    assert filled is not None and filled.group(1) == "false"
+
+
+def test_a_household_count_below_one_is_refused_as_a_readable_screen(
+    client: TestClient,
+) -> None:
+    """★★ **0호는 거부고, 그 거부가 사람이 읽는 화면이다** (`NFR-303`).
+
+    ⚠ JSON 으로 내지 않는다 — 이 라우트는 화면이고, JSON 을 받은 브라우저는
+    3요소를 사람이 읽을 모양으로 그리지 못한다.
+    """
+    response = client.get(
+        _VERIFY_PATH, params={"scenario": _SCENARIO, "household_count": 0}
+    )
+    assert response.status_code == 400, response.text[:200]
+    printed = _text(response.text)
+    assert "가구 수" in printed and "조치" in printed, (
+        f"거부 화면이 3요소를 사람이 읽을 모양으로 그리지 않았다: {printed[:300]}"
+    )
+
+
 def test_split_refuses_when_the_stage_count_changes() -> None:
     """⚠⚠ 단계가 9로 갈리지 않으면 **멈춘다** — 조용히 빠뜨리지 않는다.
 
@@ -299,3 +476,336 @@ def test_split_keeps_the_renderer_titles(report: CaseReport) -> None:
     stages = split_stages(render_verification_markdown(report))
     assert [s.number for s in stages] == list(range(1, STAGE_COUNT + 1))
     assert all(s.title and s.body.strip() for s in stages)
+
+
+# ── ★★★ R64/WP-5: ① 걸음의 **계절별 표** (사용자 요구 6) ──────────────────
+#
+# 사용자 문면: *「계절별로 가구의 전력 수요, 발전, ESS 운전 등을 시간대별로
+# 수치와 도표를 확인할 수 있어야 함」*. WP-4 가 계산을 세우고
+# `seasonal_operation` 빈 칸의 사유를 *「아직 없는 것은 화면이다」* 로 갈아
+# 끼웠다. 아래가 그 화면이며, 그 사유가 **거짓이 됐는지**를 함께 잰다.
+
+_SEASON_TABLE = re.compile(
+    r'<table data-season="([^"]+)" data-season-days="(\d+)">(.*?)</table>', re.DOTALL
+)
+_SEASON_ROW = re.compile(r'<tr data-season-step="(\d+)">(.*?)</tr>', re.DOTALL)
+_SEASON_CAPTION = re.compile(r'<figcaption>(.*?)</figcaption>', re.DOTALL)
+
+_SEASONAL_GAP = "seasonal_operation"
+
+
+def test_the_screen_splits_the_run_by_season(body: str, report: CaseReport) -> None:
+    """★★★ **화면이 계절을 갈라 보인다** — 이름·일수·스텝이 리포트 그대로다.
+
+    ⚠ 「봄 92일」 같은 수를 소스에 박지 않는다. 계절 달력은 자산
+    (`fixtures/profiles/representative-day.yaml`)이 정하고 `CaseReport.seasons`
+    가 나른다 — 박으면 자산이 달력을 바꾸는 날 이 검사가 「화면이 틀렸다」로
+    빨간불이 된다.
+
+    ⚠⚠ **화면이 계절을 다시 나누지 않는가**를 함께 잰다. 값 한 칸까지
+    `SeasonRun.dispatch` 와 맞대므로, 화면이 연간등가 하루를 계절 몫으로 되짚어
+    지으면 여기서 갈린다.
+    """
+    assert report.seasons, "이 시나리오가 계절을 하나도 돌지 않았다"
+
+    section = _group_slice(body, 1)
+    tables = _SEASON_TABLE.findall(section)
+    assert [name for name, _, _ in tables] == [s.name for s in report.seasons], (
+        f"화면의 계절 목록이 실행과 다르다: {[n for n, _, _ in tables]}"
+    )
+    assert [int(days) for _, days, _ in tables] == [s.days for s in report.seasons]
+
+    for (name, _, table), season in zip(tables, report.seasons, strict=True):
+        rows = _SEASON_ROW.findall(table)
+        assert len(rows) == len(season.dispatch.grid_export), (
+            f"계절 {name}: 스텝 {len(season.dispatch.grid_export)}개 중 "
+            f"{len(rows)}개만 실렸다"
+        )
+        for step, cells in rows:
+            index = int(step)
+            assert _num(season.dispatch.grid_import[index]) in cells, (
+                f"계절 {name} {index}스텝의 계통 수전이 실행 값과 다르다"
+            )
+            assert _num(season.dispatch.grid_export[index]) in cells, (
+                f"계절 {name} {index}스텝의 계통 송전이 실행 값과 다르다"
+            )
+
+
+def _resource_columns(body: str) -> list[tuple[str, ...]]:
+    """표마다 **자원 열의 머리글**만 — 첫 칸(스텝)과 뒤 두 칸(계통)을 걷어 낸 것.
+
+    ⚠ 뒤 두 칸을 남기면 ③ 순수요 표의 마지막 열이 「순수요 = 계통 수전」이라
+    「수요」를 찾는 검사가 **부하 열이 아닌 것**을 보고 초록불이 된다.
+    """
+    return [
+        tuple(re.findall(r'<th scope="col">([^<]*)</th>', head))[1:-2]
+        for head in re.findall(r"<thead>(.*?)</thead>", body, re.DOTALL)
+    ]
+
+
+def test_the_seasonal_tables_carry_the_same_columns_as_the_net_demand_one(
+    body: str,
+) -> None:
+    """★★ **계절 표와 순수요 표의 자원 열이 같다** — 두 표를 맞대 볼 수 있어야 한다.
+
+    갈라 두면 한쪽만 자원이 늘거나 이름이 바뀌고, 그때 화면은 멀쩡해 보인다
+    (`app/services/verify_steps.py::net_demand_columns` 의 ⚠).
+
+    ⚠ **머리글 전체를 맞대지 않는다.** ③ 순수요 표의 마지막 열은 「순수요 =
+    계통 수전」이고 그것이 그 표의 요지다(*「화면이 부하에서 자가공급을 다시
+    빼지 않는다」*). 같아야 하는 것은 **자원 열**이며, 첫 칸(스텝)과 뒤 두
+    칸(계통 송·수전)을 걷어 낸 나머지다.
+    """
+    columns = _resource_columns(body)
+    assert len(columns) >= 2, f"화면에 표가 {len(columns)}개뿐이다"
+    assert all(columns), "자원 열이 없는 표가 있다"
+    assert len(set(columns)) == 1, (
+        f"표마다 자원 열이 다르다 — 표를 두 벌로 그리고 있다: {set(columns)}"
+    )
+
+
+# ── ★★★ R65/WP-4: 열 이름이 **사람 말인가** (독립 검증 `.orch/R65/result_V.md`
+#    ②-1 · ③-3) ──────────────────────────────────────────────────────────────
+#
+# 사용자 요구 문면은 *「계절별로 가구의 **전력 수요, 발전, ESS 운전** 등을
+# 시간대별로 수치와 도표로 확인」* 인데, 표의 열 이름이 `e2e-load`·`e2e-pv`·
+# `e2e-ess` 였다. 화면은 200 을 내고 수도 맞았지만 **어느 열이 수요이고 어느
+# 열이 발전인지 사람이 알 수 없다** — 요구가 물은 것이 확인되지 않는다.
+#
+# ⚠ 이 저장소는 같은 판단을 이미 적었다:
+# `core/report/method_sections.py::_earner_cell` — *「자원 이름이 아니라 `kind`
+# 로 적는다 … 그것은 심의위원이 읽을 이름이 아니다」*. 새 규약이 아니라 있는
+# 규약을 이 화면에도 적용한 것이며, 통로는 `ui_charts.resource_labels` 하나다.
+
+
+def _join_keys(report: CaseReport) -> tuple[str, ...]:
+    """운전 결과가 쓰는 **조인 키** — 화면의 자원 열과 **같은 차례**다.
+
+    ⚠ `app/services/verify_steps.py::net_demand_columns` 와 같은 규칙(키 합집합을
+    정렬)을 여기서 다시 적는다 — 그 함수를 불러 대조하면 「화면이 그 함수를
+    썼는가」만 재고 **차례가 맞는가**는 아무도 재지 않는다.
+    """
+    return tuple(sorted(
+        {name for hour in report.dispatch_hours for name in hour.per_resource}
+    ))
+
+
+def test_the_resource_columns_are_named_in_human_words(
+    body: str, report: CaseReport
+) -> None:
+    """★★★ **열 이름이 조인 키가 아니라 사람이 읽는 이름이다** (검증자 ②-1).
+
+    ⚠ 이름을 소스에 박지 않는다 — `ResourceLine.kind` 가 정본이고 리포트가
+    나른다. 박으면 자원 제원이 바뀌는 날 이 검사가 「화면이 틀렸다」로 빨간불이
+    된다.
+    """
+    kinds = {line.name: line.kind for line in report.basis.resources}
+    assert kinds, "이 실행에 자원이 하나도 없다"
+
+    columns = _resource_columns(body)
+    assert columns and all(columns), "자원 열이 없는 표가 있다"
+    printed = {column for head in columns for column in head}
+
+    for name in kinds:
+        assert not any(name in column for column in printed), (
+            f"조인 키 {name!r} 가 열 이름으로 인쇄됐다: {sorted(printed)} — "
+            "키는 조인용이고 화면 라벨이 아니다"
+        )
+    for name, kind in kinds.items():
+        assert kind, f"자원 {name!r} 의 kind 가 비어 있다"
+        assert any(kind in column for column in printed), (
+            f"자원 {name!r} 의 이름 {kind!r} 이 열 이름에 없다: {sorted(printed)}"
+        )
+
+
+def test_the_demand_column_says_it_is_demand(
+    body: str, report: CaseReport
+) -> None:
+    """★★★ **수요 열이 「수요」라고 적혀 있다** — 대장에 없는 키의 갈래다.
+
+    `e2e-load` 는 자원이 아니라 부하라 `basis.resources` 에 **없다.** 그래서
+    `kind` 매핑이 없고, 그 하나만 키로 남으면 결함의 본체가 그대로 남는다.
+    가름은 `app/services/ui_charts.py::_demand_names` 와 **같은 이음쇠**다 —
+    평가 대상 자원 이름에 없는 항목이 수요다.
+
+    ⚠ **자리로 찾는다.** 열의 차례가 키의 차례(정렬)와 같으므로 몇 번째 열이
+    수요인지 계산할 수 있다 — 「수요」라는 글자를 아무 열에서나 찾으면 ③ 표의
+    마지막 열 「순수요 = 계통 수전」이 그 검사를 조용히 통과시킨다.
+    """
+    keys = _join_keys(report)
+    resource_names = {line.name for line in report.basis.resources}
+    demand = tuple(key for key in keys if key not in resource_names)
+    assert demand, "이 실행의 운전에 수요 항목이 없다"
+
+    for head in _resource_columns(body):
+        assert len(head) == len(keys), (
+            f"열 수가 조인 키 수와 다르다: {head} ≠ {keys} — 열이 하나 "
+            "사라지면 그 자원의 운전이 화면에서 통째로 없어진다"
+        )
+        for key in demand:
+            column = head[keys.index(key)]
+            assert key not in column, f"수요 열이 아직 조인 키다: {column!r}"
+            assert "수요" in column, (
+                f"수요 열이 「수요」라고 말하지 않는다: {column!r}"
+            )
+
+
+def test_the_seasonal_caption_says_the_calendar_is_an_assumption(body: str) -> None:
+    """★★★ **계절 몫·형상이 「가정값」이라고 화면이 말한다** (사용자 판정 §2).
+
+    사용자 문면: *「해당 자료도 참값은 아님. 가정한 값임을 유의해줘」*. 24행짜리
+    표 넷만 세우면 그것이 **실측 소비패턴**으로 읽히고, 그 오독이 심의 자료에
+    실린다 — 이 화면에서 가장 비싼 오독이다.
+    """
+    section = _group_slice(body, 1)
+    captions = [_text(found) for found in _SEASON_CAPTION.findall(section)]
+    assert captions, "계절 표에 캡션이 없다"
+    said = [
+        caption
+        for caption in captions
+        if "가정값" in caption and "실측이 아니다" in caption
+    ]
+    assert len(said) == 1, (
+        f"계절 달력이 가정값이라고 말하는 캡션이 {len(said)}개다: {captions}"
+    )
+
+
+def test_the_seasonal_blank_cell_narrowed_instead_of_disappearing(
+    body: str,
+) -> None:
+    """★★★ **`seasonal_operation` 칸이 좁아졌다 — 사라지지 않았다** (판정 ④).
+
+    ## 무엇이 닫혔나
+
+    WP-4 가 남긴 사유는 *「아직 없는 것은 화면이다 — 이 검증 절차가 계절별
+    소비·발전·수전을 갈라 그리지 않는다」* 였고, 위 검사가 그 화면이 섰음을
+    잰다. 그러므로 **그 문면은 거짓이 됐고 남아 있으면 안 된다.**
+
+    ## 무엇이 남았나
+
+    계절 몫·형상은 여전히 자산의 **가정값**이고 「가구별」 분해는 재료가 없다.
+    칸을 통째로 지우면 화면이 *「계절별 소비패턴을 실측으로 안다」* 를 주장하게
+    되므로 지우지 않는다 — `_HOUSEHOLD_TYPE_ONLY` 가 이미 밟은 형태다.
+
+    ⚠ 「화면에 무언가 있다」가 아니라 **그 태그의 상태**를 잰다.
+    """
+    assert _SEASONAL_GAP in GAP_TAGS, "칸이 목록에서 사라졌다"
+
+    block = next(
+        found
+        for found in _GAP_BLOCK.findall(body)
+        if _GAP_TAG.search(found).group(1) == _SEASONAL_GAP
+    )
+    reason = _text(_GAP_REASON.search(block).group(1))
+
+    assert "아직 없는 것은 화면이다" not in reason, (
+        "화면이 계절을 갈라 보이는데도 「아직 없는 것은 화면이다」가 남아 있다"
+    )
+    assert "가정값" in reason, (
+        f"남은 결손이 「계절 몫·형상이 가정값」임을 말하지 않는다: {reason}"
+    )
+    assert "가구별" in reason, (
+        f"남은 결손이 「가구별 분해가 없다」임을 말하지 않는다: {reason}"
+    )
+
+
+# ── ★★★ R65/WP-3: ① 걸음의 **계절별 도표** (사용자 요구 — 검증 모드에서
+#    수치와 도표 둘 다 확인이 어렵다) ──────────────────────────────────────────
+#
+# 사용자가 본 곳은 검증 모드다. 계절별 **수치 표**는 R64/WP-5 가 세웠고 이
+# 라운드가 그 아래에 **도표**를 세운다 — 그림 `seasonal_operation` 은 이미
+# 있고(`/ui/chart/seasonal_operation.png`), 검증 화면이 그것을 부르지 않을
+# 뿐이었다(`.orch/R65/result_1.md` ① 5번 상세).
+
+#: ⚠ 태그의 **속성을 열어 둔다** — 이 파일 머리말이 적은 대로 클래스·속성은
+#: 접근성·스타일 때문에 늘어나는 것이 정상이고, 재는 것은 태그 하나로 좁힌다.
+#: `data-chart` 는 `/ui/run` 의 결과 그림 칸(`run_result.html`) 이 이미 쓰는
+#: 이름이다 — 같은 그림을 같은 이름으로 센다.
+_SEASON_CHART = re.compile(
+    r'<figure[^>]*data-chart="seasonal_operation".*?</figure>', re.DOTALL
+)
+#: `src` 의 첫 조각 — 그림 주소가 **이미 있는 그림 라우트**를 가리키는지.
+_IMG_SRC = re.compile(r'<img[^>]*\ssrc="([^"]+)"')
+
+
+def test_the_season_step_carries_the_seasonal_operation_chart(body: str) -> None:
+    """★★★ ① 걸음이 계절별 **도표**를 싣는다 — 표 바로 **위**에.
+
+    ⚠ 그림을 새로 그리지 않는다 — 화면은 이미 있는 라우트
+    `GET /ui/chart/seasonal_operation.png` 를 `<img>` 로 부를 뿐이다.
+    손으로 그린 그림이 서면 같은 그림이 두 곳에 살고 화면의 수가 리포트와
+    갈릴 수 있다(그림 라우트 독스트링).
+
+    ★★ **차례가 R65/WP-4 에서 뒤집혔다.** 종전 이 검사는 그림이 표 **아래**
+    임을 쟀다. 독립 검증(`.orch/R65/result_V.md` ③-1)이 잡은 것: 계절 넷의
+    24행이 **96행**이라 표를 먼저 두면 그림이 스크롤 한참 아래에 서고
+    *「수치와 도표로 확인」* 이 한 화면에서 성립하지 않는다. **재는 것은
+    그대로 「같은 걸음에 나란히 서는가」이고 바뀐 것은 차례뿐이다.**
+    """
+    section = _group_slice(body, 1)
+    block = _SEASON_CHART.search(section)
+    assert block is not None, "① 걸음에 seasonal_operation 그림 칸이 없다"
+    img = _IMG_SRC.search(block.group(0))
+    assert img is not None, "그림 칸에 <img> 가 없다"
+    src = img.group(1)
+    assert src.startswith("/ui/chart/seasonal_operation.png"), (
+        f"그림이 이미 있는 라우트를 가리키지 않는다: {src!r}"
+    )
+    # ★ 칸은 계절 표 **위**에 — 그림이 한 화면에 들어오고 96행짜리 표가 그
+    # 근거로 뒤따라야 「수치와 도표로 확인」이 한 화면에서 성립한다.
+    assert section.index('data-chart="seasonal_operation"') < section.index(
+        "data-season="
+    ), "그림 칸이 계절 표보다 먼저 오지 않는다"
+
+
+def test_the_chart_src_carries_the_query_of_this_run(client: TestClient) -> None:
+    """★★★ **질의가 그림에 따라간다** — 20호로 돈 화면의 그림은 20호를 그린다.
+
+    안 따라가면 화면의 표는 `household_count=20` 인데 그림은 1호(또는 대장
+    기본값)가 된다 — 둘 다 그럴듯해 보이고 그 어긋남은 아무 오류도 내지
+    않는다. 질의를 잇는 것은 `/ui/run` 이 쓰는 `chart_query` 와 인자가 한
+    칸씩 같아야 한다(`app/routers/ui_verify.py::_seasonal_figure`).
+    """
+    response = client.get(
+        _VERIFY_PATH,
+        params={"scenario": _SCENARIO, "household_count": 20},
+    )
+    assert response.status_code == 200, response.text[:400]
+    block = _SEASON_CHART.search(response.text)
+    assert block is not None, "가구 수를 준 실행에도 그림 칸이 서야 한다"
+    img = _IMG_SRC.search(block.group(0))
+    assert img is not None, "그림 칸에 <img> 가 없다"
+    src = img.group(1)
+    assert "household_count=20" in src, (
+        f"그림 주소에 이 실행의 가구 수가 안 실렸다: {src!r}"
+    )
+    assert f"scenario={_SCENARIO}" in src, (
+        f"그림 주소에 이 실행의 시나리오가 안 실렸다: {src!r}"
+    )
+
+
+def test_each_stage_on_screen_carries_its_question_and_its_gate(body: str) -> None:
+    """★★ **화면에도 물음과 판단 게이트가 함께 나간다** (R68/WP-5 · 검토서 §2.1·§4.7).
+
+    ⚠ 화면은 렌더러 문면을 **고정폭 그대로** 싣는다 — 그래서 이 검사가 재는
+    것은 「화면이 그 줄을 지웠는가」다. 리포트에만 서고 화면에 안 나가면
+    사용자는 단계마다의 물음과 판정을 못 본다(배선이 끊기는 자리는 늘
+    산출물과 화면 사이였다 — 이 파일 머리말).
+
+    ⚠ 문면을 여기 베끼지 않는다 — `verification_gates.py` 에서 읽어 맞댄다.
+    ⚠⚠ **화면의 차례가 단계 번호가 아니다** — 걸음이 계산 순서를 가르므로
+    5단계(운영비)가 4단계(편익)보다 먼저 그려진다(`web/templates/verify.html`
+    의 안내문). 그래서 번호를 `data-stage` 에서 **읽어** 짝짓는다.
+    """
+    numbers = [int(n) for n in _STAGE.findall(body)]
+    bodies = [html.unescape(raw) for raw in _STAGE_BODY.findall(body)]
+    assert len(bodies) == STAGE_COUNT == len(numbers)
+    for number, printed in zip(numbers, bodies, strict=True):
+        assert f"{QUESTION_HEAD} — {stage_question(number)}" in printed, (
+            f"{number}단계 화면에 그 단계가 답하는 물음이 없다"
+        )
+        assert GATE_TITLE in printed, f"{number}단계 화면에 판단 게이트가 없다"
+        for name in GATE_ROW_NAMES:
+            assert f"| {name} | " in printed, (
+                f"{number}단계 화면의 게이트에 「{name}」 행이 없다"
+            )

@@ -234,15 +234,33 @@ def test_the_run_screen_conclusion_appears_in_the_golden_report(
 
 
 @pytest.mark.req("FR-602-AC1")
-def test_an_override_of_a_ledger_price_key_moves_the_run(
+def test_an_override_of_a_directly_read_ledger_key_moves_the_run(
     page: Page, live_server: str
 ) -> None:
-    """★ **대장 단가를 고치면 결론축이 움직인다** — `benefit.rec_price` 갈래.
+    """★ **대장 항목을 고치면 결론축이 움직인다** — `load.dr_shiftable_share` 갈래.
 
     이 키는 `core/report/case_report.py` 가 **오버라이드된 대장(provider)에서**
     직접 읽는 갈래다(`required_scalar`). 그래서 화면에서 고친 값이 실행에 닿는
     통로가 **살아 있음을** 이 시험이 붙든다 — 아래 `capex` 갈래 시험(D10)과
     짝을 이뤄, 어느 쪽이 고장인지를 갈라 본다.
+
+    ## ⚠⚠ 키가 바뀌었다 — 종전 `benefit.rec_price` 는 **더 이상 축을 못 움직인다**
+
+    R67/WP-N1·N1b 가 부하의 계절·하루 축을 가르면서 **계통 송전이 0 kWh** 가
+    됐고(잉여가 없어서가 아니라 DR 이동과 ESS 충전이 먼저 다 먹는다 — 디스패치
+    차례가 `pv_self_consumption → ess_charge → v2g_charge → grid_export` 라
+    송전이 맨 끝이다), 그래서 **`REC`·`SurplusSale` 연 편익이 0원**이다.
+    단가를 70 → 140 으로 두 배 해도 `0 × 2 = 0` 이라 결론축이 한 원도 안 움직인다.
+    ⚠ **그 실행이 고장난 것이 아니다** — 그 상태 자체가 R67 이 낸 결과이며
+    `fixtures/golden/*.yaml` 의 R67 이력 블록이 그 사실을 적는다.
+
+    ★ 오케가 대장 키 넷을 흔들어 재고 골랐다(2026-09-09 · 무보조 골든 기준):
+    `benefit.rec_price` 140 · `tax.vat_rate` 0.2 · `tariff.surplus_direct_sale` 220
+    은 **셋 다 −360,695,500 그대로**였고, `load.dr_shiftable_share` 0 만
+    **−360,105,668** 로 움직였다. **같은 `required_scalar` 통로**이므로 이 시험이
+    재는 것은 한 자도 달라지지 않는다.
+    ⚠ **잉여 판매가 되살아나면 `benefit.rec_price` 로 되돌려도 된다** — 그때
+    이 시험이 더 좁은 갈래(편익 단가)를 재게 된다.
     """
     page.goto(live_server)
     unsubsidized = next(v for v in
@@ -252,11 +270,12 @@ def test_an_override_of_a_ledger_price_key_moves_the_run(
     baseline = _run_default(page, live_server, unsubsidized)
 
     applied = _save_settings_and_read_npv(
-        page, live_server, "e2e-rec-140", "benefit.rec_price", "140"
+        page, live_server, "e2e-dr-share-0", "load.dr_shiftable_share", "0"
     )
     assert applied != baseline, (
-        f"REC 단가 오버라이드(70→140)가 결론축을 움직이지 않았다: {baseline} → "
-        f"{applied}. 대장에서 직접 읽는 갈래마저 죽었다면 통로 전체가 끊긴 것이다"
+        f"대장 오버라이드(load.dr_shiftable_share 10→0)가 결론축을 움직이지 "
+        f"않았다: {baseline} → {applied}. 대장에서 직접 읽는 갈래마저 죽었다면 "
+        "통로 전체가 끊긴 것이다"
     )
 
 
@@ -371,14 +390,14 @@ def test_equipment_settings_are_grouped_per_resource_instance(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 바 — 검증 모드: 네 걸음 × 아홉 단계, 빈 칸에는 사유가 글자로
+# 바 — 검증 모드: 네 걸음 × 열 단계, 빈 칸에는 사유가 글자로
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def test_the_verify_screen_carries_four_steps_nine_stages_and_reasoned_gaps(
+def test_the_verify_screen_carries_four_steps_ten_stages_and_reasoned_gaps(
     page: Page, live_server: str
 ) -> None:
-    """★ **검증 모드 화면의 뼈대** — 사용자의 네 걸음 · 렌더러 아홉 단계 · 빈 칸 다섯.
+    """★ **검증 모드 화면의 뼈대** — 사용자의 네 걸음 · 렌더러 열 단계 · 빈 칸 다섯.
 
     ⚠⚠ `@pytest.mark.req(...)` 를 달지 않았다 — `tests/app/test_ui_verify.py`
     머리말과 같은 판정이다. 검증 모드를 요구하는 조항이 spec 에 아직 없고,
@@ -400,13 +419,14 @@ def test_the_verify_screen_carries_four_steps_nine_stages_and_reasoned_gaps(
     ) == "1,2,3,4", "네 걸음이 1..4 순서로 서지 않았다 — 「순차적으로」가 깨진다"
     assert page.locator("[data-stage]").count() == STAGE_COUNT
     # ⚠ 단계의 **문서 순서**가 1..N 이기를 바라지 않는다 — `_GROUP_PLAN` 이
-    # 4단계(편익 화폐화)를 ④ 묶음에 실으므로 화면 순서는 1,2,3,5,4,6,… 이
-    # 정상이다. 재는 것은 **전건이 한 번씩** 서고 **묶음 안에서 오름차순**인가다.
+    # 4단계(경제성 입력)를 ① 묶음에, 5단계(편익 화폐화)를 ④ 묶음에 실으므로
+    # 화면 순서는 1,4,2,3,6,5,7,… 이 정상이다(R69/WP-1 이 단계를 열로 올렸다).
+    # 재는 것은 **전건이 한 번씩** 서고 **묶음 안에서 오름차순**인가다.
     stages = page.locator("[data-stage]").evaluate_all(
         "els => els.map(e => Number(e.dataset.stage))"
     )
     assert sorted(stages) == list(range(1, STAGE_COUNT + 1)), (
-        f"아홉 단계가 한 번씩 서지 않았다: {stages}"
+        f"열 단계가 한 번씩 서지 않았다: {stages}"
     )
     for group in page.locator(".verify-group[data-group]").all():
         numbers = group.locator("[data-stage]").evaluate_all(
@@ -427,15 +447,74 @@ def test_the_verify_screen_carries_four_steps_nine_stages_and_reasoned_gaps(
             silent.append(f"{tag}: 사유가 글자로 있어야 하는데 {text!r} 뿐이다")
     assert not silent, "\n  ".join(silent)
 
-    # 순수요 표 — 24행(대표일 24스텝)과 「대표일 하루」 캡션(착수 순서 36번 인용).
+    # 순수요 표 — 24행(대표일 24스텝)과 그 표를 오독하지 못하게 하는 캡션 넷.
     rows = page.locator('[data-net-demand] tbody tr, .net-demand tbody tr')
     assert rows.count() == 24, (
         f"순수요 표가 24행이 아니다: {rows.count()}행 — 대표일 해상도가 바뀌었다"
     )
-    caption = page.evaluate("() => document.body.innerText")
-    assert "대표일 하루" in caption and "착수 순서 36" in caption, (
-        "순수요 표의 캡션이 「대표일 하루」임과 착수 순서 36번을 말하지 않는다 — "
-        "24행짜리 표가 「계절 변동이 없다」를 결과로 주장하게 된다"
+    _the_net_demand_caption_cannot_be_misread(page)
+
+
+#: ★★★ 순수요 표의 캡션이 **말해야 하는 것** — R64/WP-WEB ⓓ · WP-5-fix 판정 ②.
+#: 판정이 이름으로 못 박은 **셋**과, 종전 단언이 이미 재고 있던 **하나**다.
+#:
+#: ## ⚠⚠ 이 목록이 종전에 무엇이었나 — **시험이 낡았고, 약화하지 않고 다시 썼다**
+#:
+#: 종전 단언은 `"대표일 하루" in body and "착수 순서 36" in body` 하나였다.
+#: 뒤쪽은 **화면에서 사라졌고 그것이 옳다**: 종전 캡션은 *「계절·요일 변동을
+#: 반영하지 않으므로 …(착수 순서 36번이 선행이다)」* 였는데 R64/WP-4 가 계절
+#: 운전을 실제로 세워 **그 앞 절이 거짓**이 됐고, 그 항목은 이 라운드가 닫는다
+#: (`app/services/verify_steps.py::_NET_DEMAND_CAPTION` 위의 ⚠⚠ 셋이 경위의
+#: 정본이다). ⛔ 번호를 화면에 되살리면 **거짓을 다시 쓰는 것**이다.
+#:
+#: 시험이 지키려던 것은 *「24행짜리 표가 「계절 변동이 없다」를 결과로 주장하게
+#: 하지 않는다」* 이고, **그 취지는 지금 캡션이 더 정확히 만족한다.** 그래서
+#: 검사를 지우지 않고 **취지를 셋으로 갈라** 각각 잰다 — 뭉뚱그리면 실패
+#: 문면이 *무엇이 없어서* 실패했는지 말하지 않는다.
+#:
+#: ⚠ **캡션 전문을 박지 않는다.** 문면이 한 글자 다듬어져도 깨지는 단언은
+#: 「고칠 수 없는 검사」이고, 그때 다음 사람이 고르는 것은 문면을 되돌리는
+#: 쪽이다. 재는 것은 **각 취지를 지고 있는 최소 구절**이다.
+_NET_DEMAND_CAPTION_MUST_SAY: tuple[tuple[str, str], ...] = (
+    (
+        "연간등가 하루",
+        "24행이 **접힌 한 벌**(계절을 일수로 가중 평균한 하루)이라는 것을 "
+        "글자로 말하지 않는다 — 그러면 이 표가 어느 날의 운전인지 알 수 없다",
+    ),
+    (
+        "「계절 변동이 없다」로 읽으면",
+        "이 표를 **「계절 변동이 없다」로 읽지 말라**는 경고가 글자로 없다 — "
+        "24행짜리 표가 계절 무변동을 결과로 주장하게 된다",
+    ),
+    (
+        "① 걸음의 계절별 표",
+        "**계절이 갈린 것을 어디서 보는지** 가리키지 않는다 — 「이 표는 "
+        "계절을 안 보인다」만 적고 볼 곳을 안 적으면 사용자는 없다고 읽는다",
+    ),
+    (
+        "대표일 하루",
+        "계절별 표가 그 하루가 **대표일**임을 적지 않는다 — 계절마다 24행이 "
+        "서면 그것이 실측 소비패턴으로 읽힌다",
+    ),
+)
+
+
+def _the_net_demand_caption_cannot_be_misread(page: Page) -> None:
+    """캡션이 말해야 하는 것 **넷을 각각** 잰다 — 실패 문면이 무엇이 없는지 말한다.
+
+    ⚠ `innerText` 를 본다(`textContent` 가 아니다) — 숨은 요소의 글자로
+    통과하면 화면에서 읽을 수 없는 경고가 「있다」로 세어진다.
+    """
+    body = page.evaluate("() => document.body.innerText")
+    silent = [
+        f"{phrase!r} 가 화면에 없다: {why}"
+        for phrase, why in _NET_DEMAND_CAPTION_MUST_SAY
+        if phrase not in body
+    ]
+    assert not silent, (
+        "순수요 표의 캡션이 그 표의 오독을 막지 못한다 "
+        f"({len(silent)}/{len(_NET_DEMAND_CAPTION_MUST_SAY)}건):\n  "
+        + "\n  ".join(silent)
     )
 
 

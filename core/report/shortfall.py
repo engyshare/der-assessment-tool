@@ -191,11 +191,24 @@ def build_shortfall(report: CaseReport) -> Shortfall:
             amount_won=benefit_pv - operating_cost_pv,
             # ★ 편익 누적이 **여기 속항으로** 선다 — 판정 §3 ⓐ 의 ④ 다.
             # 더해지는 항으로 올리면 편익이 두 번 세어진다(모듈 독스트링).
-            parts=(
-                ShortfallPart(
-                    label=f"편익 {horizon}년 누적", amount_won=benefit_pv
-                ),
-                *_rows_as_parts(split.operating_cost, rate, sign=-1.0),
+            # ⚠⚠ **합친 뒤에 다시 크기 순으로 세운다** (R65/WP-2c). 종전에는
+            # 편익 속항을 `_rows_as_parts` 의 **정렬된 결과 앞에 그냥 얹었고**,
+            # 그동안 편익이 늘 가장 큰 속항이라 표가 우연히 크기 순이었다.
+            # 20호 단지에서 운영비 누적이 편익 누적을 넘어서자 **1위와 2위가
+            # 뒤바뀐 채로 인쇄됐다** — 이 절의 순서는 *「다음에 무엇을 흔들
+            # 것인가」*를 고르는 산출물이므로(판정 §3 ⓑ), 흐트러지면 검토가
+            # 작은 항부터 흔들게 된다. `tests/report/test_shortfall.py::
+            # test_the_table_is_ordered_by_size` 가 그것을 잡았다.
+            parts=tuple(
+                sorted(
+                    (
+                        ShortfallPart(
+                            label=f"편익 {horizon}년 누적", amount_won=benefit_pv
+                        ),
+                        *_rows_as_parts(split.operating_cost, rate, sign=-1.0),
+                    ),
+                    key=lambda part: -abs(part.amount_won),
+                )
             ),
         ),
         ShortfallItem(

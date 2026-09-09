@@ -355,3 +355,38 @@ def test_every_tariff_ledger_item_is_a_sweep_axis_or_says_why_not() -> None:
         exemptions=_TARIFF_KEYS_OUTSIDE_THE_SWEEP,
         exemption_name="_TARIFF_KEYS_OUTSIDE_THE_SWEEP",
     )
+
+
+@pytest.mark.req("NFR-202-M1")
+def test_the_grid_supply_allowance_is_a_sweep_axis_read_from_the_ledger() -> None:
+    """★★ **계통 전력공급 허용 비율이 축에 있고 값이 대장에서 온다** (R67/WP-N3).
+
+    이 값은 **소스에 있던 상수를 옮긴 것이 아니라** 사용자 문면 하나에서 온
+    새 값이다(*「분산특구에서는 30% 이내에서 계통에서 전력공급을 허용」*). 그러니
+    축에서 빠지면 **저장소 어디에도 그 수를 흔들어 보는 자리가 없다** — 그것이
+    `capex.replacement_real_trend`(R41→R42)·`capex.pv.inverter_share`(R43)가
+    지났던 자리다.
+
+    ⚠⚠ **이 축은 결론축을 움직이지 않는다** — 걸리는 자리가 붙임 10 의 ESS
+    역산 소절 하나이고 그 소절은 진단이다. 그래서 5.1 은 이 축을 「미반영 —
+    측정 안 됨」으로 싣는다. **그것이 결함이 아니라 사실**이며, 이 검사가
+    재는 것은 *결론축에 든다*가 아니라 *대장 한 곳에서 값이 온다*다.
+
+    ⚠ 기대 수치를 여기 적지 않는다 — 대장을 다시 읽어 대조한다.
+    """
+    key = "policy.grid_supply_allowance"
+    axes = ledger_backed_variables()
+    assert axes.get("grid_supply_allowance") == key, (
+        f"`{key}` 가 스윕 축에서 빠졌다 — 사용자가 말한 30% 를 흔들어 볼 자리가 "
+        f"저장소에 없다: {sorted(axes)}"
+    )
+    item = _ledger_items()[key]
+    levels = build_level_map(_ASSUMPTIONS_YAML)["grid_supply_allowance"]
+    assert levels["base"] == item["value"] == item["sensitivity"]["base"]
+    assert 0.0 <= levels["low"] < levels["base"] < levels["high"] <= 1.0, (
+        f"허용 비율의 3수준이 소수(0~1) 밖으로 나갔다 — {dict(levels)}"
+    )
+    assert item["source"] is None and item["confidence"] == "가정", (
+        "근거 법령·고시를 확인하지 않았는데 출처·신뢰도가 올라갔다 — "
+        "「30%」의 출처는 사용자 문면 하나다"
+    )

@@ -63,6 +63,37 @@ def capex_row(tag: str, year: int, amount_won: int) -> CashFlowRow:
     )
 
 
+def escalation_factor(rate: float, *, year: int) -> float:
+    """`year` 년차 가격 계수 = `(1 + rate)^(year−1)`. **1년차가 기준(1.0)이다.**
+
+    ## ★ 왜 자유 함수 하나로 두는가 — **대칭이 조용히 깨지지 않게** (R69/WP-2)
+
+    전기요금 인상률(`escalation.electricity_tariff`)은 **비용과 편익 양쪽에
+    동시에** 걸려야 한다. 요금이 오르면 계통에서 사 오는 전력의 값
+    (`energy_purchase_row`)도 오르지만, **회피한 기본요금**(첨두 절감 편익)도
+    같이 오른다 — 둘 다 `tariff.hv_single_contract.*` 계열의 같은 요금이다.
+    한쪽만 올리면 NSPM 대칭이 깨져 사업이 **한 방향으로** 틀린다(실측: 배포
+    경로에서 비용만 올리면 20년 NPV 가 대칭으로 걸 때보다 약 890만원 더
+    불리해진다 — `.orch/R69/result_2.md`).
+
+    그런데 그 둘은 **서로 다른 자리에서 행이 된다** — 비용은 이 모듈의
+    `energy_purchase_row`, 편익은 `core/casegrid/e2e_runner.py` 가 짓는
+    `benefit_row` 일정표다. 그래서 **계수를 구하는 식**을 이 함수 하나로 두고
+    두 자리가 그것을 부른다. 식을 양쪽에 적으면 한쪽이 먼저 바뀌는 날 대칭이
+    깨지고, **그 어긋남은 합계에 드러나지 않는다.**
+
+    ⚠ **1년차 기준은 `core/contracts/der.py::DER.escalation_factor()` 와 같다**
+    (계수 1.0). 기준연도가 갈리면 같은 해의 비용과 편익이 한 해 어긋난 가격
+    기준으로 한 프로포마에 서고, 그 어긋남도 합계에 드러나지 않는다.
+
+    ⚠ **`fixed_om_row` 를 이 함수로 갈아 끼우지 않았다.** 그 함수는
+    `current *= (1+i)` 로 굴리고 이것은 거듭제곱이라 **부동소수 끝자리가
+    다르다** — 값은 같지만 `to_won()` 경계에서 1원이 갈릴 수 있고, 그러면
+    골든 회귀가 **이 배선과 무관한 이유로** 움직인다.
+    """
+    return (1.0 + rate) ** (year - 1)
+
+
 def fixed_om_row(
     tag: str,
     start_year: int,
@@ -144,6 +175,7 @@ def energy_purchase_row(
     start_year: int,
     end_year: int,
     annual_amount_won: int,
+    escalation_rate: float = 0.0,
 ) -> CashFlowRow:
     """**계통에서 산 전력의 비용** — 변동비 (§13.2.2 C-3 · `FR-101-AC5`).
 
@@ -163,15 +195,33 @@ def energy_purchase_row(
     바뀌면 수량이 바뀐다. 고정비와 같은 행에 섞으면 *「운전을 바꾸면 이
     비용이 바뀐다」* 가 프로포마에서 보이지 않는다.
 
-    ## ⚠ 에스컬레이션을 두지 않았다 — **한쪽만 올리면 한 방향으로 틀린다**
+    ## ★★★ 에스컬레이션을 **두었다** (R69/WP-2) — 대칭 항은 **첨두 절감**이다
 
-    요금이 해마다 오르면 이 비용도 오른다. 그런데 같은 인상률은 잉여 판매
-    수익도 올리며, 그쪽은 아직 배선되지 않았다(`tariff_escalation` 이 케이스
-    그리드 축인데 파이프라인이 읽지 않는다 — 리포트가 `unread_by_pipeline`
-    로 드러낸다). 비용만 올리면 **편익은 그대로 둔 채 비용만 커져** 사업에
-    불리하게 틀린다. NSPM 대칭성이며, 요금 인상률은 비용·편익 **양쪽에
-    동시에** 배선한다 — 그 자리는 `DispatchContext` 의 가격 신호이고 WP-3
-    몫이다.
+    요금이 해마다 오르면 이 비용도 오른다. 한쪽만 올리면 **편익은 그대로 둔 채
+    비용만 커져** 사업에 불리하게 틀리므로(NSPM 대칭성), 요금 인상률은 비용·편익
+    **양쪽에 동시에** 걸어야 한다. 그래서 `escalation_rate` 를 받는다 — 값은
+    대장 `escalation.electricity_tariff`(케이스 축 `tariff_escalation`)이고
+    계수는 `escalation_factor()` 하나가 짓는다(1년차 = 1.0).
+
+    ⚠⚠ **그 「양쪽」이 상계 크레딧이 아니다.** 종전 이 절은 대칭 항을
+    *「잉여 판매 수익」* 으로, 배선할 자리를 *「`DispatchContext` 의 가격 신호 ·
+    WP-3 몫」* 으로 적었다. **둘 다 배포 경로가 아니었다** — 실측(R69/WP-2):
+    골든 실행 한 벌 동안 `TariffEngine` 생성 **0회** · `_net_metering` 호출
+    **0회**이고, `SurplusSale` 은 **역송 0kWh 라 0원**이다. 배포 경로에서 이
+    비용과 같은 요금을 쓰는 **편익**은 하나뿐이다:
+
+        비용  `GridPurchase`  ← `tariff.hv_single_contract.energy_only`
+        편익  `PeakShaving`   ← `tariff.hv_single_contract.demand_charge`
+                                (**회피한** 기본요금이므로 요금이 오르면 함께 오른다)
+
+    그 편익 쪽에 같은 계수를 거는 자리는 `core/casegrid/e2e_runner.py` 의
+    `benefit_row` 일정표이며, **두 자리가 같은 `escalation_factor()` 를 부른다**
+    (그 함수 독스트링이 왜 식을 한 곳에 두는지를 갖는다).
+
+    ⚠ **여기서 계수를 곱하는 것이지 호출부가 미리 곱해 오는 것이 아니다.**
+    `annual_amount_won` 은 **1년차 금액**이다 — 호출부가 곱해서 넘기면 이 행이
+    연차를 모르는 채 「이미 오른 값」을 20년 깔게 되고, 그 상태는 합계만 보면
+    그럴듯하다.
     """
     if start_year < 1:
         raise ValidationError(
@@ -189,11 +239,25 @@ def energy_purchase_row(
                 "경제성이 좋아지는 결과가 나옵니다"
             ),
         )
+    if escalation_rate < 0:
+        raise ValidationError(
+            field="proforma.purchase_escalation_rate",
+            reason=f"요금 인상률은 음수일 수 없습니다: {escalation_rate}",
+            action=(
+                "escalation_rate 를 0 이상의 소수로 지정하십시오 (2.5%/년은 "
+                "0.025). 음수면 구매 비용이 해마다 줄어 회수기간이 짧아지고, "
+                "같은 계수를 받는 첨두 절감 편익도 함께 줄어 **양쪽이 동시에** "
+                "틀립니다 — 대장 띠(`escalation.electricity_tariff`)의 아래 "
+                "끝도 1.0 %/년으로 양수입니다"
+            ),
+        )
     return CashFlowRow(
         label=f"{tag} 전력 구매",
         tag=tag,
         amounts={
-            year: Decimal(annual_amount_won)
+            year: to_won(
+                annual_amount_won * escalation_factor(escalation_rate, year=year)
+            )
             for year in range(start_year, end_year + 1)
         },
     )
@@ -245,12 +309,19 @@ def forfeited_self_consumption_row(
     **사업 구조 때문에 잃는 편익**이다 — 설비를 유지했다면 있었을 자가소비이며,
     운전이 아니라 **갈래**가 바뀌면 사라진다.
 
-    ⚠ **에스컬레이션을 두지 않았다.** 이 금액은 자가소비량 × 전력 구매단가이고
-    그 단가가 오르면 이 비용도 오르는데, 같은 인상률은 요금 차액 편익도
-    올린다 — 그쪽이 아직 배선되지 않았으므로(`energy_purchase_row` 독스트링의
-    같은 절) 비용만 올리면 **편익은 그대로 둔 채 비용만 커져** 집합자원화에
-    불리하게 틀린다. NSPM 대칭성이며, 요금 인상률은 비용·편익 **양쪽에
-    동시에** 배선한다.
+    ⚠ **에스컬레이션을 두지 않았다 — 그리고 R69/WP-2 도 두지 않았다.** 이 금액은
+    자가소비량 × 전력 구매단가이고 그 단가가 오르면 이 비용도 오르는데, 같은
+    인상률은 **요금 차액 편익**(`SelfConsumption`)도 올린다. 그 짝이 배포
+    경로에 없다 — 실측(R69/WP-2): 러너가 `SelfConsumption` 을 세우는 갈래는
+    「단일계약+관리주체 경유」뿐이고 그 구조는 배포 경로가 지나지 않는다
+    (`TariffEngine` 생성 0회 · `assemble()` 호출 0회). 여기만 올리면 **편익은
+    그대로 둔 채 비용만 커져** 집합자원화에 불리하게 틀린다.
+
+    ⇒ 그래서 R69/WP-2 는 `energy_purchase_row` 에만 계수를 걸었다. 그쪽은 짝인
+    **회피 기본요금 편익**(`PeakShaving`)이 배포 경로에 실제로 서 있어 **양쪽에
+    동시에** 걸 수 있었다(그 독스트링의 같은 절이 정본이다). ⚠ **이 함수에
+    계수를 더하려면 `SelfConsumption` 을 먼저 배포 경로에 세워라** — 순서를
+    뒤집으면 그 순간 비대칭이 생기고, 그것은 합계에 드러나지 않는다.
     """
     if start_year < 1:
         raise ValidationError(

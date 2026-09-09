@@ -48,6 +48,7 @@ from pathlib import Path
 import pytest
 
 from core.casegrid.e2e_runner import DAYS_PER_YEAR, run_single_case_e2e
+from core.casegrid.household_scale import household_scale
 from core.casegrid.ledger_levels import build_level_map
 from core.casegrid.profiles import load_daily_shapes
 from core.report.case_report import (
@@ -56,7 +57,12 @@ from core.report.case_report import (
     build_case_report,
 )
 from core.report.unreflected import build_unreflected
-from tests.report.conftest import report_rec_terms, report_shapes
+from tests.report.conftest import (
+    report_household_wiring,
+    report_rec_terms,
+    report_shapes,
+    report_shift_share,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -150,6 +156,12 @@ def test_the_conclusion_stands_on_the_shaped_run() -> None:
         # ★ REC 도 같은 배선 (R52/WP-6) — 안 넘기면 리포트(REC 있음)와
         # 재실행(REC 없음)이 서로 다른 사업을 그린다.
         rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
+        # ★ **부하 이동도 같은 배선** (R64/WP-7 · 사용자 요구 2) — 안 넘기면
+        # 리포트(옮긴 하루)와 재실행(옮기지 않은 하루)이 서로 다른 사업을 그린다.
+        dr_shiftable_share_pct=report_shift_share(),
+        # ★★ **단지 규모·기기 부하·계절 몫도 같은 배선** (R65/WP-2c) — 안 넘기면
+        # 리포트(20호 단지)의 수를 **한 호짜리** 재실행과 맞대게 된다.
+        **report_household_wiring(),
     )
     flat = run_single_case_e2e(
         {},
@@ -255,13 +267,22 @@ def test_the_sensitivity_and_capacity_sections_run_the_same_business() -> None:
     # 지나지 않는 격자에서도 걸린다.
     probed = 0
     rec_price, rec_weight = report_rec_terms()
+    # ★★★ **`point.value` 는 「단지」이고 `level_map` 은 「한 호」다** (R65/WP-5).
+    # 4.4 가 인쇄하는 용량은 이 실행이 실제로 쓴 단지분(20호면 60 kW)인데,
+    # 러너는 설계 변수에 `household_scale` 을 **자기가** 곱한다. 그래서 그 값을
+    # 그대로 수준표에 넣으면 **두 번 곱해져** 60 kW 를 물으려다 1,200 kW 를 재고,
+    # 이 검사는 *「4절과 재실행이 다른 사업을 그린다」* 를 낸다 — 실제로 다른
+    # 것은 사업이 아니라 **단위**다. 되짚으려면 같은 배수로 나눠 한 호분으로
+    # 되돌린다. ⚠ 곱하는 자리는 `core/report/capacity.py::build_capacity_review`
+    # 의 `scale` 하나이며 그 독스트링 ★★★ 가 이 가름을 갖는다.
+    plant_scale = household_scale(report_household_wiring()["household_count"])
     for finding in report.capacity_review:
         for point in finding.points:
             if point.conclusion is None:
                 continue  # 제약에 막힌 점은 결론이 없다
             probe = {name: dict(v) for name, v in levels.items()}
             probe[finding.variable] = {
-                **probe[finding.variable], "base": point.value
+                **probe[finding.variable], "base": point.value / plant_scale
             }
             outcome = run_single_case_e2e(
                 {},
@@ -273,6 +294,12 @@ def test_the_sensitivity_and_capacity_sections_run_the_same_business() -> None:
                 annual_load_kwh=probe["household_load_annual_kwh"]["base"],
                 # ★ REC 도 같은 배선 (R52/WP-6).
                 rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
+                # ★ **부하 이동도 같은 배선** (R64/WP-7 · 사용자 요구 2) — 안 넘기면
+                # 리포트(옮긴 하루)와 재실행(옮기지 않은 하루)이 서로 다른 사업을 그린다.
+                dr_shiftable_share_pct=report_shift_share(),
+                # ★★ **단지 규모·기기 부하·계절 몫도 같은 배선** (R65/WP-2c) — 안 넘기면
+                # 리포트(20호 단지)의 수를 **한 호짜리** 재실행과 맞대게 된다.
+                **report_household_wiring(),
             )
             measured = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
             assert point.conclusion == pytest.approx(measured, abs=1.0), (

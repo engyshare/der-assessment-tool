@@ -32,7 +32,6 @@ import yaml  # type: ignore[import-untyped]
 from core.casegrid.e2e_runner import (
     DAYS_PER_YEAR,
     HOURS_PER_YEAR,
-    PV_CAPACITY_FACTOR,
     run_single_case_e2e,
 )
 from core.casegrid.ledger_levels import build_level_map
@@ -303,8 +302,12 @@ def test_n4_a_seasonal_asset_still_annualises_to_the_ledger_totals(
     """
     levels = build_level_map(_ASSUMPTIONS)
     load_total = float(levels["household_load_annual_kwh"]["base"])
+    # ⚠ **이용률도 대장에서 읽는다** (R67/WP-N2 — 종전 모듈 상수
+    # `PV_CAPACITY_FACTOR`). 리터럴을 적으면 사본이 된다.
     expected_generation = (
-        levels["pv_capacity_kw"]["base"] * PV_CAPACITY_FACTOR * HOURS_PER_YEAR
+        levels["pv_capacity_kw"]["base"]
+        * levels["pv_capacity_factor"]["base"]
+        * HOURS_PER_YEAR
     )
     outcome = run_single_case_e2e(
         {},

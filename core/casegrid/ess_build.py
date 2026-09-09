@@ -46,11 +46,27 @@ from core.casegrid.grid_support import _resolve_nwas_cp, peak_shaving_enabled
 from core.contracts.validation import ValidationError
 from core.contracts.valuestream import ValueStream
 from core.der.ess import ESS, ESSChargeSource, ESSOperatingMode
+from core.der.ess_schedule import ESSDischargeAllocation
 from core.valuestream import PeakShaving, TouArbitrage
 
-#: ESS **정격출력**(kW). 용량과 달리 설계 변수로 올리지 않았다 — 이 값이
+#: ESS **정격출력**(kW) — ★ **한 호분이다** (R65/WP-2c).
+#:
+#: 용량과 달리 **설계 변수로 올리지 않았다** — 이 값이
 #: `reducible_peak_kw = min(power_kw, 가용량/방전창)` 의 **상한**이라, 고정해
 #: 두어야 용량 스윕이 *「용량을 키우면 어디서 출력에 막히는가」* 를 드러낸다.
+#:
+#: ★★ **그 사유는 단지 규모를 곱해도 무너지지 않는다** — 단지 규모는 **설계
+#: 선택이 아니라 규모 환산**이기 때문이다. 20호 단지 안에서 용량을 스윕하면
+#: 여전히 **(5 kW/호 × 20호 = 100 kW)** 라는 출력 상한에 부딪히고, 드러내는
+#: 성질이 그대로다. 고정되는 것은 **호당 출력**이지 단지 출력이 아니다.
+#:
+#: ⛔ **이 수를 키워 거부를 피하지 마라.** 20호 실행이 `ess.power_kw` 로
+#: 거부됐던 것(R65/WP-2b)은 이 값이 작아서가 아니라 **배수가 안 걸려서**였다 —
+#: 아래 `_case_ess_spec(household_scale_factor=...)` 가 그 배수를 받는다.
+#: `pv_capacity_kw` base 3 kW · `ess_capacity_kwh` base 10 kWh 가 한 호분인
+#: 것과 **같은 성질**이며(`core/casegrid/ledger_levels.py::_DESIGN_VARS`),
+#: 셋이 같은 배수를 타지 않으면 같은 실행 안에서 설비 셋이 서로 다른 규모의
+#: 사업을 그린다.
 ESS_POWER_KW = 5.0
 ESS_RTE_PCT = 90.0
 ESS_SOC_MIN_PCT = 10.0
@@ -67,10 +83,19 @@ ESS_CYCLES_PER_YEAR = 365.0
 def _case_ess_spec(
     *,
     capacity_kwh: float,
+    household_scale_factor: float = 1.0,
     operating_mode: ESSOperatingMode | str,
     charge_source: ESSChargeSource | str,
     pv_surplus_profile_kwh: Sequence[float] | None,
+    discharge_allocation: ESSDischargeAllocation | str,
+    load_profile_kwh: Sequence[float] | None,
     capex_unit_won_per_kwh: float,
+    #: ★★★ **PCS 둘** — 대장 `capex.ess.pcs_power`(원/kW) ·
+    #: `capex.ess.pcs_share_of_system`(비율 0~1, 수준표가 `%` 를 이미 환산해 준다).
+    #: 기본값 0.0 은 **「PCS 를 갈라 세우기 전」과 원소 하나까지 같은 수**를 낸다 —
+    #: 몫이 0 이면 배터리 단가가 안 줄고 PCS 항도 0 이다(아래 ★★★ 절).
+    capex_pcs_won_per_kw: float = 0.0,
+    pcs_share_of_system: float = 0.0,
     fixed_om_won_per_year: float,
     replacement_unit_won_per_kwh: float,
     escalation_rate: float,
@@ -90,11 +115,47 @@ def _case_ess_spec(
     가 이미 고른 값이고, 나머지는 대장에서 온 값이다. 여기서 한 번 더
     해석하면 두 벌이 되어 어긋난다(`grid_support.py::_resolve_nwas_cp` 가
     적은 「세운 자원에서 읽는다」와 같은 원칙의 뒷면이다).
+
+    ## ★★★ PCS 를 **용량이 아니라 출력**에 매단다 (R66/WP-2 · 사용자 판정 ③)
+
+    종전에 이 저장소의 ESS 초기투자는 `단가(원/kWh) × 용량` 하나였다 — 즉
+    **정격출력을 키우는 것이 공짜**였고, 실측으로 20 kW → 400 kW 를 훑어도
+    초기투자가 196,000,000원에서 한 원도 움직이지 않았다
+    (`.orch/R66/probe/pcs_power.py`). 지금은 대장에서 온 두 값이 갈라 선다:
+
+        배터리단가 = capex.ess.new × (1 − pcs_share_of_system)   # 500,000 × 0.80
+        PCS 항     = capex.ess.pcs_power × 정격출력               # 250,000 × 100 kW
+
+    ⚠⚠ **몫으로 「떼기만」 하지 않는 것이 요점이다.** `share × (단가 × 용량)` 으로
+    떼면 그 값이 다시 **용량에** 비례하므로 출력은 여전히 공짜다. 대장 항목
+    `capex.ess.pcs_share_of_system` 이 그 함정을 스스로 적어 두었다.
+
+    ⚠ **두 출처의 층위가 완전히 맞지는 않는다** — `capex.ess.new` 는 「PCS·설치
+    포함 시스템 단가」이고 `capex.ess.pcs_power` 는 「설비비(공사비 별도)」다.
+    그래서 설계점에서 합이 종전보다 **+5,000,000원** 커진다(100,000,000 →
+    105,000,000). 그것은 **숨기지 않는 정직한 결과**이며 총액을 맞추려고 값을
+    조정하지 않았다(사용자 판정 ③ · `.orch/R66/result_2.md` §3).
+
+    ⚠⚠⚠ **`pcs_lifetime` 은 `None` 이다 — 미반영이며 결함이 아니다.** 그러면
+    `ESS._acquisitions()` 가 PCS 를 통째로 건너뛰어 **교체비도 잔존가치도 없다**
+    (대칭이므로 R40 ② 의 비대칭이 생기지 않는다). 조사가 국내 학술에서 「PCS
+    내용연수 10년」을 찾았으나 표본이 4.5 MWh·1.12 MW 급 산업용이라 이 저장소의
+    설계점(200 kWh·100 kW)에 그대로 쓸지가 **사용자 판정 자리**다 — 켜면 결론축이
+    사용자 판정 ③ 의 예상(+5,000,000)을 크게 넘어 움직인다. **지어내지 않았다.**
     """
+    # ★ 정격출력을 **한 번만** 짓는다 — 아래 `power_kw` 와 `pcs_cost_won` 이 같은
+    # 수를 봐야 한다. 두 자리에 각각 적으면 배수가 한쪽에만 붙는 일이 생긴다.
+    power_kw = ESS_POWER_KW * household_scale_factor
     return dict(
         name="e2e-ess",
         capacity_kwh=capacity_kwh,
-        power_kw=ESS_POWER_KW,
+        # ★★★ **정격출력도 한 호 규모다 — 단지 규모를 곱한다** (R65/WP-2c).
+        # 위 `ESS_POWER_KW` 옆 주석이 정본이다. `pv_capacity_kw`·
+        # `ess_capacity_kwh` 가 러너에서 같은 배수를 타므로
+        # (`core/casegrid/e2e_runner.py` 의 ★★★ 절) **여기만 안 타면 같은
+        # 어긋남이 설비 한 자리에 남는다.** ⚠ 배수 `1.0` 이 기본이고, 그때
+        # 이 곱은 이 인자가 생기기 전과 **원소 하나까지** 같다.
+        power_kw=power_kw,
         rte_pct=ESS_RTE_PCT,
         soc_min_pct=ESS_SOC_MIN_PCT,
         soc_max_pct=ESS_SOC_MAX_PCT,
@@ -118,7 +179,29 @@ def _case_ess_spec(
             if charge_source == ESSChargeSource.PV_SURPLUS
             else None
         ),
-        capex_unit_won_per_kwh=capex_unit_won_per_kwh,
+        # ★ **방전 배분과 그 부하는 짝으로 온다** (R64/WP-6b · 사용자 요구 5).
+        # `core/casegrid/pv_allocation.py::resolve_ess_discharge_inputs` 가 이미
+        # 고른 짝이며 **여기서 다시 판단하지 않는다** — 「고정 창」이면 부하가
+        # `None` 이고 그 조합만 `ESS` 가 받는다(위 ⚠ 「받은 값을 다시 판단하지
+        # 않는다」와 같은 자리다). ⚠ 몫으로 가를 때도 이 둘은 **나뉘지 않는다** —
+        # 부하 시계열은 비례 배분의 **가중치 벡터**라 몫 비율로 나누어도 같은
+        # 배분이 나오고, 나눈 척만 하게 된다(`ess_share.PRORATED_FIELDS` 밖에
+        # 두는 사유다).
+        discharge_allocation=discharge_allocation,
+        load_profile_kwh=load_profile_kwh,
+        # ★★★ **배터리 단가는 「시스템 단가에서 PCS 몫을 뺀 것」이다** (위 절).
+        capex_unit_won_per_kwh=capex_unit_won_per_kwh * (1.0 - pcs_share_of_system),
+        capex_pcs_won_per_kw=capex_pcs_won_per_kw,
+        # ★ **PCS 교체 단가 = 원/kW × 정격출력.** `ESS` 는 이 인자를 **금액**으로
+        # 받으므로(배터리와 달리 단위당이 아니다) 여기서 곱해 넘긴다. ⚠ 그래서
+        # 몫으로 가를 때 **비례 배분이 필요하고**, `core/casegrid/ess_share.py` 의
+        # `PRORATED_FIELDS` 가 이 이름을 갖는다 — 위 `capex_pcs_won_per_kw` 는
+        # 반대로 **단위당이라 그 목록 밖**이다(갈린 `power_kw` 에 곱해져 저절로 갈린다).
+        pcs_cost_won=capex_pcs_won_per_kw * power_kw,
+        # ⚠ 위 독스트링 ⚠⚠⚠ 절 — **미반영을 명시로 남긴다.** 기본값에 기대지
+        # 않고 여기 적는 이유는, 이 자리가 비어 있으면 「수명을 안 정했다」와
+        # 「이 인자를 잊었다」가 구별되지 않기 때문이다.
+        pcs_lifetime=None,
         fixed_om_won_per_year=fixed_om_won_per_year,
         # ★★ **명목 기준을 ESS 에도 물린다 (R39-E · R38 판정 ②나).** 이 인자가
         # 없는 동안 세운 ESS 의 `DER.escalation_factor()` 는 1.0 이었고 — 옮겨
@@ -144,10 +227,16 @@ def _case_ess_spec(
 def build_case_ess(
     *,
     capacity_kwh: float,
+    household_scale_factor: float = 1.0,
     operating_mode: ESSOperatingMode | str,
     charge_source: ESSChargeSource | str,
     pv_surplus_profile_kwh: Sequence[float] | None,
+    discharge_allocation: ESSDischargeAllocation | str,
+    load_profile_kwh: Sequence[float] | None,
     capex_unit_won_per_kwh: float,
+    #: ★ PCS 둘 — 뜻과 사유는 `_case_ess_spec` 의 같은 칸이 갖는다(사본을 만들지 않는다).
+    capex_pcs_won_per_kw: float = 0.0,
+    pcs_share_of_system: float = 0.0,
     fixed_om_won_per_year: float,
     replacement_unit_won_per_kwh: float,
     escalation_rate: float,
@@ -161,10 +250,14 @@ def build_case_ess(
     """
     return ESS(**_case_ess_spec(
         capacity_kwh=capacity_kwh,
+        household_scale_factor=household_scale_factor,
         operating_mode=operating_mode,
         charge_source=charge_source,
         pv_surplus_profile_kwh=pv_surplus_profile_kwh,
+        discharge_allocation=discharge_allocation,
+        load_profile_kwh=load_profile_kwh,
         capex_unit_won_per_kwh=capex_unit_won_per_kwh,
+        capex_pcs_won_per_kw=capex_pcs_won_per_kw, pcs_share_of_system=pcs_share_of_system,
         fixed_om_won_per_year=fixed_om_won_per_year,
         replacement_unit_won_per_kwh=replacement_unit_won_per_kwh,
         escalation_rate=escalation_rate,
@@ -176,10 +269,16 @@ def build_case_ess_fleet(
     *,
     shares: Sequence[ESSShare] | None,
     capacity_kwh: float,
+    household_scale_factor: float = 1.0,
     operating_mode: ESSOperatingMode | str,
     charge_source: ESSChargeSource | str,
     pv_surplus_profile_kwh: Sequence[float] | None,
+    discharge_allocation: ESSDischargeAllocation | str,
+    load_profile_kwh: Sequence[float] | None,
     capex_unit_won_per_kwh: float,
+    #: ★ PCS 둘 — 뜻과 사유는 `_case_ess_spec` 의 같은 칸이 갖는다(사본을 만들지 않는다).
+    capex_pcs_won_per_kw: float = 0.0,
+    pcs_share_of_system: float = 0.0,
     fixed_om_won_per_year: float,
     replacement_unit_won_per_kwh: float,
     escalation_rate: float,
@@ -214,10 +313,14 @@ def build_case_ess_fleet(
     """
     spec = _case_ess_spec(
         capacity_kwh=capacity_kwh,
+        household_scale_factor=household_scale_factor,
         operating_mode=operating_mode,
         charge_source=charge_source,
         pv_surplus_profile_kwh=pv_surplus_profile_kwh,
+        discharge_allocation=discharge_allocation,
+        load_profile_kwh=load_profile_kwh,
         capex_unit_won_per_kwh=capex_unit_won_per_kwh,
+        capex_pcs_won_per_kw=capex_pcs_won_per_kw, pcs_share_of_system=pcs_share_of_system,
         fixed_om_won_per_year=fixed_om_won_per_year,
         replacement_unit_won_per_kwh=replacement_unit_won_per_kwh,
         escalation_rate=escalation_rate,

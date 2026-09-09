@@ -61,7 +61,6 @@ from core.casegrid.e2e_runner import (
     DAYS_PER_YEAR,
     HOURS_PER_YEAR,
     PRICE_ESCALATION_RATE,
-    PV_CAPACITY_FACTOR,
     PV_SELF_CONSUMPTION_RATIO,
     SECONDS_PER_HOUR,
     STEPS_PER_DAY,
@@ -89,6 +88,16 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 #: 없다(`test_e2e_analysis_period_wiring.py` 머리의 「탐침값」 규약 그대로).
 _PROBE_PV_KW = 3.0
 
+#: 탐침 이용률. **대장을 읽지 않는다** — 위 `_PROBE_PV_KW` 와 같은 규약이며,
+#: 이 파일이 재는 것은 발전량의 크기가 아니라 **낮 전기 배분의 갈래**다.
+#:
+#: ⚠ 종전에는 러너의 모듈 상수 `PV_CAPACITY_FACTOR` 를 읽었다. R67/WP-N2 가
+#: 그 값을 대장(`capacity_factor.pv_rooftop`)으로 옮기며 상수를 지웠으므로,
+#: 여기서 대장을 읽는 대신 **탐침값을 세웠다** — 대장을 읽으면 이 파일이
+#: 「금액이 아니라 감싸기를 잰다」는 자기 규약을 깨고, 대장 폭이 바뀔 때
+#: 갈래 시험이 함께 흔들린다.
+_PROBE_CAPACITY_FACTOR = 0.15
+
 #: 가구 연간 사용량(kWh) — **0 이 아닌 것이 이 파일의 전제다.**
 #:
 #: ⚠⚠ `household` 가 `None` 이거나 부하가 0 이면 `HOUSEHOLD_FIRST` 가 뺄 것이
@@ -115,7 +124,8 @@ def _probe_pv() -> PV:
         capacity_kw=_PROBE_PV_KW,
         capacity_factor=None,
         generation_profile_kwh=shapes.generation.spread(
-            _PROBE_PV_KW * PV_CAPACITY_FACTOR * HOURS_PER_YEAR, days=DAYS_PER_YEAR
+            _PROBE_PV_KW * _PROBE_CAPACITY_FACTOR * HOURS_PER_YEAR,
+            days=DAYS_PER_YEAR,
         ),
         unit_capex_won_per_kw=1,
         fixed_om_won_per_year=0,
@@ -133,9 +143,16 @@ def _probe_household() -> Load:
 
     손으로 `Load(...)` 를 짓지 않는 이유는 그것이 러너의 사본이 되기 때문이다
     (형상·물가 계수 인자가 갈리면 이 파일이 다른 부하를 재게 된다).
+
+    ⚠ **R64/WP-4 가 생성자를 `core/casegrid/seasonal_dispatch.py` 로 옮기면서
+    물가 계수가 인자가 됐다** — 계절마다 부하를 세워야 해서 `Load(...)` 를 한
+    자리로 모았고, 그 자리는 `e2e_runner.py` 의 모듈 상수를 읽을 수 없다(순환
+    import). 이름은 재수출로 남아 있으므로 이 파일의 import 는 그대로다.
+    **여기서 물가 계수를 지어내지 않고 러너의 상수를 그대로 넘긴다** — 위
+    독스트링이 경고한 「갈리면 다른 부하를 잰다」가 그 자리다.
     """
     household = _household_load_if_total_given(
-        load_daily_shapes(), _PROBE_LOAD_KWH
+        load_daily_shapes(), _PROBE_LOAD_KWH, escalation_rate=PRICE_ESCALATION_RATE
     )
     assert household is not None, "총량을 주었는데 부하가 서지 않았다"
     return household

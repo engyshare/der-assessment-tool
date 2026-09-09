@@ -88,6 +88,71 @@
       </dl>
     </section>
 
+    {# ★★ **몇 호로 돌았나** (R64/WP-1 · 착수 47ⓐ). 갈래 바로 뒤에 두는 이유:
+       아래 결론·금액이 전부 이 규모 위에 서기 때문이다.
+       ⚠ **안 준 실행도 지우지 않는다** — 빈칸이면 검토자가 아래 금액을 단지
+       전체의 것으로 읽고, 40호 단지라면 40배 틀리게 읽는다. `data-household-
+       count` 는 서식 이전의 날값(안 줬으면 비어 있다)이며 검사가 그것을
+       리포트와 대조한다. #}
+    <section id="household-scale" class="band" aria-labelledby="household-scale-title">
+      <h2 id="household-scale-title">몇 호로 돌았나</h2>
+      <p class="household-count" data-household-count="{{ household_count_raw
+        if household_count_raw is not none else '' }}">{{ household_count }}</p>
+      <p>분석 설정 대장은 가구 부하를 「kWh/호·년」으로 갖는다 — 단지 총부하는
+        위 가구 수를 곱한 것이며, 아래 모든 수량과 금액이 그 총부하 위에 선다.
+        가구 수를 바꾸려면 실행 화면의 「실증단지 규모」 칸에 세대 수를 넣으십시오.</p>
+    </section>
+
+    {# ★★ **무엇을 얼마나 얹고 돌았나** (R64/WP-2 · 사용자 요구 2). 가구 수
+       바로 뒤에 두는 이유: 단지 총부하는 이 값들이 한 호에 더해진 뒤에 위
+       가구 수가 곱해진 것이다.
+       ⚠ **안 준 기기도 줄을 지우지 않는다** — 빈칸이면 「0으로 돌렸다」와
+       「그 축이 없다」가 화면에서 같아진다. `data-appliance-load` 는 서식
+       이전의 날값(안 줬으면 비어 있다)이며 검사가 그것을 리포트와 대조한다. #}
+    <section id="appliance-load" class="band" aria-labelledby="appliance-load-title">
+      <h2 id="appliance-load-title">한 호에 무엇을 얹었나</h2>
+      <dl class="appliance-loads">
+        {% for item in appliance_loads %}
+        <dt>{{ item.label }}</dt>
+        <dd class="appliance-load" data-appliance="{{ item.key }}"
+            data-appliance-load="{{ item.raw }}">{{ item.value }}</dd>
+        {% endfor %}
+        <dt>합계 (한 호에 더해진 값)</dt>
+        <dd class="appliance-total">{{ appliance_total }}</dd>
+      </dl>
+      <p>여기 서는 것은 <strong>부하</strong>뿐이다 — 그 설비의 설치비·유지보수비와
+        편익(난방비 절감·V2G 방전 수익)은 이 수에 들어 있지 않다. 값을 바꾸려면
+        실행 화면의 「가구의 추가 전력사용기기」 칸에 연간 소비전력량을 넣으십시오.</p>
+    </section>
+
+    {# ★★ **그 부하를 «언제» 썼나** (R64/WP-WEB ⓐⓑ · 사용자 요구 2·3).
+       ⚠⚠ 위 절과 **따로** 세운다. 위는 한 호에 더해진 **총량**이고 이 절은
+       그 총량을 옮긴 것뿐이다 — 한 절에 섞으면 검토자가 이 수들을 「더 쓴
+       전기」로 읽는다(연간 총량은 한 kWh 도 움직이지 않는다).
+       ⚠ **안 준 실행도 줄을 지우지 않는다** — 「미지정」임을 글자로 적지
+       않으면 「기본 부하와 같은 몫으로 돌았다」와 「그 축이 없다」가 화면에서
+       같아진다. `data-*` 는 서식 이전의 날값이며 검사가 그것을 리포트와
+       대조한다(위 기기 부하 줄과 같은 규약). #}
+    <section id="load-shape" class="band" aria-labelledby="load-shape-title">
+      <h2 id="load-shape-title">그 부하를 언제 썼나 — 총량은 그대로다</h2>
+      <dl class="load-shape">
+        <dt>하루 안에서 옮긴 가전 부하 비율</dt>
+        <dd class="dr-shiftable-share"
+            data-dr-shiftable-share="{{ dr_shiftable_share_raw }}">{{
+          dr_shiftable_share }}</dd>
+        <dt>냉난방 부하의 계절별 몫</dt>
+        {% for item in appliance_season_shares %}
+        <dd class="season-share" data-season-share="{{ item.raw }}"
+            data-season="{{ item.season }}">{{ item.season }}{% if item.share %} —
+          {{ item.share }}{% endif %}</dd>
+        {% endfor %}
+      </dl>
+      <p>두 값은 <strong>연간 소비전력량을 바꾸지 않는다</strong> — 가전은 하루
+        안에서 태양광 잉여가 있는 시각으로, 냉난방은 계절 사이에서 옮겨 간
+        것뿐이다. 둘 다 <strong>가정값이며 실측이 아니다.</strong> 값을 바꾸려면
+        실행 화면의 「부하의 형상」 칸에 넣으십시오.</p>
+    </section>
+
     {# ⚠ 이 수는 `CaseReport` 가 준 값이다. 화면이 다시 계산하지 않는다 —
        `data-npv` 는 서식 이전의 날값이며 검사가 그것을 리포트와 대조한다. #}
     <section id="conclusion" class="band" aria-labelledby="conclusion-title">

@@ -25,7 +25,7 @@ R43-F 의 첫 형태가 그 상한을 501줄로 넘겨 `check_file_size --code-s
 이 파일의 세 독스트링이 전부 그 함정을 적고 있다.
 
 ⚠ **`_resource_lines()` 는 함께 오지 않았다.** 그것이 읽는 설비 제원 상수
-(`PV_CAPACITY_FACTOR`·`ESS_RTE_PCT` 등)의 소유자를 리포트 문면이
+(`PV_SELF_CONSUMPTION_RATIO`·`ESS_RTE_PCT` 등)의 소유자를 리포트 문면이
 *「`core/casegrid/e2e_runner.py` 모듈 상수」* 라고 **이름으로 지목**하고 있고
 (`method_sections.py`·`appendix_sections.py` · `test_narrative.py` 가 그 문면을
 붙든다), 상수를 옮기면 그 문면이 거짓이 된다. 문면을 고치면 리포트 매니페스트
@@ -37,8 +37,13 @@ R43-F 의 첫 형태가 그 상한을 501줄로 넘겨 `check_file_size --code-s
 다섯(`ESS_RTE_PCT`·`ESS_SOC_MIN_PCT`·`ESS_SOC_MAX_PCT`·`ESS_EOL_SOH_PCT`·
 `ESS_CYCLES_PER_YEAR`)을 `e2e_runner.py` 가 그 모듈에서 import 해 자기
 이름공간에 두므로(재수출 규약, `check_docstring_references.py` R43·WP-F3),
-리포트 문면도 매니페스트 해시도 움직이지 않았다. `PV_CAPACITY_FACTOR` 는
-그대로 `e2e_runner.py` 것이다.
+리포트 문면도 매니페스트 해시도 움직이지 않았다.
+
+⚠⚠ **이용률은 이제 상수가 아니다** — R67/WP-N2 가 `PV_CAPACITY_FACTOR` 를
+지우고 대장 `capacity_factor.pv_rooftop` 으로 옮겼다(사용자 판정 R67 §2).
+그래서 2.1 표의 이용률 칸은 모듈 상수가 아니라 **세운 자원**에서 읽고, 위
+⚠ 절이 말하는 「옮기면 문면이 거짓이 된다」를 그 라운드가 **문면을 함께
+고쳐서** 지났다(`core/report/method_sections.py` 의 제원 소유자 줄).
 
 ⚠ **러너는 이 함수들을 `_annualise`·`_cost_lines`·`_benefit_lines`·
 `_benefit_line`·`net_operating_flows` 라는 이름으로 계속 부른다** — 밖에서
@@ -208,12 +213,31 @@ def benefit_line(
     ⚠ **연간화와 합계는 여기가 붙인다.** 편익은 자기 대입값까지만 알고,
     *「이 창이 대표일인가」* 는 호출측의 사정이다. 두 곳이 다 적으면 갈릴 수
     있고 갈린 쪽이 365배다.
+
+    ## ★★ 곱하기 **전에** 원 단위로 반올림한다 — 그것을 문면이 말한다 (R64)
+
+    `annualise()` 는 `stream.annual_value(window, year=1)` 를 먼저 받는데 그
+    반환값이 이미 `to_won()` 을 지난 **정수 원**이고(`core/contracts/units.py`
+    — 「반올림이 일어나는 유일한 지점」, 사사오입), 거기에 `DAYS_PER_YEAR` 를
+    곱한다. 곧 **하루 금액을 원으로 만든 뒤 365를 곱한다.**
+
+    문면이 그 순서를 말하지 않으면 **인쇄된 피연산자를 그대로 곱한 검토자와
+    금액이 어긋난다** — R64/WP-VERIFY 실측: 잉여판매 2.946020 × 110 × 365 =
+    118,282.7 이지만 실린 금액은 `to_won(324.06)=324` × 365 = **118,260** 이고,
+    REC 는 75,270.8 대 **75,190** 이다(각 22.7원·80.8원). 계통 구매
+    (`cost_lines`)는 연간 수량을 먼저 만들고 뒤에 반올림하므로 정확히 닫힌다 —
+    이 어긋남은 **창을 읽는 편익만의 것**이다.
+
+    ⛔ 계산을 고쳐 맞추지 않는다. 순서를 바꾸면 결론축(NPV)이 움직인다.
+    ⚠ **이 문면은 `scales_with_dispatch_window` 가 참인 편익에만 붙는다** —
+    연간 수량으로 산정하는 편익에 붙이면 거짓이 된다.
     """
     # RUF001: 「×」는 검토자가 읽는 산식 문면이다. `x` 로 바꾸면 곱셈이 변수
     # 이름처럼 보인다 — 대상을 좁히는 면제이지 규칙을 넓히는 것이 아니다.
     body = stream.formula(dispatch, year=1)
     formula = (
-        f"대표일 {body} × {DAYS_PER_YEAR}일 = {annual_won:,}원"  # noqa: RUF001
+        f"대표일 {body} → 하루 금액을 원 단위로 반올림한 뒤 "
+        f"× {DAYS_PER_YEAR}일 = {annual_won:,}원"  # noqa: RUF001
         if type(stream).scales_with_dispatch_window
         else f"{body} = {annual_won:,}원 (연간 수량으로 산정 · 연간화 없음)"
     )

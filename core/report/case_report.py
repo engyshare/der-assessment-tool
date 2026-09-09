@@ -53,6 +53,20 @@
 `core/report/case_influences.py` 로 옮겼다(그 독스트링이 경위를 갖는다).
 이 파일은 그것을 import 해 그대로 쓴다 — 밖에서 `case_report` 의
 `CONCLUSION_METRIC`·`InfluenceEntry` 를 읽던 경로는 재수출로 그대로 산다.
+
+## R64/WP-2 — **3중 표기 산식** 한 덩어리를 또 뗐다
+
+사용자 요구 2(가구의 추가 전력사용기기 부하)를 배선하니 이 파일이 **코드
+508/500** 이 되었다. `Formula` 와 `_formulas()`(새 이름 `build_formulas()`)를
+`core/report/case_formulas.py` 로 옮겼다 — 그 독스트링이 경위를 갖는다.
+⛔ **상한을 올려 풀지 않았다**(NFR-206 · spec §16.5).
+
+⚠ **위 R54/WP-2 와 달리 `__all__` 에 올리지 않았다.** 저장소를 훑어 보니 밖에서
+`case_report` 경로로 `Formula` 를 읽는 곳이 **하나도 없었다** — 재수출로 살려
+둘 옛 경로가 없다. 그리고 이 모듈의 `__all__` 은 *「재수출의 정본은
+`case_influences` 다」* 를 재는 검사(`tests/report/test_case_influences.py::
+test_the_reexports_are_the_same_objects`)가 읽으므로, 다른 모듈의 이름을 거기
+얹으면 그 검사가 뜻을 잃는다. **읽을 자리는 `case_formulas` 하나다.**
 """
 from __future__ import annotations
 
@@ -69,7 +83,21 @@ from core.assumption.scenario_overrides import (
     ASSUMPTION_OVERRIDES_FIELD,
     apply_scenario_overrides,
 )
-from core.casegrid.e2e_runner import PV_CAPACITY_FACTOR, run_single_case_e2e
+from core.casegrid.appliance_load import (
+    EV_LOAD_LEDGER_KEY,
+    HEATPUMP_LOAD_LEDGER_KEY,
+    ApplianceLoads,
+    resolve_appliance_loads,
+    with_ledger_defaults,
+)
+from core.casegrid.e2e_runner import run_single_case_e2e
+from core.casegrid.household_scale import (
+    HOUSEHOLD_COUNT_FIELD,
+    HOUSEHOLD_COUNT_LEDGER_KEY,
+    household_scale,
+    ledger_household_count,
+    resolve_household_count,
+)
 from core.casegrid.ledger_levels import (
     build_level_map,
     design_variables,
@@ -77,7 +105,11 @@ from core.casegrid.ledger_levels import (
     ledger_unit_scales,
     required_scalar,
 )
-from core.casegrid.models import CaseBasis, CashflowSplit
+from core.casegrid.load_shift import (
+    DR_SHIFTABLE_SHARE_LEDGER_KEY,
+    shiftable_share_pct,
+)
+from core.casegrid.models import CaseBasis, CashflowSplit, SeasonRun
 from core.casegrid.perspectives import PerspectiveWiring
 from core.casegrid.profiles import load_daily_shapes
 from core.casegrid.variants import run_order
@@ -94,6 +126,7 @@ from core.contracts.validation import ValidationError
 from core.engine.rule_based import DispatchRule
 from core.incentive.schemas import IncentiveScheme
 from core.report.capacity import CapacityFinding, build_capacity_review
+from core.report.case_formulas import Formula, build_formulas
 from core.report.case_influences import (
     BASELINE_VARIANT,
     CONCLUSION_METRIC,
@@ -113,6 +146,7 @@ from core.report.dispatch_notes import (
     build_dispatch_notes,
     build_hourly_profile,
 )
+from core.report.ess_sizing_section import ESSSizingReview, build_ess_sizing_review
 from core.report.manifest import create_manifest
 from core.report.sizing import (
     MONTHS_PER_YEAR,
@@ -203,7 +237,25 @@ DISTRIBUTED_CREDIT_LEDGER_KEYS: tuple[tuple[str, str], ...] = (
 #: 이 선언은 합집합이면서 동시에 각 전건의 실측값이다. 갈래가 늘어 달라지는
 #: 날에는 위 시험이 빨간불로 알려 준다.
 COMPUTE_PHASE_READ_KEYS: frozenset[str] = frozenset(
-    {ANALYSIS_PERIOD_KEY, REC_PRICE_LEDGER_KEY, REC_WEIGHT_LEDGER_KEY}
+    {
+        ANALYSIS_PERIOD_KEY,
+        REC_PRICE_LEDGER_KEY,
+        REC_WEIGHT_LEDGER_KEY,
+        # ★ **「AI 가전」이 옮기는 비율** (R64/WP-7 · 사용자 요구 2). 계산
+        # 구간이 `required_scalar()` 로 읽어 러너·스윕에 함께 넘긴다 — 그래서
+        # 이 선언 안에 든다. 키 문면은 `core/casegrid/load_shift.py` 가 정본이다.
+        DR_SHIFTABLE_SHARE_LEDGER_KEY,
+        # ★★ **단지 규모와 기기 부하 셋** (R65/WP-2 · 사용자 요구
+        # *「가구수를 20가구로 설정」* · *「히트펌프, 전기차 … 수치를 사용」*).
+        # 계산 구간이 이 셋을 읽어 러너·스윕에 함께 넘긴다
+        # (`ledger_household_count()` · `with_ledger_defaults()`) — 그래서 이
+        # 선언 안에 든다. ⚠ **선언을 넓혀 통과시킨 것이 아니다**: 셋 다
+        # `run_single_case_e2e(...)` 호출보다 **앞에서** 읽혀 총부하를 정하고,
+        # 그 읽기는 산출물 조립이 아니라 계산이다(그것이 이 선언의 기준이다).
+        HOUSEHOLD_COUNT_LEDGER_KEY,
+        HEATPUMP_LOAD_LEDGER_KEY,
+        EV_LOAD_LEDGER_KEY,
+    }
     | {key for _field, key in DISTRIBUTED_CREDIT_LEDGER_KEYS}
 )
 
@@ -224,16 +276,6 @@ def _read_distributed_sub_items(provider: AssumptionProvider) -> DistributedSubI
 
 
 @dataclass(frozen=True)
-class Formula:
-    """3중 표기 한 건 — 자연어 + 수식 + 대입값 (`FR-1001-AC3`)."""
-
-    label: str
-    natural: str
-    expression: str
-    substituted: str
-
-
-@dataclass(frozen=True)
 class AssumptionRow:
     """가정 부록 한 줄 (`FR-1002-AC6`)."""
 
@@ -244,6 +286,19 @@ class AssumptionRow:
     source: str
     confidence: str
     verified_at: date | None
+    #: ★ **계측 경계** — 부기 7종의 `applicable_scope` (R68/WP-7 · 검토서 §3.1).
+    #:
+    #: ## 왜 뒤늦게 붙었나
+    #:
+    #: 검토서 §3.1 이 *「모든 수요 입력에 `값`·`단위`·`출처`·**`계측 경계`**·
+    #: `산출식`·`변경 경로` 를 둔다」* 를 요구한다. 여섯 중 다섯은 이 행이 이미
+    #: 날랐고 **계측 경계만 없었다** — 대장(`AssumptionItem.applicable_scope`)에는
+    #: 처음부터 있었으나 리포트 경계를 넘지 못했다. 그래서 *「이 값이 무엇을 재고
+    #: 무엇을 재지 않는가」* 는 대장 파일을 열어야만 답되는 물음이었다.
+    #:
+    #: ⚠ **빈 문자열이 「경계가 없다」가 아니다** — 대장이 그 칸을 비운 항목이라는
+    #: 뜻이며, 대장 검사기(`scripts/check_assumptions.py`)가 그것을 따로 잡는다.
+    applicable_scope: str = ""
 
 
 @dataclass(frozen=True)
@@ -296,6 +351,50 @@ class CaseReport:
     #: `baseline_arrangement` 필드에서 오며, 필드가 없으면
     #: `DEFAULT_BASELINE_ARRANGEMENT`(ⓑ「자가용 유지」)다.
     baseline_arrangement: BaselineArrangement
+    #: 이 실행이 돈 **단지 규모**(호) — 시나리오 yaml 의 `household_count`
+    #: 필드에서 오며, 필드가 없으면 `None` 이다 (R64/WP-1 · 착수 47ⓐ).
+    #:
+    #: ⚠⚠ **`None` 은 「빈 값」이 아니라 진술이다** — *「가구 수를 적지 않았고,
+    #: 그래서 이 실행은 가구 한 호 기준으로 돌았다」*. 산출물은 그것을
+    #: **글자로** 인쇄해야 한다(`core/casegrid/household_scale.py::
+    #: HOUSEHOLD_COUNT_UNSPECIFIED`) — 빈칸으로 두면 검토자가 「반영됐다」로
+    #: 읽고, 그 오독은 단지 총부하를 40배쯤 틀리게 만든다.
+    #:
+    #: ⚠ **대장에서 오지 않는다.** `load.household.count` 는 `track: blocked` ·
+    #: `value: null` 이며 *「사업 계획이 정하는 사실」* 이다 — 그래서 이 값의
+    #: 통로는 실행 입력(시나리오·화면)이고 대장이 아니다.
+    household_count: int | None
+    #: 이 실행이 **한 호에 얹은 추가 전력사용기기 부하** — 히트펌프 · 전기차
+    #: (R64/WP-2 · 사용자 요구 2). 시나리오 yaml 의 `heatpump_load_annual_kwh`·
+    #: `ev_load_annual_kwh` 필드에서 오며, 없으면 둘 다 `None` 이다.
+    #:
+    #: ⚠⚠ **`None` 은 「빈 값」이 아니라 진술이다** — *「그 기기를 적지 않았고,
+    #: 그래서 이 실행은 0으로 돌았다」*. 산출물은 그것을 **글자로** 인쇄해야
+    #: 한다(`core/casegrid/appliance_load.py::APPLIANCE_LOAD_UNSPECIFIED`) —
+    #: 빈칸으로 두면 검토자가 「반영됐다」로 읽고, 히트펌프를 놓는 사업이라면
+    #: 한 호의 총부하를 절반 가까이 틀리게 읽는다.
+    #:
+    #: ⚠ **`0.0` 과 `None` 을 같게 다루지 않는다.** 더해지는 값은 둘 다 0
+    #: 이지만 앞의 것은 *「그 기기가 없다고 적었다」*이고 뒤의 것은 *「있는지
+    #: 아직 모른다」*다.
+    #:
+    #: ⚠ **대장에서 오지 않는다.** `load.heatpump.annual`·`load.ev.annual` 은
+    #: `track: blocked` · `value: null` 이며 *「사업 계획이 정하는 사실」* 이다.
+    appliance_loads: ApplianceLoads
+    #: 이 실행이 **하루 안에서 옮힌 가전 부하의 비율**(%) — 「AI 가전」
+    #: (R64/WP-7 · 사용자 요구 2). 대장 `load.dr_shiftable_share` 에서 오며,
+    #: 사용자가 바꾸는 통로는 **오버라이드**다(시나리오 yaml 의
+    #: `assumption_overrides` · 설정 화면의 대장 항목 칸).
+    #:
+    #: ⚠⚠ **총량이 아니라 형상의 축이다.** 이 수가 커져도 연간 부하 총량은
+    #: 한 kWh 도 변하지 않는다 — 옮겨 가는 곳은 **그 계절 하루의 태양광 잉여가
+    #: 있는 시각**이며, 실제로 옮긴 몫은 계절마다 다르다(`SeasonRun.
+    #: load_shift_annual_kwh` 가 그 값을 나른다).
+    #:
+    #: ⚠ **위 `appliance_loads` 와 성질이 다르다.** 저것은 `track: blocked` 인
+    #: 두 항목의 실행 입력이고 이것은 **대장이 값을 갖는** 항목이다 — 그래서
+    #: 「미지정」이 없고 `0` 은 *「옮기지 않는다」*를 뜻한다.
+    dr_shiftable_share_pct: float
     #: 그 갈래의 **선언 다섯** — Without · With · 성립 조건 · 자가소비 처리 ·
     #: 근거 조항. 붙임 1 의 셋째 표가 이것을 인쇄한다.
     #:
@@ -335,7 +434,19 @@ class CaseReport:
     rule_order: tuple[DispatchRule, ...]
     #: 대표일 스텝별 운전 (의견 3). **부하·일사 형상을 함께 세운 본 실행**이며
     #: 결론(프로포마·NPV)이 같은 실행 위에 선다 (R48/WP-B · 판정 B-1).
+    #:
+    #: ⚠ **R64/WP-4 뒤로 이 하루는 「연간등가 하루」다** — 계절별 하루를 계절
+    #: 일수로 가중 평균한 것이며, 계절 간 차이는 여기서 되돌릴 수 없다.
+    #: 그 차이를 묻는 표·도표는 아래 `seasons` 를 읽어야 한다.
     dispatch_hours: tuple[DispatchHour, ...]
+    #: ★★★ **계절별 운전** — 계절마다 (이름 · 일수 · 그 하루의 운전 · 그 계절
+    #: 연간 기여) (R64/WP-4 · 착수 36ⓐ · 사용자 요구 6).
+    #:
+    #: ⚠ **아직 인쇄하는 절이 없다.** 계절별 수치·도표를 세우는 것은 다음
+    #: 자리의 몫이며, 이 칸은 그 재료다 — 재료를 여기 싣지 않으면 그 절이
+    #: 자원을 다시 세워야 하고 **인쇄된 계절과 결론이 선 계절이 갈릴 수 있다.**
+    #: ⚠ 형상 자산이 없는 실행에서는 비어 있다.
+    seasons: tuple[SeasonRun, ...]
     #: 설계 변수(용량)를 탐색 구간에서 훑은 결과 — 4.4 · 붙임 10.
     #: *「적정 용량 검토가 선행되어야 한다」* 는 지적이 만든 절이다.
     capacity_review: tuple[CapacityFinding, ...]
@@ -343,6 +454,11 @@ class CaseReport:
     #: **진단이지 결론이 아니다** — `capacity_review` 의 탐색 구간·기준 구성을
     #: 여기서 바꾸지 않는다(검토서 §1-⑥).
     self_sufficiency: SelfSufficiencySizing
+    #: 경우 「ESS」(하루 결손) 역산 — 붙임 10 의 같은 자리 (R64/WP-8b · 요구 4).
+    #: **PV 역산과 같이 진단이지 결론이 아니다** — 역산 결과를 실행에 되먹이지
+    #: 않으므로 결론축은 이 수에 움직이지 않는다
+    #: (`core/report/ess_sizing_section.py` 머리말 ★★★).
+    ess_sizing: ESSSizingReview
     #: ★ 엔진이 만든 현금흐름 행 — **5.3 이 결손을 가르는 재료** (판정 §3 ⓐ).
     #:
     #: ⚠ 여기서 요약하지 않는다. `metrics` 는 합계 하나이고 5.3 이 묻는 것은
@@ -544,125 +660,6 @@ def _provenance(value: AssumptionValue | None) -> dict[str, Any]:
     }
 
 
-def _formulas(
-    basis: CaseBasis,
-    metrics: Mapping[str, float],
-    *,
-    subsidy_rate: float,
-    total_project_cost_won: float,
-) -> tuple[Formula, ...]:
-    """주 지표와 결론 축의 3중 표기 (`FR-1001-AC2`·`AC3`).
-
-    ⚠ `I₀` 는 `CaseBasis` 의 총사업비가 아니라 **그 변형이 실제로 낸 초기지출**
-    이다. 총사업비를 적으면 지원을 받은 사업의 산식이 지원 전 금액으로 서고,
-    검토자가 대입값을 따라가면 리포트의 결론과 다른 수가 나온다.
-    """
-    payback = metrics[HEADLINE_METRIC]
-    payback_text = (
-        f"{payback:.2f}년" if payback != float("inf") else "분석기간 내 미회수"
-    )
-    outlay = int(metrics["initial_outlay_won"])
-    flip_rate = break_even_subsidy_rate(
-        subsidy_rate=subsidy_rate,
-        npv_won=float(metrics[CONCLUSION_METRIC]),
-        total_project_cost_won=total_project_cost_won,
-    )
-    net = basis.annual_benefit_won - basis.annual_cost_won
-    # ★ **환산이 지원 상한을 넘으면 붙임 3 이 그것을 함께 진다** (판정 §2).
-    # 산식은 **지우지 않는다** — 본문의 그 수가 어디서 왔는지 대입값으로 말하는
-    # 자리가 사라지면 검토자가 따라갈 통로가 없어진다(`MC-1` 의 첫 물음).
-    # 대신 그 결과가 **답으로 성립하지 않는다**는 것을 대입값 줄이 함께 적고,
-    # *「그러면 얼마가 모자라는가」* 는 아래 「전액 지원 시 잔여 결손」 산식이
-    # 답한다 — 요구된 수가 **감사 가능해야** 하기 때문이다.
-    over_ceiling = flip_rate > MAX_SUBSIDY_RATE
-    residual = residual_gap_at_full_support_won(
-        subsidy_rate=subsidy_rate,
-        npv_won=float(metrics[CONCLUSION_METRIC]),
-        total_project_cost_won=total_project_cost_won,
-    )
-    ceiling_note = (
-        f" — ⚠ 지원 상한 {MAX_SUBSIDY_RATE:.0%}(사업비 전액)를 넘어 "
-        "지원율로는 답이 성립하지 않는다"
-        if over_ceiling
-        else ""
-    )
-    formulas = (
-        Formula(
-            label="연 순현금흐름",
-            natural="연 순현금흐름 = 연 편익 - 연 운영비",
-            expression="CF = B - C",
-            substituted=(
-                f"{net:,}원 = {basis.annual_benefit_won:,}원 "
-                f"- {basis.annual_cost_won:,}원"
-            ),
-        ),
-        Formula(
-            label="순현재가치",
-            natural=(
-                "순현재가치 = 분석기간 동안의 순현금흐름을 할인해 더한 뒤 "
-                "초기투자를 뺀 값"
-            ),
-            expression="NPV = Σ(t=1..T) CF_t / (1+r)^t - I₀",
-            substituted=(
-                f"{metrics[CONCLUSION_METRIC]:,.0f}원 = Σ(t=1..{basis.horizon_years}) "
-                f"CF_t / (1+{basis.discount_rate:.3f})^t - {outlay:,}원"
-            ),
-        ),
-        Formula(
-            label="할인 회수기간",
-            natural=(
-                "할인 회수기간 = 누적 할인 현금흐름이 초기투자에 도달하는 시점. "
-                "분석기간 안에 도달하지 못하면 「미회수」"
-            ),
-            expression="min{ T' : Σ(t=1..T') CF_t / (1+r)^t ≥ I₀ }",
-            substituted=(
-                f"{payback_text} — I₀ = {outlay:,}원 · "
-                f"r = {basis.discount_rate:.1%} · T = {basis.horizon_years}년"
-            ),
-        ),
-        # ★ **본문 5.1 의 「전환 지원율」이 여기서 감사된다.** 본문은 환산값만
-        # 싣고, 그 값이 어디서 왔는지는 이 산식이 대입값으로 말한다 — 붙임 없이
-        # 본문에만 두면 검토자가 52.6% 를 따라갈 자리가 없다(`MC-1` 의 첫 물음).
-        Formula(
-            label="결론 전환 지원율",
-            natural=(
-                "결론 전환 지원율 = 현 지원율 - 순현재가치 ÷ 총사업비. "
-                "지원은 t=0 초기지출 감액이고 순현재가치 산식은 초기투자를 "
-                "할인하지 않으므로, 지원 1원이 결론 축을 정확히 1원 올린다"
-            ),
-            expression="s* = s - NPV / I_total",
-            substituted=(
-                f"{flip_rate:.1%} = {subsidy_rate:.1%} - "
-                f"({metrics[CONCLUSION_METRIC]:,.0f}원) "
-                f"÷ {total_project_cost_won:,.0f}원{ceiling_note}"
-            ),
-        ),
-    )
-    if not over_ceiling:
-        return formulas
-    # RUF001: 「×」는 검토자가 읽는 **산식 문면**이다. `x` 로 바꾸면 곱셈이
-    # 변수 이름처럼 읽힌다 — `core/casegrid/operating_lines.py` 가 같은 자리에
-    # 같은 판정을 적어 두었다.
-    return (
-        *formulas,
-        Formula(
-            label="전액 지원 시 잔여 결손",
-            natural=(
-                "전액 지원 시 잔여 결손 = 순현재가치 + (지원 상한 - 현 지원율) "
-                "× 총사업비. 지원은 t=0 초기지출 감액이므로 지원율을 상한"  # noqa: RUF001
-                f"({MAX_SUBSIDY_RATE:.0%})까지 올려도 결론 축은 남은 지원분"
-                "만큼만 오르고, 그 위로는 올릴 곳이 없다"
-            ),
-            expression="R = NPV + (1 - s) × I_total",  # noqa: RUF001
-            substituted=(
-                f"{residual:,.0f}원 = {metrics[CONCLUSION_METRIC]:,.0f}원 + "
-                f"({MAX_SUBSIDY_RATE:.1%} - {subsidy_rate:.1%}) "
-                f"× {total_project_cost_won:,.0f}원"  # noqa: RUF001
-            ),
-        ),
-    )
-
-
 def _appendix(provider: AssumptionSet) -> tuple[AssumptionRow, ...]:
     """전 가정 목록 — 영향도 순위와 **별개로** 제공한다 (`FR-1002-AC6`).
 
@@ -700,6 +697,10 @@ def _appendix(provider: AssumptionSet) -> tuple[AssumptionRow, ...]:
                 source=item.source or "출처 미기재",
                 confidence=item.confidence.value,
                 verified_at=item.verified_at,
+                # ⚠ 오버라이드가 걸려도 **경계는 대장의 것**이다 — 값을 덮어쓰는
+                # 것과 그 값이 무엇을 재는가는 다른 축이고, 시나리오는 앞의 것만
+                # 바꾼다(`AssumptionSet.get()` 이 부기를 짓지 않는다).
+                applicable_scope=item.applicable_scope,
             )
         )
     return tuple(rows)
@@ -797,6 +798,47 @@ def build_case_report(
     # 빈 선언으로 바꿔 내지 않는다 — 결과는 같지만 「적지 않았다」와 「둘 다
     # 아니라고 적었다」는 다른 진술이다.
     pool_metering = resolve_pool_metering(scenario.get(POOL_METERING_FIELD))
+    # ★★★ **단지 규모(가구 수)도 시나리오에서 읽는다** (R64/WP-1 · 착수 47ⓐ).
+    # `load.household.annual` 이 **kWh/호·년**(한 호당)이므로 단지 총량을
+    # 내려면 이 수가 있어야 한다. **통로는 이 필드 하나다** — 갈래·ⓒ 선언과
+    # 같은 자리이며, 케이스 그리드 변수축이나 CLI 플래그를 따로 세우지 않는다.
+    # ★★★ **통로가 둘이고 시나리오가 이긴다** (R65/WP-2). 종전에는 대장의
+    # `load.household.count` 가 `track: blocked` · `value: null` 이라 통로가
+    # 실행 입력 하나였고, 필드가 없으면 **가구 한 호** 기준으로 돌았다.
+    # 사용자가 *「가구수를 20가구로 설정」*(2026-09-07)이라 정해 그 항목이
+    # `track: fixed` · `value: 20` 으로 섰다 — **저장소가 고른 수가 아니므로**
+    # 그 항목의 `derivation_method` 가 금지한 자기충족(§13.0.2)이 아니다.
+    # ⚠ **차례를 뒤집지 마라.** 시나리오·화면이 적은 수가 먼저이고, 적지
+    # 않았을 때만 대장이 답한다 — 뒤집으면 사용자가 화면에서 적은 수를 대장이
+    # 덮어쓴다. 둘 다 없으면 여전히 `None`(가구 한 호)이다.
+    # ⚠⚠ **골든 픽스처에는 이 필드가 없다** — 그래서 골든 셋은 **대장의 20호**
+    # 로 돈다. R65/WP-2 에서는 그것이 `DV` 거부였다(태양광 3kW 에 20호 부하를
+    # 얹으면 낮에 잉여가 남지 않는다). WP-2b·2c 가 설계 변수 셋에 같은 배수를
+    # 걸어 그 거부를 없앴고, 골든 3종은 **20호 구성으로 다시 뽑혔다** —
+    # `core/casegrid/household_scale.py` 머리말 ★★★ 가 경위를 갖는다.
+    household_count = resolve_household_count(scenario.get(HOUSEHOLD_COUNT_FIELD))
+    if household_count is None:
+        household_count = ledger_household_count(provider)
+    # ★★★ **가구의 추가 전력사용기기 부하도 시나리오에서 읽는다** (R64/WP-2 ·
+    # 사용자 요구 2). 대장의 `load.household.annual` 은 *「추가 전력사용기기가
+    # 없는 가구 기준」*이고, 그 `applicable_scope` 가 히트펌프 등이 들어오면
+    # **그 기기의 연간 소비전력량을 이 값에 더해** 총량이 비례 증가해야 한다고
+    # 정했다(R48 판정 §5). 규칙은 그때 섰으나 **값을 담을 자리도 통로도 없어**
+    # 러너의 `extra_appliance_load_kwh` 를 배포 경로에서 아무도 채우지 않았다.
+    # ★★★ **여기도 통로가 셋이고 시나리오가 이긴다** (R65/WP-2). 사용자 요구
+    # (*「히트펌프, 전기차 충전 연간 소비전력량 · 계절별 냉난방 부하 …
+    # 조사하거나 … 엑셀 상의 수치를 사용(조사 권장)」*)에 따라 대장 두 항목이
+    # `assume`(히트펌프 **3,289.0** `가정` · 전기차 2,784 **조사값** `추정`)으로,
+    # 계절 몫이 형상 자산의 `appliance_season_shares:` 절로 섰다.
+    # ★ **히트펌프 값이 R66/WP-5 에 2,675 → 3,289.0 으로 갈렸다** — 없던 급탕
+    # 501.6 이 서고 냉방이 조사값 712.4 로 갈렸다(그 대장 항목이 정본이다).
+    # `with_ledger_defaults` 가 **적지 않은 칸만** 그 값으로 채운다 — 칸마다
+    # 따로 보며 `0.0`(= 「그 기기가 없다고 적었다」)은 채우지 않는다.
+    # ⚠ 판정과 거부는 `core/casegrid/appliance_load.py` 하나가 지고, 대장 값도
+    # 같은 관문을 지난다.
+    # ⚠ **골든 픽스처에는 세 필드가 다 없다** — 그래서 골든 셋은 대장·자산의
+    # 값으로 돈다(위 ⚠⚠ 와 같은 통로다).
+    appliance_loads = with_ledger_defaults(resolve_appliance_loads(scenario), provider)
     # ★ ⓒ(자가용 집합자원화)를 **선언 없이** 고르면 여기서 `DV-15` 로 거부된다 —
     # 리포트를 조립하기 전이다. 러너도 같은 거부를 지나므로(그 진입점을 직접
     # 부르는 경로가 있다) 두 자리가 함께 막는다.
@@ -838,6 +880,23 @@ def build_case_report(
     rec_weight = required_scalar(
         provider, REC_WEIGHT_LEDGER_KEY, note="REC 편익 가중치 (사용자 판정 §5, R52/WP-6)"
     )
+    # ★★★ **「AI 가전」이 옮기는 비율도 대장에서 온다** (R64/WP-7 · 사용자 요구
+    # 2 · 사용자 판정 §4·§5). `REC_PRICE_LEDGER_KEY` 와 **같은 통로**이며 이유도
+    # 같다 — 러너에 리터럴을 두면 대장을 고쳐도 옛 값이 쓰인다(`NFR-202`).
+    # ⚠ **통로를 새로 내지 않았다.** 히트펌프·전기차는 대장이 값을 갖지 않아
+    # (`track: blocked`) 시나리오 필드를 따로 세웠지만, 이 비율은 **대장이 값을
+    # 갖는다** — 그래서 사용자가 바꾸는 자리는 이미 있는 오버라이드 통로
+    # (`ASSUMPTION_OVERRIDES_FIELD` · 설정 화면의 대장 항목 칸)이다. 필드를 또
+    # 세우면 통로가 둘이 되고, 그때 어느 것이 이겼는지 산출물에서 알 수 없다.
+    # ⚠ **범위 판정을 여기서 하지 않는다** — 0~100 을 거부로 지키는 자리는
+    # `core/casegrid/load_shift.py::resolve_shiftable_share` 하나다(오버라이드는
+    # 형만 맞대어져 오므로 −5·500 이 여기까지 올 수 있다).
+    dr_shiftable_share = shiftable_share_pct(
+        required_scalar(
+            provider, DR_SHIFTABLE_SHARE_LEDGER_KEY,
+            note="옮길 수 있는 가전 부하 비율 (사용자 요구 2 · R64/WP-7)",
+        )
+    )
     # ★ **분산편익 크레딧도 대장에서 온다** (R53/WP-1 · R54/WP-3 판정 ① — 대장이
     # 다섯 칸으로 나뉘었다). 지금 값은 다섯 모두 0이며(`track: default0`) 사회
     # 열 편익이 0원을 낸다 — `build_society_annualised()` 가 이 값으로 사회
@@ -858,6 +917,30 @@ def build_case_report(
         {}, level_map=level_map, horizon_years=horizon_years, scheme=scheme,
         daily_shapes=shapes,
         annual_load_kwh=level_map["household_load_annual_kwh"]["base"],
+        # ★ **단지 규모** (R64/WP-1). 위 `annual_load_kwh` 는 **한 호**의
+        # 값이므로 이 수가 곱해져야 단지 총부하가 된다. `None` 이면 배수가 1 —
+        # 종전과 같다.
+        household_count=household_count,
+        # ★★ **한 호에 얹는 추가 기기 부하** (R64/WP-2 · 사용자 요구 2).
+        # 러너 인자는 **합계 하나**이고 갈래는 산출물에서만 갈린다 — 그 인자를
+        # 기기별로 쪼개면 러너가 기기 목록을 알게 되고, 셋째 기기가 오는 날
+        # 러너 시그니처가 늘어난다(`ApplianceLoads.total_kwh` 가 정본).
+        # ⚠ 안 준 실행은 `0.0` 이며 그때 인자의 기본값과 같다 — 종전과 같다.
+        extra_appliance_load_kwh=appliance_loads.total_kwh,
+        # ★★★ **그 합계를 계절마다 갈라 준다** (R64/WP-3b-1 · 사용자 요구 3).
+        # 시나리오의 `appliance_load_season_shares` 가 같은 자리
+        # (`resolve_appliance_loads`)를 지나 여기 온다. ⛔ 안 준 실행은 `None`
+        # 이고 그때 러너가 **종전 식을 그대로** 지난다.
+        # ★★★ **`.season_shares` 가 아니라 `.blended_season_shares` 다**
+        # (R67/WP-N1). 자산이 적은 몫은 **냉난방의** 것인데 그대로 넘기면 그
+        # 겨울 몫이 **전기차 충전에도** 씌워져 겨울 부하가 과대해진다 — 그
+        # 속성이 전기차 몫만 일수 비례로 갈아 끼운다. ⚠ 전기차가 없는 실행은
+        # 그 속성이 적힌 몫을 **그대로** 내므로 원소 하나까지 같다.
+        appliance_season_shares=appliance_loads.blended_season_shares,
+        # ★★ **「AI 가전」이 하루 안에서 옮기는 몫** (R64/WP-7 · 사용자 요구 2).
+        # 총량은 한 kWh 도 변하지 않고 **하루의 모양만** 바뀐다 — 바로 위
+        # 두 인자(가구 수·기기 부하)와 성질이 다르다.
+        dr_shiftable_share_pct=dr_shiftable_share,
         rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
         distributed_sub_items=distributed_sub_items,
         baseline_arrangement=baseline_arrangement,
@@ -868,6 +951,32 @@ def build_case_report(
         level_map=level_map, horizon_years=horizon_years, scheme=scheme,
         daily_shapes=shapes, rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
         distributed_sub_items=distributed_sub_items,
+        # ★★ **본 실행과 같은 단지 규모로 스윕한다** (R64/WP-1). 안 넘기면
+        # 본문 4절은 n호 단지로, 5·6절(민감도·용량 검토)은 **한 호**로 계산되어
+        # 두 절이 서로 다른 사업을 그린다 — 바로 아래 갈래가 적어 둔 것과 같은
+        # 함정이며, 이 축은 부하 총량에 비례로 들어오므로 어긋나면
+        # `build_coupled_sweeps` 의 `base_npv` 대조가 통째로 뜻을 잃는다.
+        household_count=household_count,
+        # ★★ **본 실행과 같은 기기 부하로 스윕한다** (R64/WP-2). 안 넘기면
+        # 본문 4절은 히트펌프가 있는 가구로, 5·6절은 없는 가구로 계산되어
+        # 두 절이 서로 다른 사업을 그린다 — 바로 위 가구 수와 같은 함정이며,
+        # 이 축도 부하 총량에 더해지므로 어긋나면 `build_coupled_sweeps` 의
+        # `base_npv` 대조가 뜻을 잃는다.
+        extra_appliance_load_kwh=appliance_loads.total_kwh,
+        # ★★ **본 실행과 같은 계절 몫으로 스윕한다** (R64/WP-3b-1). 안 넘기면
+        # 본문 4절은 계절을 차등한 부하로, 5·6절은 차등하지 않은 부하로
+        # 계산되어 두 절이 서로 다른 사업을 그린다 — 바로 위 셋과 같은 함정이다.
+        # ⚠ **본 실행과 같은 속성을 읽는다** (R67/WP-N1) — 한쪽만
+        # `.season_shares` 로 두면 스윕이 전기차에 냉난방 겨울 몫을 씌운
+        # 사업을 재고, 그 결과를 본문의 `base_npv` 와 견주는
+        # `build_coupled_sweeps` 가 **그 차이를 인자 기여로 인쇄한다**.
+        appliance_season_shares=appliance_loads.blended_season_shares,
+        # ★★ **본 실행과 같은 비율로 부하를 옮겨 스윕한다** (R64/WP-7). 안
+        # 넘기면 본문 4절은 옮긴 하루로, 5·6절은 옮기지 않은 하루로 계산되어
+        # 두 절이 서로 다른 사업을 그린다 — 바로 위 둘과 같은 함정이며, 이
+        # 축은 형상을 바꾸므로 어긋나면 `build_coupled_sweeps` 의 `base_npv`
+        # 대조가 형상 차이를 인자 기여로 인쇄한다.
+        dr_shiftable_share_pct=dr_shiftable_share,
         # ★ **본 실행과 같은 기준선 갈래로 스윕한다** (`FR-705-AC2`). 안 넘기면
         # 본문 4절은 고른 갈래로, 5·6절(민감도·용량 검토)은 **기본 갈래**로
         # 계산되어 두 절이 서로 다른 사업을 그린다 — 위 `annual_load_kwh`·
@@ -918,6 +1027,18 @@ def build_case_report(
 
     # ★ 용량 스윕은 **1변수 스윕과 같은 기계**를 쓴다 (`sweeper.conclusion_at`).
     # 갈라 두면 용량 쪽만 변형(`as_planned`)을 읽지 않는 어긋남이 생긴다.
+    # ★★★ **4.4 도 「단지」로 답한다** (R65/WP-5). 종전에는 `used` 도 탐색
+    # 구간도 **한 호분**이라, 본문 4절이 60 kW·200 kWh 로 도는 동안 이 표만
+    # *「3 kW 를 썼다」* 고 적었다 — 위 붙임 10 역산(WP-2c)이 닫은 것과 **같은
+    # 형태**이며 4.4 만 안 따라온 것이었다.
+    # ⚠ **곱은 `build_capacity_review` 가 한다** — `used` 에는 금액·비율 축도
+    # 함께 있어(`pv_unit_cost`·`discount_rate` 등) 여기서 통째로 곱할 수 없고,
+    # **무엇이 설계 변수인지는 `design_variables()` 가** 안다. 그 목록을 도는
+    # 자리가 그 함수다(그 독스트링 ★★★).
+    # ⚠⚠ **스윕에 넘기는 값은 곱하지 않는다** — `sweeper.conclusion_at` 은
+    # 러너를 지나고 러너가 `household_scale` 을 곱하므로, 여기서 곱하면 **두 번
+    # 곱해져** 결론축이 움직인다. 그 가름도 그 함수 안에 있다.
+    # ⛔ 띠의 수(1.0·9.0 · 2.0·30.0)를 고치지 않았다 — 곱한 것이다.
     capacity_review = build_capacity_review(
         sweeper.conclusion_at,
         used={
@@ -925,11 +1046,20 @@ def build_case_report(
             for name, levels in level_map.items()
             if "base" in levels
         },
+        scale=household_scale(household_count),
     )
 
     # ★ 경우 「가」(100% 자립) 역산 — 붙임 10 의 별도 소절 (R55/WP-2 · 검토서 §1).
     # `pv_capacity_kw` 탐색 구간은 `design_variables()` 에서 읽는다 — 1.0·9.0 을
     # 여기 리터럴로 적으면 `_DESIGN_VARS` 가 바뀌어도 이 소절만 낡는다.
+    # ★★★ **이 역산도 「단지」로 답한다** (R65/WP-2c). 종전에는 탐색 구간도
+    # 부하도 **한 호분**이라, 본문 4절이 60 kW·20호 부하로 도는 동안 이
+    # 소절만 1~9 kW 띠와 한 호 부하로 답했다 — **같은 리포트가 두 사업을
+    # 그렸다.** 곱은 `build_self_sufficiency_sizing` 이 하고(그 독스트링 ★★),
+    # 여기서는 **본문이 쓴 것과 같은 두 수**를 넘긴다: 단지 규모와, 본문이
+    # 부하에 더하는 기기 부하(`appliance_loads.total_kwh` — 위 러너 호출의
+    # `extra_appliance_load_kwh` 와 **같은 값**이다).
+    # ⛔ 띠의 수(1.0·9.0)를 고치지 않았다 — 곱한 것이다.
     if "household_load_annual_kwh" not in level_map:
         raise ValidationError(
             field="load.household.annual",
@@ -939,11 +1069,20 @@ def build_case_report(
     pv_design_variable = next(
         v for v in design_variables() if v.name == "pv_capacity_kw"
     )
+    # ★★★ **이용률이 대장에서 온다** (R67/WP-N2 · 사용자 판정 R67 §2). 종전에는
+    # `core/casegrid/e2e_runner.py` 의 모듈 상수였고, 이 역산 **전체가 그 값에
+    # 반비례**하는데 사용자가 바꿀 통로가 없었다(판정 `docs/decisions-2026-09-08-
+    # R67b.md` §3-4 가 그것을 지목했다). ⚠ **대장 키 문자열을 여기 적지 않는다** —
+    # 변수 → 키 짝의 정본은 `ledger_backed_variables()` 이고, 두 곳에 적으면
+    # 키를 바꾸는 날 이 출처 문면만 낡는다(`REC_PRICE_LEDGER_KEY` 옆 주석과
+    # 같은 판단이며, 여기는 이미 그 짝을 아는 함수가 있어 상수를 세우지 않았다).
+    pv_capacity_factor_key = ledger_backed_variables()["pv_capacity_factor"]
     self_sufficiency = build_self_sufficiency_sizing(
         load_levels=level_map["household_load_annual_kwh"],
-        capacity_factor=PV_CAPACITY_FACTOR,
+        capacity_factor=level_map["pv_capacity_factor"]["base"],
         capacity_factor_source=(
-            "core/casegrid/e2e_runner.py::PV_CAPACITY_FACTOR (소스 상수 · 대장 미등재)"
+            f"전제 대장 `{pv_capacity_factor_key}` (R67/WP-N2 에 등재 · "
+            "종전에는 소스 상수였다)"
         ),
         search_low_kw=pv_design_variable.low,
         search_high_kw=pv_design_variable.high,
@@ -953,6 +1092,38 @@ def build_case_report(
                 USER_EXAMPLE_MONTHLY_KWH * MONTHS_PER_YEAR,
             ),
         ],
+        extra_appliance_load_kwh=appliance_loads.total_kwh,
+        household_count=household_count,
+    )
+
+    # ★ 경우 「ESS」(하루 결손) 역산 — 붙임 10 의 같은 자리 (R64/WP-8b · 요구 4).
+    # `ess_capacity_kwh` 탐색 구간은 위 PV 와 **같은 자리**(`design_variables()`)
+    # 에서 읽는다 — 2.0·30.0 을 여기 리터럴로 적으면 `_DESIGN_VARS` 가 바뀌어도
+    # 이 소절만 낡는다.
+    # ⚠ **연차는 분석기간 말이다** — 그 사유는 `ess_sizing_section` 머리말 ★★ 이며,
+    # 여기서 1 을 적으면 20년차에 미달인 용량을 「적정」이라 인쇄하게 된다.
+    ess_design_variable = next(
+        v for v in design_variables() if v.name == "ess_capacity_kwh"
+    )
+    # ★★★ **탐색 구간에만 단지 규모를 곱한다** (R65/WP-2c). 이쪽 역산의
+    # **부하는 이미 단지분**이다 — `hours`·`seasons`·`resources` 가 본문이
+    # 돌린 디스패치에서 오고 그 디스패치는 20호 부하·60 kW 로 돌았다. 곱해야
+    # 하는 것은 *「그 결손을 감당할 용량이 지금 훑는 띠 안인가」* 를 재는
+    # `search_low/high_kwh` **하나**이며, 그것만 한 호분(2~30 kWh)이었다.
+    # ⚠ **부하까지 곱하면 두 번 곱해진다.** ⛔ 띠의 수를 고친 것이 아니다.
+    ess_scale = household_scale(household_count)
+    ess_sizing = build_ess_sizing_review(
+        hours=build_hourly_profile(outcome.dispatch),
+        seasons=outcome.seasons,
+        resources=outcome.resources,
+        year=outcome.basis.horizon_years,
+        search_low_kwh=ess_design_variable.low * ess_scale,
+        search_high_kwh=ess_design_variable.high * ess_scale,
+        # ★★★ **계통 허용 완화분의 비율** (R67/WP-N3). 위 `pv_capacity_factor`
+        # 와 **같은 통로**로 읽는다 — 수준표의 `base` 이며, 소절에 리터럴 0.30
+        # 을 적으면 대장을 고쳐도 그 소절만 낡는다.
+        # ⚠ **탐색 구간과 달리 단지 규모를 곱하지 않는다** — 비율이다.
+        grid_supply_allowance=level_map["grid_supply_allowance"]["base"],
     )
 
     manifest = create_manifest({
@@ -978,6 +1149,19 @@ def build_case_report(
         assumption_set_version=provider.set_version,
         price_basis=provider.price_basis.value,
         baseline_arrangement=baseline_arrangement,
+        # ★ 산출물이 **이 실행이 몇 호로 돌았는지**를 인쇄한다 (R64/WP-1).
+        # `None` 도 그대로 나른다 — 「미지정」을 글자로 적는 것이 붙임의 몫이다
+        # (`core/report/appendix_sections.py::_household_scale_table`).
+        household_count=household_count,
+        # ★ 산출물이 **어떤 기기를 얼마로 얹었는지**를 인쇄한다 (R64/WP-2).
+        # `None` 도 그대로 나른다 — 「미지정」을 글자로 적는 것이 붙임의 몫이다
+        # (`core/report/appendix_sections.py::_appliance_load_table`).
+        appliance_loads=appliance_loads,
+        # ★ 산출물이 **얼마를 옮길 수 있다고 보고 돌았는지**를 인쇄한다
+        # (R64/WP-7). 실제로 옮긴 몫은 계절 결과가 나른다 —
+        # `core/report/appendix_sections.py::_load_shift_table` 이 둘을 함께
+        # 인쇄하고, *「옮길 곳이 없었다」* 를 글자로 적는 것도 그 자리다.
+        dr_shiftable_share_pct=dr_shiftable_share,
         baseline_branch=baseline_branch,
         metrics=outcome.variants[PLAN_VARIANT],
         baseline_metrics=outcome.variants[BASELINE_VARIANT],
@@ -988,7 +1172,7 @@ def build_case_report(
         basis=outcome.basis,
         influences=influences,
         coupled_sweeps=coupled_sweeps,
-        formulas=_formulas(
+        formulas=build_formulas(
             outcome.basis,
             outcome.variants[PLAN_VARIANT],
             subsidy_rate=subsidy_rate,
@@ -1016,8 +1200,14 @@ def build_case_report(
         ),
         rule_order=outcome.rule_order,
         dispatch_hours=build_hourly_profile(outcome.dispatch),
+        # ★★★ **계절별 운전을 그대로 받는다** (R64/WP-4 · 판정 ⑤ · 사용자 요구 6).
+        # 여기서 요약하거나 접지 않는다 — 접힌 하루(`dispatch_hours`)에서는
+        # 계절 간 차이를 되돌릴 수 없고, 되돌리려는 표시 층은 자원을 다시
+        # 세우게 된다(`dispatch_notes` 가 같은 판단을 받은 자리다).
+        seasons=outcome.seasons,
         capacity_review=capacity_review,
         self_sufficiency=self_sufficiency,
+        ess_sizing=ess_sizing,
         # ★ 러너가 **가른 채로** 낸 현금흐름 행을 그대로 받는다 (판정 §3 ⓐ).
         # 여기서 다시 묶거나 태그로 분류하지 않는다 — 그 순간 5.3 의 분해가
         # 러너의 사본이 된다(`CashflowSplit` 독스트링).

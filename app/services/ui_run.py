@@ -22,22 +22,41 @@
 알 수 없다 — 같은 판단을 `core/cba/baseline.py::POOL_METERING_FIELD` 주석이
 이미 적어 두었다.
 
-⚠ **골든 픽스처를 고치지 않는다.** 읽기만 하고, 쓰는 곳은
-`tempfile.TemporaryDirectory()` 안이다 — 요청이 끝나면 지워진다.
+⚠ **골든 픽스처를 고치지 않는다.** 읽기만 한다.
+
+## 화살표의 뒤 두 걸음은 **옆 파일**이 한다 (R64/WP-PERF)
+
+임시 디렉터리에 쓰고 `build_case_report` 를 부르는 것은
+`app/services/ui_run_cache.py::case_report_for` 다. 이 파일이 하던 그 절차를
+한 글자도 바꾸지 않고 옮긴 것이며, 옮긴 뒤 달라진 것은 **같은 입력을 두 번
+세우지 않는다**는 것뿐이다 — 화면 하나가 이것을 아홉 번 부르는 것이 실측이고
+(HTML 1 + 그림 8), 그 아홉이 42초여서 e2e 의 30초 예산을 이미 넘겨 있었다.
+사유의 정본은 그 파일 머리말이다.
 """
 from __future__ import annotations
 
 import dataclasses
-import tempfile
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from app.services.ui_run_cache import case_report_for
 from core.assumption.scenario_overrides import ASSUMPTION_OVERRIDES_FIELD
+from core.casegrid.appliance_load import (
+    APPLIANCE_SEASON_SHARE_FIELD,
+    EV_LOAD_FIELD,
+    HEATPUMP_LOAD_FIELD,
+)
+from core.casegrid.household_scale import HOUSEHOLD_COUNT_FIELD
+from core.casegrid.load_shift import (
+    DR_SHIFTABLE_SHARE_LEDGER_KEY,
+    resolve_shiftable_share,
+)
 from core.cba.baseline import POOL_METERING_FIELD, PoolMeteringDeclaration
-from core.report.case_report import CaseReport, build_case_report
+from core.report.case_report import CaseReport
 
 #: 저장소 뿌리 — `app/services/ui_run.py` 에서 두 단계 위.
 #: `app/routers/reports.py` 가 같은 셈으로 같은 두 자리를 잡는다.
@@ -67,6 +86,13 @@ _ARRANGEMENT_FIELD = "baseline_arrangement"
 #: same_scenario_as_the_run_screen` 이다 — 두 라우트의 `openapi()` 질의 기본값을
 #: 맞댄다. 갈리면 「오버라이드 안 건 실행의 결론축」이 화면마다 다른 수가 된다.
 DEFAULT_UI_SCENARIO = "scenario_unsubsidized"
+
+#: ⓐ 비율을 화면에서 바꿨을 때 오버라이드 줄이 싣는 **사유**(`FR-602-AC3`).
+#:
+#: ⚠ 비워 두지 않는다. 붙임 1 의 「기준 전제 대비 변경 항목」이 이 줄을
+#: 인쇄하는데, 사유가 없으면 검토자는 *「누가 왜 10을 20으로 바꿨나」* 를
+#: 산출물에서 알 수 없다 — 그 표가 생긴 이유가 그것이다.
+SHIFTABLE_SHARE_OVERRIDE_REASON = "분석 실행 화면에서 지정한 값 (대장 값은 가정이다)"
 
 
 def assumptions_path() -> Path:
@@ -113,6 +139,11 @@ def scenario_fields(
     ownership_or_operation_transferred: bool = False,
     metering_separated: bool = False,
     assumption_overrides: object | None = None,
+    household_count: str | int | None = None,
+    heatpump_load_annual_kwh: str | float | None = None,
+    ev_load_annual_kwh: str | float | None = None,
+    appliance_load_season_shares: Mapping[str, str] | None = None,
+    dr_shiftable_share_pct: str | float | None = None,
 ) -> dict[str, Any]:
     """골든 시나리오 + 화면이 고른 것 → 넘길 매핑.
 
@@ -144,6 +175,41 @@ def scenario_fields(
     `resolve_assumption_overrides` 하나이며(그 함수가 `build_case_report` 안에서
     불린다), 여기서 미리 걸러 내면 거부 문면이 두 곳에 생긴다 — 이 파일 머리말의
     ★★★ 가 갈래·ⓒ 전제에 대해 적은 것과 같은 판단이다.
+
+    ## ★★ `household_count` — **빈 칸이면 필드를 넣지 않는다** (R64/WP-1)
+
+    폼의 빈 칸(`""`)과 `None` 이 *「가구 수를 적지 않았다」*이고, 그때 필드가
+    시나리오에 실리지 않아 `build_case_report` 가 `None` 으로 읽는다 — 러너는
+    **가구 한 호 기준**으로 돌고 결과는 이 통로가 생기기 전과 같다.
+
+    ⚠ **여기서 정수로 바꾸지 않는다.** 문면 그대로 실어 보내고 판정은
+    `core/casegrid/household_scale.py::resolve_household_count` 하나가 한다 —
+    위 갈래·오버라이드와 같은 자리이며, 여기서 미리 바꾸면 「40.5호」 같은
+    입력의 거부 문면이 두 곳에 생긴다.
+
+    ## ★★ 기기 부하 둘 — **빈 칸이면 필드를 넣지 않는다** (R64/WP-2)
+
+    히트펌프·전기차 연간 소비전력량도 같은 규약이다. 빈 칸(`""`)과 `None` 이
+    *「그 기기를 적지 않았다」*이고, 그때 필드가 시나리오에 실리지 않아
+    `build_case_report` 가 `None` 으로 읽는다 — 더해지는 값은 0 이고 결과는
+    이 통로가 생기기 전과 같다. 판정은
+    `core/casegrid/appliance_load.py::resolve_appliance_load` 하나가 한다.
+
+    ⚠ **둘을 하나로 합치지 않는다.** 러너가 받는 것은 합계 하나지만 화면과
+    산출물은 기기별로 갈라야 한다 — 합치면 사용자가 따로 바꾸지 못한다.
+
+    ## ★★ 부하의 **형상** 둘 — 통로가 서로 다르다 (R64/WP-WEB ⓐⓑ)
+
+    ⓑ **계절 몫**(`appliance_load_season_shares`)은 위 기기 부하와 **같은
+    규약**이다: 안 주면 필드를 넣지 않고, 그때 냉난방이 기본 부하와 같은 계절
+    몫으로 돌아 출력이 이 통로가 생기기 전과 원소 하나까지 같다. ⚠ **빈 칸을
+    버리지 않고 그대로 싣는다** — 전부 빈 것과 일부만 적은 것을 가르는 자리는
+    `resolve_appliance_season_shares` 하나다.
+
+    ⓐ **옮길 비율**(`dr_shiftable_share_pct`)은 다르다 — **대장이 값을 갖는
+    항목**이므로 시나리오 필드를 새로 세우지 않고 **오버라이드 한 줄**로
+    얹는다(`_overrides_with_shift`). 그 판단의 정본은
+    `core/report/case_report.py` 의 ★★★ 절과 `.orch/R64/result_7.md` 판정 ㉳ 다.
     """
     available = golden_scenario_names()
     if name not in available:
@@ -162,9 +228,71 @@ def scenario_fields(
                 metering_separated=metering_separated,
             )
         )
-    if assumption_overrides is not None:
-        fields[ASSUMPTION_OVERRIDES_FIELD] = assumption_overrides
+    overrides = _overrides_with_shift(assumption_overrides, dr_shiftable_share_pct)
+    if overrides is not None:
+        fields[ASSUMPTION_OVERRIDES_FIELD] = overrides
+    if appliance_load_season_shares is not None:
+        fields[APPLIANCE_SEASON_SHARE_FIELD] = dict(appliance_load_season_shares)
+    if household_count is not None and household_count != "":
+        fields[HOUSEHOLD_COUNT_FIELD] = household_count
+    for field, given in (
+        (HEATPUMP_LOAD_FIELD, heatpump_load_annual_kwh),
+        (EV_LOAD_FIELD, ev_load_annual_kwh),
+    ):
+        if given is not None and given != "":
+            fields[field] = given
     return fields
+
+
+def _overrides_with_shift(
+    given: object | None, share_pct: str | float | None
+) -> object | None:
+    """ⓐ 비율을 **오버라이드 한 줄로** 얹는다 — 없으면 받은 것을 그대로.
+
+    ## ⚠⚠ 왜 여기서 수로 낮추는가 — **오버라이드 통로가 형을 맞대기 때문이다**
+
+    `resolve_assumption_overrides` 는 **키가 아니라 「키 → 값」**을 보고 대장
+    값의 형 갈래와 맞댄다(그 함수의 ⚠⚠ 절 · R1 D-4). 대장은 이 항목을 수
+    (`10`)로 갖는데 폼이 보내는 것은 글자(`"20"`)이므로, 글자를 그대로 실으면
+    **정당한 입력이 「형이 다르다」로 거부된다.**
+
+    ⚠ **그래도 판정은 한 자리다** — 여기서 형을 판정하지 않고
+    `resolve_shiftable_share`(0~100 · `nan`·`bool` 거부 · 빈 칸은 미지정)를
+    **부른다.** 그 함수가 이 비율의 유일한 판정자이며, 3요소 거부도 그 함수가
+    짓는다(`core/casegrid/load_shift.py::_rejected`).
+
+    ## ⚠ 빈 칸은 **0 이 아니다**
+
+    `None` 을 돌려받으면 줄을 얹지 않고, 그러면 대장 값(지금 10)이 쓰인다.
+    0 을 밀어 넣으면 *「옮기지 않는다」* 라는 **다른 실행**이 되어 결론축이
+    움직인다 — 그 구별을 `tests/app/test_ui_load_shape.py` 가 잰다.
+
+    ## ⚠ 같은 키가 두 번 실리면 **거부된다** (조용하지 않다)
+
+    받은 오버라이드 목록에 이미 `load.dr_shiftable_share` 가 있으면 줄이 둘이
+    되고, `resolve_assumption_overrides` 가 *「같은 대장 키를 두 번
+    적었습니다」* 로 거부한다 — 뒤가 이기며 앞이 사라지는 것을 그 함수가
+    막는다. 그래서 여기서 겹침을 판정하지 않는다(같은 사실을 두 곳에서 보면
+    한쪽만 고쳐지는 날이 온다).
+
+    ⚠ 받은 것이 **목록이 아니면 얹지 않고 그대로 보낸다.** 그 모양은
+    `resolve_assumption_overrides` 가 *「목록이 아닙니다」* 로 거부하므로
+    실행이 조용히 성공하는 일은 없다 — 여기서 모양을 고쳐 주면 거부가 사라지고
+    사용자는 자기가 적은 오버라이드가 어디로 갔는지 알 수 없게 된다.
+    """
+    share = resolve_shiftable_share(share_pct)
+    if share is None:
+        return given
+    row = {
+        "key": DR_SHIFTABLE_SHARE_LEDGER_KEY,
+        "value": share,
+        "reason": SHIFTABLE_SHARE_OVERRIDE_REASON,
+    }
+    if given is None:
+        return [row]
+    if isinstance(given, Sequence) and not isinstance(given, (str, bytes)):
+        return [*given, row]
+    return given
 
 
 def run_ui_case(
@@ -174,6 +302,11 @@ def run_ui_case(
     ownership_or_operation_transferred: bool = False,
     metering_separated: bool = False,
     assumption_overrides: object | None = None,
+    household_count: str | int | None = None,
+    heatpump_load_annual_kwh: str | float | None = None,
+    ev_load_annual_kwh: str | float | None = None,
+    appliance_load_season_shares: Mapping[str, str] | None = None,
+    dr_shiftable_share_pct: str | float | None = None,
 ) -> UiRun:
     """화면이 고른 것으로 **한 번 돌린다.**
 
@@ -184,9 +317,22 @@ def run_ui_case(
     내면 거부 문면이 두 곳에 생기고, 그때 둘이 갈려도 아무 검사도 걸리지
     않는다.
 
-    ⚠ 임시 파일 이름을 골든과 같게 두는 이유: `build_case_report` 는 시나리오
-    이름이 매핑에 없을 때 `scenario_path.stem` 을 표제로 쓴다. 임의의 이름을
-    두면 리포트 표제가 실행마다 달라진다.
+    ## ★★ 같은 입력을 **두 번 세우지 않는다** (R64/WP-PERF)
+
+    리포트를 세우는 일은 `app/services/ui_run_cache.py::case_report_for` 가
+    맡는다. 화면 하나(`/ui/run`)가 이 함수를 **아홉 번** 부르기 때문이다 —
+    HTML 이 한 번, 그 안의 `<figure data-chart=…>` 여덟 장이 각각
+    `/ui/chart/<태그>.png` 로 따로 와서 한 번씩. 실측으로 그 아홉이 42초였고,
+    e2e 의 30초 예산을 이미 넘겨 **로컬에서 화면을 판정할 수 없는 상태**였다.
+
+    ⚠ **절차는 한 글자도 바뀌지 않았다.** 임시 디렉터리에 yaml 을 쓰고 그
+    경로로 `build_case_report` 를 부르는 것은 그 파일이 그대로 한다 — 옮겨
+    간 것은 *그 절차를 몇 번 도는가* 뿐이다. 임시 파일 이름을 골든과 같게
+    두는 이유(그 함수가 시나리오 이름이 매핑에 없을 때 `scenario_path.stem`
+    을 표제로 쓴다)도 옮겨 간 자리에 함께 적혀 있다.
+
+    ⚠ **`scenario_text` 는 계속 이 함수가 짓는다.** 캐시가 그것을 대신 지으면
+    화면이 그리는 문면이 *캐시에 든 옛 실행의 것*이 될 수 있다.
     """
     fields = scenario_fields(
         name,
@@ -194,10 +340,12 @@ def run_ui_case(
         ownership_or_operation_transferred=ownership_or_operation_transferred,
         metering_separated=metering_separated,
         assumption_overrides=assumption_overrides,
+        household_count=household_count,
+        heatpump_load_annual_kwh=heatpump_load_annual_kwh,
+        ev_load_annual_kwh=ev_load_annual_kwh,
+        appliance_load_season_shares=appliance_load_season_shares,
+        dr_shiftable_share_pct=dr_shiftable_share_pct,
     )
     text = yaml.safe_dump(fields, allow_unicode=True, sort_keys=False)
-    with tempfile.TemporaryDirectory() as workspace:
-        path = Path(workspace) / f"{name}.yaml"
-        path.write_text(text, encoding="utf-8")
-        report = build_case_report(path, assumptions_path=_ASSUMPTIONS)
+    report = case_report_for(name, fields, text, assumptions_path=_ASSUMPTIONS)
     return UiRun(report=report, scenario_text=text)

@@ -60,7 +60,7 @@ from core.casegrid.models import CaseOutcome
 from core.casegrid.profiles import load_daily_shapes
 from core.der.pv import PVAllocationPriority
 from core.report.dispatch_notes import build_hourly_profile
-from core.report.unreflected import _measured_quantities
+from core.report.unreflected import measured_over_seasons
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -359,16 +359,25 @@ def test_household_first_self_consumption_ratio_matches_unreflected_layer() -> N
     `BATTERY_FIRST` 에서는 둘이 다르므로(ⓐ ≠ 0, ⓑ = 0) 여기서 견주지 않는다.
 
     ⚠⚠ **동어반복이 아니다** — 두 값을 각각 다른 자리에서 읽는다: ⓐ 는
-    `core/report/unreflected.py::_measured_quantities`(대표일 시간대별 운전
-    결과에서 `min(발전,부하)` 를 스텝마다 합산)로, ⓑ 는 리포트 0절이 실제로
+    `core/report/unreflected.py::measured_over_seasons`(계절마다 `min(발전,부하)`
+    를 스텝마다 합산하고 계절일수로 가중 평균)로, ⓑ 는 리포트 0절이 실제로
     인쇄한 퍼센트 문자열(`_self_consumption_ratio_pct`)에 **실제 PV 운전
     결과**(`outcome.dispatch.per_resource["e2e-pv"]`)의 발전량을 곱해 얻는다 —
     어느 쪽도 `pv_allocation.measured_self_consumption_ratio` 를 다시 부르지
     않는다.
+
+    ## ⚠⚠⚠ 이 검사가 R64/WP-4 에 **실제로 결함을 잡았다** — 창을 맞춘다
+
+    러너가 계절 넷을 각각 돌려 합산하게 되자 ⓑ 는 **계절을 알게** 됐는데(잉여
+    시계열이 계절별 잉여의 일수 가중 평균이다) ⓐ 는 **접힌 하루에서** 재고
+    있어 8.856 대 8.9415kWh/일로 갈렸다. `min` 이 비선형이라 접힌 하루에서
+    재면 자가소비가 과대 계상된다. **허용오차를 키우지 않고** ⓐ 를 계절마다
+    재도록 코드를 고쳤다(`measured_over_seasons`) — 이 검사가 재는 것은
+    그대로 *「두 층이 같은 수를 말하는가」* 다.
     """
     outcome = _run(_CROSS_PRIORITY_LOAD_KWH, priority=PVAllocationPriority.HOUSEHOLD_FIRST)
     hours = build_hourly_profile(outcome.dispatch)
-    measured = _measured_quantities(hours)
+    measured = measured_over_seasons(hours, outcome.seasons)
     assert measured is not None, "부하 자원이 서지 않아 ⓐ 를 잴 수 없다"
 
     generation_kwh = sum(outcome.dispatch.per_resource["e2e-pv"].electric)
@@ -403,4 +412,41 @@ def test_pv_operating_mode_shows_declaration_and_actual_allocation() -> None:
         assert f"본 실행 배분: {priority.value}" in operating_mode, (
             f"{priority.value} 로 돌렸는데 「운전 방식」 칸이 그 배분을 보이지 "
             f"않는다: {operating_mode!r}"
+        )
+
+
+def test_the_allocation_piece_also_stands_in_its_own_field() -> None:
+    """★★★ **합친 칸의 뒷조각이 «자기 칸»에도 실려 온다** (R68/WP-2).
+
+    검증 3단계는 선언과 실제 배분을 **두 열로** 갈라 그려야 한다(검토서 §3.3 —
+    한 칸에 함께 적힌 「전량 판매 (선언) · 본 실행 배분: 집 우선」이 같은 문서의
+    「자가소비율 … (본 실행 실측)」과 모순으로 읽혔다). 그런데 합친 문면을 표시
+    층에서 ` · ` 로 쪼개 가르면 **조용히 틀린다** — 배분 문면 안에도 그 구분자가
+    있다(저장장치의 「방전 배분: 부하 추종 (방전창 18~21시 안)」).
+
+    ⇒ 러너가 두 조각을 **각자의 칸에도** 싣는다. 이 검사가 붙드는 것은 셋이다:
+
+    1. `applied_allocation` 이 **비어 있지 않다** (빈 칸이면 3단계의 그 열이
+       「이 실행은 배분을 따로 고르지 않았다」라는 거짓을 인쇄한다)
+    2. 그 값이 이 실행이 **실제로 고른 배분**을 든다
+    3. 합친 칸이 **그 조각으로 끝난다** — 두 칸이 갈라지면 붙임 6(합친 칸)과
+       검증 3단계(가른 칸)가 같은 물음에 다르게 답한다
+
+    ⚠ 위 `test_pv_operating_mode_shows_declaration_and_actual_allocation` 이
+    합친 칸의 문면을 따로 붙든다 — 그 칸은 **바꾸지 않았다.**
+    """
+    for priority in (PVAllocationPriority.HOUSEHOLD_FIRST, PVAllocationPriority.BATTERY_FIRST):
+        outcome = _run(_CROSS_PRIORITY_LOAD_KWH, priority=priority)
+        line = _pv_resource_line(outcome)
+        assert line.applied_allocation, (
+            f"{priority.value}: PV 행의 `applied_allocation` 이 비어 있다 — "
+            "검증 3단계의 「실제로 적용한 배분」 열이 거짓을 인쇄한다"
+        )
+        assert priority.value in line.applied_allocation, (
+            f"{priority.value} 로 돌렸는데 그 배분이 `applied_allocation` 에 "
+            f"없다: {line.applied_allocation!r}"
+        )
+        assert line.operating_mode.endswith(line.applied_allocation), (
+            f"{priority.value}: 합친 칸이 뒷조각으로 끝나지 않는다 — 두 칸이 "
+            f"갈렸다: {line.operating_mode!r} / {line.applied_allocation!r}"
         )

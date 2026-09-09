@@ -16,7 +16,30 @@
 """
 from __future__ import annotations
 
-from core.report._format import NO_VALUE, _date, _num, _unit_head, _won
+import math
+
+from core.casegrid.appliance_load import (
+    APPLIANCE_LOAD_UNIT,
+    APPLIANCE_LOAD_UNSPECIFIED,
+    EV_LOAD_FIELD,
+    EV_LOAD_LEDGER_KEY,
+    EV_LOAD_TITLE,
+    HEATPUMP_LOAD_FIELD,
+    HEATPUMP_LOAD_LEDGER_KEY,
+    HEATPUMP_LOAD_TITLE,
+)
+from core.casegrid.household_scale import (
+    HOUSEHOLD_COUNT_FIELD,
+    HOUSEHOLD_COUNT_LEDGER_KEY,
+    HOUSEHOLD_COUNT_UNSPECIFIED,
+)
+from core.casegrid.load_shift import (
+    DR_SHIFT_NOTHING_MOVED,
+    DR_SHIFTABLE_SHARE_LEDGER_KEY,
+    DR_SHIFTABLE_SHARE_UNIT,
+)
+from core.casegrid.models import SeasonRun
+from core.report._format import NO_VALUE, _cell, _date, _num, _unit_head, _won
 from core.report.case_report import AssumptionRow, CaseReport, OverrideRow
 
 #: 산출 방법 표기 — 「단독 기여」를 문장 대신 이 라벨이 말한다 (`FR-1002-AC2`).
@@ -69,8 +92,31 @@ TOPIC_PREFIXES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("운영비", ("opex.",)),
     ("설비 성능 · 수요", ("capacity_factor.", "load.")),
     ("요금 · 정산 단가", ("tariff.", "escalation.", "fee.")),
-    ("제도 · 세제", ("rule.", "tax.", "benefit.", "cost.")),
+    # ★ `policy.` 는 R67/WP-N3 가 처음 연 이름공간이다 —
+    # `docs/assumptions.yaml::policy.grid_supply_allowance`(분산특구 계통
+    # 전력공급 허용 비율 · 사용자 지시). 선언하지 않으면 위 `opex.`·`design.`
+    # 과 **같은 자리**에서 `test_unclassified_key_is_shown_not_absorbed` 가
+    # 「미분류」로 드러낸다(실측으로 밟았다).
+    # ⚠ **새 주제를 세우지 않고 이 주제에 넣었다.** 「30% 이내에서 계통
+    # 전력공급을 허용한다」는 **제도**의 진술이고, 이 주제가 이미 제도 값
+    # (`rule.`)을 담는다 — 주제를 늘리면 붙임 1 에 한 건뿐인 절이 또 서고
+    # 사람이 읽는 자리에 새 낱말이 하나 더 선다.
+    ("제도 · 세제", ("rule.", "tax.", "benefit.", "cost.", "policy.")),
     ("분석 조건 · 운영", ("analysis.", "ops.")),
+    # ★ `design.` 은 R66/WP-5 가 처음 연 이름공간이다 —
+    # `docs/assumptions.yaml::design.coincidence_factor`(단지 설비 동시율 · 사용자
+    # 지시 2026-09-07). 선언하지 않으면 위 `opex.` 와 **같은 자리**에서
+    # `test_unclassified_key_is_shown_not_absorbed` 가 「미분류」로 드러낸다
+    # (실측으로 밟았다).
+    #
+    # ⚠ **`분석 조건 · 운영` 에 넣지 않았다.** 그 주제는 *평가자가 고르는 것*
+    # (분석기간·할인율·운영예산)이고, 동시율은 **단지를 몇 집 동시로 설계하는가**
+    # 라는 설비 설계 전제다 — 대장도 그것을 `group_titles.design: 단지 설계`
+    # 로 따로 묶는다. 두 자리의 낱말을 맞춰 두면 붙임 1 과 설정 화면이 같은
+    # 이름으로 같은 무리를 부른다.
+    # ⚠ 지금 이 주제의 항목은 **한 건**이다. 그래도 주제를 세우는 이유는 위와 같다 —
+    # 「어디에도 안 맞아서 섞어 두었다」와 「이 주제다」는 다른 진술이다.
+    ("단지 설계", ("design.",)),
     ("검증 정박점", ("oracle.",)),
 )
 
@@ -107,7 +153,7 @@ NO_OVERRIDE = "없음 — 기준 전제를 그대로 적용"
 #: 표 이름을 `###` 로 달면 주제가 하나 늘어난 것으로 세어진다.
 #:
 #: 그래서 이름을 **굵은 글씨 한 줄**로 둔다 — 계산 검증 보고서
-#: (`core/report/verification.py` 7단계의 「**편익 행**」·「**운영비 행**」)가
+#: (`core/report/verification.py` 8단계의 「**편익 행**」·「**운영비 행**」)가
 #: 한 절 안의 표 여럿에 이미 쓰는 꼴이다.
 OVERRIDE_TABLE = "기준 전제 대비 변경 항목"
 
@@ -116,6 +162,29 @@ OVERRIDE_TABLE = "기준 전제 대비 변경 항목"
 #: ⚠ `###` 머리가 아닌 이유는 위 `OVERRIDE_TABLE` 과 **똑같다** — 붙임 1 안의
 #: `###` 는 「주제 머리」로 못 박혀 있다.
 BASELINE_TABLE = "기준선 갈래 선언"
+
+#: 붙임 1 의 **넷째 표** 이름 — 이 실행이 돈 단지 규모 (R64/WP-1 · 착수 47ⓐ).
+#:
+#: ⚠ `###` 머리가 아닌 이유는 위 둘과 **똑같다** — 붙임 1 안의 `###` 는
+#: 「주제 머리」로 못 박혀 있다.
+HOUSEHOLD_SCALE_TABLE = "실증단지 규모 (가구 수)"
+
+#: 붙임 1 의 **다섯째 표** 이름 — 이 실행이 한 호에 얹은 추가 전력사용기기
+#: 부하 (R64/WP-2 · 사용자 요구 2).
+#:
+#: ⚠ `###` 머리가 아닌 이유는 위 셋과 **똑같다** — 붙임 1 안의 `###` 는
+#: 「주제 머리」로 못 박혀 있다.
+APPLIANCE_LOAD_TABLE = "가구의 추가 전력사용기기 부하"
+
+#: 붙임 1 의 **여섯째 표** 이름 — 「AI 가전」이 하루 안에서 옮기는 가전 부하
+#: (R64/WP-7 · 사용자 요구 2 · 사용자 판정 §4·§5).
+#:
+#: ⚠ `###` 머리가 아닌 이유는 위 넷과 **똑같다** — 붙임 1 안의 `###` 는
+#: 「주제 머리」로 못 박혀 있다.
+#: ⚠ 표 이름에 「AI 가전」을 넣는다 — 사용자 요구가 그 낱말로 적혀 있고,
+#: 넣지 않으면 검토자가 *「요구 2 의 세 기기 중 셋째는 어디 갔나」* 에 답을
+#: 얻지 못한다. **그 답이 「부하가 아니라 형상으로 반영했다」다.**
+LOAD_SHIFT_TABLE = "「AI 가전」 — 하루 안에서 옮기는 가전 부하"
 
 #: 갈래 선언 중 **비어 있는 칸**에 서는 문면 (`FR-705-AC2`).
 #:
@@ -218,11 +287,19 @@ def _first_sentence(text: str) -> str:
 
 
 def _appendix_row(row: AssumptionRow) -> str:
-    """붙임 1 의 한 행. **신뢰도가 열로 들어온다** — 주제별로 묶기 때문이다."""
+    """붙임 1 의 한 행. **신뢰도가 열로 들어온다** — 주제별로 묶기 때문이다.
+
+    ⚠⚠ **산문 칸을 접어서 넣는다** (R68/WP-8). 이 행은 검증 보고서 4단계 ⓑ 표와
+    **같은 함정**을 갖고 있었다 — `docs/assumptions.yaml::load.heatpump.annual`
+    의 `source` 에 줄바꿈이 있어 그 행이 표에서 튕겨 나간다. 대장은 고치지
+    않는다(값의 문제가 아니라 «인쇄»의 문제다 · `.orch/R68/JUDGMENT-wp7.md`).
+    접는 자리는 `core/report/_format.py::_cell` **하나**이며 여기서 새로 짓지
+    않는다 — 두 벌이면 한쪽만 고쳐지는 날 같은 결함이 되살아난다.
+    """
     return (
-        f"| `{row.key}` | {row.value} | {row.value_unit or NO_VALUE} | "
-        f"{row.confidence} | {row.source} | {row.base_year or NO_VALUE} | "
-        f"{_date(row.verified_at)} |"
+        f"| `{row.key}` | {_cell(str(row.value))} | {_cell(row.value_unit or '')} | "
+        f"{_cell(row.confidence)} | {_cell(row.source or '')} | "
+        f"{_cell(str(row.base_year or ''))} | {_date(row.verified_at)} |"
     )
 
 
@@ -381,6 +458,253 @@ def _baseline_branch_table(report: CaseReport) -> list[str]:
     ]
 
 
+def _household_scale_table(report: CaseReport) -> list[str]:
+    """붙임 1 의 **넷째 표** — 이 실행이 **몇 호로** 돌았는가 (R64/WP-1 · 47ⓐ).
+
+    ## ★★★ 왜 「미지정」을 인쇄하는가 — 빈칸으로 두면 거짓이 읽힌다
+
+    대장(`docs/assumptions.yaml::load.household.count`)은 `track: blocked` ·
+    `value: null` 이라 **붙임 1 의 주제별 표에 값 없는 행으로** 실린다. 그
+    행만 보면 검토자는 *「채워지지 않은 전제가 하나 있구나」* 까지만 읽고,
+    **그래서 이 실행이 몇 호를 계산했는가**에는 답을 얻지 못한다.
+
+    답은 「한 호」다. `load.household.annual` 이 **kWh/호·년**이므로 가구 수를
+    주지 않은 실행의 단지 총부하는 **한 호의 총부하**이며, 그 사실이 어디에도
+    적혀 있지 않으면 표의 모든 금액이 *「단지 전체의 금액」* 으로 읽힌다 —
+    40호 단지라면 40배 틀리게 읽는 것이다.
+
+    ⇒ 그래서 값이 없어도 **표를 지우지 않고** 「칸 + 사유」를 세운다. 같은
+    판단을 `_override_table`(「변경 없음」을 인쇄한다)과
+    `app/services/verify_steps.py` 의 `_GAPS` 가 이미 적어 두었다.
+
+    ## ⚠ 이 표는 대장 행의 사본이 아니다
+
+    붙임 1 첫째 표의 `load.household.count` 행은 **대장이 무엇을 갖고
+    있는가**(비어 있다)를 적고, 이 표는 **이 실행이 무엇으로 돌았는가**를
+    적는다. 둘은 다른 진술이며, 값이 도착하는 날에도 그렇다 — 대장에 값이
+    있어도 시나리오가 다른 수를 적으면 실행이 쓴 것은 시나리오의 수다.
+    """
+    count = report.household_count
+    used = f"{count:,}호" if count is not None else HOUSEHOLD_COUNT_UNSPECIFIED
+    return [
+        f"**{HOUSEHOLD_SCALE_TABLE}**",
+        "",
+        "- 이 표가 말하는 것은 **이 실행이 몇 호를 계산했는가**다 — 위 첫째 "
+        f"표의 `{HOUSEHOLD_COUNT_LEDGER_KEY}` 행은 **대장이 무엇을 갖고 "
+        "있는가**를 적는 자리이고, 이 표는 실행의 사실을 적는다. 값이 같아도 "
+        "다른 진술이다",
+        "",
+        "| 항목 | 값 |",
+        "|---|---|",
+        f"| 이 실행의 가구 수 | {used} |",
+        # ⚠ `×` 는 곱셈 기호 그대로다. `x` 로 바꾸면 산식이 「가구 수 x …」가
+        # 되어 변수 이름처럼 읽힌다 — `core/report/sizing.py` 의 산식 줄이 같은
+        # 자리에서 같은 `noqa` 를 단다.
+        "| 단지 총부하 | 가구 수 × (가구 한 호의 연간 사용량 + 그 호의 추가 "  # noqa: RUF001
+        "전력사용기기 소비량) |",
+        f"| 대장 자리 | `{HOUSEHOLD_COUNT_LEDGER_KEY}` — 위 첫째 표가 그 값과 "
+        "부기를 싣는다. 저장소는 이 수를 **소스의 기본값으로 메우지 않는다** "
+        "(사업 계획이 정하는 사실이므로 가정하지 않는다) |",
+        f"| 실행 입력의 통로 | 시나리오 yaml 의 `{HOUSEHOLD_COUNT_FIELD}` 필드 "
+        f"— 적지 않으면 대장 `{HOUSEHOLD_COUNT_LEDGER_KEY}` 의 값으로 돈다 |",
+        "",
+    ]
+
+
+def _appliance_load_row(
+    label: str, value: float | None, ledger_key: str, field: str
+) -> str:
+    """한 기기의 표 한 줄 — **값이든 「미지정」이든 줄을 지우지 않는다.**
+
+    ⚠ 값이 없다고 줄을 빼면 「히트펌프를 0으로 돌렸다」와 「히트펌프라는 축이
+    없다」가 산출물에서 같아진다 — `_override_table` 이 「변경 없음」을
+    인쇄하고 표를 지우지 않는 것과 같은 판단이다.
+    """
+    used = (
+        f"{value:,.0f} {APPLIANCE_LOAD_UNIT}"
+        if value is not None
+        else APPLIANCE_LOAD_UNSPECIFIED
+    )
+    return f"| {label} | {used} | `{ledger_key}` | `{field}` |"
+
+
+def _appliance_load_table(report: CaseReport) -> list[str]:
+    """붙임 1 의 **다섯째 표** — 한 호에 **무엇을 얼마나 얹었는가** (R64/WP-2).
+
+    ## ★★★ 왜 「미지정」을 인쇄하는가 — 빈칸으로 두면 거짓이 읽힌다
+
+    위 주제별 표는 **대장이 무엇을 갖고 있는가**를 싣는다. 그 행만 보면
+    검토자는 *「전제가 둘 있구나」* 까지만 읽고, **그래서 이 실행이 무엇을 얹고
+    돌았는가**에는 답을 얻지 못한다 — 시나리오·화면이 다른 수를 적었으면 실행이
+    쓴 것은 그 수이고, 아무 데도 적지 않았으면 대장의 수다.
+
+    대장이 비어 있고 실행 입력도 없으면 답은 「아무것도 안 얹었다」다. 그 사실이
+    어디에도 적혀 있지 않으면 검토자는 아래 모든 수량과 금액을
+    *「히트펌프·전기차가 있는 가구의 것」* 으로 읽을 수 있고, 참고자료의 표준
+    모델대로라면 한 호의 총부하가 실제의 **절반 남짓**이다(9,252 중 5,087이
+    그 둘이다).
+
+    ⇒ 그래서 값이 없어도 **표를 지우지 않고** 「칸 + 사유」를 세운다.
+    `_household_scale_table` 이 가구 수에서 같은 판단을 적었다.
+
+    ## ⚠ 「0」과 「미지정」이 다르게 인쇄된다
+
+    `0 kWh/호·년` 은 *「그 기기가 없다고 적었다」*이고 「미지정」은 *「있는지
+    아직 모른다」*다. 더해지는 값은 둘 다 0 이지만 진술이 다르므로 글자도
+    달라야 한다 — 같은 글자로 덮으면 검토자가 그 둘을 가릴 수 없다.
+
+    ## ⚠ 이 표는 「설비를 놓았다」가 아니다
+
+    여기 서는 것은 **부하**뿐이다. 히트펌프·전기차의 설치비·유지보수비와 그
+    설비가 만드는 편익(난방비 절감·V2G 방전 수익)은 이 표가 다루지 않으며,
+    부하에 편익을 붙이면 그 절감을 일으킨 자원과 이중 계상된다
+    (`RC-LD-B0` · `FR-402-AC2.C`).
+    """
+    loads = report.appliance_loads
+    return [
+        f"**{APPLIANCE_LOAD_TABLE}**",
+        "",
+        "- 이 표가 말하는 것은 **이 실행이 한 호에 무엇을 얼마나 얹었는가**다 "
+        "— 위 넷째 표의 가구 수가 여기 합계에 곱해져 단지 총부하가 된다",
+        "- ⚠ **부하만이다.** 그 설비의 설치비·유지보수비와 편익(난방비 절감·"
+        "V2G 방전 수익)은 이 표에 없다 — 부하는 편익을 만들지 않는다",
+        "",
+        "| 기기 | 이 실행의 값 | 대장 자리 | 실행 입력의 통로 |",
+        "|---|---|---|---|",
+        _appliance_load_row(
+            HEATPUMP_LOAD_TITLE,
+            loads.heatpump_kwh,
+            HEATPUMP_LOAD_LEDGER_KEY,
+            HEATPUMP_LOAD_FIELD,
+        ),
+        _appliance_load_row(
+            EV_LOAD_TITLE,
+            loads.ev_kwh,
+            EV_LOAD_LEDGER_KEY,
+            EV_LOAD_FIELD,
+        ),
+        f"| 합계 (한 호에 더해진 값) | {loads.total_kwh:,.0f} "
+        f"{APPLIANCE_LOAD_UNIT} | — | — |",
+        "",
+        "- 대장 두 항목은 `track: blocked` · 값 없음 — 그 기기를 가구가 갖는지는 "
+        "**사업 계획이 정하는 사실**이므로 저장소가 가정하지 않는다",
+        "- 「AI 가전」은 항목으로 서지 않는다 — 전기를 더 쓰는 새 기기가 아니라 "
+        "이미 있는 가전에 붙는 기능이며, 더하는 부하로 세우면 그 가전의 소비가 "
+        "두 번 세어진다 (사용자 판정 2026-09-06)",
+        "",
+    ]
+
+
+def _load_shift_row(season: SeasonRun) -> str:
+    """계절 하나의 표 한 줄 — **옮긴 몫이 0 이어도 줄을 지우지 않는다.**
+
+    ⚠ 0 인 계절을 빼면 「그 계절에는 옮길 곳이 없었다」와 「그 계절이 아예
+    없다」가 산출물에서 같아진다 — `_appliance_load_row` 가 「미지정」에서
+    같은 판단을 적었다.
+    """
+    moved = (
+        f"{season.load_shift_annual_kwh:,.1f} kWh/년"
+        if season.load_shift_annual_kwh > 0.0
+        else DR_SHIFT_NOTHING_MOVED
+    )
+    return f"| {season.name} | {season.days:,}일 | {moved} |"
+
+
+def _load_shift_table(report: CaseReport) -> list[str]:
+    """붙임 1 의 **여섯째 표** — 「AI 가전」을 **형상으로** 반영한 자리 (R64/WP-7).
+
+    ## ★★★ 무엇을 적어야 하는가 — 셋 (오케스트레이터 판정 ⑥)
+
+    ① **기기별이 아니라 총량의 비율**이다 — 냉장고·세탁기의 소비량과 이동 가능
+       시간 자료가 대장에도 참고자료에도 없다(사용자 판정 §5).
+    ② **그 비율은 가정값**이다 — 대장 `load.dr_shiftable_share` 가
+       `confidence: 가정` 이며 값의 근거는 그 항목의 `derivation_method` 가
+       갖는다. ⛔ *「실측」* 으로 읽히게 적지 않는다.
+    ③ **정산금(시장) 갈래는 하지 않는다** — 수요반응 정산금
+       (`FR-401-AC2.DemandResponse`)은 정산단가가 없어 **미매핑**이고, 그
+       결손은 붙임 8 이 신고한다(`core/report/unreflected.py`).
+
+    ## ⚠ 왜 「비율」과 「실제로 옮긴 몫」을 함께 싣는가
+
+    비율만 적으면 *「10% 라고 했으니 10% 가 옮겨졌다」* 로 읽힌다. 실제로
+    옮기는 양은 **그 날 태양광 잉여가 자른다** — 겨울처럼 하루 종일 잉여가
+    없는 계절에서는 **한 kWh 도 옮기지 않는다.** 그 사실이 표에 없으면 검토자가
+    자가소비 개선을 비율에 비례하는 것으로 읽는다.
+
+    ## ⚠⚠ 총량은 이 표에서 **변하지 않는다**
+
+    옮긴 몫은 **빼고 더한 같은 수**다. 그래서 이 표의 「옮긴 몫」이 커져도 붙임
+    7 의 연간 부하 총량은 한 kWh 도 달라지지 않는다 — 달라지는 것은 계통 수전·
+    송전(그 시각의 자가소비)이다. 그 성질을
+    `tests/casegrid/test_load_shift.py` 가 잰다.
+
+    ## ⚠ 계절이 서지 않은 실행
+
+    형상 자산 없이 도는 실행(케이스 그리드·성능 측정)에서는 `report.seasons`
+    가 비어 있고, 그때 옮길 「잉여가 있는 시각」이라는 개념 자체가 서지 않는다 —
+    표는 그 사실을 적고 계절 줄을 세우지 않는다.
+    """
+    seasons = report.seasons
+    lines = [
+        f"**{LOAD_SHIFT_TABLE}**",
+        "",
+        "- 사용자 요구 2 의 「AI 가전」은 **더해지는 부하가 아니라 옮길 수 있는 "
+        "부하**다 — 기존 가전(냉장고·세탁기 등)에 붙는 기능이므로 kWh 를 "
+        "더하지 않고 **언제 쓸지**를 바꾼다 (사용자 판정 2026-09-06)",
+        "- 옮겨 가는 곳은 **그 날 태양광 잉여가 있는 시각**이다 — 자가소비를 "
+        "늘리는 갈래 하나이며, 요금 단가가 싼 시각으로 옮기지 않는다",
+        "",
+        "| 항목 | 이 실행의 값 |",
+        "|---|---|",
+        f"| 옮길 수 있는 가전 부하 비율 | {report.dr_shiftable_share_pct:,.1f} "
+        f"{DR_SHIFTABLE_SHARE_UNIT} |",
+        f"| 대장 자리 | `{DR_SHIFTABLE_SHARE_LEDGER_KEY}` — `track: assume` · "
+        "신뢰도 `가정` (값의 근거는 그 항목의 `derivation_method`) |",
+        "| 실행 입력의 통로 | 시나리오 yaml 의 `assumption_overrides` · "
+        "설정 화면의 대장 항목 칸 (**전용 필드를 따로 두지 않았다**) |",
+        f"| 실제로 옮긴 몫 (연간 합) | {_moved_total(seasons)} |",
+        "",
+    ]
+    if seasons:
+        lines += [
+            "| 계절 | 일수 | 그 계절에 옮긴 몫 |",
+            "|---|---|---|",
+            *[_load_shift_row(season) for season in seasons],
+            "",
+        ]
+    lines += [
+        "- ⚠ **기기별 목록이 아니다.** 냉장고·세탁기별 소비량과 이동 가능 "
+        "시간 자료가 대장에도 참고자료에도 없어 **총량의 비율 하나**로 세웠다 "
+        "(사용자 판정 §5 — *「집 전체 가전 부하 중 비율로 간단히」*)",
+        "- ⚠ **그 비율은 가정값이다.** 실측이 아니며, 값이 오면 이 표의 수와 "
+        "아래 모든 금액이 함께 움직인다",
+        "- ⚠ **분모는 가전 부하뿐이다** — 히트펌프·전기차 부하는 이 비율의 "
+        "대상이 아니다 (전기차 충전의 형상은 별개 축이며 붙임 8 이 신고한다)",
+        "- ⚠⚠ **수요반응 정산금(시장 정산)은 하지 않는다.** 감축량에 곱할 "
+        "정산단가가 대장에 없어 `FR-401-AC2.DemandResponse` 는 **미매핑**이며, "
+        "여기서 얻는 절감은 **사는 전기가 줄어서** 요금 계산에서 나온다 — "
+        "부하는 편익을 만들지 않는다 (붙임 8 참조)",
+        "",
+    ]
+    return lines
+
+
+def _moved_total(seasons: tuple[SeasonRun, ...]) -> str:
+    """연간 옮긴 몫의 합 — **계절이 없으면 그 사실을 적는다.**
+
+    ⚠ 계절이 없는 실행에서 `0 kWh` 를 적으면 「옮길 곳이 없었다」로 읽힌다.
+    실제는 **형상 자산이 없어 옮기는 연산 자체가 서지 않은** 것이다.
+    """
+    if not seasons:
+        return "계절 형상이 없는 실행 — 옮기는 연산이 서지 않았다"
+    total = math.fsum(season.load_shift_annual_kwh for season in seasons)
+    return (
+        f"{total:,.1f} kWh/년 (**총량은 그대로다** — 같은 수를 빼고 더했다)"
+        if total > 0.0
+        else DR_SHIFT_NOTHING_MOVED
+    )
+
+
 def appendix_section(report: CaseReport) -> list[str]:
     """붙임 1 — 전 가정 목록. **주제별로 묶고 신뢰도를 열로** (`FR-1002-AC6`).
 
@@ -397,9 +721,13 @@ def appendix_section(report: CaseReport) -> list[str]:
     ⚠ 주제는 **대장 키의 접두어**에서 온다 — 여기서 새 분류를 만들지 않는다
     (`TOPIC_PREFIXES`).
 
-    ⚠ **이 붙임은 표가 셋이다** — 주제별 전건 · **변경 항목**
+    ⚠ **이 붙임은 표가 여섯이다** — 주제별 전건 · **변경 항목**
     (`_override_table` · `FR-602-AC2`) · **기준선 갈래 선언**
-    (`_baseline_branch_table` · `FR-705-AC2` · R60/WP-2). 붙임 2 가 표를 둘로
+    (`_baseline_branch_table` · `FR-705-AC2` · R60/WP-2) · **실증단지 규모**
+    (`_household_scale_table` · R64/WP-1 · 착수 47ⓐ) · **가구의 추가
+    전력사용기기 부하** (`_appliance_load_table` · R64/WP-2 · 사용자 요구 2) ·
+    **「AI 가전」의 부하 이동** (`_load_shift_table` · R64/WP-7 · 사용자 요구 2).
+    붙임 2 가 표를 둘로
     가른 것과 같은 갈래이며, 이름만 `###` 머리가 아니다(`OVERRIDE_TABLE` 주석).
     """
     by_topic: dict[str, list[AssumptionRow]] = {}
@@ -442,6 +770,22 @@ def appendix_section(report: CaseReport) -> list[str]:
     # 순서가 맨 뒤인 이유: 위 둘이 「무엇을 썼는가 · 무엇을 바꿨는가」이고
     # 이것은 「**무엇 대비** 재었는가」다 — 값을 다 보인 뒤 견준 상대를 밝힌다.
     lines += _baseline_branch_table(report)
+    # ★ 넷째 표다 — **이 실행이 몇 호로 돌았는가** (R64/WP-1 · 착수 47ⓐ).
+    # 갈래 표 뒤에 두는 이유: 앞 셋이 「무엇을 썼는가 · 무엇을 바꿨는가 ·
+    # 무엇 대비 재었는가」이고 이것은 **그 전부가 몇 호분인가**다 — 규모를
+    # 모르면 앞의 모든 금액이 단지 전체의 금액으로 읽힌다.
+    lines += _household_scale_table(report)
+    # ★ 다섯째 표다 — **한 호에 무엇을 얼마나 얹었는가** (R64/WP-2 · 사용자
+    # 요구 2). 가구 수 표 바로 뒤인 이유: 단지 총부하는 이 표의 합계가
+    # 더해진 뒤에 그 수가 곱해진 것이며, 순서가 뒤집히면 검토자가 곱한 뒤에
+    # 더하는 것으로 읽는다 — 그 오독은 「단지에 히트펌프가 딱 한 대」다.
+    lines += _appliance_load_table(report)
+    # ★ 여섯째 표다 — **「AI 가전」을 형상으로 반영한 자리** (R64/WP-7 · 사용자
+    # 요구 2). 기기 부하 표 바로 뒤인 이유: 요구 2 가 나열한 기기 셋 중 앞의
+    # 둘이 그 표이고 셋째가 이 표이며, **성질이 다르다는 것**(총량이 아니라
+    # 형상)이 나란히 놓여야 읽힌다 — 떨어뜨려 두면 검토자가 「AI 가전은
+    # 반영되지 않았다」로 읽는다.
+    lines += _load_shift_table(report)
     return lines
 
 

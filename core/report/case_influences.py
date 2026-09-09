@@ -56,6 +56,7 @@ from datetime import date
 from typing import Any
 
 from core.assumption.provider import AssumptionSet
+from core.casegrid.appliance_load import ApplianceSeasonShares
 from core.casegrid.e2e_runner import run_single_case_e2e
 from core.casegrid.ledger_levels import (
     design_variables,
@@ -228,8 +229,34 @@ class _Sweeper:
         distributed_sub_items: DistributedSubItems | None,
         baseline_arrangement: BaselineArrangement,
         pool_metering: PoolMeteringDeclaration | None = None,
+        household_count: int | None = None,
+        extra_appliance_load_kwh: float = 0.0,
+        appliance_season_shares: ApplianceSeasonShares | None = None,
+        dr_shiftable_share_pct: float = 0.0,
     ) -> None:
         self._baseline_arrangement = baseline_arrangement
+        # ★★ **단지 규모** (R64/WP-1 · 착수 47ⓐ). 기본값 `None` 은 *「적지
+        # 않았다」*이며 그때 러너가 가구 한 호 기준으로 돈다 — 위 갈래처럼
+        # 「조용히 다른 사업」이 되는 자리이므로 필수로 두고 싶으나, 이 인자를
+        # 넘기지 않는 호출부(시험)가 있고 그 실행의 본 계산도 미지정이라
+        # **본 실행과 어긋나지 않는다.** 어긋남을 붙드는 것은
+        # `tests/report/test_household_count_wired.py` 다.
+        self._household_count = household_count
+        # ★★ **한 호에 얹은 추가 전력사용기기 부하의 합계** (R64/WP-2 · 사용자
+        # 요구 2). 기본값 `0.0` 은 *「기기를 적지 않았다」*이며 그때 러너 인자의
+        # 기본값과 같다 — 위 가구 수와 같은 자리이고, 어긋남을 붙드는 것은
+        # `tests/report/test_appliance_load_wired.py` 다.
+        self._extra_appliance_load_kwh = extra_appliance_load_kwh
+        # ★★ **그 합계의 계절별 몫** (R64/WP-3b-1 · 사용자 요구 3). 기본값
+        # `None` 은 *「계절 몫을 적지 않았다」*이며 그때 러너 인자의 기본값과
+        # 같다 — 바로 위 기기 부하와 같은 자리이고, 안 넘기면 스윕이 **냉난방을
+        # 기본 부하와 같은 계절 몫으로** 돌려 본문과 다른 사업을 그린다.
+        self._appliance_season_shares = appliance_season_shares
+        # ★★ **「AI 가전」이 하루 안에서 옮기는 비율** (R64/WP-7 · 사용자 요구
+        # 2). 기본값 `0.0` 은 *「옮기지 않는다」*이며 그때 러너 인자의 기본값과
+        # 같다 — 위 둘과 같은 자리이고, 어긋남을 붙드는 것은
+        # `tests/report/test_load_shift_wired.py` 다.
+        self._dr_shiftable_share_pct = dr_shiftable_share_pct
         # ★ ⓒ 의 계측 선언 (R60/WP-3). **기본값을 두는 것이 안전한 자리다** —
         # 잊으면 ⓒ 의 스윕이 `DV-15` 로 **거부**되므로 어긋남이 조용히
         # 지나가지 않는다. 위 갈래는 그렇지 않아서(기본값이 조용히 다른
@@ -279,6 +306,26 @@ class _Sweeper:
             # 올라올 때 이 코드가 `case_report.py` 에 살던 시절에 이미 겪은
             # 함정).
             annual_load_kwh=probe["household_load_annual_kwh"]["base"],
+            # ★ **본 실행과 같은 단지 규모로 돈다** (R64/WP-1). 위
+            # `annual_load_kwh` 는 **한 호**의 값이므로 이 수가 빠지면 스윕이
+            # 한 호짜리 사업을 재고, 그 결과를 n호 단지의 `base_npv` 와 견주는
+            # `build_coupled_sweeps` 가 **규모 차이를 인자 기여로 인쇄한다**.
+            household_count=self._household_count,
+            # ★ **본 실행과 같은 기기 부하를 얹는다** (R64/WP-2). 안 넘기면
+            # 스윕이 히트펌프 없는 가구를 재고, 그 결과를 기기가 있는 본문의
+            # `base_npv` 와 견주는 `build_coupled_sweeps` 가 **부하 차이를
+            # 인자 기여로 인쇄한다** — 위 가구 수가 적어 둔 것과 같은 함정이다.
+            extra_appliance_load_kwh=self._extra_appliance_load_kwh,
+            # ★ **본 실행과 같은 계절 몫으로 냉난방을 나눈다** (R64/WP-3b-1).
+            # 안 넘기면 스윕이 계절 차등 없는 하루를 재고, 그 결과를 차등한
+            # 본문의 `base_npv` 와 견주는 `build_coupled_sweeps` 가 **계절
+            # 차이를 인자 기여로 인쇄한다** — 위 셋과 같은 함정이다.
+            appliance_season_shares=self._appliance_season_shares,
+            # ★ **본 실행과 같은 비율로 부하를 옮긴다** (R64/WP-7 · 사용자 요구
+            # 2). 안 넘기면 스윕이 **부하를 옮기지 않는 하루**를 재고, 그 결과를
+            # 옮긴 하루 위에 선 본문의 `base_npv` 와 견주는 `build_coupled_sweeps`
+            # 가 **형상 차이를 인자 기여로 인쇄한다** — 위 둘과 같은 함정이다.
+            dr_shiftable_share_pct=self._dr_shiftable_share_pct,
             # ★ **본 실행과 같은 REC 단가·가중치를 쓴다** (사용자 판정 §4·§5 ·
             # R51/WP-6·R52/WP-6). 안 넘기면 러너의 기본값이 쓰이고, 대장이
             # 값을 얻는 날 **본문과 5.1 이 서로 다른 사업을 그린다** — 위

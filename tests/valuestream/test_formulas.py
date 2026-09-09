@@ -8,7 +8,10 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
+import yaml
 
 from core.contracts.der import DispatchResult
 from core.contracts.units import Money, to_won
@@ -83,7 +86,7 @@ def test_surplus_sale_rejects_negative_price() -> None:
 
 @pytest.mark.req("FR-401-AC2.REC")
 def test_rec_generation_times_weight_times_price() -> None:
-    """REC = 발전량 × 가중치 × 단가. 충전(음수)은 REC 대상이 아니다.
+    """REC = **계통으로 나간 kWh** × 가중치 × 단가. 충전(음수)은 대상이 아니다.
 
     오라클: 순위 1. 1000 kWh × 1.0 × 50,000원 = 50,000,000 원.
     """
@@ -240,3 +243,61 @@ def test_disabled_unspecified_constructs_without_error() -> None:
     """
     # 예외 없이 생성되어야 한다
     _UnspecifiedBenefit(enabled=False)
+
+
+# ── REC 산식의 «낱말» — 대장이 쓰는 말을 쓴다 (R64/WP-FIX 결함 5) ────────────
+
+#: 대장 정본. 값이 아니라 **말**을 대조하므로 원문을 연다.
+_ASSUMPTIONS = Path(__file__).resolve().parents[2] / "docs" / "assumptions.yaml"
+
+
+def _applicable_scope(key: str) -> str:
+    ledger = yaml.safe_load(_ASSUMPTIONS.read_text(encoding="utf-8"))["assumptions"]
+    item = next(row for row in ledger if row["key"] == key)
+    return str(item["applicable_scope"])
+
+
+@pytest.mark.req("FR-401-AC2.REC")
+def test_the_rec_formula_names_the_quantity_the_way_the_ledger_does() -> None:
+    """★★ REC 산식의 수량을 **「발전(량)」이라 부르지 않는다** (결함 5).
+
+    그 수량은 `dispatch.electric` 의 양수 합, 곧 **계통으로 나간 kWh** 이며
+    대장 `benefit.rec_price` 의 `applicable_scope` 가 그렇게 정의한다. 그런데
+    같은 리포트가 「대표일 발전 10.8kWh」(용량 × 이용률)를 따로 싣는다 — 산식이
+    「대표일 발전 2.95kWh」라 적으면 두 수가 **같은 이름으로 갈리고**, 「REC 는
+    발전량 전체에 붙는다」로 읽은 검토자는 편익을 3.7배로 오독한다.
+
+    ⚠ 기대 낱말을 여기 박지 않고 **대장에서 읽어** 맞댄다 — 박으면 대장이
+    표현을 다듬는 날 코드와 대장이 조용히 갈린다.
+    """
+    scope = _applicable_scope("benefit.rec_price")
+    phrase = "계통으로 나간"
+    assert phrase in scope, (
+        f"전제가 깨졌다 — 대장이 REC 수량을 「{phrase} kWh」로 정의하지 않는다:\n{scope}"
+    )
+    text = REC(weight=1.0, rec_price_won_per_unit=70.0).formula(
+        _dispatch_electric([2.0, -1.0, 0.0]), year=1
+    )
+    assert phrase in text, f"REC 산식이 대장의 말을 쓰지 않는다 — 「{text}」"
+    assert "발전" not in text, (
+        f"REC 산식이 수량을 「발전」이라 부른다 — 「{text}」\n"
+        "괄호로 덧붙이는 것으로는 부족하다: 오독의 방아쇠가 그 낱말이다"
+    )
+    assert "2.00kWh" in text, f"수량이 양수 합(2.0)이 아니다 — 「{text}」"
+
+
+@pytest.mark.req("FR-401-AC2.REC")
+def test_the_rec_module_states_the_quantity_convention() -> None:
+    """★ 모듈 머리말·클래스 독스트링도 **같은 말**을 쓴다.
+
+    한쪽만 고치면 갈린다 — 다음에 산식 문면을 손보는 사람이 읽는 것은
+    독스트링이고, 거기 「발전량 × 가중치 × 단가」가 남아 있으면 그 말이 산식으로
+    되돌아온다.
+    """
+    from core.valuestream import rec as rec_module
+
+    assert rec_module.__doc__ and "계통으로 나간" in rec_module.__doc__
+    assert REC.__doc__ and "계통으로 나간" in REC.__doc__
+    assert REC.__doc__ and "발전" not in REC.__doc__, (
+        f"클래스 독스트링이 수량을 「발전」이라 부른다 — 「{REC.__doc__}」"
+    )

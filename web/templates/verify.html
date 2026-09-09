@@ -19,6 +19,12 @@
        `#595959` 는 같은 바닥에서 약 7:1 이다. **흐리게 보이려고 더 밝히지
        마라** — 이 칸에 적힌 사유는 「왜 값이 없는가」이고 읽혀야 하는 글이다. #}
     .gap-blank { color: #595959; font-style: italic; }
+    {# ★ 값이 선 칸은 빈 칸과 **눈으로도 갈려야** 한다 — 같은 모양이면 사유
+       문단이 붙은 것만 보고 「또 빈 칸이구나」로 읽는다. 왼쪽 띠 색만 바꾸고
+       글자색은 본문 그대로 둔다(값은 흐리게 보일 글이 아니다). #}
+    .verify-fill { border-left: 4px solid #1f6f43; padding-left: .75rem; }
+    .fill-value { font-weight: 700; }
+    .fill-note { color: #595959; }
   </style>
 </head>
 <body>
@@ -66,15 +72,16 @@
         <dt>분석 설정 대장</dt><dd>{{ assumption_set }}</dd>
         <dt>실행 매니페스트</dt><dd><code>{{ manifest }}</code></dd>
       </dl>
-      {# ⚠ 묶음이 계산 순서를 가른다 — 적지 않으면 「5단계 다음이 4단계」가
-         오류로 보인다. 5단계(운영비)는 ② 전력공급비용의 자리이고 4단계(편익
-         화폐화)는 ④ 편익의 자리라서 그렇다. #}
+      {# ⚠ 묶음이 계산 순서를 가른다 — 적지 않으면 「1단계 다음이 4단계」와
+         「6단계 다음이 5단계」가 오류로 보인다. R69/WP-1 이 단계를 열로 올려
+         어긋나는 자리가 둘이 되었다: 4단계(경제성 입력)는 ① 「전력요금」의
+         자리이고, 6단계(운영비)는 ② 「전력공급비용」의 자리다. #}
       <p class="verify-note" role="note">걸음 안의 <strong>단계 번호는 계산
         순서</strong>이고, 걸음은 <strong>사용자가 든 네 묶음</strong>이다. 둘이
-        갈리는 자리가 하나 있다 — 5단계(운영비)는 ② 「전력공급비용」에, 4단계
-        (편익 화폐화)는 ④ 「편익」에 실리므로 화면에서 5단계가 4단계보다 먼저
-        나온다. 계산 순서 그대로 따라가려면 각 단계의 <strong>ⓒ 다음 단계로 넘긴
-        값</strong> 을 짚으면 된다.</p>
+        갈리는 자리가 둘 있다 — 4단계(경제성 입력)는 ① 「전력요금」에 실리므로
+        2·3단계보다 먼저 나오고, 6단계(운영비)는 ② 「전력공급비용」에 실리므로
+        ④ 의 5단계(편익 화폐화)보다 먼저 나온다. 계산 순서 그대로 따라가려면 각
+        단계의 <strong>ⓒ 다음 단계로 넘긴 값</strong> 을 짚으면 된다.</p>
       <p class="verify-note" role="note">재료가 없어 값을 세우지 못한 칸은
         <strong>지우지 않고</strong> 사유를 글자로 적는다 — 걸음을 조용히 빼면
         사용자가 요구한 것이 화면에서 사라지고, 사라진 것은 아무도 못 본다.</p>
@@ -105,6 +112,65 @@
       </details>
       {% endfor %}
 
+      {% if group.seasons %}
+      {# ★★ 계절별 시간대별 운전 — **도표** (R65/WP-3 · 사용자 요구: 검증 모드에서
+         수치와 도표 둘 다). 아래 표와 같은 걸음에 두는 이유: 「수치와 도표로
+         확인」이 한 화면에서 성립해야 하기 때문이다.
+         ★★ **표보다 «먼저» 온다** (R65/WP-4 · 독립 검증 `.orch/R65/result_V.md` ③-1).
+         계절 넷의 24행이 96행이라, 표를 먼저 두면 그림이 스크롤 한참 아래에 서고
+         「수치와 도표를 맞대 본다」가 한 화면에서 성립하지 않는다 — 그림이 한
+         화면에 들어오고 표가 그 근거로 뒤따르는 차례다.
+         ⛔ 그림을 새로 그리지 않는다 — 이미 있는 라우트 GET /ui/chart/{tag}.png 를
+         부르며 칸의 재료는 `chart_figures` 가 짓는다(`app/routers/ui_verify.py`).
+         ⚠ `src` 에 **이 화면에 온 질의**가 실려 있다 — 안 실리면 표는 20호인데
+         그림은 1호가 된다. `group.seasons` 가 있을 때만 세운다: 계절이 없는 실행의
+         그림 주소는 501 로 거부되며, 그 빈자리의 사유는 같은 걸음의 빈 칸
+         (`seasonal_operation`) 이 이미 글자로 갖는다.
+         ⚠ 마크업·캡션 문면은 `run_result.html#result-charts` 와 같은 모양이다 —
+         한 그림을 두 화면이 다르게 소개하면 어느 쪽이 정본인지 화면만 봐서는
+         알 수 없다. #}
+      {% if seasonal_figure %}
+      <figure class="season-chart" data-chart="{{ seasonal_figure.tag }}">
+        {% if seasonal_figure.wired %}
+        <img src="{{ seasonal_figure.src }}" alt="{{ seasonal_figure.alt }}"
+             loading="lazy" style="max-width:100%;height:auto">
+        <figcaption>{{ seasonal_figure.label }} · 자료: {{ seasonal_figure.source }}</figcaption>
+        {% else %}
+        <p class="chart-unwired" role="note">아직 배선되지 않았다 — {{ seasonal_figure.reason }}</p>
+        <figcaption>{{ seasonal_figure.label }}</figcaption>
+        {% endif %}
+      </figure>
+      {% endif %}
+      {# ★★ 계절별 시간대별 운전 (R64/WP-5 · 사용자 요구 6). 순수요 표와 **같은
+         열**을 쓴다 — `app/services/verify_steps.py::season_tables` 참조.
+         ⚠ 행에 `data-step` 을 쓰지 않는다. ③ 순수요 표의 행을 세는 검사가
+         그 이름으로 세고 있고, 같은 이름을 쓰면 두 표가 한 표로 세어진다. #}
+      <figure class="season-operation" tabindex="0">
+        {% for season in group.seasons %}
+        <table data-season="{{ season.name }}" data-season-days="{{ season.days }}">
+          <caption>{{ season.name }} 대표일 — 연 {{ season.days }}일</caption>
+          <thead>
+            <tr>
+              <th scope="col">스텝</th>
+              {% for label in group.season_column_labels %}
+              <th scope="col">{{ label }} (kWh)</th>
+              {% endfor %}
+              <th scope="col">계통 송전 (kWh)</th>
+              <th scope="col">계통 수전 (kWh)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in season.rows %}
+            <tr data-season-step="{{ row.step }}"><td>{{ row.step }}</td>{% for cell in row.per_resource %}<td>{{ cell }}</td>{% endfor %}<td>{{ row.grid_export }}</td><td>{{ row.grid_import }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endfor %}
+        <figcaption>{{ group.season_caption }}</figcaption>
+      </figure>
+
+      {% endif %}
+
       {% if group.net_demand %}
       <figure class="net-demand" tabindex="0">
         <table>
@@ -112,8 +178,8 @@
           <thead>
             <tr>
               <th scope="col">스텝</th>
-              {% for name in group.net_demand_columns %}
-              <th scope="col">{{ name }} (kWh)</th>
+              {% for label in group.net_demand_column_labels %}
+              <th scope="col">{{ label }} (kWh)</th>
               {% endfor %}
               <th scope="col">계통 송전 (kWh)</th>
               <th scope="col">순수요 = 계통 수전 (kWh)</th>
@@ -128,6 +194,20 @@
         <figcaption>{{ group.net_demand_caption }}</figcaption>
       </figure>
       {% endif %}
+
+      {% for fill in group.fills %}
+      {# ★★ 재료가 도착해 **값이 선** 칸이다 (R64/WP-1). 빈 칸과 **다른 자리**에
+         두는 이유는 `app/services/verify_steps.py::VerifyFill` 독스트링이
+         갖는다 — 같은 자리에 두 뜻을 담으면 「사유가 비었다」와 「값이 비었다」를
+         검사가 구별하지 못한다.
+         ⚠ `data-filled="true"` 다. 빈 칸의 `false` 와 짝을 이루며,
+         `tests/app/test_ui_verify.py` 가 그 짝으로 두 갈래를 가른다. #}
+      <section class="verify-fill" data-fill="{{ fill.tag }}" data-filled="true">
+        <h3>{{ fill.title }}</h3>
+        <p class="fill-value">{{ fill.value }}</p>
+        <p class="fill-note">{{ fill.note }}</p>
+      </section>
+      {% endfor %}
 
       {% for gap in group.gaps %}
       {# ⚠⚠ 「빈 칸 + 사유」가 「없는 값」보다 정직하고 「지어낸 값」보다 훨씬

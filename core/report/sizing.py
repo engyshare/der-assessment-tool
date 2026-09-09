@@ -15,20 +15,29 @@
 
 **어느 연간 사용량이 맞는가**(검토서 §7)는 물음으로 남아 있다. 사용자 예시
 (월 600kWh · 연 7,200kWh)와 대장 base(연 3,600kWh)가 두 배 가까이 다르고, 이
-모듈은 어느 쪽도 고르지 않는다 — 둘 다 역산해 나란히 낸다. 이용률도 같다 —
-지금 유일한 값(`core/casegrid/e2e_runner.py::PV_CAPACITY_FACTOR`)은 대장
-항목이 아니라 소스 상수이고(검토서 §7 부수발견), 그 값을 대장으로 올리는
-것은 조사가 선행이라 이 WP 밖이다. 그래서 이 모듈은 이용률을 **인자로만**
-받고 스스로 고르지 않는다.
+모듈은 어느 쪽도 고르지 않는다 — 둘 다 역산해 나란히 낸다. **이용률도 고르지
+않는다** — 값의 소유자는 전제 대장(`capacity_factor.pv_rooftop`)이고 이 모듈은
+그것을 **인자로만** 받는다.
 
-## 탐색 구간을 넓히지 않는다
+⚠ **R67/WP-N2 까지 그 값은 소스 상수였다**(종전 이름은 `e2e_runner` 의
+`PV_CAPACITY_FACTOR`). 역산 **전체가 그 값에 반비례**하는데 사용자가 바꿀
+통로가 없었고, 판정 `docs/decisions-2026-09-08-R67b.md` §3-4 가 그것을 지목해
+대장으로 옮겼다.
+
+## 탐색 구간을 넓히지 않는다 — **그리고 답을 구간 안으로 깎지도 않는다**
 
 역산 용량이 `core/casegrid/ledger_levels.py::_DESIGN_VARS` 의 `pv_capacity_kw`
 탐색 상한을 넘을 수 있다 — 그때 이 모듈은 구간을 넓히지 않고
 `within_search_range=False` 를 값으로 싣는다. 구간을 넓히는 것은 결론 축
 (`core/report/capacity.py` 의 4.4 적정 용량 검토)이 훑는 폭 자체를 바꾸는
-일이라 이 WP 밖이다 — 넘는 점을 지우지도 않는다(`capacity.py` 머리
-독스트링의 *「계산되지 않는 점을 버리지 않는다」* 와 같은 태도).
+일이며, 넘는 점을 지우지도 않는다(`capacity.py` 머리 독스트링의
+*「계산되지 않는 점을 버리지 않는다」* 와 같은 태도).
+
+★★ **그 구간은 «경제성 스윕»의 것이다** (R67/WP-N2 · 판정 §2-2). 사용자
+판정이 *「용량 범위 제한이 없어야 하며」* 이므로 이 역산의 답은 구간과
+무관하게 그대로 제시되고, 「구간 밖」 표시는 *그 스윕이 이 용량을 훑지
+않았다*는 뜻이다. 문면은 `capacity.py::search_range_note` 하나가 갖는다 —
+같은 표를 두 문서가 싣기 때문이다.
 """
 from __future__ import annotations
 
@@ -38,6 +47,11 @@ from typing import Final
 
 from core.contracts.units import HOURS_PER_YEAR
 from core.contracts.validation import ValidationError
+
+# ⚠ **문면 하나를 두 문서가 쓴다** — 「구간 밖」이 무슨 뜻인가를 검증 보고서
+# 2단계와 이 붙임이 같이 적어야 한다(R67/WP-N2 · 판정 §2-2). 정본은 경제성
+# 스윕을 소유한 모듈이며, 여기서 다시 적으면 한쪽만 고쳐진다.
+from core.report.capacity import search_range_note
 
 #: 사용자 예시의 월 사용량 (판정 §2-1 「가」 · 검토서 §7). **대장 값이 아니다** —
 #: 대장(`load.household.annual`)의 base 는 연 3,600kWh 이고 이 예시는 연 7,200kWh 다.
@@ -78,11 +92,32 @@ def required_pv_capacity_kw(*, annual_load_kwh: float, capacity_factor: float) -
 
 @dataclass(frozen=True)
 class SelfSufficiencyPoint:
-    """자립 역산 점 하나."""
+    """자립 역산 점 하나 — **1가구 값과 단지 값을 함께 든다.**
+
+    ## ★★★ 1가구 두 칸이 **먼저** 선다 (R67/WP-③ · 사용자 판정 §4-3)
+
+    사용자 문면이 *「2단계는 **1가구 적정 용량을 먼저 제시한 뒤** 20가구 확대
+    구성을 설명한다」* 다. 종전에는 단지 값(20호) 둘만 있었고, 심의자가 「가구
+    하나에 얼마가 필요한가」를 읽으려면 **표의 수를 20으로 나눠야** 했다.
+
+    ⚠⚠ **1가구 값을 «나눠서» 만들지 않는다** — `build_self_sufficiency_sizing`
+    이 `required_pv_capacity_kw` 를 **1호분 부하로 한 번 더 돌린다.** 나누면
+    ⓐ 반올림이 두 곳에서 생기고 ⓑ 가구 수가 1 이 아닌 실행에서 두 수가 어긋나며
+    ⓒ 「무엇을 나눈 수인가」가 산출물에 남지 않는다.
+    """
 
     #: 이 부하가 어디서 왔는가 — 예 「대장 base」·「사용자 예시(월 600kWh)」.
     source_label: str
+    #: ★ **한 가구**의 연간 부하(kWh/호·년) — 일반용 + 추가 기기. 단지 규모를
+    #: **곱하기 전**의 수이며, 아래 `annual_load_kwh` 를 가구 수로 나눈 것이
+    #: 아니라 곱하기 전의 원값이다.
+    household_load_kwh: float
+    #: ★ **한 가구**의 100% 자립 필요 태양광(kW). `required_pv_capacity_kw` 를
+    #: 위 1호분 부하로 돌린 결과다 — 단지 값을 나눈 것이 **아니다.**
+    household_capacity_kw: float
+    #: 단지 전체(가구 수를 곱한 뒤)의 연간 부하.
     annual_load_kwh: float
+    #: 단지 전체의 100% 자립 필요 태양광.
     required_capacity_kw: float
     #: 역산 용량이 지금 탐색 구간(`pv_capacity_kw`) 안에 있는가.
     #: **밖이면 구간을 넓히지 않고 「밖이다」를 싣는다** — 구간을 움직이면
@@ -98,9 +133,36 @@ class SelfSufficiencySizing:
     #: 이용률의 **출처**. 지금은 대장 항목이 아니라 소스 상수다 — 그 사실을
     #: 값으로 갖는다(검토서 §7 부수발견).
     capacity_factor_source: str
+    #: ★ **단지 규모가 곱해진 탐색 구간**이다 (R65/WP-2c) —
+    #: `_DESIGN_VARS` 의 `pv_capacity_kw` 는 **한 호분**(1.0~9.0 kW)이고
+    #: 20호 실행에서는 20~180 kW 가 된다. ⛔ **띠의 수를 고친 것이 아니라
+    #: 곱한 것이다.**
     search_low_kw: float
     search_high_kw: float
     points: tuple[SelfSufficiencyPoint, ...]
+    #: 이 역산이 답한 **단지 규모**(호). `None` 이면 「가구 한 호」이고 그때
+    #: 배수는 1 이라 이 인자가 생기기 전과 원소 하나까지 같다.
+    household_count: int | None = None
+    #: 한 호에 얹힌 **추가 전력사용기기** 연간 부하(kWh/호·년). 위 점들의
+    #: 연간 사용량에 **이미 더해져 있다** — 왜 더하는지는
+    #: `build_self_sufficiency_sizing` 독스트링 ★★ 가 갖는다.
+    extra_appliance_load_kwh: float = 0.0
+
+    @property
+    def scales_to_estate(self) -> bool:
+        """단지 확대가 **있는** 실행인가 — 가구 수가 2 이상인가.
+
+        ⚠ **가구 한 호(또는 미지정) 실행에서는 두 벌이 같은 수다.** 그때
+        표가 같은 수를 두 번 인쇄하면 검토자는 *「왜 두 번 적었나」* 를 묻고,
+        더 나쁘게는 **둘이 다른 것을 재는 줄로** 읽는다. ⇒ 그 실행에서는
+        **단지 열을 접고** 「확대 없음」을 글자로 적는다(R67/WP-③).
+        """
+        return self.household_count is not None and self.household_count > 1
+
+    @property
+    def estate_label(self) -> str:
+        """단지 열의 이름 — 예 「20호」. 가구 수를 **리터럴로 적지 않는다.**"""
+        return f"{self.household_count}호"
 
 
 def build_self_sufficiency_sizing(
@@ -111,6 +173,8 @@ def build_self_sufficiency_sizing(
     search_low_kw: float,
     search_high_kw: float,
     reference_loads: Sequence[tuple[str, float]] = (),
+    extra_appliance_load_kwh: float = 0.0,
+    household_count: int | None = None,
 ) -> SelfSufficiencySizing:
     """대장 세 수준(low·base·high)과 참고 부하를 **각각** 역산한다.
 
@@ -118,6 +182,31 @@ def build_self_sufficiency_sizing(
     그대로 받는 모양이다(`low`·`base`·`high` 셋). 점 순서는 **`low` → `base` →
     `high` → `reference_loads` 순서 그대로**다 — `source_label` 은 그 순서로
     「대장 low」·「대장 base」·「대장 high」이고, 참고 부하는 받은 라벨 그대로다.
+
+    ## ★★ R65/WP-2c — **이 역산이 답하는 사업이 본문과 같아졌다**
+
+    받는 부하도 탐색 구간도 **「한 호」 값**이었다. 그런데 본문 4절은
+    `core/casegrid/e2e_runner.py` 가 단지 규모를 곱한 설비(20호면 60 kW)로
+    돌고 부하도 `(대장 annual + 기기) × 호수` 다. 그래서 같은 리포트가
+    **두 사업을 그렸다** — 본문은 60 kW 를 쓰는데 이 표는 「1~9 kW 구간」과
+    한 호 부하로 *「필요 용량은 2.74 kW」* 라 답했다.
+
+    ⇒ 부하와 탐색 구간에 **같은 배수**를 건다. 곱하는 것이지 **띠의 수
+    (1.0·9.0)를 고치는 것이 아니다** — 고치면 결론축(4.4 가 훑는 폭)이
+    움직인다(머리 독스트링 「탐색 구간을 넓히지 않는다」).
+
+    ★★ **기기 부하를 더하는 자리도 여기다.** 대장 `load.household.annual` 은
+    *「추가 전력사용기기가 없는 가구 기준」* 이고 본문은 거기에 히트펌프·전기차를
+    **더한 뒤** 곱한다(`core/casegrid/seasonal_dispatch.py::_load_total_kwh`).
+    이 역산이 `annual` 만 보면 **본문보다 작은 부하로 답한다** — 그러면 이
+    표의 「필요 용량」이 본문이 실제로 감당해야 하는 것보다 작게 나온다.
+
+    ⚠ **참고 부하(사용자 예시)에도 같은 처리를 한다.** 두 부하를 나란히 놓고
+    *「어느 쪽이 맞는가」* 를 묻는 것이 이 표의 목적인데(`_mismatch_lines`),
+    한쪽만 곱하면 그 물음이 **규모 차이로 덮인다.**
+
+    ⚠ **미지정이면 배수가 1 이고 기기 부하가 0** 이라, 이 두 인자가 생기기
+    전과 원소 하나까지 같다.
     """
     missing = [name for name in _LOAD_LEVEL_NAMES if name not in load_levels]
     if missing:
@@ -140,14 +229,32 @@ def build_self_sufficiency_sizing(
     ]
     labeled_loads.extend(reference_loads)
 
+    # ★★★ **한 호분 → 단지분** (R65/WP-2c · 위 독스트링 ★★). 부하와 탐색
+    # 구간에 **같은 배수**를 건다.
+    scale = 1.0 if household_count is None else float(household_count)
+    suffix = _scale_suffix(extra_appliance_load_kwh, household_count)
+    search_low_kw, search_high_kw = search_low_kw * scale, search_high_kw * scale
+
     points: list[SelfSufficiencyPoint] = []
-    for label, annual_load_kwh in labeled_loads:
+    for label, level_load_kwh in labeled_loads:
+        # ★★★ **1호분과 단지분을 «같은 산식»으로 각각 돈다** (R67/WP-③ · 판정
+        # 2-1). ⛔ **나누지 않는다** — 단지 값을 가구 수로 나누면 반올림이 두
+        # 곳에서 생기고, 가구 수가 1 이 아닌 실행에서 두 수가 어긋난다. 여기서
+        # 곱하기 **전**의 부하로 `required_pv_capacity_kw` 를 한 번 더 부르는
+        # 것이 「1가구 적정 용량」의 정의 그대로다.
+        household_load_kwh = level_load_kwh + extra_appliance_load_kwh
+        household_capacity_kw = required_pv_capacity_kw(
+            annual_load_kwh=household_load_kwh, capacity_factor=capacity_factor
+        )
+        annual_load_kwh = household_load_kwh * scale
         required_capacity_kw = required_pv_capacity_kw(
             annual_load_kwh=annual_load_kwh, capacity_factor=capacity_factor
         )
         points.append(
             SelfSufficiencyPoint(
-                source_label=label,
+                source_label=f"{label}{suffix}",
+                household_load_kwh=household_load_kwh,
+                household_capacity_kw=household_capacity_kw,
                 annual_load_kwh=annual_load_kwh,
                 required_capacity_kw=required_capacity_kw,
                 within_search_range=(
@@ -162,7 +269,23 @@ def build_self_sufficiency_sizing(
         search_low_kw=search_low_kw,
         search_high_kw=search_high_kw,
         points=tuple(points),
+        household_count=household_count,
+        extra_appliance_load_kwh=extra_appliance_load_kwh,
     )
+
+
+def _scale_suffix(extra_appliance_load_kwh: float, household_count: int | None) -> str:
+    """점 이름에 **무엇을 더하고 무엇을 곱했는지**를 적는다.
+
+    ⚠ 라벨을 그대로 두면 「대장 base」가 대장에 적힌 수가 아닌 값을 가리키게
+    되고, 그 어긋남은 아무 예외도 내지 않는다.
+    """
+    parts = []
+    if extra_appliance_load_kwh:
+        parts.append(" + 기기")
+    if household_count is not None:
+        parts.append(f" × {household_count}호")  # noqa: RUF001
+    return "".join(parts)
 
 
 def _range_note(sizing: SelfSufficiencySizing, point: SelfSufficiencyPoint) -> str:
@@ -173,11 +296,38 @@ def _range_note(sizing: SelfSufficiencySizing, point: SelfSufficiencyPoint) -> s
     return f"아니오 — 구간 하한 {sizing.search_low_kw:g}kW 미만"
 
 
+def base_level_point(sizing: SelfSufficiencySizing) -> SelfSufficiencyPoint | None:
+    """대장 **기준 수준(`base`)** 의 역산 점 — 없으면 `None` (R68/WP-2 부수 정리).
+
+    ## 왜 공개 접근자가 필요했나 — **규칙의 사본이 하나 생겼다**
+
+    이 점을 고르는 규칙(`base` 를 **이름으로** 찾고 그 차례의 점을 든다)이
+    아래 `_mismatch_lines` 안에 사적 상수·사적 함수로만 있었다. 그래서 R68/WP-1
+    이 구분 표의 「진단 용량」 태양광 값을 채울 때 그것을 재수출할 수 없어
+    `core/casegrid/ledger_levels.py::LEVEL_NAMES` 에서 **같은 규칙을 다시
+    썼다**(`core/report/ess_sizing_section.py::_pv_diagnostic_cell`). 규칙이 둘이
+    되면 한쪽만 고쳐지는 날 두 표가 **다른 점을 「기준」이라 부르고**, 둘 다
+    그럴듯해 보인다 — 이 저장소가 형상·기준선·REC·가구 수에서 이미 네 번 밟은
+    형태다.
+
+    ⚠ **차례를 세어 고르지 않는다 — 이름으로 고른다.** `_LOAD_LEVEL_NAMES` 의
+    차례가 곧 `points` 앞머리의 차례이고(`build_self_sufficiency_sizing` 이 그
+    이름 차례로 쌓는다), 참고 부하는 그 뒤에 붙는다.
+
+    ⚠ 점이 모자라면 `None` 이다 — **빈 점을 지어내지 않는다.** 부르는 쪽이 그
+    사실을 글자로 적는다(`_pv_diagnostic_cell` 의 「역산한 점이 없다」).
+    """
+    index = _LOAD_LEVEL_NAMES.index("base")
+    if index >= len(sizing.points):
+        return None
+    return sizing.points[index]
+
+
 def _mismatch_lines(sizing: SelfSufficiencySizing) -> list[str]:
     """대장 base 와 참고 부하(있으면 첫째)의 필요 용량을 **원문 값 그대로** 나란히 낸다."""
-    base_point = sizing.points[_LOAD_LEVEL_NAMES.index("base")]
+    base_point = base_level_point(sizing)
     reference_points = sizing.points[len(_LOAD_LEVEL_NAMES):]
-    if not reference_points:
+    if base_point is None or not reference_points:
         return []
     reference_point = reference_points[0]
     return [
@@ -186,6 +336,61 @@ def _mismatch_lines(sizing: SelfSufficiencySizing) -> list[str]:
         f"(연 {reference_point.annual_load_kwh:,.0f}kWh)의 필요 용량 "
         f"**{reference_point.required_capacity_kw:.2f}kW**가 두 배 가까이 다르고, "
         "어느 쪽이 맞는지는 답이 오지 않았다(검토서 §7)",
+    ]
+
+
+def _scale_lines(sizing: SelfSufficiencySizing) -> list[str]:
+    """**무엇을 곱했고 무엇을 더했는가** — 한 호 실행에서는 한 줄도 나오지 않는다.
+
+    이 줄이 없으면 표의 수가 대장에 적힌 수와 달라 보이는데 **왜 다른지가
+    리포트 안에 없다**(R65/WP-2c).
+    """
+    if sizing.household_count is None and not sizing.extra_appliance_load_kwh:
+        return []
+    added = (
+        f"한 호에 추가 전력사용기기 **{sizing.extra_appliance_load_kwh:,.0f}kWh/년**을 "
+        "더하고 "
+        if sizing.extra_appliance_load_kwh
+        else ""
+    )
+    scaled = (
+        f"단지 규모 **{sizing.household_count}호**를 곱했다"
+        if sizing.household_count is not None
+        else "단지 규모는 곱하지 않았다(가구 한 호)"
+    )
+    return [
+        f"- 규모 — {added}{scaled}. 본문 4절이 도는 부하·설비와 **같은 배수**이며"
+        "(`core/casegrid/e2e_runner.py`), 탐색 구간도 함께 곱했다 — "
+        "구간의 수(한 호분 "
+        f"{sizing.search_low_kw / (sizing.household_count or 1):g}~"
+        f"{sizing.search_high_kw / (sizing.household_count or 1):g}kW)를 고친 것이 "
+        "아니다",
+    ]
+
+
+def household_first_notes(sizing: SelfSufficiencySizing) -> list[str]:
+    """**1가구 값이 무엇이고 단지 값과 어떻게 이어지는가** (R67/WP-③).
+
+    ⚠ 두 벌을 나란히 싣기만 하면 검토자가 *「둘 중 어느 것이 이 사업의
+    답인가」* 를 스스로 골라야 한다. 그 물음에 이 줄이 답한다 — 1가구가
+    **가구 하나의 적정 용량**이고 단지 값이 **그 확대 구성**이다.
+
+    ⚠⚠ **가구 한 호(또는 미지정) 실행에서는 「확대 없음」을 적는다** — 열을
+    접었다는 사실이 표에 남지 않으면, 그 표가 단지 값을 **싣지 못한** 것인지
+    **같아서 접은** 것인지 구별되지 않는다.
+    """
+    if not sizing.scales_to_estate:
+        return [
+            "- 단지 확대 — **없다**(가구 "
+            f"{'한 호' if sizing.household_count is None else sizing.estate_label}"
+            " 실행). 1가구 값과 단지 값이 같은 수이므로 **단지 열을 접었다** — "
+            "지운 것이 아니다",
+        ]
+    return [
+        "- 읽는 순서 — **1가구가 적정 용량이고 "
+        f"{sizing.estate_label}는 그 확대 구성**이다(사용자 요구 순서). 두 벌 "
+        "모두 같은 산식을 **각자의 부하로** 돌린 결과이며, 단지 값을 가구 수로 "
+        "나눈 것이 아니다",
     ]
 
 
@@ -203,32 +408,63 @@ def self_sufficiency_section(sizing: SelfSufficiencySizing) -> list[str]:
     `### {label}` 소절을 쌓는 자리이므로 같은 층에 나란히 세운다.
 
     이 표는 **진단이지 답이 아니다** — 대장 세 수준과 참고 부하를 나란히
-    역산해 보일 뿐, `_DESIGN_VARS` 탐색 구간도 `PV_CAPACITY_FACTOR` 도 여기서
-    바꾸지 않는다(검토서 §1-⑥). 구간 밖 점도 지우지 않는다 — `capacity_section`
+    역산해 보일 뿐, `_DESIGN_VARS` 탐색 구간도 이용률도 여기서 바꾸지
+    않는다(검토서 §1-⑥). 구간 밖 점도 지우지 않는다 — `capacity_section`
     이 지키는 태도(「계산되지 않는 점을 버리지 않는다」)와 같다.
+
+    ⚠ **칸 이름이 그 구간의 소유자를 말한다** (R67/WP-N2). 종전에는 「탐색
+    구간 안인가」라고만 적어, 이 역산이 **본문 4.4 의 경제성 스윕과 같은
+    구간에 매인 것처럼** 읽혔다 — 사용자 판정은 그 반대다(§2-2).
     """
+    # ★★★ **1가구 두 칸이 앞에 선다** (R67/WP-③ · 사용자 판정 §4-3 *「1가구
+    # 적정 용량을 먼저 제시한 뒤 20가구 확대 구성을 설명한다」*). 검증 리포트
+    # 2단계 ②(`core/report/verification_inputs.py::_self_sufficiency_table`)가
+    # 같은 자료를 같은 순서로 그린다 — **짝 렌더러를 한쪽만 고치지 않는다.**
+    # ⚠ 가구 한 호 실행에서는 두 벌이 같은 수라 **단지 열을 접는다**
+    # (`SelfSufficiencySizing.scales_to_estate`).
+    estate = sizing.scales_to_estate
+    head = ["연간 사용량의 출처", "연간 사용량 (kWh/호)", "필요 용량 (kW/호)"]
+    if estate:
+        head += [
+            f"연간 사용량 (kWh · {sizing.estate_label})",
+            f"필요 용량 (kW · {sizing.estate_label})",
+        ]
+    head.append("4.4 의 경제성 스윕 구간 안인가")
     lines = [
         "### 경우 「가」 — 100% 에너지 자립에 필요한 용량 (역산)",
         "",
-        "| 연간 사용량의 출처 | 연간 사용량 (kWh) | 필요 용량 (kW) | 탐색 구간 안인가 |",
-        "|---|---|---|---|",
+        "| " + " | ".join(head) + " |",
+        "|" + "|".join(["---"] * len(head)) + "|",
     ]
     for point in sizing.points:
-        lines.append(
-            f"| {point.source_label} | {point.annual_load_kwh:,.0f} | "
-            f"{point.required_capacity_kw:.2f} | {_range_note(sizing, point)} |"
-        )
+        cells = [
+            point.source_label,
+            f"{point.household_load_kwh:,.0f}",
+            f"{point.household_capacity_kw:.2f}",
+        ]
+        if estate:
+            cells += [
+                f"{point.annual_load_kwh:,.0f}",
+                f"{point.required_capacity_kw:.2f}",
+            ]
+        cells.append(_range_note(sizing, point))
+        lines.append("| " + " | ".join(cells) + " |")
     lines.append("")
+    lines += household_first_notes(sizing)
     lines += [
         "- 산식 — 필요 용량(kW) = 연간 사용량(kWh) ÷ "
         f"({HOURS_PER_YEAR:,}h × 이용률)",  # noqa: RUF001
         (
             f"- 이용률 {sizing.capacity_factor:.0%} — 출처: {sizing.capacity_factor_source}. "
-            "대장 항목이 아니라 소스 상수이며, 사용자 예시의 이용률과 값이 우연히 같다 — "
-            "그 일치를 근거로 쓸 수 없다"
+            "**그 값이 옳다는 근거는 없다** — 이 사업지의 일사량·경사·방위·음영을 "
+            "재지 않았고 실적 발전량도 없다(대장 항목의 유도 근거가 그 사실을 "
+            "적는다). 이 표의 필요 용량은 그 값에 반비례하므로, 수가 그럴듯해 "
+            "보이는 것을 근거로 쓸 수 없다"
         ),
     ]
+    lines += _scale_lines(sizing)
     lines += _mismatch_lines(sizing)
+    lines.append(f"- {search_range_note(sweep_where='본문 4.4')}")
     lines.append(
         "- 이 표는 진단이다 — 이 용량을 채택한 것이 아니다. 채택하려면 탐색 구간·"
         "기준 구성을 바꿔야 하고 그것은 결론축을 움직인다"

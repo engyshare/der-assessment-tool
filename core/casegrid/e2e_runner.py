@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 
+from core.casegrid.appliance_load import ApplianceSeasonShares
 from core.casegrid.attribution import attribute_benefits
 
 # ★ **지표 조립도 이 파일 것이었다** — 코드 496/500(여유 4줄)에서 R57/WP-9 가
@@ -41,7 +42,6 @@ from core.casegrid.ess_build import (
     ESS_RTE_PCT,
     ESS_SOC_MAX_PCT,
     ESS_SOC_MIN_PCT,
-    build_case_ess_fleet,
     build_fleet_streams,
 )
 
@@ -53,6 +53,17 @@ from core.casegrid.ess_build import (
 # ⚠ **이름을 다른 모듈로 우회해 문자열 검사를 피하지 않는다** — 피하면 그
 # 래칫이 거짓을 참으로 인쇄한다.
 from core.casegrid.ess_share import ESSShare
+
+# ★ **가구 수 배수의 판정은 이 파일 것이 아니다** (R64/WP-1) — 아래 `ess_build` ·
+# `pv_allocation` 과 같은 사유로 `core/casegrid/household_scale.py` 에 있고
+# 판정(1 이상의 정수인가)도 그 모듈이 진다.
+#
+# ⚠ **R64/WP-4 뒤로 「부하」 쪽 곱은 이 파일에 없다** — 총량에 곱하는 자리가
+# 부하 생성자와 함께 `core/casegrid/seasonal_dispatch.py` 로 갔다(아래 import 옆 ⚠).
+# ★★★ **R65/WP-2b 에 「설비」 쪽 곱이 이 파일로 왔다** — `pv_capacity_kw` ·
+# `ess_capacity_kwh` 는 러너가 `_resolve` 로 직접 얻는 값이라 그 자리가 여기밖에
+# 없다. 그래서 이 파일이 배수를 **다시** 읽는다. 사유는 아래 두 `_resolve` 옆 ★★★.
+from core.casegrid.household_scale import household_scale
 from core.casegrid.incentive_cases import (
     Viewpoint,
     build_capex_cashflows_for_all_cases,
@@ -91,30 +102,44 @@ from core.casegrid.profiles import DailyShapes
 # 인정한다).
 from core.casegrid.pv_allocation import (
     ESS_CHARGE_SOURCE_DEFAULT,  # noqa: F401
+    ESS_DISCHARGE_ALLOCATION_DEFAULT,  # noqa: F401
     ESS_OPERATING_MODE_DEFAULT,  # noqa: F401
     FORFEITED_SELF_CONSUMPTION_TAG,
     PV_ALLOCATION_PRIORITY_DEFAULT,  # noqa: F401
-    _dispatch_inputs_under_baseline,
+    _dispatch_inputs_under_baseline,  # noqa: F401
     _forfeited_self_consumption_rows,
     _resolve_ess_dispatch_inputs,  # noqa: F401
     measured_self_consumption_ratio,
 )
+
+# ★★★ **계절 넷을 각각 돌려 합산하는 운전이 이 모듈에 있다** (R64/WP-4 · 착수 36ⓐ).
+# 갈라낸 사유는 그 모듈 머리말이 갖는다 — `pv_allocation.py`·`ess_build.py` 와
+# 같다(이 파일의 `NFR-206` 코드 줄 상한과 `run_single_case_e2e` 의 `PLR0915`
+# 문장 상한이 둘 다 꽉 차 있었다).
+# ⚠ **`_household_load_if_total_given` 은 재수출이다** — 계절마다 부하를 세워야
+# 해서 생성자가 그 모듈로 갔고, 이름은 여기 남는다(위 ⚠ 주석 참조).
+from core.casegrid.seasonal_dispatch import (
+    _household_load_if_total_given,  # noqa: F401
+    build_and_dispatch_case,
+    dispatch_note,
+)
 from core.cba.baseline import BaselineArrangement, PoolMeteringDeclaration
 from core.cba.proforma import (
     benefit_row,
-    check_analysis_period,
     energy_purchase_row,
+    escalation_factor,
     fee_row,
     fixed_om_row,
 )
 from core.contracts.assumptions import AssumptionProvider
-from core.contracts.der import DER, DispatchContext, DispatchResult
+from core.contracts.der import DispatchContext, DispatchResult
 from core.contracts.engine import SystemDispatch
-from core.contracts.units import Money, Year
+from core.contracts.units import Money, to_won
 from core.contracts.valuestream import ValueStream
 from core.der.ess import ESS, ESSChargeSource, ESSOperatingMode
+from core.der.ess_schedule import ESSDischargeAllocation
 from core.der.load import Load
-from core.der.pv import PV, OperatingMode, PVAllocationPriority
+from core.der.pv import PV, PVAllocationPriority
 from core.engine.rule_based import RuleBasedEngine
 from core.incentive.schemas import IncentiveScheme
 from core.regulation.tariff import TariffEngine
@@ -135,7 +160,6 @@ __all__ = (
     "DAYS_PER_YEAR",
     "FORFEITED_SELF_CONSUMPTION_TAG",
     "HOURS_PER_YEAR",
-    "PV_CAPACITY_FACTOR",
     "net_operating_flows",
     "run_single_case_e2e",
 )
@@ -184,7 +208,13 @@ HOURS_PER_YEAR = DAYS_PER_YEAR * STEPS_PER_DAY
 # 케이스를 다 돌려도 3kW·10kWh 한 값이었다 — 리포트가 *「이 용량이 맞는가」*
 # 를 묻지도 답하지도 못한 이유다. 기본값을 여기 남기지 않는 것이 요점이다:
 # 남기면 수준표를 고쳐도 러너가 옛 용량을 쓰고 **NPV 만 조용히 달라진다**.
-PV_CAPACITY_FACTOR = 0.15
+# ⚠ **이용률도 여기 없다** — `PV_CAPACITY_FACTOR = 0.15` 모듈 상수를
+# R67/WP-N2 가 지웠다. 대장 `capacity_factor.pv_rooftop` 에서 `level_map` 으로
+# 온다(사용자 판정 R67 §2 「모든 수치는 추후 변경 가능」 ·
+# `docs/decisions-2026-09-08-R67b.md` §3-4) — 아래 고정 O&M 과 **같은 사유**로
+# 기본값을 남기지 않았다. 그 값을 읽던 자리가 셋이었고(러너의 발전량 · 2.1 표의
+# 문면 · 자립 역산의 역수) 그중 어느 것도 사용자가 바꿀 통로를 갖지 못했다.
+
 #: ⚠ **고정 O&M 은 여기 없다** — `PV_FIXED_OM_WON_PER_YEAR` 모듈 상수를
 #: R51/WP-2 가 지웠다. 대장 `opex.pv.fixed_om` 에서 `level_map` 으로 온다
 #: (사용자 판정 §2, `docs/decisions-2026-09-01-R51.md`) — 소스에 기본값을
@@ -251,76 +281,19 @@ PV_SELF_CONSUMPTION_RATIO = 0.0
 #: `ESS_CHARGE_SOURCE_DEFAULT`·`PV_ALLOCATION_PRIORITY_DEFAULT` 를 R51/WP-5 가
 #: 옮겼다(위 import). 이름은 그대로이고 이 파일이 재수출한다.
 
-
-def _household_load_if_total_given(
-    daily_shapes: DailyShapes | None,
-    annual_load_kwh: float | None,
-    extra_appliance_load_kwh: float = 0.0,
-) -> Load | None:
-    """가구 부하 자원 — **부하 총량(`annual_load_kwh`)이 왔을 때만** 세운다.
-
-    `extra_appliance_load_kwh` (판정 §5·B-2)는 히트펌프 등 추가 전력사용기기의
-    **연간 소비전력량**이며 총량에 더해진다 — `annual_load_kwh` 가 `None`
-    이면(부하를 세우지 않는 실행) 더할 기저가 없으므로 **무시된다**.
-
-    ## 왜 함수 이름이 조건을 말하는가 (R37)
-
-    종전에는 「형상과 총량이 함께 와야 한다」였고, 형상만 오면 **오류로 막았다**.
-    그 막음이 잡으려던 실수는 *「부하를 넣을 생각이었는데 총량을 잊었다」* 다.
-
-    R37 이 일사 곡선을 기본 경로에 배선하면서 `daily_shapes` 는 **발전 형상의
-    자산이 되었다** — 이제 형상은 모든 실행에 온다. 그러므로 *형상이 왔다* 를
-    *부하를 원한다* 로 읽을 수 없다. 부하를 원한다는 뜻은 **총량만이** 말한다.
-
-    ⚠ **그래서 조건을 그냥 풀지 않고 이름으로 갈랐다.** 조건만 완화하면 옛
-    실수(총량을 잊었다)가 조용히 통과하고 호출부는 그것을 알 수 없다. 이름이
-    `…_if_total_given` 이면 호출 자리에서 *「총량을 주지 않으면 부하가 서지
-    않는다」* 가 읽히므로, 통과가 조용하지 않다. 반대 방향의 실수는 **여전히
-    오류다** — 총량은 왔는데 형상이 없으면 부하가 하루 안에서 균등 배분되어
-    지금 PV 가 겪던 것과 같은 형태가 되고(붙임 8 「일중 발전 프로파일」),
-    *「부하를 반영했다」* 는 진술이 성립하는데 **그 부하는 실제로 아무 시간대도
-    갖지 않는다.**
-
-    ⚠ **부하는 편익을 만들지 않는다** (`RC-LD-B0`). `Load.value_streams()` 가
-    비어 있는 것이 정답이며, 부하가 만드는 절감은 그 절감을 일으킨 자원의
-    편익이다 — 부하에도 붙이면 같은 화폐 흐름이 두 번 계상된다
-    (`FR-402-AC2.C`). 그래서 이 자원을 더해도 편익 갈래는 늘지 않고 **운전만**
-    달라진다.
-    """
-    if annual_load_kwh is None:
-        return None
-    if daily_shapes is None:
-        raise ValueError(
-            "연간 부하(annual_load_kwh)를 주면 대표일 형상(daily_shapes)도 "
-            "함께 주어야 합니다 — 총량만 주면 부하가 시간대를 갖지 못한 채 "
-            "「반영했다」가 성립합니다"
-        )
-    return Load(
-        name="e2e-load",
-        # ★★ **`spread()` 가 아니라 대표일을 되풀이한 시계열이다** (R60/WP-4-fix).
-        # 이 러너는 24스텝 하루를 돌려 365배로 연간화하고, 자원은 받은 시계열의
-        # 앞 하루만 잘라 쓴다(`core/der/load.py` 의 `[: ctx.steps]`). 그래서
-        # 계절을 차례로 이어 붙인 `spread()` 를 넘기면 앞 하루가 **첫 계절의
-        # 하루**가 되어 연간화 총량이 대장값과 어긋난다 — 실측으로 −315kWh/년.
-        # `representative_day()` 는 **몫 가중 평균 하루**를 내므로 그 하루를
-        # 365배 한 것이 총량이다. 계절이 하나면 종전과 원소 하나까지 같다.
-        hourly_kwh=daily_shapes.load.spread_over_representative_day(
-            annual_load_kwh + extra_appliance_load_kwh, days=DAYS_PER_YEAR
-        ),
-        # ★ **지금 어떤 수도 움직이지 않는다** — 이 `Load` 에는 비용 인자가 하나도
-        # 없어(단가·O&M·부속설비 전부 미지정) 곱할 것이 없다. 그런데도 넘기는
-        # 이유는 `test_escalation_debt.py` 래칫이 R42 에 **처음으로 이 자리를
-        # 보았기** 때문이다 — 그 래칫은 생성자 인자 이름에 `capex`·`replacement`
-        # 가 있는지로 「미래 지출을 갖는 자원」을 가리는데, `Load` 는 그 관례를
-        # 안 따르는 이름(`unit_cost_won_per_kw`)을 써서 여태 대상 밖이었다.
-        # 즉 **부채가 는 것이 아니라 사각이 드러난 것**이고, 비용 인자가 들어오는
-        # 날 조용히 실질 기준이 되지 않도록 지금 닫는다 (`DV-7`).
-        escalation_rate=PRICE_ESCALATION_RATE,
-    )
+#: ⚠ **가구 부하 생성자도 여기 없다** (R64/WP-4) — `_household_load_if_total_given`
+#: 은 `core/casegrid/seasonal_dispatch.py` 로 갔다. 계절마다 부하를 세워야 하는데
+#: `Load(...)` 를 두 곳에 적으면 사본이 되기 때문이다. **이름은 그대로이고 이
+#: 파일이 재수출한다**(위 import) — 그 이름을 가리키는 문면들
+#: (`pv_allocation.py`·`case_metrics.py`·이 파일 `run_single_case_e2e` 독스트링)
+#: 은 그래서 여전히 참이다.
 
 
 def _site_load_kw(
-    household: Load | None, dispatch: SystemDispatch, ctx: DispatchContext
+    household: Load | None,
+    dispatch: SystemDispatch,
+    ctx: DispatchContext,
+    coincidence_factor: float,
 ) -> list[float] | None:
     """가구 부하의 시각별 kW — `ESS.reducible_peak_kw(site_load_kw=...)` 로 간다
     (판정 §4·B-3, `docs/decisions-2026-08-31-R48.md`).
@@ -334,12 +307,43 @@ def _site_load_kw(
 
     ⚠ **kWh 를 kW 로 명시 환산한다.** 스텝이 1시간이면 수는 같지만 단위가
     다르고, `dt` 가 바뀌는 날 조용히 틀린다.
+
+    ## ★★★ **동시율이 걸리는 자리는 여기 하나다** (R66/WP-5 · 사용자 지시)
+
+    사용자 문면은 *「동시율은 내가 임의로 정하기 어려움. 초기설정은 80%로
+    하고, 설정을 통해 변경하는 한 것으로 설계해줘」* 까지이고 **적용 자리를
+    말하지 않았다.** 그 자리를 정한 것은 판정
+    (`docs/decisions-2026-09-07-R66.md` §3)이며 *「출력·ESS 용량에 걸리고
+    연간 전력량·태양광 용량에는 걸리지 않는다」* 다. 이 함수의 반환값이
+    **단지의 시각별 최대수요(kW)** 이므로 그 「출력」의 자리가 여기다.
+
+    ⛔⛔ **연간 부하 kWh 총량에 곱하지 마라.** `annual_load_kwh` ·
+    `extra_appliance_load_kwh` · `household_scale()` 근처에 곱하면 **부하를
+    20% 지우는 것**이고, 스무 집이 1년에 쓰는 전기의 합은 동시성과 무관하므로
+    그것은 *쓰지 않은 전기를 안 쓴 것으로 만드는* 계산이다 — 결론축이
+    **좋아지는 쪽으로** 틀린다.
+    ⛔ **`load_profile_kwh`(부하 추종 방전용)에도 곱하지 마라** — 그것은
+    kW 가 아니라 **에너지**이고, 곱하면 같은 부하가 계산 안에서 두 크기를
+    갖는다(방전량은 줄고 계통 수전량은 안 줄어 잔차가 어디로도 가지 않는다).
+    ⛔ **태양광 용량 역산에도 걸지 않는다** — 연간 총량 ÷ (8,760 × 이용률)
+    이므로 동시성이 들어올 자리가 없다.
+
+    ⚠ **곱하지 않은 것이 「빠뜨린 것」이 아니다.** 위 셋은 판정이 명시로
+    제외한 자리이며, 다음 사람이 「일관성」을 이유로 넣으면 그 순간 결론축이
+    조용히 좋아진다. ⚠ **ESS 용량(kWh) 역산에는 걸려야 하는데 그 역산 자체가
+    아직 없다**(판정 §6 착수 4) — 세워지면 그 자리에 함께 태운다.
+
+    ⚠ **배수로 받는다**(80% → `0.8`). `%` → 배수 환산은
+    `core/casegrid/ledger_levels.py::_LEDGER_VARS` 한 곳에서만 한다.
+    기본값을 두지 않는 이유는 `grid_purchase_price` 와 같다 — 두면 수준표에서
+    이 변수를 빼도 러너가 옛 값으로 계속 계산하고 아무 예외도 나지 않는다.
     """
     if household is None:
         return None
     hours_per_step = ctx.dt / SECONDS_PER_HOUR
     return [
-        -v / hours_per_step for v in dispatch.per_resource[household.name].electric
+        -v * coincidence_factor / hours_per_step
+        for v in dispatch.per_resource[household.name].electric
     ]
 
 
@@ -391,6 +395,9 @@ def run_single_case_e2e(
     daily_shapes: DailyShapes | None = None,
     annual_load_kwh: float | None = None,
     extra_appliance_load_kwh: float = 0.0,
+    appliance_season_shares: ApplianceSeasonShares | None = None,
+    household_count: int | None = None,
+    dr_shiftable_share_pct: float = 0.0,
     rec_price_won_per_unit: float = 0.0,
     rec_weight_pv: float = 1.0,
     distributed_sub_items: DistributedSubItems | None = None,
@@ -402,6 +409,7 @@ def run_single_case_e2e(
     viewpoint: Viewpoint = "OWNER",
     ess_operating_mode: ESSOperatingMode | str | None = None,
     ess_charge_source: ESSChargeSource | str | None = None,
+    ess_discharge_allocation: ESSDischargeAllocation | str | None = None,
     pv_allocation_priority: PVAllocationPriority | str | None = None,
     ess_shares: Sequence[ESSShare] | None = None,
     baseline_arrangement: BaselineArrangement | str | None = None,
@@ -502,8 +510,12 @@ def run_single_case_e2e(
     `ESSOperatingMode.PEAK_SHAVING` 을 코드에 박아 두어, 그 모드의 충전창
     (01~06시)이 심야 계통충전을 강제했다 — 태양광 연계 ESS 의 운전이
     아니었다. 이제 인자 → `case_values` → 모듈 상수 순으로 값을 고른다.
-    `pv_surplus_profile_kwh` 는 이 함수가 PV 를 먼저 디스패치해 만들고
-    (충전원이 `PV_SURPLUS` 일 때만) 넘긴다 — 호출자가 줄 수 있는 값이 아니다.
+    `pv_surplus_profile_kwh` 는 PV 를 먼저 디스패치해 만들고 (충전원이
+    `PV_SURPLUS` 일 때만) 넘긴다 — 호출자가 줄 수 있는 값이 아니다.
+    ⚠ **R64/WP-4 뒤로 그 잉여는 계절마다 하나씩 만들어진다** — 만드는 자리가
+    `core/casegrid/seasonal_dispatch.py::build_and_dispatch_case` 로 옮겼고,
+    돈을 매기는 배터리 한 벌은 그 계절별 잉여를 **일수로 가중 평균**한 것 위에
+    선다(그 모듈 머리말 마지막 ⚠).
 
     ★ **`pv_allocation_priority` — 낮 전기를 「가구」·「배터리」 중 누구에게 먼저
     주는가** (판정 §1, `docs/decisions-2026-09-01-R51.md`). 같은 인자 →
@@ -514,6 +526,17 @@ def run_single_case_e2e(
     (*「지산지소 모델의 경우에는 집에서 우선 사용하는 것이 취지에 맞음」*)에
     따라 뒤집었고, 근거는 그 상수 옆 주석에 있다.
 
+    ★ **`ess_discharge_allocation` — 하루 방전량을 방전창 안에서 어떻게 나누는가**
+    (사용자 요구 5 · R64/WP-6a·6b). 같은 사슬(인자 → `case_values` → 모듈 상수
+    `ESS_DISCHARGE_ALLOCATION_DEFAULT`)을 따르며, 승격·거부는 `ESS` 자신이
+    한다(`ess_operating_mode`·`ess_charge_source` 와 같은 처리). 배포 기본값은
+    **「부하 추종」**이다 — 그 시각의 가구 부하에 비례해 나눈다.
+    ⚠ **부하를 세우지 않는 실행은 「고정 창」으로 선다** — 따라갈 수요가 없기
+    때문이며, 그 떨어짐의 판정문은 `pv_allocation.resolve_ess_discharge_inputs`
+    가 갖는다. ⚠⚠ **방전 「창」 자체는 운전 방법이 정하는 그대로다** — 창 밖의
+    수요는 여전히 대응하지 못하며, 붙임 8 의 「방전창 밖 가구 수요」 항목이 그
+    크기를 매 실행 재어 신고한다(`core/report/unreflected.py`).
+
     ★ **`extra_appliance_load_kwh` — 「추가 기기 비례 증가」** (판정 §5·B-2,
     `docs/decisions-2026-08-31-R48.md`). 히트펌프 등 추가 전력사용기기가
     있으면 **그 기기의 연간 소비전력량만큼 가구 부하 총량이 늘어난다** — 이
@@ -521,10 +544,69 @@ def run_single_case_e2e(
     세운다(형상도 같은 대표일 형상을 쓴다). 기본값 0.0 은 *「추가 기기가
     없다」* 다.
 
+    ★★ **R64/WP-2 가 이 인자에 배포 통로를 냈다** (사용자 요구 2). 그 전까지
+    이 인자를 시험 밖에서 넘기는 코드가 **하나도 없었고** 기본값 0.0 만
+    살았다. 지금은 시나리오 yaml 의 `heatpump_load_annual_kwh`·
+    `ev_load_annual_kwh` 두 필드가 `core/casegrid/appliance_load.py::
+    resolve_appliance_loads` 를 지나 **합계로** 여기 온다.
+    ⚠ **인자를 기기별로 쪼개지 않았다** — 쪼개면 러너가 기기 목록을 알게 되고
+    셋째 기기가 오는 날 시그니처가 늘어난다. 갈래는 산출물에서만 갈린다
+    (`core/report/appendix_sections.py::_appliance_load_table`).
+    ★★★ **`appliance_season_shares` — 그 합계가 계절마다 갈린다**
+    (R64/WP-3b-1 · 사용자 요구 3 *「계절별로 냉난방수요를 차등하여 설정할 수
+    있어야 함」*). 종전에는 위 합계가 `annual_load_kwh` 와 **먼저 합쳐진 뒤**
+    자산이 선언한 **기본 부하의 계절 몫**으로 나뉘어, 냉난방 몫이 기본 몫과
+    강제로 같았다. 이 인자를 주면 계절 `i` 의 부하 총량이
+    `기본×기본몫[i] + 냉난방×냉난방몫[i]` 가 된다.
+    ⛔ **`None` 이면 종전 식을 원소 하나까지 그대로 지난다** — 새 식으로 「같은
+    값이 나오도록」 다시 계산하지 않는다(`core/casegrid/appliance_load.py::
+    ApplianceSeasonShares` 머리말 ⛔ 절). 골든 셋이 그 동일성을 잰다.
+    ⚠ 합이 1 이 아니거나 자산의 계절 달력과 이름이 다르면 **거부한다** —
+    고쳐 주지 않는다.
+
+    ⚠⚠ **여기 세워지는 것은 부하뿐이다.** 히트펌프·전기차를 **자원**으로
+    세우는 것(설치비·유지보수비·편익 갈래가 함께 서는 것)은 이 인자가 하는
+    일이 아니며, 부하에 편익을 붙이면 그 절감을 일으킨 자원과 이중 계상된다
+    (`RC-LD-B0` · `FR-402-AC2.C`).
+
     ⚠ **`annual_load_kwh` 가 `None`(부하를 아예 세우지 않는 실행)이면 이
     인자는 무시된다.** 기기 소비량은 가구 부하에 **더하는 증분**이지 그
     자체로 부하를 만드는 값이 아니다 — 기저 없이 증분만 있으면 「무엇에
     비례해 늘었는가」에 답할 수 없다.
+
+    ★★★ **`household_count` — 단지에 몇 호가 있는가** (R64/WP-1 · 착수 47ⓐ).
+    `load.household.annual` 이 **kWh/호·년**(한 호당)이므로 단지 총량을
+    내려면 이 수가 있어야 한다. `None` 이 **기본**이고 *「적지 않았다」*를
+    뜻하며, 그때 러너는 **가구 한 호 기준**으로 돈다 — 이 인자가 생기기 전과
+    원소 하나까지 같다. 정수 `n ≥ 1` 을 주면 단지 총부하가 `n` 배가 되고
+    형상은 그대로다(`_household_load_if_total_given` 의 ★★ 절이 정본).
+
+    ⚠⚠ **기본 가구 수를 두지 않는다.** 대장의 `load.household.count` 는
+    `track: blocked` · `value: null` 이고 *「가정하면 안 된다」* 가 그 항목의
+    `derivation_method` 다 — 여기에 수를 두면 그것이 단지 규모를 정하고,
+    검토자가 보는 것은 우리가 고른 규모로 우리가 돌린 계산이 된다. 판정과
+    거부는 `core/casegrid/household_scale.py::resolve_household_count` 하나가
+    진다.
+
+    ★★★ **`dr_shiftable_share_pct` — 「AI 가전」이 하루 안에서 옮기는 몫**
+    (R64/WP-7 · 사용자 요구 2 의 남은 절반). *「집 전체 가전 부하 중 ○○% 는
+    하루 안에서 옮길 수 있다」* 하나이며, 그 몫은 **그 계절 하루의 태양광
+    잉여가 있는 시각으로** 간다(`core/casegrid/load_shift.py::
+    shift_into_pv_surplus`).
+
+    ⚠⚠ **총량은 한 kWh 도 변하지 않는다** — 옮기는 것이지 더하는 것이 아니다.
+    그래서 이 인자는 **위 두 인자와 성질이 다르다**: 저 둘은 총량을 키우고
+    이것은 하루의 모양만 바꾼다. 기본값 `0.0` 은 *「옮기지 않는다」* 이며 그때
+    이 배선이 생기기 전과 원소 하나까지 같다.
+
+    ⚠ **기기별 목록을 세우지 않았다.** 냉장고·세탁기의 소비량·이동 가능
+    시간 자료가 대장에도 참고자료에도 없다(사용자 판정 §5). 그래서 축은
+    **비율 하나**이고, 「AI 가전」을 가산 부하 항목으로 세우지 않은 사유는
+    `core/casegrid/appliance_load.py` 머리말의 ⚠⚠ 절이 갖는다.
+
+    ⚠ **새 편익 갈래를 만들지 않는다.** 절감은 사는 전기가 줄어 요금 엔진에서
+    나오며, 수요반응 **정산금**(`FR-401-AC2.DemandResponse`)은 정산단가가 없어
+    **미매핑 그대로**다 — 그 결손은 붙임 8 이 신고한다.
 
     ★★★ **`ess_shares` — 배터리 한 대를 몫으로 갈라 몫마다 다른 역할을 준다**
     (R57/WP-6 · ★분할). `None` 이 *「몫으로 가르지 않는다」* 이고 **그것이
@@ -559,7 +641,9 @@ def run_single_case_e2e(
     ⚠ **갈래가 계산을 가르는 자리는 자가소비 하나다** — 갈래가
     `SelfConsumptionTreatment.NONE`(ⓐ 자가용 없음)이면 전기사용자에게 자가용
     설비가 없으므로 낮 전기가 **가구로 먼저 가는 몫이 0** 이다. 그 반영은
-    아래 `_resolve_ess_dispatch_inputs` 호출 직후 한 자리에서 한다.
+    `_resolve_ess_dispatch_inputs` 를 감싸는 `_dispatch_inputs_under_baseline`
+    한 자리에서 하며, R64/WP-4 뒤로 그 호출은 **계절마다** 지나간다
+    (`core/casegrid/seasonal_dispatch.py::build_and_dispatch_case`).
     ⓑ(`CANCEL_OUT`)는 자가소비가 Without·With 양쪽에 똑같이 있어 차액에서
     소거되므로 **종전 동작 그대로**이며, 그래서 골든 셋이 움직이지 않는다.
 
@@ -598,10 +682,41 @@ def run_single_case_e2e(
     discount_rate = _resolve(
         case_values.get("discount_rate", "base"), "discount_rate", level_map
     )
-    pv_capacity_kw = _resolve(
+    # ★★★ **설계 변수는 「한 호가 갖는 설비」다 — 단지 규모를 곱한다** (R65/WP-2b).
+    #
+    # `ledger_levels.py::_DESIGN_VARS` 의 `pv_capacity_kw` base **3.0** ·
+    # `ess_capacity_kwh` base **10.0** 은 **한 호 규모**이고 그 모듈과
+    # `household_scale.py`·`appliance_load.py` 가 셋 다 그렇게 적어 두었다.
+    #
+    # ⚠⚠ **부하와 설비가 같은 배수를 쓰지 않으면 두 절이 다른 사업을 그린다.**
+    # 부하 쪽은 `core/casegrid/seasonal_dispatch.py:789` 의
+    # `(annual_load_kwh + extra_appliance_load_kwh) * household_scale(household_count)`
+    # 이며 **여기가 그것과 같은 함수를 부르는 자리**다. 곱하지 않으면 20호 단지가
+    # 부하만 20배가 되고 설비는 1호분이라 낮에도 태양광 잉여가 0 이 되고, 잉여로
+    # 충전하는 ESS 가 `DV` 로 실행을 **거부**한다(R65/WP-2 실측: 기기 부하까지
+    # 얹으면 **2호부터** 거부되고, 20호가 성립하려면 태양광이 약 32.8 kW 여야 했다).
+    # R64 가 `_Sweeper` 에서 고친 어긋남과 **같은 형태**다.
+    #
+    # ⚠ **`household_count or 1` 을 적지 않는다** — 그 표현은 `0` 도 조용히 `1` 로
+    # 바꾼다. `household_scale()` 이 그 함정을 막으려고 있는 함수다.
+    # ⚠ **`capex` 는 곱하지 않는다** — 단가(원/kW·원/kWh)이고 총액은 자원 안에서
+    # `용량 × 단가` 로 나온다(`seasonal_dispatch.py` 의 `unit_capex_won_per_kw` ·
+    # `capex_unit_won_per_kwh`). 여기서 함께 곱하면 **두 번 곱해진다.**
+    # ⚠ **미지정(`None`)이면 배수가 `1`** 이라 이 곱이 생기기 전과 원소 하나까지 같다.
+    #
+    # ⚠⚠ **설비는 셋이고 곱하는 자리도 둘이다** (R65/WP-2c). 여기서 곱하는 것은
+    # 용량 둘뿐이며, 셋째인 **ESS 정격출력**은 `_resolve` 를 지나지 않는다 —
+    # 설계 변수가 아니라 `core/casegrid/ess_build.py::ESS_POWER_KW`(한 호분
+    # 5 kW) 모듈 상수이기 때문이다. 그것은 **같은 배수**를
+    # `core/casegrid/seasonal_dispatch.py::_ESSSpec` 이 날라 곱한다(그 자리의
+    # ★★★ 주석이 왜 여기가 아닌지를 갖는다). ⛔ **셋 중 하나만 배수를 안 타면
+    # 같은 실행 안에서 설비가 서로 다른 규모의 사업을 그린다** — WP-2b 가
+    # 용량 둘만 곱했을 때 실행이 `ess.power_kw` 로 거부된 것이 그 증상이다.
+    scale = household_scale(household_count)
+    pv_capacity_kw = scale * _resolve(
         case_values.get("pv_capacity_kw", "base"), "pv_capacity_kw", level_map
     )
-    ess_capacity_kwh = _resolve(
+    ess_capacity_kwh = scale * _resolve(
         case_values.get("ess_capacity_kwh", "base"), "ess_capacity_kwh", level_map
     )
     # ★ **계통에서 산 전력의 한계단가** (`tariff.hv_single_contract.energy_only`).
@@ -681,140 +796,91 @@ def run_single_case_e2e(
     # 얹는다. ⚠ **`rec_weight_pv` 는 여기 없다** — 이유는
     # `ledger_levels.py::_LEDGER_VARS` 옆 주석에 있다(폭을 지어낼 수 없어
     # 이 함수의 인자로 직접 받는다).
+    # ★★★ **R66/WP-2 가 PCS 둘을 더했다** (`capex.ess.pcs_power` ·
+    # `capex.ess.pcs_share_of_system` · 사용자 판정 ③). 같은 이유로 새 statement 를
+    # 만들지 않고 이 대입에 얹는다 — 여섯 다 `_resolve()` 스칼라 조회다.
+    # ⚠ **여기서 곱하거나 빼지 않는다.** 배터리 단가에서 몫을 빼는 것도, 몫을
+    # 정격출력에 곱하는 것도 `core/casegrid/ess_build.py::_case_ess_spec` 이 한다 —
+    # 그 자리가 정격출력의 정본(`ESS_POWER_KW` × 단지 배수)을 아는 유일한 곳이고,
+    # 여기서 지으면 그 정본이 둘이 된다(`pv_inverter_share` 를 여기서 단가로
+    # 짓는 것과 **갈리는 판단**이며, 갈리는 사유가 그 「출력을 알아야 한다」다).
     demand_charge, pv_fixed_om, ess_fixed_om, ess_replacement_price = (
         _resolve(case_values.get("demand_charge", "base"), "demand_charge", level_map),
         _resolve(case_values.get("pv_fixed_om", "base"), "pv_fixed_om", level_map),
         _resolve(case_values.get("ess_fixed_om", "base"), "ess_fixed_om", level_map),
         _resolve(case_values.get("ess_replacement", "base"), "ess_replacement", level_map),
     )
-
-    # 1. Resources
-    # ★ **형상이 오면 이용률 대신 시계열을 준다** (둘 다 주면 자원이 거부한다).
-    # 연간 발전량은 **그대로**이며 시간대만 옮겨간다 — 형상은 배분이지 값이
-    # 아니다.
+    # ★★★ **R66/WP-5 가 동시율을 이 대입에 얹었다** (`design.coincidence_factor` ·
+    # 사용자 지시 · 판정 §3). 새 statement 를 만들지 않는 이유는 위 넷과 같다 —
+    # `PLR0915`(이 함수의 statement 상한 50) 여유가 0 이고, 셋 다 `_resolve()`
+    # 스칼라 조회다. ⚠ **여기서 곱하지 않는다** — 곱하는 자리는
+    # `_site_load_kw` 하나이며 그 독스트링이 *어디에 곱하면 안 되는가*를 갖는다.
+    # ★★★ **R67/WP-N2 가 태양광 이용률을 이 대입에 얹었다**
+    # (`capacity_factor.pv_rooftop` · 사용자 판정 R67 §2). 종전에는
+    # `PV_CAPACITY_FACTOR = 0.15` 모듈 상수였다 — 새 statement 를 만들지 않는
+    # 이유는 위 셋과 같고(`PLR0915` 여유가 0 이다), 넷 다 `_resolve()` 스칼라
+    # 조회다. ⚠ **여기서 곱하거나 뒤집지 않는다** — 발전량은 `PV(...)` 가
+    # 곱하고, 자립 역산의 **역수**는 `core/report/sizing.py` 가 짓는다.
+    # ★★★ **R69/WP-2 가 전기요금 인상률을 이 대입에 얹었다**
+    # (`escalation.electricity_tariff` · 케이스 축 `tariff_escalation` ·
+    # 오케스트레이터 판정 `.orch/R69/WP-2-fix.md` ①·②). 새 statement 를 만들지
+    # 않는 이유는 위 넷과 같고(`PLR0915` 여유가 0 이다), 다섯 다 `_resolve()`
+    # 스칼라 조회다. ⚠ **여기서 곱하지 않는다** — 계수를 곱하는 자리는 아래
+    # 둘(전력 구매 비용 행 · 편익 일정표)이고, **계수를 짓는 식**은
+    # `core/cba/proforma.py::escalation_factor()` **하나**다.
     #
-    # ✔ **R37 에 리포트가 이 통로를 쓴다.** 종전에는 통로가 열려 있는데 배포
-    # 경로가 쓰지 않아 결론이 평탄 발전 위에 서 있었고(붙임 8 「일중 발전
-    # 프로파일」), 붙임 7 만 곡선을 그렸다. 이제 `build_case_report` 가 본
-    # 실행과 스윕에 형상을 넘긴다 — 그 배선은 `tests/report/
-    # test_irradiance_wired.py` 가 진입점에서 붙든다.
+    # ⚠⚠ **이 축은 R69/WP-2 전까지 러너에 소비자가 0곳이었다** — 수준표와
+    # 케이스 그리드(`grid.py` 의 빠른·전체 탐색 프리셋)에는 서 있는데 읽는
+    # 자리가 없어 결론축이 **0원** 움직였고, 「미반영 항목」 표가 그것을
+    # 신고하고 있었다(`tests/report/test_ledger_axes_wired.py::DEAD_AXES`).
+    ess_pcs_capex, ess_pcs_share, coincidence_factor, pv_capacity_factor, tariff_escalation = (
+        _resolve(case_values.get("ess_pcs_unit_cost", "base"), "ess_pcs_unit_cost", level_map),
+        _resolve(case_values.get("ess_pcs_share", "base"), "ess_pcs_share", level_map),
+        _resolve(case_values.get("coincidence_factor", "base"), "coincidence_factor", level_map),
+        _resolve(case_values.get("pv_capacity_factor", "base"), "pv_capacity_factor", level_map),
+        _resolve(case_values.get("tariff_escalation", "base"), "tariff_escalation", level_map),
+    )
+
+    # 1·2. Resources & Dispatch — ★★★ **계절 넷의 대표일을 각각 돌려 합산한다**
+    # (R64/WP-4 · 착수 36ⓐ). 조립과 운전 전문은 `core/casegrid/seasonal_
+    # dispatch.py` 가 갖는다 — 갈라낸 이유는 그 모듈 머리말에 있다(이 파일이
+    # `NFR-206` 코드 줄 상한에 499/500 으로 닿아 있었고 이 함수의 `PLR0915`
+    # 문장 상한도 꽉 차 있었다. `pv_allocation.py`·`ess_build.py` 와 같은 사유다).
     #
-    # ⚠ **인자를 필수로 만들지 않았다.** 러너는 케이스 그리드·성능 측정도
-    # 도는 범용 진입점이고, 형상 없는 실행은 정당한 상태다(그때 이용률 하나로
-    # 균등 배분한다는 것을 이 자리가 말한다). 결론을 내는 배포 경로가 하나뿐
-    # 이므로 배선은 거기서 붙드는 것이 맞다.
+    # ⚠ **여기서 돌아오는 `dispatch` 는 「연간등가 하루」다** — 계절마다 돌린
+    # 하루를 **계절일수로 가중 평균**한 것이며, 아래 연간화 규약(`_annualise`
+    # 의 ×365 · `daily_grid_import_kwh × DAYS_PER_YEAR`)을 **한 줄도 고치지
+    # 않고** 그대로 쓰면 `Σ_계절 (계절 하루 × 계절일수)` 와 같아진다. 그
+    # 항등식과 「합산을 금액이 아니라 운전에서 하는」 근거는 그 모듈 머리말이
+    # 갖는다. ⚠⚠ **금액에서 합치면 첨두 절감이 계절 수만큼 곱해진다.**
     #
-    # ★★ **부하와 같은 이유로 `spread()` 가 아니다** (R60/WP-4-fix · 위 `_household`
-    # 의 주석이 정본). 계절이 선 자산에서 `spread()` 를 넘기면 앞 하루가 첫
-    # 계절의 하루가 되어 연간화 발전량이 `용량 × 이용률 × 8760` 과 어긋난다 —
-    # 실측으로 +281kWh/년이 없던 데서 생겼다. 길이는 그대로 연간 스텝 수다
-    # (`PV._resolve_generation` 의 `DV-4` 가 그 길이를 본다).
-    generation_profile = (
-        daily_shapes.generation.spread_over_representative_day(
-            pv_capacity_kw * PV_CAPACITY_FACTOR * HOURS_PER_YEAR,
-            days=DAYS_PER_YEAR,
-        )
-        if daily_shapes is not None
-        else None
-    )
-    pv = PV(
-        name="e2e-pv",
-        capacity_kw=pv_capacity_kw,
-        capacity_factor=None if daily_shapes is not None else PV_CAPACITY_FACTOR,
-        generation_profile_kwh=generation_profile,
-        unit_capex_won_per_kw=pv_capex,
-        inverter_unit_capex_won_per_kw=pv_capex * pv_inverter_share,
-        # ★ **인버터 교체 단가** (사용자 판정 §7 · R52/WP-6). 조사가 크기 근거를
-        # 찾지 못해(WP-5 §7) **취득 단가와 같은 값**을 쓴다 — 위 줄과 같은
-        # 표현식이며 지어낸 차이가 아니다. `pv.py::inverter_replacement_unit_
-        # won_per_kw` 가 그 통로다.
-        inverter_replacement_unit_won_per_kw=pv_capex * pv_inverter_share,
-        fixed_om_won_per_year=pv_fixed_om,
-        escalation_rate=PRICE_ESCALATION_RATE,
-        replacement_escalation_rate=replacement_escalation_rate,
-        self_consumption_ratio=PV_SELF_CONSUMPTION_RATIO,
-        operating_mode=OperatingMode.FULL_EXPORT,
-    )
-
-    # ★ **부하는 편익을 만들지 않는다** (`RC-LD-B0` · `Load.value_streams()` 는
-    # 비어 있다). 그래서 여기 더해도 편익 갈래는 늘지 않고 **운전만** 달라진다 —
-    # 계통 수전이 실제 수량으로 나온다. 화폐화(자가소비 절감·구매 비용)는 요금
-    # 엔진의 몫이며, 한쪽만 계상하면 사업에 불리한 쪽으로 틀린다(NSPM 대칭성).
-    # ⚠ **여기로 옮겼다(판정 §1 ④)** — `_household_load_if_total_given` 은
-    # 함수 인자만 쓰고 그 사이에 만들어지는 어떤 것도 쓰지 않으므로, PV 잉여
-    # 배분(`HOUSEHOLD_FIRST`)이 이 부하 시계열을 봐야 하는 지금 자리로 옮겨도
-    # 안전하다.
-    household = _household_load_if_total_given(
-        daily_shapes, annual_load_kwh, extra_appliance_load_kwh
-    )
-
-    # ★ **운전 방법·충전원·PV 잉여 배분 순서 — 하드코딩을 세 갈래로 노출한다**
-    # (판정 §1·§3·A-3·A-6, `docs/decisions-2026-09-01-R51.md`). 한 statement 로
-    # 묶어 부르는 이유는 계산 자체가 아니라 `PLR0915`(이 함수의 statement 상한)
-    # 다 — 이 함수는 이미 그 상한에 닿아 있었다(브리프 실측).
-    ctx = DispatchContext(steps=STEPS_PER_DAY, dt=SECONDS_PER_HOUR, year=Year(1))
-    (
-        resolved_ess_operating_mode,
-        resolved_ess_charge_source,
-        ess_pv_surplus_profile_kwh,
-        resolved_pv_allocation_priority,
-    # ★★★ **기준선 갈래가 이 자리를 지난다** (`FR-705-AC2` · 위 독스트링).
-    # 감싸는 함수가 `core/casegrid/pv_allocation.py` 에 있는 이유는 그 모듈
-    # 머리말의 R60/WP-2 절이 갖는다(이 함수의 `PLR0915` 문장 상한이 꽉 차
-    # 있었고, 이 파일의 `NFR-206` 코드 줄 상한도 닿아 있었다).
-    ) = _dispatch_inputs_under_baseline(
-        ess_operating_mode, ess_charge_source, case_values, pv, ctx,
-        pv_allocation_priority=pv_allocation_priority, household=household,
-        baseline_arrangement=baseline_arrangement,
-        # ★ ⓒ 의 계측 선언을 그대로 넘긴다 — 판정은 `get_baseline_branch` 한
-        # 곳이고 이 자리는 나르기만 한다(R60/WP-3).
-        pool_metering=pool_metering,
-    )
-
-    # ★ **제원 상수 여덟과 `ESS(...)` 조립 전문은 `ess_build.py` 에 있다**
-    # (R57/WP-5). 여기서 넘기는 것은 **이미 해석된 값들**(위
-    # `_resolve_ess_dispatch_inputs` 가 골랐다)과 **대장에서 온 값들**뿐이며,
-    # 그 해석은 함께 가지 않았다 — 가면 「자리 옮김」이 아니게 된다.
-    # ⚠ `cast(ESSOperatingMode, ...)` 와 `pv_surplus_profile_kwh` 의 조건식은
-    # 사유 주석째로 그 모듈이 들고 있다.
-    #
-    # ★★★ **몫 분기도 그 모듈이 진다**(R57/WP-6 · ★분할). 돌려받는 셋은
-    # ① 디스패치·수명·자원 표에 실을 **자원 전건** ② 몫 계획 전건(몫이 없으면
-    # 빈 튜플) ③ **가르기 전의 물리 배터리**다. ③이 따로 오는 이유는 교체비·
-    # 잔존가치가 **물리 배터리 한 대의 사건**이고 그 행을 짓는
-    # `core/casegrid/lifecycle.py::lifecycle_rows` 가 자원 하나만 받기
-    # 때문이다 — 몫이 없으면 ①의 유일한 원소가 ③과 같은 객체다.
-    ess_fleet, ess_plans, ess_whole = build_case_ess_fleet(
-        shares=ess_shares,
-        capacity_kwh=ess_capacity_kwh,
-        operating_mode=resolved_ess_operating_mode,
-        charge_source=resolved_ess_charge_source,
-        pv_surplus_profile_kwh=ess_pv_surplus_profile_kwh,
-        capex_unit_won_per_kwh=ess_capex, fixed_om_won_per_year=ess_fixed_om,
-        replacement_unit_won_per_kwh=ess_replacement_price,
-        escalation_rate=PRICE_ESCALATION_RATE,
-        replacement_escalation_rate=replacement_escalation_rate,
-    )
-
-    # ★ **자원이 서자마자 분석기간을 잰다 (DV-5).** 수명은 자원이 갖고 있으므로
-    # 여기가 규칙을 평가할 수 있는 가장 이른 자리다 — 디스패치·편익·CBA 어느
-    # 것도 돌기 전에 거부한다. 늦게 두면 상한을 넘긴 케이스의 중간 산출물이
-    # 한 번은 만들어지고, 그것이 로그·캐시로 새어 나간다(`DV-10` 과 같은 이유).
-    # ⚠ **몫 전건의 수명을 넣는다** — 하나만 넣으면 나머지 몫이 상한 판정에서
-    # 사라진다(지금은 몫마다 수명이 같지만, 같다는 사실을 여기가 아니라
-    # `split_ess` 가 정한다).
-    check_analysis_period(
-        analysis_years=horizon_years,
-        asset_lifetimes_years=[pv.lifetime, *(e.lifetime for e in ess_fleet)],
-    )
-
-    # 2. Dispatch
-    # ⚠ **몫 전건을 싣는다** — 하나만 실으면 나머지 몫이 방전하지 않는다.
+    # ⚠ 분석기간 상한(`DV-5`)·기준선 갈래(`FR-705-AC2`)·ⓒ 계측 선언(`DV-15`)의
+    # 거부는 그 모듈 안에서 **편익·프로포마·CBA 어느 것도 돌기 전에** 난다.
     engine = RuleBasedEngine()
-    resources: list[DER] = (
-        [pv, *ess_fleet] if household is None else [pv, *ess_fleet, household]
+    run = build_and_dispatch_case(
+        engine=engine, daily_shapes=daily_shapes, case_values=case_values,
+        horizon_years=horizon_years,
+        steps_per_day=STEPS_PER_DAY, seconds_per_hour=SECONDS_PER_HOUR,
+        pv_capacity_kw=pv_capacity_kw, pv_capacity_factor=pv_capacity_factor,
+        pv_capex=pv_capex, pv_inverter_share=pv_inverter_share,
+        pv_fixed_om=pv_fixed_om, pv_self_consumption_ratio=PV_SELF_CONSUMPTION_RATIO,
+        price_escalation_rate=PRICE_ESCALATION_RATE,
+        replacement_escalation_rate=replacement_escalation_rate,
+        annual_load_kwh=annual_load_kwh,
+        extra_appliance_load_kwh=extra_appliance_load_kwh,
+        appliance_shares=appliance_season_shares,
+        household_count=household_count,
+        dr_shiftable_share_pct=dr_shiftable_share_pct,
+        ess_shares=ess_shares, ess_capacity_kwh=ess_capacity_kwh, ess_capex=ess_capex,
+        ess_fixed_om=ess_fixed_om, ess_replacement_price=ess_replacement_price,
+        ess_pcs_capex=ess_pcs_capex, ess_pcs_share=ess_pcs_share,
+        ess_operating_mode=ess_operating_mode, ess_charge_source=ess_charge_source,
+        ess_discharge_allocation=ess_discharge_allocation,
+        pv_allocation_priority=pv_allocation_priority,
+        baseline_arrangement=baseline_arrangement, pool_metering=pool_metering,
     )
-    dispatch = engine.run(resources, ctx)
+    pv, household, ctx, dispatch = run.pv, run.household, run.ctx, run.dispatch
+    ess_fleet, ess_plans, ess_whole = run.ess_fleet, run.ess_plans, run.ess_whole
 
     # 3. Benefits (one day, annualised)
     grid_export_result = DispatchResult(
@@ -842,7 +908,7 @@ def run_single_case_e2e(
         nwas_price_won_per_kwh=nwas_price_won_per_kwh,
         cp_price_won_per_kw_month=cp_price_won_per_kw_month,
         demand_charge_won_per_kw_month=demand_charge,
-        site_load_kw=_site_load_kw(household, dispatch, ctx),
+        site_load_kw=_site_load_kw(household, dispatch, ctx, coincidence_factor),
     )
     # ★ **계약구조가 주어지면 그것이 잉여 화폐화 편익을 고른다 (FR-205-AC1).**
     #
@@ -975,10 +1041,32 @@ def run_single_case_e2e(
     lifecycle_rows, one_off_flows = _lifecycle_rows(
         pv=pv, ess=ess_whole, horizon_years=horizon_years
     )
+    # ★★★ **요금 인상률의 편익 쪽 절반** (R69/WP-2 · 판정 ②). 요금이 오르면
+    # 사 오는 전력의 값(아래 `energy_purchase_row`)만 오르는 것이 아니라
+    # **회피한 기본요금**도 함께 오른다 — 첨두 절감(`PeakShaving`)은 대장
+    # `tariff.hv_single_contract.demand_charge` 로 값이 매겨지고, 그것은
+    # 구매 단가(`…energy_only`)와 **같은 요금표의 다른 칸**이다. 한쪽만
+    # 올리면 NSPM 대칭이 깨져 사업이 한 방향으로 틀린다(`energy_purchase_row`
+    # 독스트링의 그 절이 정본이고, 계수를 짓는 식은 `escalation_factor()`
+    # **하나**가 갖는다).
+    #
+    # ⚠ **첨두 절감 몫에만 곱한다.** `annual_benefit` 에는 REC·NWAs·CP·
+    # 잉여판매가 함께 들어 있고 그것들은 요금표가 정하는 값이 아니다 —
+    # 전액에 곱하면 REC 단가가 전기요금 인상률로 오르게 된다.
+    # ⚠ **`SurplusSale` 에는 걸지 않는다** — 그 단가는
+    # `tariff.surplus_direct_sale`(잉여 직거래 · 도매 계열)이고 정산 구조가
+    # 다르다(WP-2 §0·§3-④). 지금 실행에서 그 값은 역송 0kWh 라 0원이다.
+    # ⚠ **1년차 계수는 `(1+r)^0 = 1.0`** 이므로 1년차 편익은 종전과 원 하나까지
+    # 같다. 반올림은 `to_won()` 한 곳에서 한다(`NFR-103`).
     benefit_rows = [
         benefit_row(
             "E2EBenefit",
-            {year: annual_benefit for year in range(1, horizon_years + 1)},
+            {
+                year: annual_benefit - peak_per_year + int(
+                    to_won(peak_per_year * escalation_factor(tariff_escalation, year=year))
+                )
+                for year in range(1, horizon_years + 1)
+            },
         ),
     ]
     # ★ **운영비와 교체·잔존을 이름으로 갈라 둔다** (R49 · 판정 §3 ⓐ).
@@ -1012,11 +1100,17 @@ def run_single_case_e2e(
             # 「가격 기준 · 명목 (전 항목 공통)」이 그 순간 거짓이 된다.
             escalation_rate=PRICE_ESCALATION_RATE,
         ),
+        # ★★★ **요금 인상률의 비용 쪽 절반** (R69/WP-2 · 판정 ①·②). 넘기는
+        # 금액은 **1년차** 값이고 연차 계수는 행이 스스로 굴린다 — 여기서
+        # 미리 곱하면 행이 연차를 모르는 채 「이미 오른 값」을 20년 깐다.
+        # 편익 쪽 절반은 위 `benefit_rows` 의 첨두 절감 몫이며, 두 자리가
+        # **같은 `escalation_factor()`** 를 부른다.
         energy_purchase_row(
             "GridPurchase",
             start_year=1,
             end_year=horizon_years,
             annual_amount_won=annual_purchase_won,
+            escalation_rate=tariff_escalation,
         ),
         *(
             fee_row(
@@ -1037,7 +1131,7 @@ def run_single_case_e2e(
             pool_metering,
             pv=pv,
             ctx=ctx,
-            surplus_profile_kwh=ess_pv_surplus_profile_kwh,
+            surplus_profile_kwh=run.pv_surplus_profile_kwh,
             price_won_per_kwh=grid_purchase_price,
             horizon_years=horizon_years,
         ),
@@ -1080,10 +1174,12 @@ def run_single_case_e2e(
     )
     resource_lines = _resource_lines(
         pv, pv_capex, ess_fleet, ess_capex, benefit_lines,
+        ess_pcs_capex=ess_pcs_capex, ess_pcs_share=ess_pcs_share,
+        pv_capacity_factor=pv_capacity_factor,
         self_consumption_ratio=measured_self_consumption_ratio(
-            pv, ctx, ess_pv_surplus_profile_kwh
+            pv, ctx, run.pv_surplus_profile_kwh
         ),
-        pv_allocation_priority=resolved_pv_allocation_priority,
+        pv_allocation_priority=run.pv_allocation_priority,
     )
 
     return CaseOutcome(
@@ -1095,8 +1191,13 @@ def run_single_case_e2e(
         # 물을 때마다 이 파일이 함께 바뀐다.
         # ⚠ **몫 전건을 넘긴다**(R57/WP-6) — 하나만 넘기면 리포트·비교 표가
         # 나머지 몫을 「없는 자원」으로 읽는다.
-        resources=(pv, *ess_fleet),
+        resources=run.resources,
         dispatch=dispatch,
+        # ★★★ **계절별 결과** (R64/WP-4 · 판정 ⑤ · 사용자 요구 6). 다음 WP 가
+        # 계절별 수치·도표를 세울 재료이며, 여기서 안 실으면 그 WP 가 자원을
+        # 다시 세워야 한다 — 그러면 인쇄된 계절과 결론이 선 계절이 갈릴 수 있다.
+        # ⚠ **형상 자산이 없는 실행에서는 비어 있다**(케이스 그리드·성능 측정).
+        seasons=run.seasons,
         # 엔진 인스턴스가 실제로 쓴 순서다 — 기본 상수를 다시 읽지 않는다
         # (`CaseOutcome.rule_order` 독스트링).
         rule_order=engine.rule_order,
@@ -1112,10 +1213,17 @@ def run_single_case_e2e(
         # ★★★ 관점 넷 배선 (R52/WP-A) — `build_perspective_wiring()` 독스트링 참조.
         # ★ 사회 편익은 `society_annualised` 로 따로 넣는다 (R53/WP-1 판정 ①) —
         # `annualised` 는 위에서 한 글자도 고치지 않는다.
+        # ★★ **요금 연동 갈래를 관점 표에도 알려 준다** (R69/WP-2). 사업자 열은
+        # `benefit_rows`(위에서 계수를 이미 태웠다)를 그대로 쓰는데, 참여 주민
+        # 열은 `annualised` 의 1년차 값으로 다시 지어지므로 여기를 안 넘기면
+        # **같은 첨두 절감의 20년 합계가 표 안에서 두 수로 인쇄된다.**
+        # 판정(어느 갈래가 요금 연동인가)은 여기 한 곳에 있고 관점 모듈은
+        # 받기만 한다 — 그쪽에 태그를 다시 적으면 정본이 둘이 된다.
         perspectives=build_perspective_wiring(
             annualised, benefit_rows, [*operating_cost_rows, *lifecycle_rows],
             initial_investment, discount_rate, horizon_years=horizon_years,
-            society_annualised=build_society_annualised(distributed_sub_items)),
+            society_annualised=build_society_annualised(distributed_sub_items),
+            escalation_by_tag={peak.tag: tariff_escalation}),
         basis=CaseBasis(
             initial_investment_won=int(initial_investment),
             annual_benefit_won=annual_benefit,
@@ -1163,12 +1271,12 @@ def run_single_case_e2e(
                 annual_purchase_won=annual_purchase_won,
                 settlement_costs=settlement_costs,
             ),
-            dispatch_note=(
-                f"대표일 1일을 {STEPS_PER_DAY}스텝(1시간 간격)으로 모의하고 "
-                f"{DAYS_PER_YEAR}일로 연간화한다. 계절·요일 변동을 반영하지 "
-                "않으므로 잉여 판매량은 대표일의 {DAYS_PER_YEAR}배다. "
-                "첨두 절감은 월 단위 12회로 이미 연간값이라 곱하지 않는다"
-            ).replace("{DAYS_PER_YEAR}", str(DAYS_PER_YEAR)),
+            # ★★★ **문면은 이 실행이 실제로 한 일을 적는다** (R64/WP-4 · 판정 ④).
+            # 종전 문면(*「계절·요일 변동을 반영하지 않으므로…」*)은 계절 합산이
+            # 서는 순간 거짓이 됐다. 갈래와 「요일은 여전히 미반영」의 근거는
+            # `dispatch_note()` 독스트링이 갖는다 — **여기서 문장을 다시 쓰지
+            # 않는다**(두 곳에 적으면 갈리고, 갈린 쪽이 산출물에 실린다).
+            dispatch_note=dispatch_note(run.seasons, steps_per_day=STEPS_PER_DAY),
         ),
     )
 
@@ -1221,6 +1329,40 @@ def _with_model_generation(
     return replace(inputs, annual_generation_kwh=generation)
 
 
+def _hours_text(hours: Sequence[int]) -> str:
+    """방전창을 **연속 구간**으로 접어 적는다 — `(18, 19, 20, 21)` → `18~21시`.
+
+    ⚠ 시각을 스물넷 다 나열하면 표 칸이 넘치고, 첫·끝만 적으면 창이 끊긴
+    운전 방법에서 거짓이 된다. 그래서 **끊긴 자리마다 구간을 나눈다.**
+    """
+    if not hours:
+        return "없음"
+    spans: list[list[int]] = [[hours[0], hours[0]]]
+    for hour in hours[1:]:
+        if hour == spans[-1][1] + 1:
+            spans[-1][1] = hour
+        else:
+            spans.append([hour, hour])
+    return "·".join(
+        f"{lo}시" if lo == hi else f"{lo}~{hi}시" for lo, hi in spans
+    )
+
+
+def _ess_allocation_text(ess: ESS) -> str:
+    """저장장치가 이 실행에서 **실제로 적용한 방전 배분** 한 조각 (R68/WP-2).
+
+    ⚠ **함수로 둔 이유** — 이 조각은 `ResourceLine` 의 «두» 칸이 읽는다:
+    합친 `operating_mode`(붙임 6 과 골든이 보는 문면 · ⛔ 바꾸지 않는다)와
+    뒷조각만 나르는 `applied_allocation`(검증 3단계의 「실제 배분」 열)이다.
+    저장장치 줄은 몫마다 서는 **생성식** 안에서 만들어져 지역 변수를 둘 수
+    없으므로, 같은 f-문자열을 두 번 적는 대신 여기서 한 번 짓는다.
+    """
+    return (
+        f"방전 배분: {ess.discharge_allocation} "
+        f"(방전창 {_hours_text(ess.discharge_hours)} 안)"
+    )
+
+
 def _resource_lines(
     pv: PV,
     pv_capex: float,
@@ -1228,6 +1370,19 @@ def _resource_lines(
     ess_capex: float,
     benefits: Sequence[BenefitLine],
     *,
+    #: ★ PCS 둘 — 2.1 표의 단가 칸이 **자기 취득비를 설명할 수 있어야** 한다
+    #: (R66/WP-2-fix · 아래 `unit_capex` 의 ★★★ 절). ⚠ **키워드 전용이다** —
+    #: 위치 인자를 늘리면 `PLR0917`(위치 인자 5개 상한)에 걸리고, 무엇보다
+    #: 두 단가는 호출부에서 **이름으로 구별돼야** 서로 바뀌어도 드러난다.
+    ess_pcs_capex: float,
+    ess_pcs_share: float,
+    #: ★★ 태양광 이용률 — **대장에서 온 값을 호출자가 넘긴다** (R67/WP-N2).
+    #: ⚠⚠ **`pv.capacity_factor` 에서 읽으면 안 된다.** 이 러너는 PV 를 이용률이
+    #: 아니라 **8,760 발전 시계열**로 세우므로(`core/casegrid/seasonal_dispatch.py`
+    #: 가 대표일 형상을 펼친다) 그 속성은 `None` 이고, 그것을 인쇄하면 2.1 표의
+    #: 이용률 칸이 **「미지정」으로 사라진다** — R67/WP-N2 가 실물로 밟았다
+    #: (`.orch/R67/result_N2.md` ②). 시계열을 만든 수가 곧 이 값이다.
+    pv_capacity_factor: float,
     self_consumption_ratio: float,
     pv_allocation_priority: PVAllocationPriority,
 ) -> tuple[ResourceLine, ...]:
@@ -1253,6 +1408,11 @@ def _resource_lines(
             line.tag for line in benefits if line.resource_code == resource
         )
 
+    # ★★ **배분 조각을 «한 번» 짓는다** (R68/WP-2). 합친 칸과 `applied_
+    # allocation` 칸이 같은 지역 변수를 읽으므로 둘이 갈라질 수 없다 — 두 곳에
+    # 같은 f-문자열을 적으면 한쪽만 고쳐지는 날 검증 3단계의 「실제 배분」 열이
+    # 붙임 6 의 합친 칸과 다른 말을 하고, 아무 예외도 나지 않는다.
+    pv_allocation_text = f"본 실행 배분: {pv_allocation_priority}"
     return (
         ResourceLine(
             name=pv.name,
@@ -1260,13 +1420,16 @@ def _resource_lines(
             # ★ **세운 자원에서 읽는다.** 모듈 상수에서 읽으면 용량 스윕이
             # 도는 동안에도 리포트가 기준 용량을 계속 인쇄한다 — 값이 바뀌어도
             # 아무 예외가 나지 않는 형태다.
+            # ★★ **이용률은 대장에서 온 값을 인자로 받는다** (R67/WP-N2) —
+            # 위 `pv_capacity_factor` 인자의 ⚠⚠ 가 *왜 자원에서 읽지 않는가*를
+            # 갖는다(이 러너의 PV 는 시계열로 세워져 그 속성이 `None` 이다).
             # ★★ **자가소비율은 `PV_SELF_CONSUMPTION_RATIO`(모듈 상수)가 아니라
             # 본 실행의 실측치를 받는다** (판정 §4). `BATTERY_FIRST` 갈래에서만
             # 그 상수가 계속 쓰이며(`pv_allocation._resolve_ess_dispatch_inputs`
             # 독스트링), 여기 인쇄되는 값은 갈래와 무관하게 이 실행이 실제로
             # 배분한 결과다 — 「(본 실행 실측)」 문면이 그 사실을 표시한다.
             capacity=(
-                f"{pv.capacity_kw:g} kW · 이용률 {PV_CAPACITY_FACTOR:.0%} · "
+                f"{pv.capacity_kw:g} kW · 이용률 {pv_capacity_factor:.0%} · "
                 f"자가소비율 {self_consumption_ratio:.0%} (본 실행 실측)"
             ),
             # ★★ **선언(전량 판매)과 본 실행 배분 순서를 함께 적는다** (판정
@@ -1275,9 +1438,10 @@ def _resource_lines(
             # allocation_priority` 축이 낮 동안 따로 정한다(같은 뿌리, 판정
             # §4 ⚠). 배분 순서는 실행이 실제로 고른 값(`resolved_pv_allocation_
             # priority`)에서 읽는다 — 지어내지 않는다.
-            operating_mode=(
-                f"{pv.operating_mode} (선언) · 본 실행 배분: {pv_allocation_priority}"
-            ),
+            operating_mode=f"{pv.operating_mode} (선언) · {pv_allocation_text}",
+            # ★ 위 합친 칸의 **뒷조각만** — 검증 3단계가 파싱 없이 「선언」과
+            # 「실제 배분」을 두 열로 가른다(`ResourceLine.applied_allocation`).
+            applied_allocation=pv_allocation_text,
             lifetime_years=int(pv.lifetime),
             unit_capex=f"{pv_capex:,.0f}원/kW",
             capex_won=int(pv.capex(year=1)),
@@ -1295,9 +1459,41 @@ def _resource_lines(
                     f"{ESS_SOC_MAX_PCT:g}% · 수명종료 SOH {ESS_EOL_SOH_PCT:g}% · "
                     f"연 {ESS_CYCLES_PER_YEAR:g}사이클"
                 ),
-                operating_mode=str(ess.operating_mode),
+                # ★★ **방전 배분을 함께 적는다** (R64/WP-6b · 사용자 요구 5).
+                # ⚠ **모듈 상수(`ESS_DISCHARGE_ALLOCATION_DEFAULT`)를 다시 읽어
+                # 재현하지 않는다** — 세운 자원이 실제로 든 값을 읽는다. 상수를
+                # 읽으면 부하를 세우지 않는 실행(그 실행은 「고정 창」으로 선다)
+                # 에서도 「부하 추종」이 인쇄되고, 그 거짓은 아무 예외도 내지
+                # 않는다. 위 `capacity` 칸의 ★ 와 같은 판단이다.
+                # ⚠⚠ **방전창을 함께 적는다** — 「부하 추종」만 적으면 *하루
+                # 종일 수요를 따라간다* 로 읽힌다. 실제로는 운전 방법이 정한
+                # 창 **안에서만** 나눈다(창을 부하로 정하면 충전 계획과
+                # 순환한다 — `ess_schedule.pv_surplus_charge_kwh_by_hour`).
+                # 창 밖 수요의 크기는 붙임 8 이 재어 신고한다.
+                operating_mode=f"{ess.operating_mode} · {_ess_allocation_text(ess)}",
+                # ★ 위 합친 칸의 **뒷조각만** — 검증 3단계가 파싱 없이 「선언」과
+                # 「실제 배분」을 두 열로 가른다. 같은 함수를 읽으므로 두 칸이
+                # 갈라질 수 없다(`_ess_allocation_text` 독스트링의 ⚠).
+                applied_allocation=_ess_allocation_text(ess),
                 lifetime_years=int(ess.lifetime),
-                unit_capex=f"{ess_capex:,.0f}원/kWh",
+                # ★★★ **두 축을 함께 인쇄한다** (R66/WP-2-fix). R66/WP-2 가
+                # 초기투자에 `PCS 단가 × 정격출력` 항을 세우면서 이 칸이
+                # **자기 행의 취득비를 설명하지 못하게 됐다** — 실측으로
+                # `500,000원/kWh` 를 인쇄하는데 같은 행의 취득비는
+                # 105,000,000원이었다(500,000 × 200 kWh = 100,000,000 ≠ 그 수).
+                # 즉 심의자가 표에 적힌 단가·용량으로 초기투자를 되짓지 못했다.
+                # ⚠ **대장의 시스템 단가를 그대로 적을 수 없다** — 배터리에
+                # 실제로 곱해지는 것은 `시스템 단가 × (1 − PCS 몫)` 이다
+                # (`core/casegrid/ess_build.py::_case_ess_spec`).
+                # ⚠⚠ **자원에서 되읽지 않는다** — `ESS` 는 두 단가를 비공개
+                # 속성으로만 갖고(`_capex_unit`·`_capex_pcs_per_kw`) 그 파일은
+                # 코드 498/500 이라 접근자를 세울 자리가 없다. 그래서 러너가
+                # **같은 값을 같은 자리에서** 받아 넘긴다 — 위 `capacity` 칸의
+                # ★ 가 경계한 「모듈 상수에서 다시 읽는」 형태와는 다르다.
+                unit_capex=(
+                    f"{ess_capex * (1.0 - ess_pcs_share):,.0f}원/kWh (배터리) + "
+                    f"{ess_pcs_capex:,.0f}원/kW (PCS)"
+                ),
                 capex_won=int(ess.capex(year=1)),
                 fixed_om_won_per_year=int(ess.fixed_om(year=1)),
                 produces=produced_by("ESS"),

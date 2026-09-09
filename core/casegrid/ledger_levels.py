@@ -203,6 +203,85 @@ _LEDGER_VARS: tuple[tuple[str, str, float], ...] = (
     # §7 이 요구한 *「각각 별도 설정이 가능해야 함」*을 충족하기 위해서다 — 값이
     # 같아도 통로가 따로 있어야 다음에 견적이 오면 이 한 줄만 고치면 된다.
     ("ess_replacement", "capex.ess.replacement", 1.0),
+    # ★★★ **PCS 둘 — 초기투자에 「원/kW 항」을 세우는 통로** (R66/WP-1·WP-2 · `Q-2`).
+    #
+    # R66/WP-1 이 대장에 값을 세우고 **배선은 하지 않았다** — 그 상태가 곧
+    # `capex.replacement_real_trend`(R41→R42) · `capex.pv.inverter_share`(R43) 가
+    # 지났던 자리이며, `tests/casegrid/test_ledger_levels.py::
+    # test_every_capex_ledger_item_is_a_sweep_axis_or_says_why_not` 가 **그 상태를
+    # 실제로 빨간불로 잡았다**(WP-2 착수 실측 — 그 항목 둘을 이름으로 지목했다).
+    #
+    # ⚠⚠ **둘의 쓰임이 다르다 — 같은 값을 두 번 쓰는 것이 아니다.**
+    #   · `pcs_power`(원/kW)  → **PCS 항을 세운다**: `PCS 단가 × 정격출력`
+    #   · `pcs_share_of_system`(%) → **배터리 단가를 줄인다**: `단가 × (1 − 몫)`
+    # 몫으로 PCS 를 「떼기만」 하면 떼어낸 값이 다시 **용량에** 비례해
+    # *「정격출력을 키우는 것이 공짜」* 가 그대로 남는다 — 대장 항목
+    # `capex.ess.pcs_share_of_system` 의 `applicable_scope` 가 그 함정을 스스로
+    # 적어 두었다(*「그때는 몫이 아니라 `capex.ess.pcs_power` 를 곱해야 한다」*).
+    # 배선의 몸통은 `core/casegrid/ess_build.py::_case_ess_spec` 이다.
+    #
+    # ⚠ **배율 1.0 · 0.01 이 갈리는 것은 단위 환산이다** — 앞은 대장·자원 둘 다
+    # 원/kW 이고, 뒤는 대장이 `%` 이며 자원이 비율을 쓴다. **`0.01` 은 145줄의
+    # `pv_inverter_share` 선례를 그대로 따른 것**이며(그 항목도 「단가 하나를
+    # 쪼개는 몫」이고 단위가 `%` 다), `tests/casegrid/test_ledger_levels.py::
+    # test_percent_per_year_is_converted_once` 가 `%` 로 시작하는 단위 전건에
+    # 이 환산을 요구한다 — 즉 여기서 `1.0` 을 주면 빨간불이다.
+    ("ess_pcs_unit_cost", "capex.ess.pcs_power", 1.0),
+    ("ess_pcs_share", "capex.ess.pcs_share_of_system", 0.01),
+    # ★★★ **동시율** — 사용자 지시 (R66/WP-5 · `docs/decisions-2026-09-07-R66.md`
+    # §1ⓑ *「동시율은 내가 임의로 정하기 어려움. 초기설정은 80%로 하고, 설정을
+    # 통해 변경하는 한 것으로 설계해줘」*).
+    #
+    # ⚠⚠ **이 축이 걸리는 자리는 한 곳뿐이다** — `core/casegrid/e2e_runner.py::
+    # _site_load_kw` 의 반환값(시각별 kW)이다. 그 함수 독스트링이 *왜 거기 하나인가*
+    # 와 *어디에 걸면 안 되는가* 를 갖는다. ⛔ **연간 부하 kWh 총량에 곱하면
+    # 부하를 20% 지우는 것**이고 결론축이 좋은 쪽으로 틀린다(대장 항목의
+    # `applicable_scope` 가 그 오독을 ⛔⛔ 로 막는다).
+    #
+    # ⚠ **배율 0.01 은 단위 환산이다** — 대장이 `%` 이고 러너는 배수를 쓴다.
+    # 145줄 `pv_inverter_share` 의 선례를 그대로 따랐고, 아래
+    # `test_percent_per_year_is_converted_once` 가 `%` 로 시작하는 단위 전건에
+    # 이 환산을 요구한다 — 여기서 `1.0` 을 주면 빨간불이다.
+    ("coincidence_factor", "design.coincidence_factor", 0.01),
+    # ★★★ **태양광 이용률** — R67/WP-N2 에 올렸다 (사용자 판정 R67 §2
+    # 「모든 수치는 추후 변경 가능」 · `docs/decisions-2026-09-08-R67b.md` §3-4).
+    #
+    # 종전에는 `e2e_runner` 의 모듈 상수 `PV_CAPACITY_FACTOR = 0.15` 였다 —
+    # `PV_FIXED_OM_WON_PER_YEAR`(R51/WP-2)·`DEMAND_CHARGE_WON_PER_KW_MONTH`
+    # (R43)와 **같은 형태**이며, 대장에도 축에도 없이 결론에 들어와 있었다.
+    # 그 상수를 이 라운드가 지웠다 — 소스에 기본값을 남기면 대장 한 곳만
+    # 고쳐도 실행에 반영된다는 그 판정의 요구가 깨진다.
+    #
+    # ⚠⚠ **이 축은 발전량의 전제이지 「적정용량의 답」이 아니다.** 자립 역산
+    # (`core/report/sizing.py::required_pv_capacity_kw`)이 이 값의 **역수**로
+    # 답을 내므로 역산 전체가 여기에 매여 있는데, 사용자가 바꿀 통로가
+    # 없었다(판정 R67b §3-4 가 그것을 지목했다).
+    #
+    # ⚠ **배율 1.0 이다** — 대장·자원 둘 다 0~1 의 소수를 쓴다. 대장 항목의
+    # 주석이 *왜 `%` 로 두지 않았는가*를 갖는다(형제 항목
+    # `capacity_factor.bipv_wall.ratio` 는 `%` 이고, 그쪽은 이 값에 대한
+    # 비율이라 단위가 갈린다).
+    ("pv_capacity_factor", "capacity_factor.pv_rooftop", 1.0),
+    # ★★★ **계통 전력공급 허용 비율** — R67/WP-N3 에 올렸다 (사용자 지시 ·
+    # 판정 정본 `docs/decisions-2026-09-07-R66.md` §4).
+    #
+    # ⚠⚠ **이 축은 결론축(순현재가치)을 한 원도 움직이지 않는다** — 걸리는 자리가
+    # 붙임 10 의 ESS 역산 소절 하나이고(`core/report/ess_sizing_section.py`) 그
+    # 소절은 **진단**이라 결과를 실행에 되먹이지 않는다. 그래서 5.1 영향도 표에
+    # 「미반영 — 측정 안 됨」으로 오른다(`core/report/case_influences.py::
+    # InfluenceEntry.unread_by_pipeline`).
+    #
+    # ★ **그런데 그것이 이 줄을 빼야 할 사유가 아니다.** 이 값이 정하는 것은
+    # 역산의 **채택값**이며(완전 자립분 917kWh → 채택값 642kWh · 실측), 축에
+    # 없으면 *「0.30 을 골랐다」가 그 채택값에 얼마를 넣었는지* 를 검토자가
+    # 어디서도 읽을 수 없다 — `capex.replacement_real_trend`(R41→R42) ·
+    # `capex.pv.inverter_share`(R43) 가 지났던 자리와 같은 형태다.
+    # ⚠ 「미반영」 라벨은 **결함이 아니라 사실**이다: 결론축과 채택값은 다른
+    # 축이고, 이 라벨이 그 둘을 갈라 준다.
+    #
+    # ⚠ **배율 1.0 이다** — 대장·산식 둘 다 0~1 의 소수를 쓴다. 대장 항목의
+    # 주석이 *왜 `%` 로 두지 않았는가*를 갖는다.
+    ("grid_supply_allowance", "policy.grid_supply_allowance", 1.0),
     # ⚠ **`benefit.rec_weight_pv` 는 여기 없다** — `test_levels_come_from_
     # the_ledger_not_from_a_copy` 가 모든 스윕 축에 `low < base < high` **강한
     # 부등호**를 요구하는데, 이 라운드는 가중치 폭을 조사하지 않아 세 수준이
@@ -229,6 +308,27 @@ _MODELLING_VARS: tuple[tuple[str, tuple[tuple[str, float], ...]], ...] = (
 #: 범위는 **탐색 구간**이지 불확실성이 아니다. 대장의 `sensitivity` 와 같은
 #: 이름(low·base·high)을 쓰되 뜻이 다르므로, 리포트가 이 변수를 5.1 의
 #: 불확실 인자와 **같은 표에 싣지 않는다** (`design_variables()` 로 가른다).
+#:
+#: ★★★ **아래 수는 「한 호가 갖는 설비」다 — 러너가 가구 수를 곱한다**
+#: (R65/WP-2b). `core/casegrid/e2e_runner.py` 가 이 둘을 `_resolve` 로 얻은
+#: 직후 `household_scale(household_count)` 를 곱하므로, **20호 단지의 실행이
+#: 실제로 쓰는 것은 60 kW · 200 kWh** 다. 부하 쪽
+#: (`core/casegrid/seasonal_dispatch.py:789`)이 쓰는 배수와 같은 것이며,
+#: 한쪽만 곱하면 부하와 설비가 서로 다른 사업을 그린다.
+#: ⛔ **그러니 이 수를 「작다」고 키우지 마라** — 키우면 한 호가 60 kW 를 갖는
+#: 사업이 되고 배수가 두 번 곱해진다. 여기 적는 것은 **한 호분**이다.
+#: ⚠ **탐색 구간(1.0~9.0 · 2.0~30.0)도 한 호분이다.** 그 수를 읽어 인쇄하는
+#: 자리가 둘이고 **이제 둘 다 곱한다**:
+#:   · 붙임 10 의 역산 소절 (R65/WP-2c). `core/report/case_report.py` 가
+#:     `core/report/sizing.py`·`core/report/ess_sizing.py` 에 넘길 때 부하와
+#:     구간에 같은 배수를 건다(20호면 20~180 kW · 40~600 kWh).
+#:   · 본문 4.4(적정 용량) (R65/WP-5). `core/report/capacity.py::
+#:     build_capacity_review(scale=...)` 가 **인쇄되는 값에만** 곱한다 — 20호
+#:     실행이 「60 kW 를 썼다」로 적히고 띠도 20~180 kW 다.
+#:     ⚠⚠ **스윕에 넘기는 값은 곱하지 않는다.** 그쪽은 러너를 지나고 러너가
+#:     이 배수를 이미 곱하므로, 곱하면 **두 번 곱해져** 결론축이 움직인다.
+#:     종전에는 이쪽만 안 곱해 20호 실행에서도 *「3 kW 를 썼다」* 고 적었다 —
+#:     **수는 맞고 이름표가 한 호분**이었다(`.orch/R65/result_2c.md` ⑧ⓑ).
 #: (변수, 단위, 사람이 읽는 이름, 탐색 구간)
 _DESIGN_VARS: tuple[tuple[str, str, str, tuple[tuple[str, float], ...]], ...] = (
     (
