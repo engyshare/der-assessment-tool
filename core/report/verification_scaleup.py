@@ -86,6 +86,7 @@ from core.casegrid.household_scale import (
     HOUSEHOLD_COUNT_LEDGER_KEY,
     HOUSEHOLD_COUNT_UNSPECIFIED,
 )
+from core.casegrid.ledger_levels import design_variables
 from core.report.case_report import AssumptionRow, CaseReport
 from core.report.ess_sizing_section import per_household_scaled
 
@@ -125,30 +126,56 @@ NOT_MULTIPLIED = "⛔ 곱하지 않는다"
 #: 단지 값이 한 호 값과 **같은** 칸의 문면 — 단가처럼 규모와 무관한 값이다.
 SAME_AS_HOUSEHOLD = "같다"
 
-#: ★★★ **바꾸는 통로가 «없는» 설비 축 둘을 신고하는 줄** (R68/WP-8 · 판정
-#: `.orch/R68/JUDGMENT-wp7.md`).
+#: ★★★ **감시의 사각지대를 드러내는 줄** — 아래 `no_change_path_lines()` 절의
+#: 꼬리다 (R68/WP-8 · 판정 `.orch/R68/JUDGMENT-wp7.md` · R68/WP-8-fix).
 #:
 #: 검토서 §4.5 는 *「… **ESS 용량·출력** … 을 하나씩 바꿨을 때 … 움직이는지
 #: 테스트해야 한다」* 를 요구하는데, 실물은 저장장치 정격출력이
 #: `core/casegrid/ess_build.py::ESS_POWER_KW` **모듈 상수**이고 용량은 소스의
 #: 설계 변수다 — **대장 키도 시나리오 필드도 아니다.**
 #:
-#: ⚠⚠ **「미반영 항목」 표는 이 둘을 못 센다.** 그 표는 *대장 스윕 축인데 안
-#: 읽히는 것*만 세고(`core/report/unreflected.py::_unread_items`), 이 둘은 대장에
-#: 아예 없어서 그 판정에 들지 않는다. ⇒ **그래서 이 줄이 필요하다** — 없으면
-#: 산출물이 *「모든 수치는 변경 가능」* 을 말없이 참으로 만든다.
+#: ⚠⚠ **「미반영 항목」 표는 그 축들을 못 센다.** 그 표는 *대장 스윕 축인데 안
+#: 읽히는 것*만 세고(`core/report/unreflected.py::_unread_items`), 그 축들은
+#: 대장에 아예 없어서 그 판정에 들지 않는다. ⇒ **그래서 이 절이 필요하다** —
+#: 없으면 산출물이 *「모든 수치는 변경 가능」* 을 말없이 참으로 만든다.
 #:
 #: ⚠ **「빠뜨렸다」가 아니다.** `ESS_POWER_KW` 옆 주석이 *「용량과 달리 설계
 #: 변수로 올리지 않았다」* 로 사유까지 적어 두었다 — 정한 것이다. 뒤집을지는
 #: 사업 계획이 정하는 사실에 가깝고(가구 수·전기차 대수와 같은 부류다) 사람
 #: 판단 자리로 올라가 있다.
 NO_CHANGE_PATH_NOTE = (
-    "- ⚠⚠ **저장장치 용량·정격출력은 이 실행에서 «바꾸는 통로가 없다»** — "
-    "대장 키도 시나리오 필드도 아니고, 용량은 소스의 설계 변수이며 정격출력은 "
-    "`core/casegrid/ess_build.py::ESS_POWER_KW` 모듈 상수다. "
-    "「미반영 항목」 표는 **대장 항목만** 세므로 이 둘을 신고하지 못한다 — "
-    "그래서 여기 적는다. ⚠ **빠뜨린 것이 아니라 정한 것**이며(그 상수 옆 주석이 "
-    "사유를 진다), 통로를 세울 것인가는 사람 판단 자리다"
+    "- ⚠⚠ **이 축들은 「미반영 항목」 표가 세지 «않는다»** — 그 표는 «대장 스윕 "
+    "축인데 파이프라인이 안 읽는 것»만 세고, 이 축들은 **대장에 아예 없어서** 그 "
+    "판정에 들지 않는다. **감시의 사각지대이며, 그것이 이 절이 서 있는 이유다**"
+)
+
+#: 이 절의 제목. ⚠ 「전제」를 쓰지 않는다(판정 R63b §1).
+#:
+#: ★★ **「없다」를 «절»로 세운 이유** (R68/WP-8-fix). 종전에는 같은 사실이 확대
+#: 규칙 표 아래 **줄 하나**로만 있었고, 오케스트레이터가 산출물에서 그것을 **찾지
+#: 못했다**(실측 2026-09-09). 문면이 있어도 찾을 수 없으면 검토자에게는 없는
+#: 것이며, 검토서 §4.5 가 묻는 것이 바로 *「정말 변경 가능한가」* 이므로 그 답은
+#: **표로 서야** 한다.
+NO_CHANGE_PATH_TITLE = "바꾸는 통로가 «없는» 축 — 고정이며 그 사유가 소스에 있다"
+
+#: 「통로 없음」 칸의 문면. **빈칸으로 두지 않는다** — 빈칸은 「아직 안 적었다」와
+#: 구별되지 않는다(`NOT_MULTIPLIED` 가 같은 사유를 적는다).
+NO_CHANGE_PATH = "⛔ **없다** — 대장 키도 시나리오 필드도 아니다"
+
+#: 정격출력 상수가 사는 자리. ⚠ **값을 여기 적지 않는다** — 값은 실행에서 읽는다.
+ESS_POWER_HOME = "`core/casegrid/ess_build.py::ESS_POWER_KW` — 모듈 상수"
+
+#: 설계 변수가 사는 자리의 문면 틀. 탐색 구간은 **`design_variables()` 에서 읽어**
+#: 채운다 — 리터럴로 박으면 그 구간을 옮기는 날 산출물만 옛말을 한다.
+DESIGN_VAR_HOME = (
+    "`core/casegrid/ledger_levels.py::design_variables()` — 소스의 설계 변수"
+    "(탐색 {low:g}~{high:g} {unit}/호)"
+)
+
+#: 설계 변수 행의 통로 칸에 덧붙는 말 — **스윕은 하는데 고를 수는 없다.**
+#: 그 둘이 다른 사실이라는 것이 이 칸이 있는 이유다.
+DESIGN_VAR_SWEPT_NOT_CHOSEN = (
+    " · 용량 검토가 그 축을 **스윕은 하는데** 대장 항목이 아니라 고를 수 없다"
 )
 
 #: 표 제목. ⚠ 「전제」를 쓰지 않는다 — 사람이 읽는 자리의 그 낱말은 0건이
@@ -377,15 +404,116 @@ def _scale_notes(report: CaseReport) -> list[str]:
         f"- 동시율을 **바꾸는 통로** — 대장 `{COINCIDENCE_FACTOR_LEDGER_KEY}` 이며, "
         "시나리오 yaml 의 `assumption_overrides` · 설정 화면의 대장 항목 칸이 그 "
         "자리다(검토서 §4.5)",
-        # ★★★ **감시의 사각지대를 글자로 신고한다** (R68/WP-8 · 판정
-        # `.orch/R68/JUDGMENT-wp7.md` 「WP-8 이 새로 올린 판정 요청」).
-        # 「미반영 항목」 표는 이것을 **못 센다** — 그 표는 *대장 스윕 축인데 안
-        # 읽히는 것*만 세고, 이 둘은 **대장에 없어서** 그 판정에 들지 않는다.
-        # ⛔ 이 라운드가 통로를 세우지 않는다(대장에 올리면 `sensitivity` 삼수를
-        # 지어야 하고 그 근거가 없다 — 지어 넣으면 대장이 「조사값」의 얼굴로
-        # 가정을 싣는다). ⇒ **없다는 사실을 적는 것**이 검토서 §4.5 가 물은
-        # *「정말 변경 가능한가」* 에 거짓 없이 답하는 길이다.
+        # ⚠ **「통로가 없는 축」은 여기 줄로 적지 않는다** — 아래
+        # `no_change_path_lines()` 가 **절과 표**로 진다(R68/WP-8-fix). 종전에는
+        # 이 목록의 줄 하나였고, 그때 오케스트레이터가 산출물에서 그것을 **찾지
+        # 못했다**(실측 2026-09-09). 문면이 있어도 찾을 수 없으면 검토자에게는
+        # 없는 것이다.
+    ]
+
+
+def _scaled_pair(estate: float, count: int | None, unit: str) -> str:
+    """「한 호분 · 단지 값」 한 칸 — **곱은 여기 없다.** 나누는 자리는 하나다.
+
+    ⚠ 가구 수가 미지정이면 두 수가 같으므로 **한 번만** 적는다 — 같은 수를 두
+    번 인쇄하면 읽는 눈이 「곱해졌다」로 읽는다(`_ess_sizing_table` 이 같은
+    규칙으로 열을 접는다).
+    """
+    household = per_household_scaled(estate, count)
+    if count is None or count <= 1:
+        return f"{estate:g} {unit}"
+    return f"{household:g} {unit}/호 · {estate:g} {unit}(단지)"
+
+
+def _no_change_path_rows(report: CaseReport) -> list[str]:
+    """통로가 «없는» 축의 행들 — **목록을 손으로 적지 않는다.**
+
+    설계 변수는 `core/casegrid/ledger_levels.py::design_variables()` 를 훑어
+    짓는다. 손으로 둘을 적으면 설계 변수가 늘어난 날 그 축이 **말없이** 이 표
+    밖에 남고, 그러면 산출물이 *「모든 수치는 변경 가능」* 을 다시 참으로
+    만든다 — 이 절이 고치러 온 상태 그 자체다.
+
+    ⚠ **값은 이 실행에서 읽는다**(`report.capacity_review` 의 `used_value` ·
+    `report.ess_sizing.run_power_kw`). 탐색 구간만 소스에서 읽는다.
+    ⚠ 실행이 그 축을 세우지 않았으면 **행을 짓지 않는다** — 없는 설비의 통로를
+    인쇄하면 그 설비가 있다는 뜻이 된다(`_ess_power_row` 와 같은 규칙).
+    """
+    count = report.household_count
+    used = {finding.variable: finding for finding in report.capacity_review}
+    rows = [
+        f"| {finding.label} "
+        f"| {_scaled_pair(finding.used_value, count, finding.unit)} "
+        f"| {DESIGN_VAR_HOME.format(low=variable.low, high=variable.high, unit=variable.unit)} "
+        f"| {NO_CHANGE_PATH}{DESIGN_VAR_SWEPT_NOT_CHOSEN} |"
+        for variable in design_variables()
+        if (finding := used.get(variable.name)) is not None
+    ]
+    power_kw = report.ess_sizing.run_power_kw
+    if power_kw is not None:
+        rows.append(
+            "| 저장장치 정격출력 "
+            f"| {_scaled_pair(power_kw, count, 'kW')} "
+            f"| {ESS_POWER_HOME} | {NO_CHANGE_PATH} |"
+        )
+    return rows
+
+
+def no_change_path_lines(report: CaseReport) -> list[str]:
+    """**바꾸는 통로가 없는 축**의 절 — 검토서 §4.5 의 답 (R68/WP-8-fix).
+
+    ## ★ 왜 「변경 가능」이 아니라 「이 둘은 아니다」를 적는가
+
+    §4.5 문면: *「**「모든 수치는 변경 가능」하다고 적는 것만으로는 부족하다**
+    … 일반용 전력, HP, EV 대수, 충전효율, PV 이용률, **ESS 용량·출력**, 단가를
+    하나씩 바꿨을 때 … 움직이는지 테스트해야 한다」*.
+
+    그 목록을 실물로 훑으면 **설비 용량 축은 사용자가 바꿀 통로가 없다** —
+    태양광 용량·저장장치 용량은 소스의 설계 변수이고 저장장치 정격출력은 모듈
+    상수다. 대장 키도 시나리오 필드도 아니므로 화면에도 시나리오 yaml 에도
+    그 칸이 없다. ⇒ **그 사실을 적는 것이 §4.5 가 원한 답이다.** 적지 않으면
+    산출물이 「모든 수치는 변경 가능」을 **말없이 참으로** 만든다.
+
+    ## ⚠⚠ 이 절이 없으면 **어느 검사도 걸리지 않는다**
+
+    「미반영 항목」 표는 *대장 스윕 축인데 파이프라인이 안 읽는 것*만 센다
+    (`core/report/unreflected.py::_unread_items`). 이 축들은 **대장에 아예
+    없어서** 그 판정에 들지 않는다 — 감시의 사각지대이며, 그래서 이 절이 그
+    사각지대를 스스로 드러낸다.
+
+    ## ⛔ 「누락」으로 적지 않는다 — **정한 것이다**
+
+    `core/casegrid/ess_build.py::ESS_POWER_KW` 옆 주석이 *「용량과 달리 **설계
+    변수로 올리지 않았다**」* 로 사유까지 적어 두었다(그 값이
+    `ESS.reducible_peak_kw` 의 상한이라, 고정해 두어야 용량 스윕이 *「용량을
+    키우면 어디서 출력에 막히는가」* 를 드러낸다). 「빠뜨렸다」로 적으면 다음
+    사람이 넣고, 그것은 판정을 읽지 않은 변경이 된다 — `COINCIDENCE_EXCLUDED`
+    가 같은 사유로 「제외이며 누락이 아니다」를 적는 것과 **같은 형태**다.
+
+    ⛔ **여기서 통로를 세우지 않는다.** 대장에 올리면 `sensitivity` 삼수를
+    지어야 하고 그 근거가 없다 — 지어 넣으면 대장이 「조사값」의 얼굴로 가정을
+    싣는다. 통로를 세울 것인가는 **사람 판단 자리**다.
+    """
+    rows = _no_change_path_rows(report)
+    if not rows:
+        return []
+    return [
+        "",
+        f"**{NO_CHANGE_PATH_TITLE}** (검토서 §4.5)",
+        "",
+        "| 축 | 이 실행의 값 | 실물이 사는 자리 | 바꾸는 통로 |",
+        "|---|---|---|---|",
+        *rows,
+        "",
         NO_CHANGE_PATH_NOTE,
+        "- ⚠ **누락이 아니라 정한 것**이다 — `ESS_POWER_KW` 옆 주석이 *「용량과 "
+        "달리 설계 변수로 올리지 않았다」* 로 사유를 적어 두었다(그 값이 첨두 "
+        "저감이 깎을 수 있는 최대 출력의 상한이라, 고정해 두어야 용량 검토가 "
+        "*「용량을 키우면 어디서 출력에 막히는가」* 를 드러낸다). 통로를 세울 "
+        "것인가는 **사람 판단 자리**다",
+        "- ★ 위 확대 규칙 표의 **나머지 축은 통로가 있다** — 부하는 대장과 실행 "
+        "입력이, 단가와 동시율은 대장이 갖는다. 그 통로가 실제로 계산에 닿는지는 "
+        "축마다 하나씩 흔들어 재고 있으며, 닿지 않는 축은 「미반영 항목」 표가 "
+        "신고한다",
     ]
 
 
@@ -438,5 +566,9 @@ def scaleup_lines(report: CaseReport) -> list[str]:
         *_coincidence_row(report),
         "",
         *_scale_notes(report),
+        # ★ **「통로가 없다」를 절로 세운다** (R68/WP-8-fix · 검토서 §4.5).
+        # 아래 「제외이며 누락이 아니다」 표와 **같은 갈래**라 나란히 둔다 —
+        # 둘 다 *「빠뜨린 것이 아니라 정한 것」* 을 적는 자리다.
+        *no_change_path_lines(report),
         *_excluded_lines(),
     ]

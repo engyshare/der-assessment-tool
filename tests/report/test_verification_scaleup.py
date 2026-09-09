@@ -26,13 +26,18 @@ import pytest
 
 from core.casegrid.appliance_load import APPLIANCE_LOAD_UNIT
 from core.casegrid.household_scale import HOUSEHOLD_COUNT_UNSPECIFIED
+from core.casegrid.ledger_levels import design_variables
 from core.report.case_report import CaseReport, build_case_report
 from core.report.verification_scaleup import (
     COINCIDENCE_EXCLUDED,
     COINCIDENCE_FACTOR_LEDGER_KEY,
+    DESIGN_VAR_SWEPT_NOT_CHOSEN,
+    ESS_POWER_HOME,
     ESTATE_LOAD_UNIT,
     EXCLUDED_BY_DECISION,
+    NO_CHANGE_PATH,
     NO_CHANGE_PATH_NOTE,
+    NO_CHANGE_PATH_TITLE,
     NOT_MULTIPLIED,
     SAME_AS_HOUSEHOLD,
     estate_load_kwh,
@@ -287,28 +292,80 @@ def test_the_estate_unit_says_it_is_the_estate_not_one_household() -> None:
     )
 
 
-def test_the_axes_with_no_change_path_are_reported_in_words(
+def test_the_axes_with_no_change_path_stand_as_a_section_not_a_buried_line(
     report: CaseReport,
 ) -> None:
-    """★★★ **바꾸는 통로가 「없다」를 산출물이 글자로 신고한다** (R68/WP-8).
+    """★★★ **바꾸는 통로가 「없다」가 «절과 표»로 선다** (R68/WP-8-fix · 검토서 §4.5).
 
-    ## 왜 이 줄이 필요한가 — **「미반영 항목」 표가 이 둘을 못 센다**
+    ## ⚠⚠ 문면이 있어도 **찾을 수 없으면 없는 것이다**
 
-    그 표(`core/report/unreflected.py::_unread_items`)는 *대장 스윕 축인데
-    파이프라인이 안 읽는 것*만 센다. 저장장치 용량·정격출력은 **대장에 아예
-    없어서** 그 판정에 들지 않는다 — 감시의 사각지대다. 검토서 §4.5 는 그 둘을
-    *「하나씩 바꿨을 때 움직이는지 테스트해야 한다」* 의 목록에 넣었으므로,
-    적지 않으면 산출물이 *「모든 수치는 변경 가능」* 을 **말없이 참으로 만든다.**
+    R68/WP-8 은 같은 사실을 확대 규칙 표 아래 **줄 하나**로 적었다. 실측
+    (2026-09-09)으로 그 줄은 산출물에 **있었는데**, 그것을 찾으러 온 사람이
+    **찾지 못했다** — 주석 목록 여섯 줄 사이에 묻혀 있었기 때문이다. 검토서
+    §4.5 가 묻는 것이 *「정말 변경 가능한가」* 이므로 그 답은 **제목과 표를
+    갖고 서야** 한다. ⇒ 이 검사는 «문면이 있는가»가 아니라 **«절로 서는가»**
+    를 잰다: 제목 · 표 머리 · 축마다 한 행 · 사각지대 주석.
 
-    ⛔ **통로를 세우는 것은 이 검사의 몫이 아니다** — 대장에 올리면 `sensitivity`
-    삼수를 지어야 하고 그 근거가 없다. 여기서 붙드는 것은 **없다는 사실이 인쇄되는가**다.
+    ## ⛔ 통로를 세우는 것은 이 검사의 몫이 아니다
+
+    대장에 올리면 `sensitivity` 삼수를 지어야 하고 그 근거가 없다 — 지어 넣으면
+    대장이 「조사값」의 얼굴로 가정을 싣는다. 여기서 붙드는 것은 **없다는 사실이
+    인쇄되는가**뿐이며, 값은 한 자리도 보지 않는다.
     """
     lines = scaleup_lines(report)
+    assert any(NO_CHANGE_PATH_TITLE in line for line in lines), (
+        f"「{NO_CHANGE_PATH_TITLE}」 절이 2단계에 서지 않는다 — 그러면 산출물이 "
+        "「모든 수치는 변경 가능」을 말없이 참으로 만든다"
+    )
+    assert "| 축 | 이 실행의 값 | 실물이 사는 자리 | 바꾸는 통로 |" in lines, (
+        "그 절이 표 없이 산문 한 줄로만 서 있다 — 묻히는 것이 이 교정이 고치러 온 상태다"
+    )
     assert NO_CHANGE_PATH_NOTE in lines, (
-        "「바꾸는 통로가 없다」 줄이 2단계에 없다 — 그러면 산출물이 「모든 수치는 "
-        f"변경 가능」을 말없이 참으로 만든다. 실린 줄: {lines}"
+        "**감시의 사각지대**를 적는 줄이 없다 — 「미반영 항목」 표가 이 축들을 "
+        "세지 않는다는 사실이 그 절의 값이다"
     )
-    assert "ESS_POWER_KW" in NO_CHANGE_PATH_NOTE, (
-        "신고가 **어디에 있는 값인지**를 가리키지 않는다 — 가리키지 않으면 "
-        "읽는 사람이 그것을 찾을 수 없다"
-    )
+
+
+def test_every_axis_without_a_path_gets_its_own_row_naming_where_it_lives(
+    report: CaseReport,
+) -> None:
+    """★★★ **통로 없는 축이 «하나도 빠짐없이» 행을 갖는다** — 목록을 손으로 안 적는다.
+
+    설계 변수는 `core/casegrid/ledger_levels.py::design_variables()` 가 정본이다.
+    시험이 이름 둘을 손으로 적으면 **설계 변수가 늘어난 날 그 축이 말없이 표
+    밖에 남고**, 그때 산출물이 다시 *「모든 수치는 변경 가능」* 을 참으로 만든다 —
+    이 절이 고치러 온 상태 그 자체다. ⇒ **정본을 읽어 순회한다.**
+
+    ⚠ 그리고 각 행이 **실물이 어디 사는지**를 가리켜야 한다. 「없다」만 적으면
+    읽는 사람이 그 값을 찾아갈 수 없고, 「고정이며 그 사유가 소스에 있다」가
+    성립하려면 그 소스를 가리켜야 한다.
+    """
+    lines = scaleup_lines(report)
+    rows = [line for line in lines if NO_CHANGE_PATH in line]
+    swept = {finding.variable for finding in report.capacity_review}
+    expected = [
+        variable for variable in design_variables() if variable.name in swept
+    ]
+    assert expected, "이 실행에 설계 변수가 0건이다 — 이 검사가 0회 순회로 통과한다"
+    for variable in expected:
+        matched = [line for line in rows if line.startswith(f"| {variable.label} |")]
+        assert len(matched) == 1, (
+            f"설계 변수 「{variable.label}」의 행이 {len(matched)}개다 — "
+            f"`design_variables()` 가 정본인데 표가 그것을 따라오지 않았다"
+        )
+        assert "design_variables()" in matched[0], (
+            f"「{variable.label}」 행이 **실물이 사는 자리**를 가리키지 않는다: {matched[0]}"
+        )
+        assert f"{variable.low:g}~{variable.high:g}" in matched[0], (
+            f"「{variable.label}」 행의 탐색 구간이 소스와 다르다 — 리터럴로 박혔을 수 "
+            f"있다: {matched[0]}"
+        )
+    if report.ess_sizing.run_power_kw is not None:
+        power = [line for line in rows if ESS_POWER_HOME in line]
+        assert len(power) == 1, (
+            f"저장장치 정격출력 행이 {len(power)}개다 — 그 축은 설계 변수도 아니라 "
+            "따로 서야 한다"
+        )
+        assert DESIGN_VAR_SWEPT_NOT_CHOSEN not in power[0], (
+            "정격출력 행에 「스윕은 한다」가 붙었다 — 그 축은 **스윕조차 하지 않는다**"
+        )
