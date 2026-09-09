@@ -1,4 +1,4 @@
-"""편익 단계의 **수량과 금액을 가른다** — 검증 4단계 (R68/WP-8 · 검토서 §3.6).
+"""편익 단계의 **수량과 금액을 가른다** — 검증 5단계 (R68/WP-8 · 검토서 §3.6).
 
 검토서 §3.6:
 
@@ -9,22 +9,26 @@
       기본요금 절감액 · PV·ESS 의 설치비와 교체비 · 물리적으로 측정하지 않은
       편익과 0원으로 설정한 편익」
 
-## ★ 무엇이 문제였나 — 4단계 표에는 **금액만** 있었다
+⚠ **위 인용의 번호는 «승격 전» 배열이다** — R69/WP-1 이 단계를 아홉에서 열로
+올려 그 넷이 이제 **5·6·7·8단계**다(편익 · 운영비 · 생애주기 · 현금흐름).
+검토서 문면은 고쳐 적지 않는다: 고치면 거짓 인용이 되고, 대응은 이 줄이 진다.
 
-종전 4단계 ⓑ 는 `| 편익 | 1년차 금액 | 만든 자원 |` 셋이었다. 검토자는
+## ★ 무엇이 문제였나 — 5단계 표에는 **금액만** 있었다
+
+종전 5단계 ⓑ 는 `| 편익 | 1년차 금액 | 만든 자원 |` 셋이었다. 검토자는
 「잉여전력 판매 0원」을 읽고 **얼마를 팔았는데 0원인지** 알 수 없었고, 그래서
 그 0원이 *「팔 것이 없었다」* 인지 *「팔았는데 값이 0이었다」* 인지 갈리지 않았다.
-그 둘은 고치는 사람이 다르다 — 앞은 운전(3단계)이고 뒤는 단가(1단계)다.
+그 둘은 고치는 사람이 다르다 — 앞은 운전(3단계)이고 뒤는 단가(4단계)다.
 
 ⇒ **수량 열과 금액 열을 나란히 세운다.** 수량은 3단계 운전에서 잰 것이고
-(`core/report/measured_run.py::measured_over_seasons`) 금액은 4·5단계가 그 위에
+(`core/report/measured_run.py::measured_over_seasons`) 금액은 5·6단계가 그 위에
 곱한 것이다. 한 행에 세워야 검토자가 *어느 쪽이 0인가* 를 눈으로 가른다.
 
 ## ⚠⚠ **재료가 없는 쌍은 지어내지 않는다**
 
 피크 절감량(kW)은 이 실행의 어느 자료형에도 없다 — `CaseBasis.benefits` 는
 `tag·label·annual_won·resource_code·formula` 뿐이고 감축 출력은
-`core/der/ess.py::ESS.reducible_peak_kw` 안에서 쓰이고 사라진다. 그 수를 4단계
+`core/der/ess.py::ESS.reducible_peak_kw` 안에서 쓰이고 사라진다. 그 수를 5단계
 ⓓ 의 **산식 문면에서 되뽑지 않는다** — 산문을 파싱해 수를 만드는 것은 이
 저장소가 R68/WP-7 에서 명시로 금한 자리이고, 표기를 다듬는 날 그 수가 조용히
 바뀐다(`core/casegrid/models.py::CaseBasis.grid_purchase_price_won_per_kwh`
@@ -39,7 +43,7 @@
 
 ⛔ **어느 갈래가 「수량이 0」이고 어느 갈래가 「단가가 0」인지 이 모듈이
 분류하지 않는다.** 갈래 이름으로 가르면 태그를 다듬는 날 조용히 틀리고, 그
-답은 이미 4단계 ⓓ 의 그 갈래 산식이 **수량과 단가를 함께 싣는 것**으로 있다.
+답은 이미 5단계 ⓓ 의 그 갈래 산식이 **수량과 단가를 함께 싣는 것**으로 있다.
 여기서 하는 일은 *「0을 어떻게 읽어야 하는가」* 를 세우는 것뿐이다.
 
 ## ⚠ 값을 여기서 짓지 않는다
@@ -81,9 +85,9 @@ NOT_MONETISED = "현재 산정하지 않음"
 #: 수량 단위. 표 제목이 지므로 칸에 되풀이하지 않는다(검토서 §4.2).
 QUANTITY_UNIT = "kWh/년"
 
-#: 이 표가 「4단계 것이 아닌 행」을 함께 싣는다는 표시. 한전 수전량·전력
-#: 구매비는 5단계 소관인데, §3.6 이 **그 쌍도 갈라 보이라**고 요구한다.
-STAGE5_MARK = "5단계"
+#: 이 표가 「5단계 것이 아닌 행」을 함께 싣는다는 표시. 한전 수전량·전력
+#: 구매비는 6단계 소관인데, §3.6 이 **그 쌍도 갈라 보이라**고 요구한다.
+STAGE6_MARK = "6단계"
 
 
 def _annual(daily_kwh: float) -> str:
@@ -117,7 +121,7 @@ def _pair_rows(basis: CaseBasis, measured: MeasuredQuantities | None) -> list[st
         f"| 잉여판매량 (계통 송전) | {surplus} | 판매 수입 (`SurplusSale`) | "
         f"{_amount_of(basis, 'SurplusSale')} | 아래 0원 주석 |",
         f"| 한전 수전량 | {purchased} | 전력 구매비 (`GridPurchase`) | "
-        f"{_amount_of(basis, 'GridPurchase')} | {STAGE5_MARK} 운영비 행이 같은 "
+        f"{_amount_of(basis, 'GridPurchase')} | {STAGE6_MARK} 운영비 행이 같은 "
         "수를 싣는다 — 이 표는 그 쌍을 갈라 보이려고 함께 세운다 |",
         f"| 피크 절감량 (kW) | {NOT_COMPUTED} | 기본요금 절감액 "
         f"(`PeakShaving`) | {_amount_of(basis, 'PeakShaving')} | 감축 출력을 "
@@ -182,9 +186,9 @@ def _zero_notes(basis: CaseBasis, measured: MeasuredQuantities | None) -> list[s
 
 
 def benefit_pair_lines(report: CaseReport) -> list[str]:
-    """4단계에 붙는 「수량 ↔ 금액」 블록 전부 — 표 둘 + 0원 주석.
+    """5단계에 붙는 「수량 ↔ 금액」 블록 전부 — 표 둘 + 0원 주석.
 
-    ⚠ **부르는 자리는 `core/report/verification.py::_stage4_benefits` 하나**다.
+    ⚠ **부르는 자리는 `core/report/verification.py::_stage5_benefits` 하나**다.
     두 곳에서 부르면 같은 표가 두 번 실리고, 그때 어느 쪽이 정본인지 산출물이
     말하지 못한다.
     """

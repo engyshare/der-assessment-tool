@@ -5,7 +5,7 @@
 사용자 요구(2026-09-06): *「조직과 분석 결과를 확인할 수 있는 방법이 필요하며
 주요 사항을 텍스트로 저장해서 이를 확인할 수 있게 하는 방법이 필요할 것
 같음」*. 그 텍스트는 **이미 있다** —
-`core/report/verification.py::render_verification_markdown` 이 내는 9단계
+`core/report/verification.py::render_verification_markdown` 이 내는 10단계
 마크다운이며, 이 파일은 그것을 파일에 쓰기만 한다.
 
 ## ⚠ `app/run/report_cli.py` 와 무엇이 다른가 — **골든 밖 시나리오**
@@ -58,12 +58,12 @@ def build_parser() -> argparse.ArgumentParser:
     """인자 셋 — `--scenario`(필수) · `--assumptions` · `--out`(필수).
 
     ⚠ `--help` 가 **무엇을 내는지** 말하게 한다. 「검증 보고서」라는 이름만
-    적으면 읽는 사람이 그것이 9단계 텍스트인지 표인지 알 수 없다.
+    적으면 읽는 사람이 그것이 10단계 텍스트인지 표인지 알 수 없다.
     """
     parser = argparse.ArgumentParser(
         prog="python scripts/dump_verification.py",
         description=(
-            "시나리오 하나로 검증 보고서(9단계 마크다운)를 파일에 쓴다. "
+            "시나리오 하나로 검증 보고서(10단계 마크다운)를 파일에 쓴다. "
             "각 단계가 ⓐ 전제한 수치 → ⓑ 계산된 수치 → ⓒ 다음 단계로 넘긴 값 "
             "→ ⓓ 계산 수식을 싣는다"
         ),

@@ -52,16 +52,25 @@ def _report() -> CaseReport:
     return build_case_report(_GOLDEN, assumptions_path=_ASSUMPTIONS)
 
 
-def test_the_block_lands_inside_stage_four_and_nowhere_else() -> None:
-    """★★ **부르는 자리가 하나다** — 같은 표가 두 단계에 서면 정본이 사라진다."""
+def test_the_block_lands_inside_the_benefit_stage_and_nowhere_else() -> None:
+    """★★ **부르는 자리가 하나다** — 같은 표가 두 단계에 서면 정본이 사라진다.
+
+    ⚠ 단계 **번호를 박지 않는다** — 「편익 화폐화」 단계가 어느 번호인지는
+    렌더러가 정하고 R69/WP-1 이 그것을 4 에서 5 로 밀었다. 여기서 재는 것은
+    *「그 표가 편익 단계 하나에만 선다」* 이지 그 번호가 아니다.
+    """
     report = _report()
     carrying = [
-        block.number
+        (block.number, block.title)
         for block in stage_blocks(report)
         if any(PAIR_TITLE in line for line in block.lines)
     ]
-    assert carrying == [4], (
-        f"「{PAIR_TITLE}」 표가 {carrying} 단계에 서 있다 — 4단계 하나여야 한다"
+    assert len(carrying) == 1, (
+        f"「{PAIR_TITLE}」 표가 {carrying} 에 서 있다 — 한 단계여야 한다"
+    )
+    assert carrying[0][1] == "편익 화폐화", (
+        f"「{PAIR_TITLE}」 표가 「{carrying[0][1]}」 단계에 서 있다 — "
+        "편익 화폐화 단계여야 한다"
     )
 
 

@@ -21,7 +21,7 @@ def _cell(text: str) -> str:
     ## ★★ 왜 이 자리인가 (R68/WP-8)
 
     R68/WP-7 이 이 함수를 `core/report/verification_demand.py` 안에 두었고, 그
-    표는 함정을 피했다. **그런데 1단계 ⓑ 표(대장 전건)는 피하지 못했다** —
+    표는 함정을 피했다. **그런데 대장 전건 표(지금의 4단계 ⓑ)는 피하지 못했다** —
     `docs/assumptions.yaml::load.heatpump.annual` 의 `source` 에 줄바꿈이 들어
     있어 그 행이 마크다운 표에서 **여러 줄로 쪼개져 튕겨 나간다**(R68/WP-7
     실측). 판정은 *「대장을 고치지 말고 표시 층에서 접어라」* 였고

@@ -4,7 +4,7 @@
 
 사용자 지적(2026-09-06): *「현재 검증 모드라는 기능이 구현되어 있을 텐데 그
 내용은 텍스트로 구성되어 있습니다」*. 그래서 **새 렌더러를 세우지 않았다** —
-`core/report/verification.py::render_verification_markdown` 이 이미 내는 9단계
+`core/report/verification.py::render_verification_markdown` 이 이미 내는 10단계
 마크다운에 **빠져 있던 다섯 자리**를 채운다. 그 다섯은 실측으로 골랐다(그
 379줄에서 「히트펌프」·「전기차」·「적정」·「역산」·「미반영」이 **0건**이었고
 계절은 낱말 하나뿐이었다).
@@ -40,8 +40,8 @@
 
 ## ⚠ 단계를 «늘리지» 않는다
 
-네 자리는 전부 **기존 단계 본문 안**에 실린다(1·2·3단계와 9단계 뒤).
-화면은 `app/services/verify_steps.py::STAGE_COUNT` 로 9를 기대하고
+네 자리는 전부 **기존 단계 본문 안**에 실린다(1·2·3단계와 10단계 뒤).
+화면은 `app/services/verify_steps.py::STAGE_COUNT` 로 10을 기대하고
 `app/services/verify_steps.py::split_stages` 가 단계 머리글로 쪼갠다 — 그래서
 이 모듈이 내는 어떤 줄도 `## N단계 — ` 로 시작하지 않는다. 미반영 절만
 `###` 을 쓰며, 그것은 그 정규식에 걸리지 않는다.
@@ -73,7 +73,6 @@ from core.casegrid.household_scale import (
     HOUSEHOLD_COUNT_LEDGER_KEY,
     HOUSEHOLD_COUNT_UNSPECIFIED,
 )
-from core.casegrid.ledger_levels import LEVEL_NAMES
 from core.casegrid.load_shift import (
     DR_SHIFT_NOTHING_MOVED,
     DR_SHIFTABLE_SHARE_LEDGER_KEY,
@@ -208,8 +207,9 @@ def execution_input_lines(report: CaseReport) -> list[str]:
     ## 왜 1단계인가
 
     이 표의 행들은 계산의 결과가 아니라 **이 실행이 받은 전제와 그 산수**다.
-    대장 표(위 ⓑ)는 *「대장이 무엇을 갖고 있는가」*를 적고 이 표는 *「이 실행이
-    무엇으로 돌았는가」*를 적는다 — **둘은 다른 진술이며 값이 같아도 그렇다.**
+    대장 표(아래 ⓑ 의 부하·설계 부분 표와 4단계 ⓑ 의 전건 표)는 *「대장이
+    무엇을 갖고 있는가」*를 적고 이 표는 *「이 실행이 무엇으로 돌았는가」*를
+    적는다 — **둘은 다른 진술이며 값이 같아도 그렇다.**
 
     ## ★★ R65 — 앞의 넷은 이제 대장·자산에서도 온다
 
@@ -234,12 +234,15 @@ def execution_input_lines(report: CaseReport) -> list[str]:
     `core/report/verification_scaleup.py::household_base_kwh` 다). 「시나리오에서도 못
     바꾼다」로 적으면 거짓이므로 통로 칸이 그 차이를 그대로 나른다.
 
-    ## ★★ 할인율이 **여기** 있는 이유 (R64/WP-FIX 결함 1)
+    ## ⛔ 할인율은 **이 표에서 나갔다** (R69/WP-1)
 
-    8단계 ⓐ 가 *「1단계 할인율」* 을 가리키는데 1단계에 그 행이 없었다 —
-    할인율은 대장 항목이 **아니다**(`docs/assumptions.yaml` 에 0건 ·
-    `core/casegrid/ledger_levels.py`: *「평가자가 고르는 모형 파라미터」*). 곧
-    이 표의 정의에 드는 값이므로 **참조를 지우는 대신 참으로 만든다.**
+    R64/WP-FIX 가 9단계 ⓐ 의 *「할인율」* 가리킴을 참으로 만들려고 그 행을 이
+    표에 세웠다. R69/WP-1 이 단계를 가르면서 **경제성 쪽으로 옮겼다** —
+    할인율은 수요가 아니고, 이 표는 이제 1단계「가구 수요」의 것이다. 그 행의
+    정본은 `core/report/verification_economics.py::economic_axis_lines` 이며
+    9단계의 가리킴도 **4단계**로 함께 옮겼다.
+    ⚠ **참조를 지우는 대신 참으로 만든다**는 R64 의 판단은 그대로다 — 행이
+    사라진 것이 아니라 자리를 옮긴 것이다.
 
     ## ★★ R67/WP-2 — 소계와 총계는 «다른 이름»을 쓴다
 
@@ -304,10 +307,6 @@ def execution_input_lines(report: CaseReport) -> list[str]:
         f"| {report.dr_shiftable_share_pct:,.1f} {DR_SHIFTABLE_SHARE_UNIT} "
         f"| 대장 `{DR_SHIFTABLE_SHARE_LEDGER_KEY}` — 시나리오 yaml 의 "
         "`assumption_overrides` · 설정 화면의 대장 항목 칸 |",
-        f"| 할인율 (8단계 `NPV` 의 r) | {report.basis.discount_rate:.1%} "
-        "| **대장에 없다** — 케이스 수준표 `core/casegrid/ledger_levels.py` 의 "
-        f"모형 파라미터이며 갈래 셋({' · '.join(LEVEL_NAMES)}) 중 이 실행의 "
-        "케이스 값이 고른 것 |",
         "",
         "- 「미지정」은 **빈칸이 아니라 진술**이다 — 가구 수가 미지정이면 이 "
         "보고서의 모든 수량과 금액이 **가구 한 호의 것**이고, 기기 부하가 "
@@ -651,7 +650,7 @@ def capacity_review_lines(report: CaseReport) -> list[str]:
     ## ⚠⚠ 진단이지 결론이 아니다
 
     아래 셋은 이 실행의 자원 구성을 **바꾸지 않는다.** 역산 결과를 실행에
-    되먹이지 않으므로 8단계 지표는 이 수에 움직이지 않으며, 그 사실을 표 위에
+    되먹이지 않으므로 9단계 지표는 이 수에 움직이지 않으며, 그 사실을 표 위에
     글자로 적는다 — 적지 않으면 검토자가 「이 용량으로 돌렸다」로 읽는다
     (`core/report/ess_sizing_section.py` 머리말 ★★★ 이 같은 판단을 적었다).
 
@@ -668,7 +667,7 @@ def capacity_review_lines(report: CaseReport) -> list[str]:
         "**적정 용량 검토 — 이 용량이 적정한가 · 얼마면 되는가** (사용자 요구 4)",
         "",
         "⚠ **진단이지 결론이 아니다.** 아래 셋은 이 실행의 자원 구성을 바꾸지 "
-        "않는다 — 역산 결과를 실행에 되먹이지 않으므로 8단계 지표는 이 수에 "
+        "않는다 — 역산 결과를 실행에 되먹이지 않으므로 9단계 지표는 이 수에 "
         "움직이지 않는다. 위 ⓐ·ⓑ 가 이 실행이 **실제로 세운** 자원이다.",
         "",
         # ★★★ **절 머리에 구분 표가 먼저 선다** (R68/WP-1 · 검토서 §3.2).
@@ -790,7 +789,7 @@ def season_lines(report: CaseReport) -> list[str]:
         "",
         "⚠ 위 대표일은 **연간등가 하루**다 — 계절별 하루를 계절 일수로 가중 "
         "평균한 것이라 계절 간 차이를 거기서 되돌릴 수 없다. 아래가 그 차이이며, "
-        "결론(7·8단계)은 이 계절들을 계절일수로 가중 합산한 것 위에 선다.",
+        "결론(8·9단계)은 이 계절들을 계절일수로 가중 합산한 것 위에 선다.",
         "",
     ]
     if not seasons:
@@ -882,7 +881,7 @@ def season_lines(report: CaseReport) -> list[str]:
 
 
 def unreflected_lines(report: CaseReport) -> list[str]:
-    """9단계 뒤 — **이 실행이 세지 않은 것**.
+    """10단계 뒤 — **이 실행이 세지 않은 것**.
 
     ## 왜 `unreflected_section()` 을 그대로 부르지 않는가
 
@@ -899,7 +898,7 @@ def unreflected_lines(report: CaseReport) -> list[str]:
     lines = [
         "### 미반영 항목 — 이 실행이 세지 않은 것",
         "",
-        "⚠ 위 아홉 단계의 **어느 수에도 들어 있지 않은** 항목이다. 「영향이 "
+        "⚠ 위 열 단계의 **어느 수에도 들어 있지 않은** 항목이다. 「영향이 "
         "없다」가 아니라 「이 실행이 재지 않았다」이며, 방향이 갈린다는 사실 "
         "자체가 검토에 필요한 정보다.",
         "",

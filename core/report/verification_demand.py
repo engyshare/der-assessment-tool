@@ -3,7 +3,7 @@
 
 ## 무엇이 없었나
 
-1단계는 두 표를 갖고 있었다 — 「이 실행이 받은 입력」(값과 통로)과 대장 전건
+옛 1단계는 두 표를 갖고 있었다 — 「이 실행이 받은 입력」(값과 통로)과 대장 전건
 목록(값·단위·기준연도·출처·신뢰도·최종확인일). 검토서 §3.1 이 요구하는 것은
 그 둘의 교집합이 아니라 **수요 입력마다의 여섯 속성**이다:
 
@@ -86,11 +86,67 @@ from core.casegrid.appliance_load import (
 )
 from core.report._format import _cell
 from core.report.case_report import AssumptionRow, CaseReport
+from core.report.verification_ledger import ledger_table, rows_with_prefix
 from core.report.verification_scaleup import (
     ESTATE_LOAD_UNIT,
     HOUSEHOLD_LOAD_LEDGER_KEY,
     household_base_kwh,
 )
+
+#: **1단계가 대장에서 읽는 접두** — 부하와 단지 설계 (R69/WP-1 · 검토서 §3.1).
+#:
+#: ⚠ 이 목록을 여기서 정하는 근거는 **대장 자신**이다: `docs/assumptions.yaml` 의
+#: `group_titles` 가 `load` 를 「전기사용자 부하」로 `design` 을 「단지 설계」로
+#: 이미 갈라 두었다. 여기서 주제를 새로 짓지 않고 그 갈래를 **접두로** 읽는다.
+#:
+#: ⛔ **`capex.*` 를 넣지 않는다.** 설비 단가는 2단계에 남는다 — 초기투자가
+#: 그것으로 계산되기 때문이다(R68 판정 · 검토서 §3.1 은 *「PV·ESS 단가도 경제성
+#: 입력으로」* 라 적었으나 그 판정이 정본이다).
+#:
+#: ⚠⚠ **4단계의 접두 목록과 겹치지 않아야 한다.** 겹치면 같은 대장 항목이 두
+#: 단계에서 「이 단계가 읽은 값」으로 서고, 그때 어느 단계가 그 값을 정했는지
+#: 산출물이 말해 주지 않는다. 그 사실을 시험이 붙든다
+#: (`tests/report/test_verification.py`).
+DEMAND_LEDGER_PREFIXES: tuple[str, ...] = ("load.", "design.")
+
+#: 부분 표의 제목. ⚠ 「전제」를 쓰지 않는다(판정 R63b §1).
+DEMAND_LEDGER_TITLE = (
+    "**이 단계가 분석 설정 대장에서 읽은 값 — 부하와 단지 설계** "
+    "(접두 `load.*` · `design.*`)"
+)
+
+
+def demand_ledger_lines(report: CaseReport) -> list[str]:
+    """1단계 ⓑ — 대장 **부분 표**. 전건 표는 4단계가 갖는다 (R69/WP-1).
+
+    ## ⛔ 행을 고르는 것이지 새로 만드는 것이 아니다
+
+    같은 `report.assumptions` 행을 접두로 걸러 인쇄한다 — 값을 다시 계산하거나
+    행을 짓지 않는다. 인쇄 규칙은 `core/report/verification_ledger.py` 하나가
+    갖고 이 함수는 **무엇을 고를지**만 정한다.
+
+    ## ⚠ 전건 표를 여기 두지 않은 이유
+
+    옛 1단계는 대장 **전건**을 실었다. 그것을 주제별로 쪼개 여러 단계에 흩으면
+    어느 단계에도 안 실리는 접두가 생기고 **행이 조용히 사라진다.** ⇒ 전건은
+    4단계에 **한 덩어리로** 남기고, 1단계는 *「이 단계가 읽은 것」* 만 부분
+    표로 앞세운다. 두 표가 같은 행을 싣는 것은 사본이 아니라 **다른 진술**이다:
+    앞은 「수요를 이 값으로 돌았다」이고 뒤는 「대장이 무엇을 갖고 있는가」다.
+    """
+    rows = rows_with_prefix(report, DEMAND_LEDGER_PREFIXES)
+    return [
+        "",
+        DEMAND_LEDGER_TITLE,
+        "",
+        *ledger_table(rows),
+        "",
+        f"- 이 표는 대장 **전건이 아니다** — {len(rows)}건이며 전건 "
+        f"{len(report.assumptions)}건은 4단계 ⓑ 가 한 덩어리로 싣는다. 접두를 "
+        "이렇게 가른 근거는 대장 자신의 `group_titles`(「전기사용자 부하」 · "
+        "「단지 설계」)다",
+        "- ⛔ 설비 단가(`capex.*`)는 이 표에 **없다** — 2단계에 남는다. 초기투자가 "
+        "그것으로 계산되므로 자원 구성과 같은 자리에 서야 한다",
+    ]
 
 #: 일반용 전력의 사람용 이름. 히트펌프·전기차는 `core/casegrid/appliance_load.py`
 #: 가 이름을 갖는데(`HEATPUMP_LOAD_TITLE`·`EV_LOAD_TITLE`) 일반용은 대장 항목이라
@@ -303,7 +359,8 @@ def _verification_state_lines() -> list[str]:
         "",
         "- 대장이 갖는 축은 부기의 `confidence` 하나이고 그 눈금은 **확정 · 추정 · "
         "가정** 셋이다. 그것은 *「얼마나 단단한가」*를 묻지 *「원문을 열어 대조했는가」*를 "
-        "묻지 않는다 — 위 ⓑ 표의 「신뢰도」 열이 그 축이다",
+        "묻지 않는다 — 아래 ⓑ 부분 표와 4단계 ⓑ 전건 표의 「신뢰도」 열이 그 "
+        "축이다",
         "- ⛔ **셋을 넷으로 재해석해 인쇄하지 않았다.** 「가정」을 「조사 인용」으로, "
         "「추정」을 「출처 확인」으로 옮겨 적는 것은 **근거 등급의 승격**이며, 승격된 "
         "등급은 검토자에게 **확인된 사실**로 읽힌다 — 그 확인은 일어나지 않았다",

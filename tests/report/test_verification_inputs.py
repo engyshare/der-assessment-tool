@@ -876,15 +876,22 @@ def test_the_seasonal_table_does_not_replace_the_representative_day(
 # ── ⑤ 검증이 찾은 결함 셋 — 각각 «따로» 잰다 (R64/WP-FIX) ───────────────────
 
 
-def test_the_discount_rate_is_in_stage_one_where_stage_eight_points(
+def test_the_discount_rate_stands_where_the_metric_stage_points(
     tmp_path: Path,
 ) -> None:
-    """★★ 결함 1 — 8단계의 **「1단계 할인율」이 실제로 1단계에 있다.**
+    """★★ 결함 1 — 지표 단계의 **「N단계 할인율」이 실제로 그 N 단계에 있다.**
 
     종전에는 그 교차참조가 거짓이었다: 할인율은 대장 항목이 아니라 케이스
-    수준표의 모형 파라미터라 1단계 대장 표에 행이 없었고, 검토자가 1단계에서
-    찾으면 없었다. 「손계산으로 따라올 수 있게 한다」는 이 문서의 목적에
-    정면으로 어긋나는 끊김이다.
+    수준표의 모형 파라미터라 대장 표에 행이 없었고, 검토자가 찾으면 없었다.
+    「손계산으로 따라올 수 있게 한다」는 이 문서의 목적에 정면으로 어긋나는
+    끊김이다.
+
+    ## ★ R69/WP-1 — **행이 사라진 것이 아니라 자리를 옮겼다**
+
+    승격 9→10 이 옛 1단계를 가르면서 할인율이 **4단계「경제성 입력」**으로
+    갔고 지표는 9단계가 됐다. ⇒ **번호를 박는 대신 제목으로 두 단계를 찾고,
+    가리키는 쪽의 문면이 실제 번호를 부르는지 잰다** — 그러면 다음 승격에서도
+    이 시험이 같은 것을 잰다.
 
     ⚠ 값을 여기 박지 않는다 — 리포트가 읽는 그 칸에서 가져와 맞댄다.
     """
@@ -893,12 +900,17 @@ def test_the_discount_rate_is_in_stage_one_where_stage_eight_points(
         "거짓이 된다(`core/casegrid/ledger_levels.py` 머리말이 그날을 예고한다)"
     )
     stages = split_stages(_dumped(tmp_path))
+    by_title = {stage.title: stage for stage in stages}
+    economics = by_title["경제성 입력"]
+    metrics = by_title["지표"]
     rate = f"{_report().basis.discount_rate:.1%}"
-    first, eighth = stages[0].body, stages[7].body
-    assert "할인율" in first, "1단계에 할인율 행이 없다 — 8단계의 참조가 거짓이 된다"
-    assert rate in first, f"1단계 할인율 행에 값({rate})이 없다"
-    assert f"1단계 할인율 {rate}" in eighth, (
-        "8단계가 1단계 할인율을 가리키지 않는다 — 두 자리가 갈렸다"
+    assert "할인율" in economics.body, (
+        f"{economics.number}단계에 할인율 행이 없다 — 지표 단계의 참조가 거짓이 된다"
+    )
+    assert rate in economics.body, f"할인율 행에 값({rate})이 없다"
+    assert f"{economics.number}단계 할인율 {rate}" in metrics.body, (
+        f"{metrics.number}단계가 {economics.number}단계 할인율을 가리키지 "
+        "않는다 — 두 자리가 갈렸다"
     )
 
 
@@ -1012,9 +1024,14 @@ def test_the_item_count_says_what_those_items_are(tmp_path: Path) -> None:
         "픽스처 전제가 깨졌다 — 값이 비어 있는 대장 항목이 하나도 없다"
     )
     text = _dumped(tmp_path)
-    first = split_stages(text)[0].body
-    assert f"항목 {printed}건" in first, f"1단계에 「항목 {printed}건」이 없다"
-    assert "값을 읽어 온" in first, (
+    # ★ R69/WP-1 — 대장 **전건** 표가 「경제성 입력」 단계로 갔다(옛 1단계의
+    #   「나머지」다). 번호를 박지 않고 제목으로 찾는다.
+    ledger_stage = {s.title: s for s in split_stages(text)}["경제성 입력"]
+    body = ledger_stage.body
+    assert f"항목 {printed}건" in body, (
+        f"{ledger_stage.number}단계에 「항목 {printed}건」이 없다"
+    )
+    assert "값을 읽어 온" in body, (
         "그 40이 무엇인지 말하지 않는다 — 검토자는 대장 파일의 항목 수로 읽는다"
     )
     assert f"항목 {len(ledger)}건" not in text, (

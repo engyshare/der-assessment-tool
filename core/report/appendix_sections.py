@@ -153,7 +153,7 @@ NO_OVERRIDE = "없음 — 기준 전제를 그대로 적용"
 #: 표 이름을 `###` 로 달면 주제가 하나 늘어난 것으로 세어진다.
 #:
 #: 그래서 이름을 **굵은 글씨 한 줄**로 둔다 — 계산 검증 보고서
-#: (`core/report/verification.py` 7단계의 「**편익 행**」·「**운영비 행**」)가
+#: (`core/report/verification.py` 8단계의 「**편익 행**」·「**운영비 행**」)가
 #: 한 절 안의 표 여럿에 이미 쓰는 꼴이다.
 OVERRIDE_TABLE = "기준 전제 대비 변경 항목"
 
@@ -289,7 +289,7 @@ def _first_sentence(text: str) -> str:
 def _appendix_row(row: AssumptionRow) -> str:
     """붙임 1 의 한 행. **신뢰도가 열로 들어온다** — 주제별로 묶기 때문이다.
 
-    ⚠⚠ **산문 칸을 접어서 넣는다** (R68/WP-8). 이 행은 검증 보고서 1단계 ⓑ 표와
+    ⚠⚠ **산문 칸을 접어서 넣는다** (R68/WP-8). 이 행은 검증 보고서 4단계 ⓑ 표와
     **같은 함정**을 갖고 있었다 — `docs/assumptions.yaml::load.heatpump.annual`
     의 `source` 에 줄바꿈이 있어 그 행이 표에서 튕겨 나간다. 대장은 고치지
     않는다(값의 문제가 아니라 «인쇄»의 문제다 · `.orch/R68/JUDGMENT-wp7.md`).

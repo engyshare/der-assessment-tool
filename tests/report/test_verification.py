@@ -72,7 +72,7 @@ from core.report.verification_scaleup import (
     SCALEUP_TITLE,
 )
 from core.report.verification_variants import (
-    STAGE8_FORMULA_POINTER,
+    STAGE9_FORMULA_POINTER,
     unbuilt_variant_columns,
 )
 
@@ -93,12 +93,20 @@ def _verification_text(tmp_path: Path, scenario: str = DEFAULT_SCENARIO) -> str:
     return target.read_text(encoding="utf-8")
 
 
-def test_cli_writes_nine_stages_each_with_four_cells(tmp_path: Path) -> None:
+def test_cli_writes_every_stage_each_with_four_cells(tmp_path: Path) -> None:
+    """⚠ 단계 수를 **박지 않는다** — `STAGE_COUNT` 에서 얻는다.
+
+    박아 두면 단계를 늘리는 날 이 시험이 먼저 빨간불이 되고, 그때 사람은 「몇
+    이 옳은가」를 이 파일에서 다시 정하게 된다. 옳은 수는 렌더러와 화면이
+    맞추는 값 하나뿐이다(R69/WP-1 이 9 에서 10 으로 올렸다).
+    """
     text = _verification_text(tmp_path)
-    for n in range(1, 10):
+    for n in range(1, STAGE_COUNT + 1):
         assert f"## {n}단계" in text, f"{n}단계가 CLI 산출물에 없다"
     for cell in _CELLS:
-        assert text.count(cell) == 9, f"{cell!r} 칸이 9단계마다 하나씩 있지 않다"
+        assert text.count(cell) == STAGE_COUNT, (
+            f"{cell!r} 칸이 {STAGE_COUNT}단계마다 하나씩 있지 않다"
+        )
 
 
 def test_transferred_values_agree_when_read_from_the_pipeline_independently(
@@ -193,15 +201,22 @@ def _stage_dir(tmp_path: Path) -> Path:
     return out_dir
 
 
-def test_split_stages_writes_nine_stage_files_and_an_index(tmp_path: Path) -> None:
+def test_split_stages_writes_one_file_per_stage_and_an_index(tmp_path: Path) -> None:
+    """★ **사전순 = 단계순**. 두 자리 번호가 그것을 진다 — `10-` 이 서도 그렇다.
+
+    ⚠ 단계 수를 박지 않는다(위 시험과 같은 사유). 자릿수는 `_stage_filename`
+    의 `{stage.number:02d}` 가 정하며, 그래서 `01` … `10` 이 사전순으로 선다.
+    """
     out_dir = _stage_dir(tmp_path)
     names = sorted(p.name for p in out_dir.iterdir())
     assert names[0] == INDEX_FILENAME, "목차가 사전순으로 가장 앞이어야 한다"
     stage_files = names[1:]
-    assert len(stage_files) == 9, f"단계 파일은 9개여야 한다: {stage_files}"
-    assert [n[:2] for n in stage_files] == [f"{n:02d}" for n in range(1, 10)], (
-        "사전순 = 단계순이어야 한다(01- … 09-)"
+    assert len(stage_files) == STAGE_COUNT, (
+        f"단계 파일은 {STAGE_COUNT}개여야 한다: {stage_files}"
     )
+    assert [n[:2] for n in stage_files] == [
+        f"{n:02d}" for n in range(1, STAGE_COUNT + 1)
+    ], f"사전순 = 단계순이어야 한다(01- … {STAGE_COUNT:02d}-)"
 
 
 def test_split_stages_index_lists_every_stage(tmp_path: Path) -> None:
@@ -770,15 +785,21 @@ def test_the_gate_is_judged_from_the_run_and_not_stamped(tmp_path: Path) -> None
     )
 
 
-def test_stage_nine_stops_reprinting_stage_eights_formulas(tmp_path: Path) -> None:
-    """★★★ **8·9단계의 되풀이를 끊었다** (검토서 §3.7).
+def test_the_variant_stage_stops_reprinting_the_metric_stages_formulas(
+    tmp_path: Path,
+) -> None:
+    """★★★ **지표 단계와 변형 단계의 되풀이를 끊었다** (검토서 §3.7).
 
     실물이 그랬다 — 두 단계가 「결론 전환 지원율」과 「전액 지원 시 잔여 결손」을
-    **자연어·표현식·대입 문면 세 줄까지 똑같이** 실었다. 산식은 8단계에 남기고
-    9단계는 그것을 **가리킨다.**
+    **자연어·표현식·대입 문면 세 줄까지 똑같이** 실었다. 산식은 지표 단계에
+    남기고 변형 단계는 그것을 **가리킨다.**
+
+    ⚠ **자리 번호를 박지 않는다** — 변형은 «마지막» 단계이고 지표는 그 앞이다.
+    R69/WP-1 이 그 둘을 8·9 에서 9·10 으로 밀었고, 뒤에서 세면 그 밀림에
+    걸리지 않는다.
     """
     stages = split_stages(_verification_text(tmp_path))
-    eight, nine = stages[7].body, stages[8].body
+    eight, nine = stages[-2].body, stages[-1].body
     report = build_case_report(
         _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
     )
@@ -795,17 +816,18 @@ def test_stage_nine_stops_reprinting_stage_eights_formulas(tmp_path: Path) -> No
         assert formula.substituted not in nine, (
             f"9단계가 「{formula.label}」 의 대입 문면을 다시 인쇄한다"
         )
-    assert STAGE8_FORMULA_POINTER in nine, "9단계가 8단계를 가리키지 않는다"
+    assert STAGE9_FORMULA_POINTER in nine, "9단계가 8단계를 가리키지 않는다"
 
 
-def test_stage_nine_compares_the_variants_row_by_row(tmp_path: Path) -> None:
-    """★★★ **9단계는 비교표만 갖는다** — 행마다 구성·초기투자·NPV·필요한 지원율.
+def test_the_variant_stage_compares_the_variants_row_by_row(tmp_path: Path) -> None:
+    """★★★ **변형 단계는 비교표만 갖는다** — 행마다 구성·초기투자·NPV·지원율.
 
     ⚠ 재료가 없는 열은 **「미산출」로 글자로** 선다(지어내지 않는다). ⚠ 두 변형의
     수가 같으면 「같다」와 그 사유가 함께 선다 — 같은 수를 두 줄로 인쇄하고 아무
     말도 안 하면 독자가 오류로 읽는다.
+    ⚠ 자리 번호를 박지 않는다 — 변형은 «마지막» 단계다(위 시험과 같은 사유).
     """
-    nine = split_stages(_verification_text(tmp_path))[8].body
+    nine = split_stages(_verification_text(tmp_path))[-1].body
     report = build_case_report(
         _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
     )

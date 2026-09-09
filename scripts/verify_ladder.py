@@ -8,18 +8,23 @@
 
 ## 사다리는 **이미 저장소에 있었다** — 새로 짓지 않았다
 
-`core/report/verification.py::render_verification_markdown` 이 내는 **9단계**가
-그 사다리다(1 전제 → 2 자원 → 3 운전 → 4 편익 → 5 운영비 → 6 생애주기 →
-7 현금흐름 → 8 지표 → 9 변형). 이 파일은 **그 문자열을 층으로 잘라 견주는 일만**
-한다 — 새 계산도, 둘째 정본도 만들지 않는다.
+`core/report/verification.py::render_verification_markdown` 이 내는 **10단계**가
+그 사다리다(1 가구 수요 → 2 자원 → 3 운전 → 4 경제성 입력 → 5 편익 →
+6 운영비 → 7 생애주기 → 8 현금흐름 → 9 지표 → 10 변형). 이 파일은 **그 문자열을
+층으로 잘라 견주는 일만** 한다 — 새 계산도, 둘째 정본도 만들지 않는다.
 
     L0  결론축            report.metrics 의 npv · payback_years
-    L1  8·9단계          지표 · 지원율 변형
-    L2  7단계            현금흐름
-    L3  4·5·6단계        편익 · 운영비 · 생애주기
+    L1  9·10단계         지표 · 지원율 변형
+    L2  8단계            현금흐름
+    L3  5·6·7단계        편익 · 운영비 · 생애주기
     L4  3단계            운전(디스패치)
     L5  2단계            자원·초기투자
-    L6  1단계            전제 대장
+    L6  1·4단계          가구 수요 · 경제성 입력
+
+★★ **L6 이 «둘»인 것이 R69/WP-1 승격의 결과다.** 옛 1단계 하나가 새 1「가구
+수요」와 새 4「경제성 입력」으로 갈렸고, 그 둘은 사다리에서 **같은 층**이다 —
+둘 다 «입력»이며 위층이 그것을 받는다. 층을 가르면 「어디부터 볼지」가 두 갈래로
+쪼개지는데 그 둘은 실제로 같은 자리다(대장·실행 입력).
 
 ## ⚠⚠ 이것이 **못 잡는 것** — 「L0 동일」은 「아무것도 안 바뀌었다」가 아니다
 
@@ -83,36 +88,67 @@ ASSUMPTIONS_PATH = REPO_ROOT / "docs" / "assumptions.yaml"
 DEFAULT_BASELINE = REPO_ROOT / ".orch" / "verify_ladder" / "baseline.json"
 
 #: L0 이 견주는 것 — **결론축**. `initial_outlay_won` 은 지표가 아니라 대입값이라
-#: 여기 넣지 않는다(그것은 8단계에 실려 L1 이 본다).
+#: 여기 넣지 않는다(그것은 9단계에 실려 L1 이 본다).
 CONCLUSION_KEYS: tuple[str, ...] = ("npv", "payback_years")
 
+#: 이 사다리가 견주는 단계 수 — **렌더러와 맞춰야 하는 값**이다
+#: (`app/services/verify_steps.py::STAGE_COUNT` 와 같은 수여야 한다).
+STAGE_COUNT = 10
+
 #: 층 → (이름, 그 층이 견주는 `N단계` 번호들). **순서가 사다리다.**
+#:
+#: ⚠ **아래 번호 전건의 합이 1..`STAGE_COUNT` 여야 한다** — 빠진 번호가 있으면
+#: 그 단계의 갈림을 어느 층도 보지 않고, 사다리는 「동일」이라 답한다. 그 조건을
+#: `_assert_ladder_covers_every_stage()` 가 실행에서 붙든다.
 LADDER: tuple[tuple[str, str, tuple[int, ...]], ...] = (
     ("L0", "결론축(순현재가치·회수기간)", ()),
-    ("L1", "8·9단계 — 지표 · 지원율 변형", (8, 9)),
-    ("L2", "7단계 — 현금흐름", (7,)),
-    ("L3", "4·5·6단계 — 편익 · 운영비 · 생애주기", (4, 5, 6)),
+    ("L1", "9·10단계 — 지표 · 지원율 변형", (9, 10)),
+    ("L2", "8단계 — 현금흐름", (8,)),
+    ("L3", "5·6·7단계 — 편익 · 운영비 · 생애주기", (5, 6, 7)),
     ("L4", "3단계 — 운전(디스패치)", (3,)),
     ("L5", "2단계 — 자원 · 초기투자", (2,)),
-    ("L6", "1단계 — 전제 대장", (1,)),
+    ("L6", "1·4단계 — 가구 수요 · 경제성 입력", (1, 4)),
 )
 
 #: 검증 보고서의 단계 머리글. `_stage()` 가 내는 모양 그대로다
 #: (`core/report/verification.py::_stage` → `f"## {number}단계 — {title}"`).
-_STAGE_HEADING = re.compile(r"^## (\d)단계 — ", re.MULTILINE)
+#:
+#: ⚠⚠ **`\d+` 이지 `\d` 가 아니다** — 한 자리로 두면 `## 10단계 — ` 에서 **`1`
+#: 만 집어** 10단계가 1단계로 실리고, 그러면 1단계의 갈림이 조용히 사라진다
+#: (R69/WP-1 이 그 자리를 고쳤다).
+_STAGE_HEADING = re.compile(r"^## (\d+)단계 — ", re.MULTILINE)
+
+
+def _assert_ladder_covers_every_stage() -> None:
+    """층 정의가 **단계 전건**을 덮는가 — 빠진 번호가 있으면 멈춘다.
+
+    빠진 단계는 어느 층도 보지 않으므로 그 단계만 갈린 변경에서 사다리가
+    **「갈린 층이 없다」**라고 답한다. 그 침묵이 이 도구를 무의미하게 만들므로
+    여기서 예외를 낸다(`core/report/verification_chain.py::
+    _assert_nodes_point_at_real_stages` 와 같은 판단이다).
+    """
+    covered = {number for _level, _title, numbers in LADDER for number in numbers}
+    missing = sorted(set(range(1, STAGE_COUNT + 1)) - covered)
+    if missing:
+        raise RuntimeError(
+            "사다리가 덮지 않는 단계가 있다 — "
+            + " · ".join(f"{n}단계" for n in missing)
+            + f". LADDER 의 번호 전건이 1..{STAGE_COUNT} 여야 한다"
+        )
 
 
 def _split_stages(markdown: str) -> dict[str, str]:
-    """검증 보고서를 `{"1": …, …, "9": …}` 로 자른다.
+    """검증 보고서를 `{"1": …, …, "10": …}` 로 자른다.
 
     ⚠ **머리말(표제·매니페스트 해시)은 버린다.** 해시는 입력이 한 원이라도
     움직이면 함께 움직이므로 「무엇이 갈렸나」를 말하지 못하고, 층에 실으면
     모든 층이 늘 상이해진다.
     """
     marks = list(_STAGE_HEADING.finditer(markdown))
-    if len(marks) != 9:
+    if len(marks) != STAGE_COUNT:
         raise RuntimeError(
-            f"검증 보고서에서 9단계를 찾지 못했다 — {len(marks)}개를 찾았다. "
+            f"검증 보고서에서 {STAGE_COUNT}단계를 찾지 못했다 — "
+            f"{len(marks)}개를 찾았다. "
             "`core/report/verification.py` 의 단계 머리글 모양이 바뀌었는지 보라"
         )
     stages: dict[str, str] = {}
@@ -132,13 +168,14 @@ def _scenario_paths() -> list[Path]:
 def collect(assumptions_path: Path = ASSUMPTIONS_PATH) -> dict[str, Any]:
     """골든 셋을 **각각 한 번씩만** 돌려 층 재료를 모은다.
 
-    ⚠ **`build_case_report()` 를 시나리오당 한 번 부른다.** 그 한 번이 9단계
+    ⚠ **`build_case_report()` 를 시나리오당 한 번 부른다.** 그 한 번이 10단계
     문자열과 결론축을 함께 낸다 — 층마다 다시 돌리면 사다리가 전건보다 비싸진다.
 
     ⚠ `assumptions_path` 를 받는 이유는 **「대장을 이렇게 고치면 축이 움직이나」**
     를 묻기 위해서다 — 고친 대장 사본을 주면 기준선(실물 대장)과 층별로 견준다.
     실물 대장을 건드리지 않고 물을 수 있는 통로가 이것뿐이다.
     """
+    _assert_ladder_covers_every_stage()
     collected: dict[str, Any] = {}
     for path in _scenario_paths():
         report = build_case_report(path, assumptions_path=assumptions_path)
@@ -203,7 +240,7 @@ def _report(verdicts: Sequence[tuple[str, str, list[str]]], *, deep: bool) -> in
     """사다리를 인쇄하고 종료 코드를 낸다.
 
     ⚠ **「최초로 갈린 층」이 아니라 「가장 깊이 갈린 층」이 원인 자리다.**
-    파이프라인은 1단계 → 9단계로 흐르므로 위층(L0)은 아래층이 움직이면 함께
+    파이프라인은 1단계 → 10단계로 흐르므로 위층(L0)은 아래층이 움직이면 함께
     움직인다. 갈림이 시작된 자리는 **상이한 층 중 가장 아래**다.
     ⚠ 위층이 같아도 아래층이 다를 수 있다(상쇄) — 그래서 `--deep` 은 끊지 않고
     전부 인쇄한다.

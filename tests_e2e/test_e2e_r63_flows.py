@@ -390,14 +390,14 @@ def test_equipment_settings_are_grouped_per_resource_instance(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 바 — 검증 모드: 네 걸음 × 아홉 단계, 빈 칸에는 사유가 글자로
+# 바 — 검증 모드: 네 걸음 × 열 단계, 빈 칸에는 사유가 글자로
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def test_the_verify_screen_carries_four_steps_nine_stages_and_reasoned_gaps(
+def test_the_verify_screen_carries_four_steps_ten_stages_and_reasoned_gaps(
     page: Page, live_server: str
 ) -> None:
-    """★ **검증 모드 화면의 뼈대** — 사용자의 네 걸음 · 렌더러 아홉 단계 · 빈 칸 다섯.
+    """★ **검증 모드 화면의 뼈대** — 사용자의 네 걸음 · 렌더러 열 단계 · 빈 칸 다섯.
 
     ⚠⚠ `@pytest.mark.req(...)` 를 달지 않았다 — `tests/app/test_ui_verify.py`
     머리말과 같은 판정이다. 검증 모드를 요구하는 조항이 spec 에 아직 없고,
@@ -419,13 +419,14 @@ def test_the_verify_screen_carries_four_steps_nine_stages_and_reasoned_gaps(
     ) == "1,2,3,4", "네 걸음이 1..4 순서로 서지 않았다 — 「순차적으로」가 깨진다"
     assert page.locator("[data-stage]").count() == STAGE_COUNT
     # ⚠ 단계의 **문서 순서**가 1..N 이기를 바라지 않는다 — `_GROUP_PLAN` 이
-    # 4단계(편익 화폐화)를 ④ 묶음에 실으므로 화면 순서는 1,2,3,5,4,6,… 이
-    # 정상이다. 재는 것은 **전건이 한 번씩** 서고 **묶음 안에서 오름차순**인가다.
+    # 4단계(경제성 입력)를 ① 묶음에, 5단계(편익 화폐화)를 ④ 묶음에 실으므로
+    # 화면 순서는 1,4,2,3,6,5,7,… 이 정상이다(R69/WP-1 이 단계를 열로 올렸다).
+    # 재는 것은 **전건이 한 번씩** 서고 **묶음 안에서 오름차순**인가다.
     stages = page.locator("[data-stage]").evaluate_all(
         "els => els.map(e => Number(e.dataset.stage))"
     )
     assert sorted(stages) == list(range(1, STAGE_COUNT + 1)), (
-        f"아홉 단계가 한 번씩 서지 않았다: {stages}"
+        f"열 단계가 한 번씩 서지 않았다: {stages}"
     )
     for group in page.locator(".verify-group[data-group]").all():
         numbers = group.locator("[data-stage]").evaluate_all(
