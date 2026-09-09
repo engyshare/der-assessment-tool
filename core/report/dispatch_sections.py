@@ -26,7 +26,7 @@
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from types import MappingProxyType
 
 from core.engine.rule_based import DispatchRule
@@ -335,7 +335,7 @@ def _season_annual_table(
 
 
 def _hour_table(hours: tuple[DispatchHour, ...]) -> list[str]:
-    """스텝별 표 하나 — 이 절의 **모든** 스텝 표가 이 함수로 그려진다.
+    """붙임 7 의 스텝 표 — **자원별 부호 표**. 이 붙임의 모든 스텝 표가 이것이다.
 
     ⚠ 함수로 갈라 둔 것은 표가 둘이던 시절의 흔적이 아니다. `Q-3` 실측이 오면
     둘째 표가 돌아오고(위 독스트링), 그때 **두 표가 같은 기계로 그려져야**
@@ -344,28 +344,187 @@ def _hour_table(hours: tuple[DispatchHour, ...]) -> list[str]:
     ⚠⚠ **R64/WP-5 가 그날을 앞당겼다.** 계절별 표가 이 함수를 그대로 부르므로
     이 절에는 이제 `1 + 계절 수` 개의 스텝 표가 선다. 열을 바꾸려면 여기서
     바꾸면 전부 함께 바뀐다 — 계절 쪽에 사본을 만들지 마라.
+
+    ## ★★ R68/WP-3 — **그리는 기계가 `step_table()` 로 내려갔다**
+
+    검증 3단계가 같은 하루를 **사람용 양수 표**로도 실어야 했다(검토서 §3.4 ·
+    §4.3). 그 표는 열 구성이 다르다 — 붙임 7 은 자원별 **부호** 표이고 검증
+    3단계는 총부하·발전·충전·방전을 **양수 별도 열**로 가른 표다. 그렇다고
+    표를 두 벌로 그리면 이 함수의 ⚠ 가 금한 상태가 정확히 돌아온다. ⇒ **그리는
+    기계 하나 + 열 구성은 인자**로 갈랐고, 이 함수는 그 기계에 붙임 7 의 열
+    구성(`_resource_columns`)을 먹인다. **붙임 7 의 열은 한 글자도 바뀌지 않았다.**
     """
-    names = tuple(hours[0].per_resource)
+    return step_table(hours, _resource_columns(tuple(hours[0].per_resource)))
+
+
+#: 스텝 표의 열 하나 — (머리글, 그 스텝에서 값을 꺼내는 함수).
+#:
+#: ⚠ 머리글과 꺼내는 법을 **한 쌍으로** 묶는다. 두 목록으로 갈라 넘기면 길이나
+#: 차례가 어긋나는 날 표가 **다른 열의 값을 그 이름 아래 인쇄하고**, 그것은 아무
+#: 예외도 내지 않는다.
+StepColumn = tuple[str, Callable[[DispatchHour], float]]
+
+
+def _resource_columns(names: tuple[str, ...]) -> tuple[StepColumn, ...]:
+    """붙임 7 의 열 구성 — **자원별 부호 열 + 계통 송·수전**.
+
+    ⚠ **부호를 여기서 뒤집지 않는다.** `DispatchHour` 의 ⚠ 가 그 사유를 진다 —
+    충전과 방전이 한 열에 서야 「스텝 합계가 계통 송전량과 맞는가」를 눈으로
+    셀 수 있다. 부호를 걷은 표가 필요한 자리는 `human_step_columns()` 다.
+    """
+    return (
+        *((f"`{name}`", _resource_value(name)) for name in names),
+        ("계통 송전", lambda hour: hour.grid_export),
+        ("계통 수전", lambda hour: hour.grid_import),
+    )
+
+
+def _resource_value(name: str) -> Callable[[DispatchHour], float]:
+    """자원 하나의 스텝값을 꺼내는 함수. **없는 자원은 0 이 아니라 예외다** —
+    붙임 7 의 열 목록은 그 하루가 정하므로 없는 이름이 오면 그것이 결함이다."""
+    def get(hour: DispatchHour) -> float:
+        return hour.per_resource[name]
+
+    return get
+
+
+def step_table(
+    hours: tuple[DispatchHour, ...],
+    columns: tuple[StepColumn, ...],
+    *,
+    step_head: str = "스텝",
+) -> list[str]:
+    """★ 스텝 표를 그리는 **하나뿐인 기계** — 열 구성은 인자로 받는다 (R68/WP-3).
+
+    ## ⚠⚠ 여기 말고 다른 곳에서 스텝 표를 그리지 마라
+
+    이 저장소에는 지금 스텝 표가 **두 종류**로 선다 — 붙임 7 의 자원별 부호 표
+    (`_resource_columns`)와 검증 3단계의 사람용 양수 표(`human_step_columns`).
+    둘은 **다른 물음에 답하므로 열이 다르지만**, 「스텝 라벨을 어떻게 적는가 ·
+    합계 행을 어떻게 내는가 · 표의 서식이 무엇인가」는 같아야 한다. 사본을
+    만들면 한쪽만 바뀌는 날 두 표를 맞대 볼 수 없고 그 어긋남은 조용하다.
+
+    ⚠ **합계 행을 뺄 수 없게 두었다.** 이 저장소의 스텝 표는 전부 합계로
+    검증된다 — 붙임 7 은 붙임 4 산식의 대입값과, 검증 3단계는 그 계절의 연간값과
+    맞댄다(`season_step_tables`). 선택 인자로 두면 합계 없는 표가 생기고 그
+    표는 대조할 수 없다.
+
+    Args:
+        hours: 그 하루의 스텝 전건. **표본이 아니라 전건이다.**
+        columns: 열 구성. 차례가 그대로 인쇄 차례다.
+        step_head: 첫 칸의 머리글. 붙임 7 은 「스텝」, 사람용 표는 「시각」이다 —
+            `_hour_label()` 이 24스텝일 때만 시각으로 적으므로 머리글도 그
+            갈래를 따라야 한다(24가 아닌 실행에서 「시각」은 없는 해상도를
+            주장하는 것이 된다).
+    """
     steps = len(hours)
     lines = [
-        "| 스텝 | " + " | ".join(f"`{name}`" for name in names)
-        + " | 계통 송전 | 계통 수전 |",
-        "|---|" + "---|" * (len(names) + 2),
+        f"| {step_head} | " + " | ".join(head for head, _ in columns) + " |",
+        "|---|" + "---|" * len(columns),
     ]
     for hour in hours:
-        cells = " | ".join(f"{hour.per_resource[name]:,.2f}" for name in names)
-        lines.append(
-            f"| {_hour_label(hour.step, steps)} | {cells} | "
-            f"{hour.grid_export:,.2f} | {hour.grid_import:,.2f} |"
-        )
+        cells = " | ".join(f"{get(hour):,.2f}" for _, get in columns)
+        lines.append(f"| {_hour_label(hour.step, steps)} | {cells} |")
     totals = " | ".join(
-        f"**{sum(hour.per_resource[name] for hour in hours):,.2f}**"
-        for name in names
+        f"**{sum(get(hour) for hour in hours):,.2f}**" for _, get in columns
     )
-    lines += [
-        f"| **합계** | {totals} | "
-        f"**{sum(hour.grid_export for hour in hours):,.2f}** | "
-        f"**{sum(hour.grid_import for hour in hours):,.2f}** |",
-        "",
-    ]
+    lines += [f"| **합계** | {totals} |", ""]
     return lines
+
+
+# ── 사람용 양수 열 — 검증 3단계가 쓰는 열 구성 (R68/WP-3 · 검토서 §3.4·§4.3) ──
+#
+# ## 왜 열이 붙임 7 과 다른가
+#
+# 검토서 §4.3 문면: *「사람용 표에서는 «한전 수전»·«한전 역송»을 양의 수량으로
+# 별도 열에 두고, 내부 부호는 수식 설명에만 남기는 편이 안전하다」*. 붙임 7 은
+# 그 반대 요구를 진다 — 자원 수지는 **부호가 뜻**이어야 「스텝 합계가 계통
+# 송전량과 맞는가」를 눈으로 셀 수 있다(`DispatchHour` 의 ⚠).
+#
+# ⇒ **두 요구가 둘 다 참이므로 표가 둘**이다. 갈리는 것은 열 구성뿐이고 그리는
+# 기계는 위 `step_table()` 하나다.
+#
+# ⚠ 머리글에 단위를 적지 않는다 — **표 제목이 진다**(검토서 §4.2 · 한 표 안에서
+# 여섯 열이 같은 단위이므로 열마다 되풀이하면 표가 읽기 어려워진다).
+
+#: 부하 쪽 자원의 소비량을 **양수로** 실는 열.
+LOAD_HEAD = "총부하"
+#: 발전 쪽 자원의 발전량을 실는 열.
+GENERATION_HEAD = "발전"
+#: 저장장치가 **받아들인** 양(음수의 절댓값).
+STORAGE_CHARGE_HEAD = "저장장치 충전"
+#: 저장장치가 **내보낸** 양(양수 그대로).
+STORAGE_DISCHARGE_HEAD = "저장장치 방전"
+GRID_IMPORT_HEAD = "한전 수전"
+GRID_EXPORT_HEAD = "한전 역송"
+
+
+def _role_sum(names: Sequence[str], *, sign: float) -> Callable[[DispatchHour], float]:
+    """그 갈래 자원들의 스텝값 합에 `sign` 을 곱한다 — 부하는 `sign=-1` 로 양수가 된다.
+
+    ⚠ **자르지 않는다.** 이 함수를 쓰는 갈래(발전·부하)는 `split_three_ways()`
+    가 **전 스텝의 부호가 한쪽인 것**만 넣으므로 곱한 값이 이미 0 이상이다.
+    여기서 `max(0, …)` 로 자르면 그 성질이 깨진 날 **음수가 조용히 0 으로**
+    인쇄되고, 그때 표는 「그 시각에 부하가 없었다」를 주장한다.
+    """
+    frozen = tuple(names)
+    def get(hour: DispatchHour) -> float:
+        return sign * sum(hour.per_resource.get(name, 0.0) for name in frozen)
+
+    return get
+
+
+def _role_clipped(
+    names: Sequence[str], *, sign: float
+) -> Callable[[DispatchHour], float]:
+    """그 갈래 자원들의 스텝값 중 **한쪽 방향만** 골라 양수로 합한다.
+
+    저장장치는 같은 하루에 충전(음수)과 방전(양수)을 **함께** 하므로 두 열로
+    가르려면 방향별로 잘라야 한다 — 자르지 않으면 두 열이 같은 순액을 두 번
+    인쇄하고, 그러면 「그 시각에 얼마를 받아들였는가」에 답할 수 없다.
+    """
+    frozen = tuple(names)
+    def get(hour: DispatchHour) -> float:
+        return sum(
+            max(0.0, sign * hour.per_resource.get(name, 0.0)) for name in frozen
+        )
+
+    return get
+
+
+def human_step_columns(
+    generation: Sequence[str],
+    storage: Sequence[str],
+    load: Sequence[str],
+) -> tuple[StepColumn, ...]:
+    """검증 3단계의 열 구성 — **부호를 읽지 않고 읽는 여섯 열**.
+
+    ## ⚠⚠ 빈 갈래는 **0 열을 세우지 않고 아예 세우지 않는다**
+
+    저장장치 없는 실행에서 「저장장치 충전 0.00」 열을 스물넷 인쇄하면 그것은
+    *「저장장치가 있는데 하루 종일 안 움직였다」* 로 읽힌다 — 이 저장소의 ★★
+    규약(*「`None` 은 빈칸이 아니라 진술이다」*)이 금하는 자리다. ⇒ 열을 세우지
+    않고, **왜 없는지는 부르는 쪽이 글자로 적는다**
+    (`core/report/verification_dispatch.py::season_step_tables`). 둘 중 하나만
+    하면 「열이 빠졌다」와 「그 자원이 없다」가 산출물에서 같아진다.
+
+    ⚠ 계통 두 열은 **갈래와 무관하게 언제나 선다** — 자원이 하나도 없는 실행도
+    계통에서 받아 오거나 내보낼 수 있고, 그 둘은 `DispatchHour` 가 직접 나른다.
+
+    Args:
+        generation: 발전 쪽 자원 이름 · storage: 저장장치 · load: 부하 쪽.
+            셋의 가름은 `split_three_ways()` 하나가 하며 여기서 다시 하지 않는다.
+    """
+    columns: list[StepColumn] = []
+    if load:
+        columns.append((LOAD_HEAD, _role_sum(load, sign=-1.0)))
+    if generation:
+        columns.append((GENERATION_HEAD, _role_sum(generation, sign=1.0)))
+    if storage:
+        columns.append((STORAGE_CHARGE_HEAD, _role_clipped(storage, sign=-1.0)))
+        columns.append((STORAGE_DISCHARGE_HEAD, _role_clipped(storage, sign=1.0)))
+    columns += [
+        (GRID_IMPORT_HEAD, lambda hour: hour.grid_import),
+        (GRID_EXPORT_HEAD, lambda hour: hour.grid_export),
+    ]
+    return tuple(columns)

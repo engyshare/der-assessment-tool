@@ -50,6 +50,7 @@ from typing import Any, ClassVar
 from core.contracts.chart import Chart
 from core.contracts.validation import ValidationError
 from core.report.charts._render import new_figure, to_png
+from core.report.dispatch_notes import DEMAND_LABEL
 
 #: 자원 색. `dispatch_stack.py` 와 **같은 순서**다 — 두 그림이 같은 실행의 같은
 #: 자원을 그리므로 색이 갈리면 검토자가 둘을 맞대 볼 수 없다.
@@ -63,15 +64,19 @@ _DEMAND_COLOR = "#222222"
 
 #: 수요 곡선의 범례 이름 (R65/WP-4).
 #:
-#: ⚠ 검증 모드 표의 수요 열과 **같은 글자**여야 한다
-#: (`app/services/ui_charts.py::_DEMAND_LABEL`). 종전 문면은 「수요」였고
-#: 자원 계열만 `e2e-*` 라 표기가 갈려 있었다 — 독립 검증
-#: `.orch/R65/result_V.md` ③-3 이 잡은 자리다. ⛔ 두 곳에 글자를 따로 적어
-#: 두면 한쪽만 고쳐지고, 그때 표와 그림 중 어느 쪽이 정본인지 화면만 봐서는
-#: 알 수 없다. 여기서 `ui_charts` 를 import 하지 않는 이유는 계층이다
-#: (`core.report` 가 `app` 을 알면 `lint-imports` 가 거부한다) — 그래서
-#: **검사가 두 글자를 맞댄다**(`tests/app/test_ui_charts.py`).
-_DEMAND_LABEL = "가구 전력수요"
+#: ## ★★ R68/WP-3 — **글자가 여기 있었고, 정본이 아래로 내려갔다**
+#:
+#: 종전에는 이 파일과 `app/services/ui_charts.py` **두 곳**에 같은 글자가 따로
+#: 적혀 있었고(계층이 서로의 import 를 막아서 — `core.report` 가 `app` 을 알면
+#: `lint-imports` 가 거부한다) **검사가 두 글자를 맞댔다**
+#: (`tests/app/test_ui_charts.py`). R68/WP-3 이 검증 3단계 표에도 같은 낱말을
+#: 세워야 해서 자리가 셋이 되었고, 셋을 맞대는 검사는 더 버티지 못한다.
+#: ⇒ 정본은 `core/report/dispatch_notes.py::DEMAND_LABEL` 이다. **이 파일이
+#: 정본을 갖지 않는 이유**는 이 모듈이 `matplotlib` 을 끄는 `_render` 를 모듈
+#: 수준에서 import 하기 때문이다 — 글자를 여기 두면 «표»를 짓는 텍스트 층이
+#: 그림 묶음을 끌어오게 된다(그 상수의 주석이 그 실측을 진다).
+#: ⛔ 글자를 바꾸지 마라 — 화면·그림·표가 같은 낱말이어야 한다.
+_DEMAND_LABEL = DEMAND_LABEL
 
 
 class SeasonalOperation(Chart):

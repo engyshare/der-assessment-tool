@@ -51,7 +51,11 @@ from core.contracts.schemas import CashFlowRow
 from core.contracts.validation import ValidationError
 from core.report.case_influences import CONCLUSION_METRIC
 from core.report.case_report import CaseReport
-from core.report.dispatch_notes import DispatchHour, build_hourly_profile
+from core.report.dispatch_notes import (
+    DEMAND_LABEL,
+    DispatchHour,
+    build_hourly_profile,
+)
 
 #: 결론 축의 화면 문면. 지표 **이름**은 `CONCLUSION_METRIC` 이 정본이고 여기는
 #: 축에 적을 사람 말이다 — `model_comparison` 이 `comparison_metric_label` 로
@@ -309,7 +313,16 @@ def _demand_names(
 #: ⚠ 「부하」가 아니라 「가구 전력수요」로 적는다. 사용자 요구 문면이
 #: *「가구의 전력 수요, 발전, ESS 운전」* 이고, 화면은 그 말로 찾을 수 있어야
 #: 한다. `_demand_names` 가 가른 그 항목이며 가름은 여기서 다시 하지 않는다.
-_DEMAND_LABEL = "가구 전력수요"
+#:
+#: ## ★★ R68/WP-3 — **글자를 여기 적어 두지 않는다**
+#:
+#: 종전에는 같은 글자가 이 파일과 `core/report/charts/seasonal_operation.py`
+#: 두 곳에 따로 적혀 있었고, 계층이 import 를 막아(`core` 는 `app` 을 알 수
+#: 없다) **검사가 두 글자를 맞댔다**. 방향은 막히지 않았다 — `app` → `core` 는
+#: 허용이므로 이쪽이 정본을 부르면 사본이 사라진다. 정본은
+#: `core/report/dispatch_notes.py::DEMAND_LABEL` 이며, 그 파일이 검증 보고서
+#: 표·심의 리포트 그림·이 화면이 **함께 부를 수 있는** 유일한 자리다.
+_DEMAND_LABEL = DEMAND_LABEL
 
 
 def resource_labels(report: CaseReport, keys: Sequence[str]) -> tuple[str, ...]:

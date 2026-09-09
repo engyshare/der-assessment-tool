@@ -39,6 +39,7 @@ from app.services.ui_run import run_ui_case
 from core.contracts.validation import ValidationError
 from core.report.charts import chart_registry
 from core.report.charts.seasonal_operation import _DEMAND_LABEL as _CHART_DEMAND_LABEL
+from core.report.dispatch_notes import DEMAND_LABEL
 
 #: PNG 파일 서명. **이것으로 「그렸다」와 「200 을 냈다」가 갈린다** —
 #: `tests/contract/test_chart_contract.py` 가 같은 상수를 같은 이유로 쓴다.
@@ -315,17 +316,31 @@ def test_the_seasonal_picture_gets_human_words_for_its_legend() -> None:
 
 
 def test_the_demand_curve_is_named_the_same_in_the_table_and_the_picture() -> None:
-    """★★★ **표의 수요 열과 그림의 수요 곡선이 같은 글자다.**
+    """★★★ **표와 그림이 수요를 «같은 상수»로 부른다** — 글자를 맞대던 자리다.
 
-    ⚠ 글자가 두 파일에 따로 적혀 있다 — 그림은 `core.report` 안이고 표는 `app`
-    안이라 **계층이 import 를 막는다**(`lint-imports` 의 `layers` 계약: `core`
-    가 `app` 을 알 수 없다). 한쪽만 고치면 표는 「가구 전력수요」인데 그림은
-    옛 글자가 되고, 그때 둘 다 그럴듯해 보인다 — **그 어긋남을 재는 것이 이
-    검사다.**
+    ## 무엇이 바뀌었나 (R68/WP-3)
+
+    종전에는 같은 글자가 **두 파일에 따로** 적혀 있었다 — 그림은 `core.report`
+    안이고 표는 `app` 안이라 계층이 import 를 막았다(`lint-imports` 의 `layers`
+    계약: `core` 가 `app` 을 알 수 없다). 그래서 이 검사는 **두 글자를 맞대는**
+    수밖에 없었고, 붙들 수 있는 것은 *「지금 같다」* 뿐이었다.
+
+    R68/WP-3 이 검증 3단계 표에도 같은 낱말을 세우며 자리가 **셋**이 되었고,
+    정본을 `core/report/dispatch_notes.py::DEMAND_LABEL` 로 내렸다(`app` →
+    `core` 는 허용 방향이라 사본이 사라진다).
+
+    ⚠ **이 검사를 지우지 않았다.** 그것이 지키던 요구는 *「표와 그림의 글자가
+    같다」* 이고 그 요구는 그대로다 — 다만 지금 재는 것은 **둘이 정본을
+    가리키는가**다. 누군가 어느 한쪽에 글자를 다시 적어 넣으면(값이 같아도)
+    사본이 되살아나고, 그 순간부터 한쪽만 고쳐질 수 있다 — `is` 로 재는 이유가
+    그것이다.
     """
-    assert _CHART_DEMAND_LABEL == _DEMAND_LABEL, (
-        "표와 그림의 수요 이름이 갈렸다: "
-        f"{_DEMAND_LABEL!r}(표) ≠ {_CHART_DEMAND_LABEL!r}(그림)"
+    assert _CHART_DEMAND_LABEL is DEMAND_LABEL, (
+        "그림이 정본 상수를 쓰지 않는다 — 글자를 다시 적어 두면 사본이 되살아난다: "
+        f"{_CHART_DEMAND_LABEL!r}"
+    )
+    assert _DEMAND_LABEL is DEMAND_LABEL, (
+        "화면 표가 정본 상수를 쓰지 않는다: " f"{_DEMAND_LABEL!r}"
     )
 
 

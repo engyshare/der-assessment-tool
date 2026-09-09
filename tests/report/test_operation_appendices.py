@@ -28,11 +28,24 @@ from core.casegrid.e2e_runner import run_single_case_e2e
 from core.casegrid.ledger_levels import build_level_map
 from core.engine.rule_based import DEFAULT_RULE_ORDER, DispatchRule
 from core.report.case_report import build_case_report
-from core.report.dispatch_notes import NO_OPERATING_MODE, build_hourly_profile
+from core.report.dispatch_notes import (
+    NO_OPERATING_MODE,
+    DispatchHour,
+    build_hourly_profile,
+    split_three_ways,
+)
 from core.report.dispatch_sections import (
+    GENERATION_HEAD,
+    GRID_EXPORT_HEAD,
+    GRID_IMPORT_HEAD,
+    LOAD_HEAD,
     RULE_TEXT,
+    STORAGE_CHARGE_HEAD,
+    STORAGE_DISCHARGE_HEAD,
     dispatch_profile_section,
     dispatch_rule_section,
+    human_step_columns,
+    step_table,
 )
 from core.report.narrative import render_markdown
 from tests.report.conftest import (
@@ -655,3 +668,143 @@ def test_the_appendix_and_the_body_do_not_disagree_about_the_operating_mode() ->
             f"{line.name}: 붙임이 본문과 다른 말을 한다 — 본문은 "
             f"{line.operating_mode!r} 를 싣는데 붙임에는 없다"
         )
+
+
+# ── ★★ R68/WP-3: 스텝 표를 그리는 기계는 **하나**, 열 구성은 인자 ─────────────
+#
+# 검증 3단계가 같은 하루를 **사람용 양수 표**로도 실어야 했다(검토서 §3.4·§4.3).
+# 붙임 7 은 자원별 **부호** 표라 열이 다르다 — 그렇다고 표를 두 벌로 그리면
+# `_hour_table()` 의 ⚠(*「계절 쪽에 사본을 만들지 마라」*)가 금한 상태가 정확히
+# 돌아온다. ⇒ 기계 하나(`step_table`) + 열 구성만 갈라 두었고, 아래가 그 성질을
+# 붙든다.
+
+
+def _synthetic_day() -> tuple[DispatchHour, ...]:
+    """자원 셋(발전·저장장치·부하)이 다 있는 하루 둘 — **실행을 돌리지 않는다.**
+
+    이 검사가 재는 것은 **열을 짜는 규칙**이고, 그것은 실행과 무관하다. 실물로
+    재는 자리는 `tests/report/test_verification_dispatch.py` 다.
+    """
+    return (
+        DispatchHour(
+            step=0,
+            per_resource={"pv": 0.0, "ess": -2.0, "load": -5.0},
+            grid_export=0.0,
+            grid_import=7.0,
+        ),
+        DispatchHour(
+            step=1,
+            per_resource={"pv": 9.0, "ess": 1.5, "load": -4.0},
+            grid_export=6.5,
+            grid_import=0.0,
+        ),
+    )
+
+
+def test_the_human_columns_carry_positive_quantities_in_separate_columns() -> None:
+    """★★★ **부호를 읽지 않고 읽는 표다** (검토서 §4.3).
+
+    검토서 문면: *「사람용 표에서는 «한전 수전»·«한전 역송»을 양의 수량으로
+    별도 열에 두고, 내부 부호는 수식 설명에만 남기는 편이 안전하다」*. 그래서 이
+    표에서는 부하가 **양수**로 서고 저장장치의 충전·방전이 **두 열**로 갈린다.
+
+    ⚠ 붙임 7 은 그 반대 요구를 진다(자원 수지는 부호가 뜻이다) — **두 요구가
+    둘 다 참이므로 표가 둘**이고, 갈리는 것은 열 구성뿐이다.
+    """
+    hours = _synthetic_day()
+    generation, storage, load = split_three_ways(hours)
+    columns = human_step_columns(generation, storage, load)
+    heads = [head for head, _ in columns]
+
+    assert heads == [
+        LOAD_HEAD,
+        GENERATION_HEAD,
+        STORAGE_CHARGE_HEAD,
+        STORAGE_DISCHARGE_HEAD,
+        GRID_IMPORT_HEAD,
+        GRID_EXPORT_HEAD,
+    ], f"열 구성이나 차례가 다르다 — {heads}"
+
+    by_head = dict(columns)
+    first, second = hours
+    assert by_head[LOAD_HEAD](first) == 5.0, "부하가 양수로 서지 않았다"
+    assert by_head[STORAGE_CHARGE_HEAD](first) == 2.0, "충전이 양수로 서지 않았다"
+    assert by_head[STORAGE_DISCHARGE_HEAD](first) == 0.0, (
+        "충전만 한 스텝에 방전이 실렸다 — 두 열이 순액을 두 번 인쇄하고 있다"
+    )
+    assert by_head[STORAGE_CHARGE_HEAD](second) == 0.0, (
+        "방전만 한 스텝에 충전이 실렸다"
+    )
+    assert by_head[STORAGE_DISCHARGE_HEAD](second) == 1.5, "방전이 실리지 않았다"
+    assert by_head[GENERATION_HEAD](second) == 9.0, "발전이 실리지 않았다"
+    # ⚠ 스텝 수지가 닫힌다 — 부호를 걷었어도 물리가 바뀌지 않았다는 증거다.
+    for hour in hours:
+        supplied = (
+            by_head[GENERATION_HEAD](hour)
+            + by_head[STORAGE_DISCHARGE_HEAD](hour)
+            + by_head[GRID_IMPORT_HEAD](hour)
+        )
+        used = (
+            by_head[LOAD_HEAD](hour)
+            + by_head[STORAGE_CHARGE_HEAD](hour)
+            + by_head[GRID_EXPORT_HEAD](hour)
+        )
+        assert supplied == pytest.approx(used, abs=1e-9), (
+            f"{hour.step}번 스텝의 수지가 닫히지 않는다 — 공급 {supplied} · "
+            f"사용 {used}"
+        )
+
+
+def test_an_absent_role_loses_its_column_but_never_the_grid_ones() -> None:
+    """★★★ **없는 설비의 열을 0 으로 세우지 않는다** — 계통 두 열은 언제나 선다.
+
+    「저장장치 충전 0.00」 열을 스물넷 인쇄하면 *「저장장치가 있는데 하루 종일 안
+    움직였다」* 로 읽힌다. 반면 계통 두 열은 자원이 하나도 없는 실행에서도 서야
+    한다 — `DispatchHour` 가 그 둘을 직접 나르고, 자원 없는 실행도 계통에서 받아
+    온다.
+    """
+    heads = [head for head, _ in human_step_columns((), (), ("load",))]
+    assert LOAD_HEAD in heads, "부하 열이 사라졌다"
+    assert GENERATION_HEAD not in heads, "발전 자원이 없는데 발전 열을 세웠다"
+    assert STORAGE_CHARGE_HEAD not in heads, "저장장치가 없는데 그 열을 세웠다"
+    assert STORAGE_DISCHARGE_HEAD not in heads, "저장장치가 없는데 그 열을 세웠다"
+
+    bare = [head for head, _ in human_step_columns((), (), ())]
+    assert bare == [GRID_IMPORT_HEAD, GRID_EXPORT_HEAD], (
+        f"자원이 하나도 없는 실행에서 계통 두 열이 사라졌다 — {bare}"
+    )
+
+
+def test_the_step_table_always_closes_with_a_total_row() -> None:
+    """★★ **합계 행을 뺄 수 없다** — 이 저장소의 스텝 표는 전부 합계로 검증된다.
+
+    붙임 7 의 합계는 붙임 4 산식의 대입값과, 검증 3단계의 합계는 그 계절의
+    연간값과 맞댄다. 선택 인자로 두면 합계 없는 표가 생기고 그 표는 대조할 수
+    없다.
+
+    ⚠ 첫 칸의 머리글은 **인자로 갈린다** — 붙임 7 은 「스텝」, 사람용 표는
+    「시각」이다. 스텝 수가 24가 아닌 실행에서 「시각」은 없는 해상도를 주장하는
+    것이 되므로 `_hour_label()` 과 짝이 맞아야 한다.
+    """
+    hours = _synthetic_day()
+    columns = human_step_columns(*split_three_ways(hours))
+    lines = step_table(hours, columns, step_head="시각")
+
+    assert lines[0].startswith("| 시각 |"), f"첫 칸 머리글이 인자를 따르지 않았다 — {lines[0]}"
+    assert step_table(hours, columns)[0].startswith("| 스텝 |"), (
+        "머리글 기본값이 붙임 7 의 「스텝」이 아니다"
+    )
+    total = next((line for line in lines if line.startswith("| **합계** |")), None)
+    assert total is not None, f"합계 행이 없다 — {lines}"
+    cells = [cell.strip() for cell in total.strip("|").split("|")]
+    assert len(cells) == 1 + len(columns), (
+        f"합계 행의 칸 수가 머리글과 다르다 — {cells}"
+    )
+    load_total = sum(-hour.per_resource["load"] for hour in hours)
+    assert cells[1] == f"**{load_total:,.2f}**", (
+        f"합계가 그 열의 합이 아니다 — {cells[1]} ≠ {load_total:,.2f}"
+    )
+    # 스텝이 2개뿐이므로 시각으로 적으면 없는 해상도를 주장한다 — 번호로 남는다.
+    assert lines[2].startswith("| 0 |"), (
+        f"24스텝이 아닌 하루를 시각으로 적었다 — {lines[2]}"
+    )

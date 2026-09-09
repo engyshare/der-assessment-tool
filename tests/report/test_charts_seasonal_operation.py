@@ -37,7 +37,8 @@ import pytest
 
 from core.contracts.validation import ValidationError
 from core.report.charts import chart_registry, render_charts
-from core.report.charts.seasonal_operation import SeasonalOperation
+from core.report.charts.seasonal_operation import _DEMAND_LABEL, SeasonalOperation
+from core.report.dispatch_notes import DEMAND_LABEL
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
@@ -194,3 +195,22 @@ def test_a_malformed_season_is_refused_not_patched(
     err = caught.value
     assert err.field.startswith(f"chart.{SeasonalOperation.tag}"), what
     assert err.action, f"{what}: 조치가 비어 있다 (NFR-303)"
+
+
+def test_the_demand_legend_uses_the_canonical_word_not_a_copy() -> None:
+    """★★★ **수요 곡선의 범례가 정본 상수를 «가리킨다»** (R68/WP-3).
+
+    이 글자는 그림·화면 표·검증 보고서 표 **셋**이 함께 쓴다. 종전에는 그림과
+    화면이 각자 적어 두고 검사가 두 글자를 맞댔는데(`tests/app/
+    test_ui_charts.py`), 자리가 셋이 되면서 그 방식이 버티지 못했다. 정본은
+    `core/report/dispatch_notes.py::DEMAND_LABEL` 이며 **이 모듈이 그것을 갖지
+    않는 이유는 계층이 아니라 의존성**이다 — 이 파일은 `matplotlib` 을 끄는
+    `_render` 를 모듈 수준에서 import 하므로, 글자를 여기 두면 «표»를 짓는
+    텍스트 층이 그림 묶음을 끌어오게 된다.
+
+    ⚠ `is` 로 잰다 — 값이 같은 사본을 다시 적어 넣으면 그때부터 한쪽만 고쳐질 수
+    있고, 값 비교는 그 순간을 잡지 못한다.
+    """
+    assert _DEMAND_LABEL is DEMAND_LABEL, (
+        f"그림이 정본 상수를 쓰지 않는다 — {_DEMAND_LABEL!r}"
+    )

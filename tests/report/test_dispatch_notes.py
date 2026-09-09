@@ -15,13 +15,16 @@ from core.der.pv import PV
 from core.der.pv import OperatingMode as PVOperatingMode
 from core.engine.rule_based import DEFAULT_RULE_ORDER, DispatchRule
 from core.report.dispatch_notes import (
+    DEMAND_LABEL,
     NO_APPLIED_ALLOCATION,
     DispatchHour,
     applied_allocation,
     build_dispatch_notes,
     declared_operating_mode,
     resolved_operating_mode,
+    resource_display_name,
     split_by_direction,
+    split_three_ways,
 )
 
 
@@ -219,3 +222,89 @@ def test_a_resource_with_no_allocation_gets_a_statement_not_a_blank() -> None:
     assert applied_allocation(note, {}) == NO_APPLIED_ALLOCATION
     assert applied_allocation(note, {note.resource_name: ""}) == NO_APPLIED_ALLOCATION
     assert NO_APPLIED_ALLOCATION, "빈 문면은 「진술」이 아니다"
+
+
+# ── 세 갈래 가름과 사람용 이름 (R68/WP-3) ─────────────────────────────────────
+
+
+def _hour(step: int, **values: float) -> DispatchHour:
+    """스텝 하나 — 계통 두 칸은 이 검사가 재는 것이 아니라 0 으로 둔다."""
+    return DispatchHour(
+        step=step, per_resource=dict(values), grid_export=0.0, grid_import=0.0
+    )
+
+
+def test_the_third_way_is_the_leftover_not_a_new_rule() -> None:
+    """★★★ **저장장치는 「둘 다 아닌 것」이다** — 새 규칙을 세우지 않았다.
+
+    `split_by_direction()` 독스트링이 이미 적었다: *「충·방전을 함께 하는
+    자원(ESS)은 어느 쪽도 아니므로 둘에서 다 빠진다」*. `split_three_ways()` 가
+    하는 일은 그 나머지에 **이름을 주는 것**뿐이며, 가름이 두 곳에서 일어나면
+    한쪽만 고쳐지는 날 두 자리가 서로 다른 「저장장치」를 본다.
+
+    ⚠ **셋의 합집합이 전건**이어야 한다 — 어느 갈래에도 안 든 자원은 표에서
+    조용히 사라진다.
+    """
+    hours = (
+        _hour(0, pv=0.0, ess=-2.0, load=-5.0, idle=0.0),
+        _hour(1, pv=3.0, ess=1.5, load=-4.0, idle=0.0),
+    )
+    generation, storage, load = split_three_ways(hours)
+    by_direction = split_by_direction(hours)
+
+    assert generation == ("pv",), f"발전 갈래가 다르다 — {generation}"
+    assert load == ("load",), f"부하 갈래가 다르다 — {load}"
+    assert (generation, load) == by_direction, (
+        "두 함수가 같은 가름을 쓰지 않는다 — 규칙이 두 곳에 있다"
+    )
+    assert set(storage) == {"ess", "idle"}, (
+        f"저장장치 갈래가 「둘 다 아닌 것」이 아니다 — {storage}"
+    )
+    assert set(generation) | set(storage) | set(load) == set(hours[0].per_resource), (
+        "셋의 합집합이 자원 전건이 아니다 — 어느 갈래에도 안 든 자원이 있다"
+    )
+
+
+def test_a_charge_only_day_is_why_the_caller_picks_the_day() -> None:
+    """★★★ **한 계절만 보면 저장장치가 「부하」로 떨어진다** — 그 함정을 붙든다.
+
+    그 계절에 충전만 한 저장장치는 전 스텝이 0 이하이므로 **부하로 갈린다.** 그
+    상태로 계절 표를 그리면 ESS 충전량이 총부하에 섞여 인쇄되고 **아무 예외도
+    나지 않는다.** 그래서 부르는 쪽은 **연간등가 하루**로 한 번 가르고 그 가름을
+    계절 전부에 쓴다(`core/report/verification_dispatch.py::season_step_tables`).
+    이 검사는 그 사유가 실물이라는 것을 고정한다 — 사라지면 그 규약의 근거가
+    함께 사라진다.
+    """
+    charge_only = (_hour(0, ess=-2.0), _hour(1, ess=-1.0))
+    _generation, storage, load = split_three_ways(charge_only)
+    assert storage == (), f"충전만 한 하루에서 저장장치가 갈렸다 — {storage}"
+    assert load == ("ess",), (
+        f"충전만 한 저장장치가 부하로 떨어지지 않았다 — {load}. 이 사실이 "
+        "바뀌었다면 「연간등가 하루로 한 번 가른다」는 규약의 근거를 다시 써야 한다"
+    )
+
+
+def test_an_empty_day_splits_into_three_empty_ways() -> None:
+    """스텝이 0 인 실행에서 **터지지 않는다** — 세 갈래가 모두 빈다."""
+    assert split_three_ways(()) == ((), (), ())
+
+
+def test_the_human_name_has_three_branches_and_none_is_a_blank() -> None:
+    """★★★ **사람용 이름의 갈래 셋** — 대장에 있고 이름이 있으면 그 이름 · 대장에
+    없으면 수요 · 대장에 있으나 이름이 비면 `None`.
+
+    ⚠⚠ `None` 은 **빈칸이 아니라 진술**이다 — 「사람용 이름이 없다」이며 부르는
+    쪽이 조인 키를 인쇄해야 한다. 여기서 키를 돌려주면 「이름이 「e2e-x」다」와
+    「이름이 없다」가 구별되지 않는다.
+    """
+    kinds = {"e2e-pv": "태양광 (옥상 고정형)", "e2e-blank": ""}
+    assert resource_display_name("e2e-pv", kinds) == "태양광 (옥상 고정형)"
+    assert resource_display_name("e2e-load", kinds) == DEMAND_LABEL, (
+        "대장에 없는 키가 수요로 적히지 않았다 — 가름은 「대장에 있는가」다"
+    )
+    assert resource_display_name("e2e-blank", kinds) is None, (
+        "`kind` 가 빈 자원에 이름을 지어냈다"
+    )
+    assert DEMAND_LABEL and "수요" in DEMAND_LABEL, (
+        f"수요 열의 이름이 「수요」라고 말하지 않는다 — {DEMAND_LABEL!r}"
+    )

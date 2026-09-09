@@ -109,7 +109,7 @@ from core.report.sizing import (
     household_first_notes,
 )
 from core.report.unreflected import build_unreflected, unreflected_direction_tally
-from core.report.verification_dispatch import resource_labels
+from core.report.verification_dispatch import resource_labels, season_step_tables
 
 #: 「그렇다/아니다」 두 글자를 한 자리에서만 정한다 — 표마다 다른 낱말을 쓰면
 #: 훑는 눈이 다른 판정으로 읽는다(`core/report/_format.py::_recovery` 와 같은
@@ -858,6 +858,15 @@ def season_lines(report: CaseReport) -> list[str]:
             f"다른 계절 몫**으로 갈렸다: {_season_share_cell(shares)}(1단계 표). "
             "연간 총량은 그대로이고 계절 사이에서 옮겨 갔을 뿐이다"
         )
+    # ★★ **계절마다 하루 스텝 전건** (R68/WP-3 · 검토서 §3.4). 위 두 표는 계절의
+    # **연간 합계**이고, 검토서가 요구한 것은 *「계절마다 하루 24스텝 + 대조」*
+    # 다. ⚠ 표를 짓는 기계는 이 파일에 두지 않았다 — 이 파일은
+    # `scripts/check_file_size.py --code-strict` 의 코드 500줄 상한(NFR-206)에
+    # 스물 몇 줄을 남기고 있고, 붙임 7 의 스텝 표 기계
+    # (`core/report/dispatch_sections.py::step_table`)를 **두 벌로 만들지 않는
+    # 것**이 그 요구의 다른 절반이다(WP-2 가 `dispatch_note_rows` 를 옮긴 것과
+    # 같은 판단이다 · `core/report/verification_dispatch.py` 머리말).
+    lines += season_step_tables(report)
     return lines
 
 

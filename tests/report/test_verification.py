@@ -374,3 +374,45 @@ def test_the_dispatch_table_splits_the_declaration_from_the_applied_allocation(
     assert "이 실행에서 그 선언이 실현됐는가" in stage3, (
         "그 선언이 이 실행에서 실현됐는지를 말하는 줄이 없다"
     )
+
+
+def test_the_stage_three_file_carries_a_full_day_for_every_season(
+    tmp_path: Path,
+) -> None:
+    """★★★ **CLI 산출물의 3단계 파일에 계절마다 하루가 전건 실린다** (검토서 §3.4).
+
+    검토서 문면: *「계절별 연간 수전량은 있으나 … 계절마다 24스텝 표가 필요하다.
+    표 아래에 «하루 합계 × 계절 일수 = 계절 연간값» 을 대조해야 한다」*.
+
+    ★ **렌더러를 직접 부르지 않는다** — 이 파일 머리말의 사유이며, 배선이
+    끊기면 다른 검사가 초록불이어도 사용자는 그 표를 못 본다.
+
+    ⚠ 계절 이름·개수·스텝 수를 리터럴로 박지 않는다 — 리포트가 실어 온 것으로
+    기대를 만든다. 박으면 자산이 달력을 바꾸는 날 이 검사가 「리포트가 틀렸다」로
+    빨간불이 된다.
+    """
+    report = build_case_report(
+        _GOLDEN / f"{DEFAULT_SCENARIO}.yaml", assumptions_path=_ASSUMPTIONS
+    )
+    assert len(report.seasons) >= 2, "이 시나리오가 계절을 갈라 돌지 않았다"
+
+    stage3 = split_stages(_verification_text(tmp_path))[2].body
+    rows = [
+        line
+        for line in stage3.splitlines()
+        if line.startswith("| ") and "시 |" in line
+    ]
+    steps = len(report.dispatch_hours)
+    assert len(rows) == steps * len(report.seasons), (
+        f"3단계의 스텝 행이 {len(rows)}개다 — 계절 {len(report.seasons)}개에 "
+        f"{steps}스텝을 곱한 {steps * len(report.seasons)}개여야 한다. 적으면 "
+        "표본을 실은 것이고, 많으면 계절을 이어 붙인 것이다"
+    )
+    for season in report.seasons:
+        assert f"**{season.name} — 대표일 {steps}스텝** (연 {season.days}일" in stage3, (
+            f"{season.name} 의 하루 표 제목이 없거나 일수·스텝 수를 안 적었다"
+        )
+        annual = f"{season.grid_import_annual_kwh:,.2f}"
+        assert annual in stage3, (
+            f"{season.name} 의 대조에 러너가 실어 온 연간 수전량 {annual} 이 없다"
+        )

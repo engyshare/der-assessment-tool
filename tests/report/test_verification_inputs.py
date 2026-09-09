@@ -61,7 +61,11 @@ from core.report.capacity import (
     binding_constraint_text,
 )
 from core.report.case_report import CaseReport, build_case_report
-from core.report.dispatch_notes import NO_APPLIED_ALLOCATION, NO_OPERATING_MODE
+from core.report.dispatch_notes import (
+    DEMAND_LABEL,
+    NO_APPLIED_ALLOCATION,
+    NO_OPERATING_MODE,
+)
 from core.report.ess_sizing_section import (
     ADOPTED_HEAD,
     ADOPTED_TERM,
@@ -1244,3 +1248,39 @@ def test_the_season_columns_carry_the_human_name_beside_the_join_key(
             f"조인 키 {line.name!r} 가 열 이름에서 사라졌다 — 갈아 끼우지 않고 "
             f"병기해야 한다: {header}"
         )
+    # ★ R68/WP-3 — 부하 열도 사람 말을 얻었다. 대장에 **없는** 키(`e2e-load`)라
+    # `kind` 가 없고, 그래서 WP-2 뒤에도 그 한 열만 조인 키였다.
+    assert DEMAND_LABEL in header, (
+        f"대장에 없는 키(부하)가 아직 사람 말을 못 얻었다: {header}"
+    )
+
+
+def test_the_seasonal_day_tables_reach_stage_three(tmp_path: Path) -> None:
+    """★★★ **계절마다 하루 스텝 표가 3단계에 실제로 실린다** (검토서 §3.4).
+
+    검토서 문면: *「계절별 연간 수전량은 있으나 … 계절마다 24스텝 표가
+    필요하다」*. 그 표를 짓는 자리는 `core/report/verification_dispatch.py` 이고
+    (성질은 `tests/report/test_verification_dispatch.py` 가 잰다) **이 검사가
+    붙드는 것은 그것이 이 문서의 3단계에 닿았는가**다 — R33 이 여섯 번 만난
+    「계산은 있는데 읽는 쪽이 없다」의 반대 방향이다.
+
+    ⚠ 계절 개수·스텝 수를 리터럴로 박지 않는다 — 자산이 정본이다.
+    """
+    stage3 = split_stages(_dumped(tmp_path))[2].body
+    for name in _season_names():
+        assert f"**{name} — 대표일 " in stage3, (
+            f"3단계에 {name} 의 하루 스텝 표가 없다"
+        )
+        assert f"{name} 대조 — " in stage3, f"3단계에 {name} 의 대조 줄이 없다"
+    assert "| 시각 |" in stage3, "사람용 스텝 표의 머리가 3단계에 없다"
+    # ⚠ 문면을 찾지 않고 **표 칸**을 본다 — 「어긋나면 그대로 인쇄한다」는 안내
+    # 줄이 그 낱말을 품고 있어, 글자로 찾으면 이 검사가 조용히 뒤집힌다.
+    diverged = [
+        line
+        for line in stage3.splitlines()
+        if line.startswith("| ") and "**어긋남" in line
+    ]
+    assert not diverged, (
+        f"이 실행의 대조가 어긋났다 — 하루 표와 계절 연간값이 다른 실행을 보고 "
+        f"있다: {diverged}"
+    )
