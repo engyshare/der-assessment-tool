@@ -123,7 +123,7 @@ def test_control_group_the_real_ledger_still_shows_a_shortfall() -> None:
     이 대조군이 없으면 「흑자 경로가 돈다」와 「늘 그 문면이 나온다」가
     구별되지 않는다(모듈 독스트링 참조). `fixtures/golden/
     scenario_subsidy_80.yaml`(기존 골든)이 같은 `subsidy_rate=0.80` 을
-    진짜 대장으로 매 회귀에서 재는 값(`npv_won: -199895500`)과 일치해야
+    진짜 대장으로 매 회귀에서 재는 값(`npv_won: -232681396`)과 일치해야
     한다 — 이 실측이 그 값과 어긋나면 이 파일이 아니라 진짜 대장이나
     `core/` 가 움직인 것이다.
     ⚠ **이 도입부의 수는 R66/WP-5 때 갱신이 빠져 `-167457263` 에 멈춰 있었다**
@@ -224,13 +224,31 @@ def test_control_group_the_real_ledger_still_shows_a_shortfall() -> None:
     `build_level_map()` 이 그 키를 **요구**하고, 없으면 *「대장에 …
     항목이 없습니다」* 로 거부한다(실측으로 밟았다 — R66/WP-2·WP-5 와 같은 자리).
     진짜 대장의 항목을 **그대로 복제**했고 값도 폭도 한 자 바꾸지 않았다.
+
+    ## ⚠ 값이 여덟 번째로 바뀌었다 — **역시 재는 것은 그대로다** (R69/WP-2)
+
+    전기요금 인상률(`escalation.electricity_tariff` 연 2.5%)이 **파이프라인에
+    배선됐다** — 그동안 이 축은 대장에도 케이스 그리드 프리셋에도 서 있었는데
+    러너에 읽는 자리가 0곳이라 끝에서 끝까지 흔들어도 결론축이 0원 움직였다.
+    이제 계통 구매 비용(`GridPurchase`)과 **회피한 기본요금**(첨두 절감)이
+    **같은 계수로 함께** 오른다. `-199895500` → **`-232681396`**
+    (**−32,785,896**). 산식·손계산·「무엇이 안 움직였나」는 그 골든 파일
+    (`fixtures/golden/scenario_subsidy_80.yaml`)의 **R69/WP-2 블록**이 갖는다.
+    ⚠ **이번에도 세 시나리오의 이동 폭이 «같다»** — 움직인 것이 **운영
+    현금흐름**이고 초기투자가 1원도 안 움직여 보조율이 나눌 대상이 없다.
+    ⚠ **파생 대장은 한 자도 고치지 않았다** — `escalation.electricity_tariff`
+    는 종전부터 `_LEDGER_VARS` 의 스윕 축이라 그 파일에 **이미 있었다**(없던
+    것은 대장 항목이 아니라 **러너의 소비자**다). ⛔ 그래서 위쪽 흑자 시험도
+    이 계수를 타는데, 그 시험은 수를 단언하지 않고 **갈래(흑자/결손)** 만
+    보므로 값이 움직여도 재는 것이 바뀌지 않는다.
+    ⚠ **오라클은 이번에도 한 자도 느슨해지지 않았다** — 여전히 완전 일치(`==`)다.
     """
     report = build_case_report(PROBE_SCENARIO_PATH, assumptions_path=REAL_ASSUMPTIONS_PATH)
 
     assert report.recovers_within_horizon is False
-    assert report.metrics["npv"] == -199895500.0, (
+    assert report.metrics["npv"] == -232681396.0, (
         "대조군의 순현재가치가 fixtures/golden/scenario_subsidy_80.yaml 의 "
-        "실측(-199895500)과 어긋난다 — 진짜 대장이나 core/ 가 움직였다는 뜻이다"
+        "실측(-232681396)과 어긋난다 — 진짜 대장이나 core/ 가 움직였다는 뜻이다"
     )
 
     rendered = render_markdown(report)

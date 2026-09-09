@@ -22,9 +22,13 @@ from core.cba import (
     salvage_row,
     total_row,
 )
-from core.cba.proforma import check_analysis_period, energy_purchase_row
+from core.cba.proforma import (
+    check_analysis_period,
+    energy_purchase_row,
+    escalation_factor,
+)
 from core.contracts.schemas import CashFlowRow
-from core.contracts.units import Money
+from core.contracts.units import Money, to_won
 from core.contracts.validation import ValidationError
 
 
@@ -374,10 +378,13 @@ def test_the_energy_purchase_row_is_a_cost_of_a_measured_quantity() -> None:
     값**이다 — 운전이 바뀌면 수량이 바뀐다. 같은 행에 섞으면 그 사실이
     프로포마에서 보이지 않는다.
 
-    ⚠ **에스컬레이션이 없는 것이 지금은 옳다.** 요금 인상률은 잉여 판매 수익도
-    올리는데 그쪽이 아직 배선되지 않았다 — 비용만 올리면 사업에 불리한 쪽으로
-    틀린다(NSPM 대칭성). 배선되는 날 **양쪽이 함께** 움직여야 하므로, 여기서
-    금액이 연도마다 같은 것을 못 박아 둔다.
+    ⚠ **인상률을 «주지 않으면» 금액이 연도마다 같다** — 기본값이 `0.0` 이고
+    계수가 전 연차 `1.0` 이다. R69/WP-2 가 `escalation_rate` 를 열었지만 그것은
+    **호출부가 줄 때만** 걸린다. 여기서 그 기본값을 못 박아 두는 이유: 기본값이
+    조용히 0 이 아니게 되면 이 행을 쓰는 다른 호출부가 **묻지도 않은 인상**을
+    받게 되고, 그 어긋남은 합계만 보면 그럴듯하다. 인상률을 준 경우는 아래
+    `test_the_purchase_row_compounds_the_tariff_escalation_from_the_first_year`
+    가 잰다.
     """
     row = energy_purchase_row(
         "GridPurchase", start_year=1, end_year=3, annual_amount_won=271_073
@@ -391,6 +398,91 @@ def test_the_energy_purchase_row_is_a_cost_of_a_measured_quantity() -> None:
     assert row.amounts == {
         1: Decimal(271_073), 2: Decimal(271_073), 3: Decimal(271_073)
     }, "연도 범위 전건에 같은 금액이 실려야 한다 (에스컬레이션 없음)"
+
+
+@pytest.mark.req("FR-701-AC3")
+def test_the_purchase_row_compounds_the_tariff_escalation_from_the_first_year() -> None:
+    """★★★ 요금 인상률을 **1년차 기준 복리**로 굴린다 (R69/WP-2 · `FR-701-AC3`).
+
+    두 가지를 함께 붙든다:
+
+    ① **1년차 계수가 1.0** — `(1+r)^0` 이므로 첫해 금액은 인상률과 무관하게
+      `annual_amount_won` 그대로다. 기준연도가 한 해 밀리면 20년 누계가 수 %
+      어긋나는데 **그 어긋남은 프로포마 어느 행에도 이름으로 나타나지 않는다**
+      (`core/contracts/der.py::DER.escalation_factor` 가 같은 판단을 갖는다).
+    ② **복리이지 단리가 아니다** — 3년차는 `(1+r)^2` 다. 단리로 굴리면 초기
+      몇 해는 거의 같아 보이고 20년 끝에서만 갈리므로, 짧은 기간을 보는 검사는
+      둘을 구별하지 못한다.
+
+    ⚠ **기대값을 리터럴로 적지 않고 산식으로 적는다** — 리터럴로 적으면 이
+    검사가 반올림 규약(`to_won`)의 사본을 갖게 되고, 그 규약이 바뀌는 날
+    함께 낡는다.
+    """
+    rate = 0.025
+    base = 271_073
+    row = energy_purchase_row(
+        "GridPurchase",
+        start_year=1,
+        end_year=3,
+        annual_amount_won=base,
+        escalation_rate=rate,
+    )
+
+    assert row.amounts[1] == Decimal(base), (
+        f"1년차가 {row.amounts[1]}원이다 — 기준연도이므로 계수가 1.0 이어야 "
+        f"하고 금액은 {base:,}원 그대로여야 한다"
+    )
+    assert row.amounts == {
+        year: to_won(base * escalation_factor(rate, year=year))
+        for year in (1, 2, 3)
+    }, "연차 계수가 `(1+r)^(year-1)` 복리가 아니다"
+    assert row.amounts[3] > row.amounts[2] > row.amounts[1], (
+        "요금이 오르는데 구매 비용이 따라 오르지 않는다"
+    )
+
+
+@pytest.mark.req("FR-701-AC3")
+def test_a_negative_tariff_escalation_is_refused() -> None:
+    """★★ 음수 인상률을 거부한다 — **양쪽이 동시에 틀린다**.
+
+    통과시키면 구매 비용이 해마다 줄어 회수기간이 짧아지고, **같은 계수를 받는
+    첨두 절감 편익도 함께 줄어** 어느 쪽도 단독으로는 이상해 보이지 않는다.
+    `fixed_om_row` 가 같은 이유로 같은 거부를 한다 — 이 저장소에서 비용이
+    해마다 줄어드는 자원은 드물고, 대장 띠(`escalation.electricity_tariff`)의
+    **아래 끝조차 1.0 %/년으로 양수**다.
+    """
+    with pytest.raises(ValidationError) as caught:
+        energy_purchase_row(
+            "GridPurchase",
+            start_year=1,
+            end_year=3,
+            annual_amount_won=100,
+            escalation_rate=-0.01,
+        )
+
+    assert caught.value.field == "proforma.purchase_escalation_rate"
+
+
+@pytest.mark.req("FR-701-AC3")
+def test_the_escalation_factor_is_the_only_place_the_year_exponent_lives() -> None:
+    """★★ 계수 식이 **한 곳**이다 — 비용 행과 편익 일정표가 같은 함수를 부른다.
+
+    이 함수가 있는 이유는 산술이 어려워서가 아니라 **대칭 때문**이다. 전기요금
+    인상률은 계통 구매 비용(`energy_purchase_row`)과 회피 기본요금 편익
+    (러너의 첨두 절감 몫)에 **동시에** 걸려야 하는데, 두 자리가 각자 지수를
+    적으면 한쪽이 먼저 바뀌는 날 대칭이 깨지고 **그 어긋남은 합계에 드러나지
+    않는다.** 그래서 여기서 계약을 붙든다 — 1년차 1.0 · 복리 · 음수 아닌 값.
+    """
+    assert escalation_factor(0.04, year=1) == 1.0, (
+        "1년차가 기준(1.0)이 아니다 — `DER.escalation_factor()` 와 기준연도가 "
+        "갈리면 같은 해의 비용과 편익이 한 해 어긋난 가격 기준으로 선다"
+    )
+    assert escalation_factor(0.0, year=20) == 1.0, (
+        "인상률 0 인데 계수가 1.0 이 아니다 — 축을 끄면 배선 전과 같아야 한다"
+    )
+    assert escalation_factor(0.1, year=3) == pytest.approx(1.21), (
+        "복리가 아니다 — 3년차는 `(1+r)^2` 다"
+    )
 
 
 @pytest.mark.req("FR-701-AC1")

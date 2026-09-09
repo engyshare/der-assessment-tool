@@ -458,6 +458,11 @@ def _level_map() -> Mapping[str, Mapping[str, float]]:
         # (`capacity_factor.pv_rooftop`). **종전 소스 상수와 같은 값**을 주어 이
         # 파일의 수가 그 이동에 한 원도 움직이지 않게 한다.
         "pv_capacity_factor": MappingProxyType({"base": 0.15}),
+        # ★ R69/WP-2 — 전기요금 인상률. 러너가 요구한다(기본값을 두지 않는 것이
+        # 규칙이다). **0 은 대장의 사본이 아니라 중립값이다** — 계수가 전 연차
+        # 1.0 이 되어 이 축을 배선하기 전과 원 하나까지 같다(`replacement_real_trend`
+        # 와 같은 규약이며, 이 파일은 그 축을 재지 않는다).
+        "tariff_escalation": MappingProxyType({"base": 0.0}),
         **design_levels(),
     }
 

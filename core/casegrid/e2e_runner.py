@@ -127,13 +127,14 @@ from core.cba.baseline import BaselineArrangement, PoolMeteringDeclaration
 from core.cba.proforma import (
     benefit_row,
     energy_purchase_row,
+    escalation_factor,
     fee_row,
     fixed_om_row,
 )
 from core.contracts.assumptions import AssumptionProvider
 from core.contracts.der import DispatchContext, DispatchResult
 from core.contracts.engine import SystemDispatch
-from core.contracts.units import Money
+from core.contracts.units import Money, to_won
 from core.contracts.valuestream import ValueStream
 from core.der.ess import ESS, ESSChargeSource, ESSOperatingMode
 from core.der.ess_schedule import ESSDischargeAllocation
@@ -820,11 +821,24 @@ def run_single_case_e2e(
     # 이유는 위 셋과 같고(`PLR0915` 여유가 0 이다), 넷 다 `_resolve()` 스칼라
     # 조회다. ⚠ **여기서 곱하거나 뒤집지 않는다** — 발전량은 `PV(...)` 가
     # 곱하고, 자립 역산의 **역수**는 `core/report/sizing.py` 가 짓는다.
-    ess_pcs_capex, ess_pcs_share, coincidence_factor, pv_capacity_factor = (
+    # ★★★ **R69/WP-2 가 전기요금 인상률을 이 대입에 얹었다**
+    # (`escalation.electricity_tariff` · 케이스 축 `tariff_escalation` ·
+    # 오케스트레이터 판정 `.orch/R69/WP-2-fix.md` ①·②). 새 statement 를 만들지
+    # 않는 이유는 위 넷과 같고(`PLR0915` 여유가 0 이다), 다섯 다 `_resolve()`
+    # 스칼라 조회다. ⚠ **여기서 곱하지 않는다** — 계수를 곱하는 자리는 아래
+    # 둘(전력 구매 비용 행 · 편익 일정표)이고, **계수를 짓는 식**은
+    # `core/cba/proforma.py::escalation_factor()` **하나**다.
+    #
+    # ⚠⚠ **이 축은 R69/WP-2 전까지 러너에 소비자가 0곳이었다** — 수준표와
+    # 케이스 그리드(`grid.py` 의 빠른·전체 탐색 프리셋)에는 서 있는데 읽는
+    # 자리가 없어 결론축이 **0원** 움직였고, 「미반영 항목」 표가 그것을
+    # 신고하고 있었다(`tests/report/test_ledger_axes_wired.py::DEAD_AXES`).
+    ess_pcs_capex, ess_pcs_share, coincidence_factor, pv_capacity_factor, tariff_escalation = (
         _resolve(case_values.get("ess_pcs_unit_cost", "base"), "ess_pcs_unit_cost", level_map),
         _resolve(case_values.get("ess_pcs_share", "base"), "ess_pcs_share", level_map),
         _resolve(case_values.get("coincidence_factor", "base"), "coincidence_factor", level_map),
         _resolve(case_values.get("pv_capacity_factor", "base"), "pv_capacity_factor", level_map),
+        _resolve(case_values.get("tariff_escalation", "base"), "tariff_escalation", level_map),
     )
 
     # 1·2. Resources & Dispatch — ★★★ **계절 넷의 대표일을 각각 돌려 합산한다**
@@ -1027,10 +1041,32 @@ def run_single_case_e2e(
     lifecycle_rows, one_off_flows = _lifecycle_rows(
         pv=pv, ess=ess_whole, horizon_years=horizon_years
     )
+    # ★★★ **요금 인상률의 편익 쪽 절반** (R69/WP-2 · 판정 ②). 요금이 오르면
+    # 사 오는 전력의 값(아래 `energy_purchase_row`)만 오르는 것이 아니라
+    # **회피한 기본요금**도 함께 오른다 — 첨두 절감(`PeakShaving`)은 대장
+    # `tariff.hv_single_contract.demand_charge` 로 값이 매겨지고, 그것은
+    # 구매 단가(`…energy_only`)와 **같은 요금표의 다른 칸**이다. 한쪽만
+    # 올리면 NSPM 대칭이 깨져 사업이 한 방향으로 틀린다(`energy_purchase_row`
+    # 독스트링의 그 절이 정본이고, 계수를 짓는 식은 `escalation_factor()`
+    # **하나**가 갖는다).
+    #
+    # ⚠ **첨두 절감 몫에만 곱한다.** `annual_benefit` 에는 REC·NWAs·CP·
+    # 잉여판매가 함께 들어 있고 그것들은 요금표가 정하는 값이 아니다 —
+    # 전액에 곱하면 REC 단가가 전기요금 인상률로 오르게 된다.
+    # ⚠ **`SurplusSale` 에는 걸지 않는다** — 그 단가는
+    # `tariff.surplus_direct_sale`(잉여 직거래 · 도매 계열)이고 정산 구조가
+    # 다르다(WP-2 §0·§3-④). 지금 실행에서 그 값은 역송 0kWh 라 0원이다.
+    # ⚠ **1년차 계수는 `(1+r)^0 = 1.0`** 이므로 1년차 편익은 종전과 원 하나까지
+    # 같다. 반올림은 `to_won()` 한 곳에서 한다(`NFR-103`).
     benefit_rows = [
         benefit_row(
             "E2EBenefit",
-            {year: annual_benefit for year in range(1, horizon_years + 1)},
+            {
+                year: annual_benefit - peak_per_year + int(
+                    to_won(peak_per_year * escalation_factor(tariff_escalation, year=year))
+                )
+                for year in range(1, horizon_years + 1)
+            },
         ),
     ]
     # ★ **운영비와 교체·잔존을 이름으로 갈라 둔다** (R49 · 판정 §3 ⓐ).
@@ -1064,11 +1100,17 @@ def run_single_case_e2e(
             # 「가격 기준 · 명목 (전 항목 공통)」이 그 순간 거짓이 된다.
             escalation_rate=PRICE_ESCALATION_RATE,
         ),
+        # ★★★ **요금 인상률의 비용 쪽 절반** (R69/WP-2 · 판정 ①·②). 넘기는
+        # 금액은 **1년차** 값이고 연차 계수는 행이 스스로 굴린다 — 여기서
+        # 미리 곱하면 행이 연차를 모르는 채 「이미 오른 값」을 20년 깐다.
+        # 편익 쪽 절반은 위 `benefit_rows` 의 첨두 절감 몫이며, 두 자리가
+        # **같은 `escalation_factor()`** 를 부른다.
         energy_purchase_row(
             "GridPurchase",
             start_year=1,
             end_year=horizon_years,
             annual_amount_won=annual_purchase_won,
+            escalation_rate=tariff_escalation,
         ),
         *(
             fee_row(
@@ -1171,10 +1213,17 @@ def run_single_case_e2e(
         # ★★★ 관점 넷 배선 (R52/WP-A) — `build_perspective_wiring()` 독스트링 참조.
         # ★ 사회 편익은 `society_annualised` 로 따로 넣는다 (R53/WP-1 판정 ①) —
         # `annualised` 는 위에서 한 글자도 고치지 않는다.
+        # ★★ **요금 연동 갈래를 관점 표에도 알려 준다** (R69/WP-2). 사업자 열은
+        # `benefit_rows`(위에서 계수를 이미 태웠다)를 그대로 쓰는데, 참여 주민
+        # 열은 `annualised` 의 1년차 값으로 다시 지어지므로 여기를 안 넘기면
+        # **같은 첨두 절감의 20년 합계가 표 안에서 두 수로 인쇄된다.**
+        # 판정(어느 갈래가 요금 연동인가)은 여기 한 곳에 있고 관점 모듈은
+        # 받기만 한다 — 그쪽에 태그를 다시 적으면 정본이 둘이 된다.
         perspectives=build_perspective_wiring(
             annualised, benefit_rows, [*operating_cost_rows, *lifecycle_rows],
             initial_investment, discount_rate, horizon_years=horizon_years,
-            society_annualised=build_society_annualised(distributed_sub_items)),
+            society_annualised=build_society_annualised(distributed_sub_items),
+            escalation_by_tag={peak.tag: tariff_escalation}),
         basis=CaseBasis(
             initial_investment_won=int(initial_investment),
             annual_benefit_won=annual_benefit,

@@ -118,12 +118,22 @@ def test_operator_perspective_keeps_the_conclusion_axis(report) -> None:
     전기차 24시간 균등 · **−5,243,133**). 나빠진 몫은 **첨두 절감 하나**이며
     (3,424,374 → 3,362,048 → **2,957,522원/년**), 분해와 손계산은 그 골든 파일의
     **R67/WP-N1·N1b 블록**이 갖는다.
+
+    ⚠⚠⚠⚠⚠⚠ **R69/WP-2 가 −360,695,500 → −393,481,396원으로 옮겼다**
+    (**−32,785,896**). ★ **이번에도 초기투자는 1원도 안 움직였다** — 전기요금
+    인상률(`escalation.electricity_tariff` 연 2.5%)이 파이프라인에 배선되며
+    **2~20년차의 요금 연동 흐름 둘**이 함께 올랐다: 계통 구매 비용
+    (13,813,659원/년 · **−41,717,709**)과 그 짝인 **회피 기본요금**(첨두 절감
+    2,957,522원/년 · **+8,931,815**). 증분의 현가계수는 연금현가계수가 아니라
+    `Σ_{y=1..20} ((1.025)^(y−1) − 1) ÷ 1.045^y` = **3.0200332** 이며, 손계산과
+    「무엇이 안 움직였나」는 그 골든 파일의 **R69/WP-2 블록**이 갖는다.
+    ⚠ **1년차는 한 원도 안 움직였다** — 계수가 `(1+r)^0 = 1.0` 이다.
     """
     operator = next(
         r for r in report.perspectives.results if r.perspective is Perspective.OPERATOR
     )
     assert int(operator.npv_value) == int(report.metrics[CONCLUSION_METRIC])
-    assert int(operator.npv_value) == -360_695_500
+    assert int(operator.npv_value) == -393_481_396
 
 
 @pytest.mark.req("FR-402-AC7")
@@ -206,7 +216,9 @@ def test_npv_row_prints_no_number_for_perspectives_without_cost_basis(report) ->
     # ⚠⚠⚠⚠ 절이 분해와 손계산을 갖는다).
     # ⚠⚠⚠⚠⚠ R67/WP-N1·N1b 가 부하의 「하루 안 자리」를 고치며 −355,028,932 →
     # −360,695,500원이 됐다 (같은 함수의 ⚠⚠⚠⚠⚠ 절 참조).
-    assert "-360,695,500원" in npv_line, npv_line
+    # ⚠⚠⚠⚠⚠⚠ R69/WP-2 가 전기요금 인상률을 배선하며 −360,695,500 →
+    # −393,481,396원이 됐다 (같은 함수의 ⚠⚠⚠⚠⚠⚠ 절이 두 흐름의 분해를 갖는다).
+    assert "-393,481,396원" in npv_line, npv_line
     cells = [cell.strip() for cell in npv_line.strip().strip("|").split("|")]
     assert "0원" not in cells, npv_line
     assert "0" not in cells, npv_line
@@ -256,7 +268,15 @@ def test_cost_total_row_prints_not_allocated_for_perspectives_without_cost_basis
     # ★ **비용이 내려갔는데 결론축은 나빠졌다** — 첨두 절감이 더 크게 줄었기
     # 때문이며, 그 분해는 아래 `test_benefit_total_row_always_prints_a_real_number`
     # 와 그 골든 파일의 R67 블록이 갖는다.
-    assert "499,817,918원" in cost_line, cost_line
+    # ⚠⚠⚠⚠⚠⚠ R69/WP-2 — 초기투자는 또 1원도 안 움직였고 **전력 구매 비용만**
+    # 올랐다. 이 칸은 **할인하지 않은 단순 누계**이므로 계수도 단순 누계다:
+    # `Σ_{y=1..20} (1.025)^(y−1)` = **25.5446576** 이고 13,813,659 × 25.5446576 =
+    # 352,865,190원 — 평평할 때의 276,273,180원(= 13,813,659 × 20)보다
+    # **+76,592,010** 이라 499,817,918 → **576,409,928원**이 됐다.
+    # ⚠ **첨두 절감도 같은 계수를 타는데 이 칸은 안 움직인다** — 그쪽은 비용이
+    # 아니라 편익이며, 아래 `test_benefit_total_row_always_prints_a_real_number`
+    # 가 그 +16,398,447 을 잰다. **둘이 함께 오르는 것이 이 배선의 요점**이다.
+    assert "576,409,928원" in cost_line, cost_line
 
 
 def test_benefit_total_row_always_prints_a_real_number(report) -> None:
@@ -326,12 +346,25 @@ def test_benefit_total_row_always_prints_a_real_number(report) -> None:
     된 것이지 한 칸이 사라진 것이 아니므로, **오라클을 느슨하게 하지 않으려고
     「그 수가 이 줄에 «두 번» 실렸는가」로 센다.** 종전 두 줄(주민 하나 · 사업자
     하나)과 같은 세기다 — `in` 두 번으로 두면 한 칸만 맞아도 통과한다.
+
+    ⚠⚠⚠⚠⚠ **R69/WP-2 가 «두 칸을 함께» 올렸다** — 59,150,440 → **75,548,887원**
+    (**+16,398,447**). 전기요금 인상률이 배선되며 남은 한 갈래(첨두 절감 =
+    **회피한 기본요금**)가 요금과 함께 오른다. 이 칸은 할인하지 않은 단순
+    누계이므로 계수도 단순 누계다: `Σ_{y=1..20} (1.025)^(y−1)` = **25.5446576**
+    이고 2,957,522 × 25.5446576 = **75,548,887원**이다.
+    ★★ **두 칸이 «함께» 올라야 한다는 것이 이 자리의 요점**이다. 사업자 열은
+    러너가 지은 편익 행(계수를 이미 탄다)에서 오고 참여 주민 열은 `annualised`
+    의 1년차 값에서 다시 지어지므로, 한쪽만 태우면 **같은 편익의 20년 합계가 이
+    한 줄에 두 수로 인쇄된다** — R69/WP-2 가 실제로 그 상태를 한 번 만들었고
+    (주민 59,150,440 · 사업자 75,548,887) `build_perspective_wiring(
+    escalation_by_tag=…)` 으로 닫았다. 그래서 아래 「두 번」 세기가 **그 갈림을
+    잡는 자리**이기도 하다.
     """
     text = render_markdown(report)
     benefit_line = next(line for line in text.splitlines() if line.startswith("| 편익 합계 |"))
     assert "미산출" not in benefit_line and "미배분" not in benefit_line
     # 참여 주민 · 사업자 두 칸이다 (윗 독스트링 ⚠⚠ 참조)
-    assert benefit_line.count("59,150,440원") == 2, benefit_line
+    assert benefit_line.count("75,548,887원") == 2, benefit_line
 
 
 def test_header_row_pairs_repository_and_user_vocabulary(report) -> None:

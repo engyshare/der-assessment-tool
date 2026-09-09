@@ -33,10 +33,11 @@ _LEDGER_VARS` 가 세운 대장 스윕 축이며, 그 축들은 **재는 모양�
 
 ## ★★★ 이 검사가 **끊긴 축을 잇지 않는다** — 잰 뒤에 신고만 한다
 
-실측(R68/WP-8)으로 대장 스윕 축 17 중 셋은 값을 고쳐도 결론축이 **0원** 움직인다:
-`escalation.electricity_tariff` · `tariff.surplus_direct_sale` ·
-`policy.grid_supply_allowance`. 그 셋은 **엔진 배선이 끊긴 것**이고, 여기서
-이으면 결론축이 움직인다 — 이 라운드가 할 일이 아니다.
+실측(R68/WP-8)으로 대장 스윕 축 17 중 **셋**은 값을 고쳐도 결론축이 **0원**
+움직였다: `escalation.electricity_tariff` · `tariff.surplus_direct_sale` ·
+`policy.grid_supply_allowance`. **R69/WP-2 가 그중 첫째를 이었고 이제 둘이다**
+(아래 `DEAD_AXES` 가 무엇이 남았고 왜 남았는지를 갖는다). 잇는 것은 그때그때의
+배선 라운드가 하고, 이 파일은 **잰 뒤에 신고만** 한다.
 
 ⇒ 그래서 이 파일이 세우는 규칙은 *「전부 움직여야 한다」* 가 아니라
 **「움직이거나, 안 움직인다는 사실을 산출물이 신고하거나」** 다. 그 신고 자리가
@@ -96,15 +97,27 @@ _UPPER_LEVEL = LEVEL_NAMES[-1]
 #: `abs=1.0` 과 같은 자리이며 부호는 보지 않는다(축마다 좋아지는 쪽이 다르다).
 _MOVED_WON = 1.0
 
-#: 이 라운드 착수 시점에 **끊겨 있던** 축. 값을 고쳐도 결론축이 0원 움직이고,
-#: 「미반영 항목」 표가 그 사실을 셋 다 신고한다(R68/WP-8 실측).
+#: 아직 **끊겨 있는** 축. 값을 고쳐도 결론축이 0원 움직이고, 「미반영 항목」
+#: 표가 그 사실을 신고한다.
 #:
 #: ⛔ **여기에 축을 더해 검사를 통과시키지 마라.** 이 목록이 길어지는 것은
 #: 「배선이 하나 더 끊겼다」이며, 그것이 이 파일이 잡으려는 사건이다.
 #: ⚠ 반대로 **줄어드는 것은 좋은 일**이다 — 그때 이 목록을 함께 줄인다.
+#:
+#: ★★★ **셋에서 둘로 줄었다** (R69/WP-2) — `escalation.electricity_tariff`
+#: 를 뺐다. 그 축을 대장 띠의 위 끝(4.0 %/년)으로 고치면 이제 결론축이
+#: **24,592,595원** 움직인다. 배선한 자리는 둘이고 계수를 짓는 식은 하나다 —
+#: 비용은 `core/cba/proforma.py::energy_purchase_row(escalation_rate=)`,
+#: 편익은 `core/casegrid/e2e_runner.py` 의 첨두 절감(`PeakShaving`) 몫이며
+#: 둘 다 `escalation_factor()` 를 부른다. **양쪽에 동시에 건 이유**(한쪽만
+#: 올리면 NSPM 대칭이 깨진다)는 그 행 함수의 독스트링이 갖는다.
+#:
+#: ⚠ 남은 둘은 R69/WP-2 의 범위 밖이다 — `tariff.surplus_direct_sale` 은
+#: 배선돼 있는데 **이 시나리오의 역송이 0kWh 라 0원**이고(단가가 아니라 수량이
+#: 막고 있다), `policy.grid_supply_allowance` 는 그 결과가 **실제 설치 용량**을
+#: 바꾸는 통로가 아직 없다.
 DEAD_AXES: frozenset[str] = frozenset(
     {
-        "escalation.electricity_tariff",
         "tariff.surplus_direct_sale",
         "policy.grid_supply_allowance",
     }
