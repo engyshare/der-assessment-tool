@@ -106,6 +106,17 @@ R65 절 참조.
 ⛔ **골든 yaml 에 이 수들을 적지 않았다** — 적으면 같은 수가 대장과 픽스처 두
 곳에 살고, 대장을 고쳐도 골든이 옛 값으로 돈다.
 
+## ★★ R71/WP-1 — 전기차의 ②에 **넷째 통로**가 붙었다: 경계 환산
+
+②가 답하는 전기차 값은 **배터리 투입 기준**이고 가구가 계통에서 사는 전기는
+그보다 충전 손실만큼 많다. 그 손실률이 대장 `load.ev.charging_loss`(0.10 ·
+`가정`)로 섰고, `with_ledger_defaults` 가 **②를 지난 값에만**
+`÷ (1 − 손실률)` 을 건다 — ①(사용자가 적은 수)에는 걸지 않는다.
+
+⛔ **그 계수를 `load.ev.annual` 의 값에 곱해 대장을 갈지 않았다.** 그 값은
+공개 문헌이 뒷받침하는 **조사값**이고 손실률은 **관례치 가정**이다 — 한 수로
+섞으면 어느 쪽이 조사이고 어느 쪽이 가정인지 산출물이 말해 주지 않는다.
+
 ## ★ 이 부하가 한때 실행을 «거부»시켰다 — 그때 그랬고, 지금은 이렇다
 
 **그때(R65/WP-2)**: 대장의 20호 × (3,600 + 2,675 + 2,784)를 골든의 설계
@@ -187,9 +198,29 @@ HEATPUMP_LOAD_LEDGER_KEY = "load.heatpump.annual"
 #: 다르다).
 EV_LOAD_LEDGER_KEY = "load.ev.annual"
 
+#: 전기차 **충전 손실률**의 대장 자리 (R71/WP-1).
+#:
+#: ## ⚠⚠ 이것은 부하가 아니라 **경계 환산 계수**다
+#:
+#: 위 `EV_LOAD_LEDGER_KEY` 의 값은 **배터리 투입 기준**(주행에 쓴 전기)이고,
+#: 가구가 **계통에서 사는 전기**는 그보다 충전 손실만큼 많다. 두 경계를 잇는
+#: 수가 이것이며 산식은 `계통 수전 = 배터리 투입 ÷ (1 − 손실률)` 이다.
+#:
+#: ⛔ **대장의 조사값에 곱해 넣지 않는다.** `load.ev.annual` 은 공개 문헌이
+#: 뒷받침하는 **조사값**이고 이 손실률은 **관례치 가정**이다 — 한 수로 섞으면
+#: 어느 쪽이 조사이고 어느 쪽이 가정인지 산출물이 말해 주지 않는다. 그래서
+#: 항목을 둘로 두고 **쓰는 자리에서** 나눈다(`with_ledger_defaults`).
+#:
+#: ⚠ **대장이 이 항목을 갖지 않으면 나누지 않는다** — 그때 출력이 이 항목이
+#: 서기 전과 원소 하나까지 같다. 기본값 0.10 을 소스가 메우면 대장을 비우는
+#: 것으로 「손실을 반영하지 않는다」를 표현할 수 없게 된다.
+EV_CHARGING_LOSS_LEDGER_KEY = "load.ev.charging_loss"
+
 #: 두 칸의 **표시 이름** — 거부 문면과 산출물이 같은 낱말을 쓰게 한다.
 HEATPUMP_LOAD_TITLE = "히트펌프 연간 소비전력량"
 EV_LOAD_TITLE = "전기차 충전 연간 전력량"
+#: 손실률 칸의 표시 이름 — 대장 `title` 과 같은 낱말이어야 한다.
+EV_CHARGING_LOSS_TITLE = "전기차 충전 손실률"
 
 #: 기기 부하를 적지 않은 실행이 산출물에 **글자로** 남기는 문면.
 #:
@@ -1081,6 +1112,7 @@ def with_ledger_defaults(
         ② 대장 `load.heatpump.annual` · `load.ev.annual`   ← 이 함수
         ③ 자산의 `appliance_season_shares:` 절             ← 이 함수
         ④ 자산의 `appliance_daily_shapes:` 절              ← 이 함수 (R67/WP-N1b)
+        ⑤ 대장 `load.ev.charging_loss` 로 **경계 환산**    ← 이 함수 (R71/WP-1)
 
     ①이 `None`(= **적지 않았다**)인 칸만 ②·③이 채운다. 뒤집으면 사용자가
     화면에서 적은 수를 대장이 덮어쓰고, 그때 산출물이 인쇄하는 수와 사용자가
@@ -1094,6 +1126,16 @@ def with_ledger_defaults(
     ⚠ **칸마다 따로 본다.** 히트펌프만 적은 실행에서 전기차는 대장 값으로
     돈다 — 「하나라도 적었으면 대장을 통째로 무시한다」로 하면 사용자가 한 칸을
     고치는 순간 다른 칸이 조용히 0 이 된다.
+
+    ## ⚠⚠ ⑤ 는 **②를 지난 값에만** 걸린다 (R71/WP-1)
+
+    충전 손실 환산(`_grid_side_ev_kwh`)은 **대장에서 읽은 전기차 값**에만
+    걸리고 ①(사용자가 적은 수)에는 걸리지 않는다. 사용자가 적은 수가 어느
+    경계의 것인지 — 배터리 투입인지 계통 수전인지 — 는 **적은 사람만 안다.**
+    거기에 저장소가 10%를 조용히 얹으면 **화면이 인쇄하는 수와 사용자가 적은
+    수가 갈리고**, 그 어긋남은 「대장이 이겼다」와 구별되지 않는다. 대장 값의
+    경계는 대장이 적어 두었으므로(`load.ev.annual` 의 `derivation_method` ⚠⚠)
+    그 값만 환산한다.
 
     ## ⚠ `0.0` 은 채우지 않는다 — 「없다고 적었다」이기 때문이다
 
@@ -1132,7 +1174,7 @@ def with_ledger_defaults(
         ev_kwh=(
             loads.ev_kwh
             if loads.ev_kwh is not None
-            else _ledger_kwh(provider, EV_LOAD_LEDGER_KEY, EV_LOAD_TITLE)
+            else _grid_side_ev_kwh(provider)
         ),
         season_shares=season_shares,
     )
@@ -1156,3 +1198,74 @@ def _ledger_kwh(
     if item is None:
         return None
     return resolve_appliance_load(item.value, ledger_key=ledger_key, title=title)
+
+
+def _grid_side_ev_kwh(provider: AssumptionProvider) -> float | None:
+    """대장이 답하는 전기차 부하 — **계통 수전 기준**으로 환산해 낸다 (R71/WP-1).
+
+    ## 왜 나누는가 — 방향을 헷갈리면 결론축이 좋아지는 쪽으로 틀린다
+
+    대장의 `load.ev.annual` 은 **배터리에 들어간 전기**다. 충전 손실이 있으면
+    같은 양을 배터리에 넣기 위해 **계통에서 더 사야** 하므로
+
+        계통 수전 = 배터리 투입 ÷ (1 − 손실률)
+
+    이고 **곱하면 방향이 뒤집힌다**(수전량이 줄고 계통 구매비가 줄어 순현재가치가
+    좋아진다 — 틀렸는데 좋아 보이는 갈래다).
+
+    ## ⚠ 대장이 손실률을 갖지 않으면 **나누지 않는다**
+
+    그때 돌려주는 수가 이 함수가 서기 전과 같다. 소스가 0.10 을 기본값으로
+    메우면 대장을 비우는 것으로 「손실을 반영하지 않는다」를 표현할 길이 없어지고,
+    그 기본값은 **대장에 없는 가정이 소스에 사는 것**이다(NFR-202).
+    """
+    battery_kwh = _ledger_kwh(provider, EV_LOAD_LEDGER_KEY, EV_LOAD_TITLE)
+    if battery_kwh is None:
+        return None
+    loss = _ledger_charging_loss(provider)
+    if loss is None:
+        return battery_kwh
+    return battery_kwh / (1.0 - loss)
+
+
+def _ledger_charging_loss(provider: AssumptionProvider) -> float | None:
+    """대장 `load.ev.charging_loss` → `float`(0 이상 1 미만) 또는 `None`.
+
+    ⚠ **1 이상을 거부한다.** `1.0` 이면 위 나눗셈이 0 으로 나누기가 되고,
+    그보다 크면 **수전량이 음수**가 되어 부하 칸에 발전이 선다 — 같은 실수를
+    `resolve_appliance_load` 가 음수 부하에 대해 막는 것과 같은 자리다.
+    """
+    item = provider.get(EV_CHARGING_LOSS_LEDGER_KEY)
+    if item is None:
+        return None
+    return resolve_charging_loss(item.value)
+
+
+def resolve_charging_loss(value: object | None) -> float | None:
+    """충전 손실률 하나 → `float`(0 ≤ x < 1) 또는 `None`(적지 않았다).
+
+    ⚠ **0 이상·유한의 판정은 `_non_negative` 가 진다** — 판정하는 자리를
+    늘리지 않는다는 이 모듈의 규약이며, 여기서 더 하는 일은 **상한 하나**다.
+    """
+    number = _non_negative(value, reject=_rejected_charging_loss)
+    if number is not None and number >= 1.0:
+        raise _rejected_charging_loss(value)
+    return number
+
+
+def _rejected_charging_loss(value: object) -> ValidationError:
+    """거부 하나 — **3요소를 갖춘다** (`NFR-303`)."""
+    return ValidationError(
+        field=EV_CHARGING_LOSS_LEDGER_KEY,
+        reason=(
+            f"{EV_CHARGING_LOSS_TITLE}은 0 이상 1 미만의 소수여야 합니다 "
+            f"(받은 값 {value!r}). 1 이면 계통 수전량이 무한대가 되고 그보다 "
+            "크면 음수가 되어, 부하 칸에 발전이 서게 됩니다"
+        ),
+        action=(
+            f"대장 `{EV_CHARGING_LOSS_LEDGER_KEY}` 의 값을 비우거나(그때 "
+            f"`{EV_LOAD_LEDGER_KEY}` 의 배터리 투입 기준 값이 환산 없이 "
+            "쓰입니다) 0 이상 1 미만의 소수로 적으십시오 — 0.10 이 "
+            "계통에서 산 전기의 10%가 손실된다는 뜻입니다"
+        ),
+    )

@@ -40,16 +40,27 @@
   **여기 리터럴로 박지 않고 가리킨다.**
 - 그 밖은 `LEDGER_DERIVATION_REFERENCE` — **「대장 참조」와 그 키**다.
 
-## ⚠⚠ 「÷ 충전효율」은 보이되 곱해지지 않는다
+## ★★ R71/WP-1 — 「÷ 충전효율」이 **이제 곱해진다. 그래서 보여야 한다**
 
-대장이 스스로 적었다 — *「⛔ 손실 계수를 지어내 곱하지 않았다 … 이 값은 배터리
-투입 기준이다」*. 그래서 산식 문면에는 그 항이 **`[충전효율: 미반영]` 으로 서
-있고 어떤 수도 곱해지지 않는다.** `0.9` 로 나누면 조사값에 가정이 섞이고 그
-사실이 산출물에서 사라진다 — **없는 것은 없는 채로** 두는 것이 사람 몫으로
-남은 판정이다.
+종전에는 그 항이 `[충전효율: 미반영]` 으로 서 있고 어떤 수도 곱해지지 않았다.
+대장이 스스로 *「⛔ 손실 계수를 지어내 곱하지 않았다」* 고 적었기 때문이다.
+R71/WP-1 이 그 결손을 **별도 대장 항목**으로 닫았다 —
+`load.ev.charging_loss`(0.10 · `confidence: 가정`)이며, 환산은
+`core/casegrid/appliance_load.py::with_ledger_defaults` 가
+`대장 값 ÷ (1 − 손실률)` 로 한다.
 
-⚠ 그 문면이 대장에서 사라지면 이 모듈의 계측 경계 절이 **거짓말이 된다.** 문면을
-파싱해 인쇄하는 대신 **시험이 대장을 붙든다**
+⇒ **이 표의 「값」 칸이 대장 `load.ev.annual` 의 값과 다르다** — 2,784(배터리
+투입) 가 아니라 3,093(계통 수전)이다. ⚠⚠ **그 차이를 산식이 글자로 보여야
+한다.** 계산에는 들어가는데 표에는 안 보이면, 읽는 사람은 두 수의 차이를
+「어느 쪽이 오타인가」로 읽는다. 그래서 산식 문면이 나눈 수를 **그대로 인쇄**하고,
+아래 계측 경계 절이 **어느 경계에서 어느 경계로 옮겼는지**를 적는다.
+
+⛔ **대장의 조사값은 한 글자도 바뀌지 않았다.** 조사값(2,784)과 가정(0.10)이
+**서로 다른 두 행**으로 서고, 1단계 ⓑ 부분 표가 그 둘을 나란히 싣는다 —
+한 수로 섞으면 어느 쪽이 조사이고 어느 쪽이 가정인지 산출물이 말해 주지 않는다.
+
+⚠ 대장이 *「배터리 투입 기준」* 이라는 말을 거두면 이 모듈의 계측 경계 절이
+**거짓말이 된다.** 문면을 파싱해 인쇄하는 대신 **시험이 대장을 붙든다**
 (`tests/report/test_verification_demand.py::test_ledger_still_says_the_ev_value_is_battery_side`).
 파싱은 인쇄를 산문에 매달고, 시험은 **어긋나는 날 사람을 부른다** — 다른 일이다.
 
@@ -79,6 +90,8 @@ from __future__ import annotations
 from core.casegrid.appliance_load import (
     APPLIANCE_LOAD_UNIT,
     APPLIANCE_LOAD_UNSPECIFIED,
+    EV_CHARGING_LOSS_LEDGER_KEY,
+    EV_CHARGING_LOSS_TITLE,
     EV_LOAD_LEDGER_KEY,
     EV_LOAD_TITLE,
     HEATPUMP_LOAD_LEDGER_KEY,
@@ -161,8 +174,13 @@ LEDGER_DERIVATION_REFERENCE = "대장 참조 — 산출근거가 대장 `{key}` 
 #: 수로 채워진다. ⚠⚠ 항의 수를 여기 박지 않는다 — 대수·주행거리·전비는 대장
 #: **항목이 아니라** 산출근거 안이고, 박으면 대장이 바뀌는 날 이 줄만 옛말을 한다.
 EV_DERIVATION_SHAPE = (
-    "{total} = 대수 × 연간 주행거리 ÷ 전비 ÷ [충전효율: **미반영**]"  # noqa: RUF001
+    "{total} = 대수 × 연간 주행거리 ÷ 전비 ÷ (1 − 충전 손실률 {loss})"  # noqa: RUF001
 )
+
+#: 대장이 손실률 항목을 **갖지 않을 때** 산식의 그 자리에 서는 문면. ⚠ 빈칸으로
+#: 두지 않는다 — 빈칸은 「손실이 0 이다」와 「대장이 그 항목을 갖지 않는다」를
+#: 가르지 못하고, 이 저장소가 반복해 밟은 결함이 그 혼동이다.
+EV_CHARGING_LOSS_ABSENT = "**대장에 항목이 없어 미반영**"
 
 #: 대장 `load.ev.annual` 의 산출근거가 여전히 이 문면을 갖는지 **시험이 붙든다.**
 #: 이 상수는 인쇄되지 않는다 — 파싱의 씨앗이 아니라 **드리프트의 붙잡이**다.
@@ -256,6 +274,8 @@ def demand_attribute_lines(report: CaseReport) -> list[str]:
     keys = (HOUSEHOLD_LOAD_LEDGER_KEY, HEATPUMP_LOAD_LEDGER_KEY, EV_LOAD_LEDGER_KEY)
     ev_row = rows.get(EV_LOAD_LEDGER_KEY)
     ev_total = _value_cell(loads.ev_kwh)
+    ev_loss = _charging_loss_cell(rows)
+    ev_formula = EV_DERIVATION_SHAPE.format(total=ev_total, loss=ev_loss)
     return [
         "",
         f"**수요 입력의 여섯 속성 — 값의 단위는 `{APPLIANCE_LOAD_UNIT}`** "
@@ -281,7 +301,7 @@ def demand_attribute_lines(report: CaseReport) -> list[str]:
             value=loads.ev_kwh,
             ledger=ev_row,
             key=EV_LOAD_LEDGER_KEY,
-            derivation=EV_DERIVATION_SHAPE.format(total=ev_total),
+            derivation=ev_formula,
         ),
         "",
         "- 「값」은 **이 실행이 쓴 값**이고 「단위 · 출처 · 계측 경계」는 **대장이 적은 "
@@ -292,43 +312,98 @@ def demand_attribute_lines(report: CaseReport) -> list[str]:
         "스스로 말한다(검토서 §4.2). ⚠ **분모가 바뀐 것이 아니라 이름이 바뀐 "
         "것**이다 — 값도 곱하는 자리도 그대로다",
         "",
-        *_ev_boundary_lines(ev_total),
+        *_ev_boundary_lines(ev_formula, rows),
         *_heatpump_breakdown_lines(),
         *_verification_state_lines(),
     ]
 
 
-def _ev_boundary_lines(ev_total: str) -> list[str]:
-    """전기차 — 산식과 **계측 경계**를 글자로 못 박는다 (검토서 §3.1)."""
+def _charging_loss_cell(rows: dict[str, AssumptionRow]) -> str:
+    """산식의 「충전 손실률」 자리 — **대장에서 읽은 수**이거나 「없다」다.
+
+    ⛔ **여기서 0.10 을 짓지 않는다.** 이 모듈이 기본값을 가지면 대장을 비운
+    실행이 *「손실을 반영했다」* 로 인쇄되고, 그때 인쇄된 수는 **계산에 쓰인 수와
+    다르다** — 환산은 `core/casegrid/appliance_load.py::with_ledger_defaults` 가
+    하며 그쪽도 대장이 없으면 나누지 않는다. 두 자리가 **같은 통로 하나**(대장)를
+    본다.
+    """
+    row = rows.get(EV_CHARGING_LOSS_LEDGER_KEY)
+    if row is None or not isinstance(row.value, int | float):
+        return EV_CHARGING_LOSS_ABSENT
+    return f"{row.value:g} · 대장 `{EV_CHARGING_LOSS_LEDGER_KEY}`"
+
+
+def _ev_boundary_lines(ev_formula: str, rows: dict[str, AssumptionRow]) -> list[str]:
+    """전기차 — 산식과 **계측 경계**를 글자로 못 박는다 (검토서 §3.1 · R71/WP-1)."""
+    loss_row = rows.get(EV_CHARGING_LOSS_LEDGER_KEY)
+    ledger_row = rows.get(EV_LOAD_LEDGER_KEY)
+    battery_side = (
+        f"{ledger_row.value:,.0f}"
+        if ledger_row is not None and isinstance(ledger_row.value, int | float)
+        else f"대장에 `{EV_LOAD_LEDGER_KEY}` 행이 없다"
+    )
     return [
         f"**{EV_LOAD_TITLE} — 산식과 계측 경계** (검토서 §3.1)",
         "",
         "```",
-        EV_DERIVATION_SHAPE.format(total=ev_total).replace("**", ""),
+        ev_formula.replace("**", "").replace("`", ""),
         "```",
         "",
-        "- **계측 경계 — 배터리 투입 기준이다.** 전비는 배터리에서 나간 전기로 "
-        "주행거리를 나눈 수이고, 벽면 콘센트에서 배터리까지의 **충전 손실이 빠져 "
-        "있다** — 그래서 이 값은 가구가 계통에서 사는 전기보다 **작다**",
-        "- ⛔ **충전효율을 지어내 나누지 않았다.** **이 단지의** 충전 손실을 잰 값이 "
-        "없다 — 완속·급속 비율과 충전기 효율을 아무도 모르며, 계수를 곱하면 조사값에 "
-        "가정이 섞이고 **섞였다는 사실이 산출물에서 사라진다.** 그래서 산식에 그 항이 "
-        "**보이되 어떤 수도 곱해지지 않는다**",
+        "- **계측 경계 — 이 표의 값은 「계통 수전 기준」이다.** 전비는 배터리에서 "
+        "나간 전기로 주행거리를 나눈 수여서 대장의 조사값은 **배터리 투입 기준**이고, "
+        "벽면 콘센트에서 배터리까지의 **충전 손실만큼 가구는 계통에서 더 산다** — "
+        f"그래서 이 표의 값은 대장 `{EV_LOAD_LEDGER_KEY}`({battery_side})보다 "
+        "**크다**",
+        *_loss_applied_lines(loss_row),
         # ★ R68/WP-9 — **문면을 좁힌다** (독립 검증 결함 #5). 「재료가 없다」는
         #   넓은 말이 *저장소에 같은 이름의 수가 있다는 사실*을 가렸다. 그
         #   사실을 적되 ⛔ **그 수를 끌어다 쓰지 않는다** — 경계가 다르다.
-        "- ⚠ **저장소에 `charge_efficiency` 라는 이름의 수는 있다** — "
+        "- ⚠ **저장소에 `charge_efficiency` 라는 이름의 수도 있다** — "
         "`core/der/ev_v2g.py` 의 기본값 0.92 다. 그러나 그것은 **V2G 자원의 배터리 "
         "왕복 효율 기본값**이지 이 부하의 계측 경계가 아니고 대장 항목도 아니다 — "
-        f"이 산식이 나눌 수는 벽면 콘센트에서 배터리까지의 손실이며 대장 "
-        f"`{EV_LOAD_LEDGER_KEY}` 에 곱해질 것이다. ⛔ 이름이 같다고 끌어다 쓰면 "
-        "**다른 경계의 수가 조사값에 섞이고, 섞였다는 사실이 사라진다**",
-        "- ⇒ 충전효율의 계측 경계가 정해지지 않아 **미해결**이다. 정해지는 날 곱하는 "
-        f"자리는 이 표가 아니라 대장 `{EV_LOAD_LEDGER_KEY}` 다",
+        "이 산식이 나누는 수는 **벽면 콘센트에서 배터리까지**의 편도 손실이다. "
+        "⛔ 이름이 같다고 끌어다 쓰면 **다른 경계의 수가 섞이고, 섞였다는 사실이 "
+        "사라진다**",
         "- 항의 수(대수 · 연간 주행거리 · 전비)는 **대장 항목이 아니라** 그 키의 "
         "산출근거 안에 있다 — 여기 옮겨 적으면 대장이 바뀌는 날 이 줄만 옛말을 하므로 "
-        "**꼴만 세우고 수는 가리킨다**",
+        "**꼴만 세우고 수는 가리킨다**. ⚠ **충전 손실률만 다르다** — 그것은 "
+        f"대장 항목 `{EV_CHARGING_LOSS_LEDGER_KEY}` 이므로 수를 그 행에서 읽어 "
+        "인쇄한다",
         "",
+    ]
+
+
+def _loss_applied_lines(loss_row: AssumptionRow | None) -> list[str]:
+    """충전 손실률이 **곱해졌는가** — 대장이 그 항목을 갖는지로 갈린다 (R71/WP-1).
+
+    ⚠⚠ **두 갈래를 한 문장으로 뭉치지 않는다.** 「반영했다」와 「대장이 항목을
+    갖지 않아 반영하지 않았다」는 산출물을 읽는 사람에게 **다른 사실**이고,
+    한쪽 문면으로 둘을 덮으면 그 차이가 사라진다.
+    """
+    if loss_row is None:
+        return [
+            "- ⛔ **충전 손실률이 반영되지 않았다 — 대장에 "
+            f"`{EV_CHARGING_LOSS_LEDGER_KEY}` 행이 없다.** 이 값은 배터리 투입 "
+            "기준 그대로이며 가구가 계통에서 사는 전기보다 **작다.** ⚠ 이것은 "
+            "「손실이 0 이다」가 아니라 **「아직 세우지 않았다」**이다",
+        ]
+    return [
+        f"- ★ **충전 손실률 {loss_row.value:g} 이 반영됐다** — 대장 "
+        f"`{EV_CHARGING_LOSS_LEDGER_KEY}`(「{EV_CHARGING_LOSS_TITLE}」 · "
+        f"신뢰도 **{loss_row.confidence}**)에서 읽었고, 환산은 "
+        "`core/casegrid/appliance_load.py::with_ledger_defaults` 가 "
+        "`대장 값 ÷ (1 − 손실률)` 로 한다. ⚠ **곱하기가 아니라 나누기다** — "  # noqa: RUF001
+        "손실이 있으면 같은 양을 배터리에 넣기 위해 계통에서 **더 사야** 한다",
+        "- ⚠⚠ **그 수는 조사값이 아니라 관례치 가정이다.** **이 단지의** 충전 "
+        "손실을 잰 값이 없다 — 완속·급속 비율과 충전기 효율을 아무도 모른다. "
+        "그래서 그 수를 조사값에 곱해 넣지 않고 **자기 이름을 단 대장 항목**으로 "
+        f"세웠다: 위 ⓑ 부분 표에 `{EV_LOAD_LEDGER_KEY}`(조사값)와 "
+        f"`{EV_CHARGING_LOSS_LEDGER_KEY}`(가정)가 **두 행으로** 나란히 선다. "
+        "한 수로 섞으면 어느 쪽이 조사이고 어느 쪽이 가정인지 사라진다",
+        "- ⚠ **민감도 폭이 없다**(`low = base = high`). 폭을 적으면 그 폭이 "
+        "관측에서 나온 것처럼 읽히는데 **관측이 없다** — 「민감하지 않다」가 "
+        "아니라 **「폭을 주장할 근거가 없다」**이다. 충전 인프라 구성이 정해지면 "
+        "그때 실측 범위가 폭을 준다",
     ]
 
 

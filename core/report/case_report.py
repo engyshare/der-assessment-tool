@@ -84,6 +84,7 @@ from core.assumption.scenario_overrides import (
     apply_scenario_overrides,
 )
 from core.casegrid.appliance_load import (
+    EV_CHARGING_LOSS_LEDGER_KEY,
     EV_LOAD_LEDGER_KEY,
     HEATPUMP_LOAD_LEDGER_KEY,
     ApplianceLoads,
@@ -255,6 +256,14 @@ COMPUTE_PHASE_READ_KEYS: frozenset[str] = frozenset(
         HOUSEHOLD_COUNT_LEDGER_KEY,
         HEATPUMP_LOAD_LEDGER_KEY,
         EV_LOAD_LEDGER_KEY,
+        # ★★★ **전기차 부하의 «경계 환산» 계수** (R71/WP-1). 같은
+        # `with_ledger_defaults()` 가 `EV_LOAD_LEDGER_KEY` 와 **같은 자리에서**
+        # 읽어 `대장 값 ÷ (1 − 손실률)` 로 총부하를 정한다 — 곧 산출물 조립이
+        # 아니라 계산이고, 그래서 이 선언 안에 든다.
+        # ⚠ **선언을 넓혀 통과시킨 것이 아니다.** 이 키를 읽는 자리는
+        # `run_single_case_e2e(...)` 호출보다 앞이며, 읽은 수가 러너로 가는
+        # `extra_appliance_load_kwh` 를 바꾼다(위 셋과 같은 기준).
+        EV_CHARGING_LOSS_LEDGER_KEY,
     }
     | {key for _field, key in DISTRIBUTED_CREDIT_LEDGER_KEYS}
 )

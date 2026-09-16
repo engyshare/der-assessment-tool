@@ -500,5 +500,5 @@ oracle_source: "tests/integration/test_wave2_end_to_end.py"
 error_tolerance: "0.1%"
 
 expected_values:
-  npv_won: -232681396
+  npv_won: -243241856
   payback_period_years: .inf

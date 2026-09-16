@@ -31,6 +31,7 @@ from typing import Any
 import pytest
 import yaml
 
+from core.casegrid.appliance_load import EV_CHARGING_LOSS_LEDGER_KEY
 from core.casegrid.ledger_levels import ledger_backed_variables
 from core.cba.baseline import POOL_METERING_FIELD, BaselineArrangement
 from core.report.appendix_sections import UNREAD_OVERRIDE_MARK, appendix_section
@@ -333,6 +334,35 @@ def test_the_declaration_carries_no_key_the_compute_phase_never_reads(
     assert COMPUTE_PHASE_READ_KEYS - union == frozenset(), (
         "선언에 어느 전건도 읽지 않는 키가 있다 — 넓혀서 통과시킨 것이 아닌지 "
         f"보라: {sorted(COMPUTE_PHASE_READ_KEYS - union)}"
+    )
+
+
+def test_the_ev_charging_loss_is_read_by_the_compute_phase_in_every_case(
+    probed: dict[str, CaseReport],
+) -> None:
+    """★★ **경계 환산 계수가 «계산 구간»에서 읽힌다 — 전건 전부** (R71/WP-1).
+
+    바로 위 두 검사는 **집합이 같은가**만 재므로, 이 키가 선언과 굳힌 집합에서
+    **동시에** 빠지면 둘 다 초록불이다. 그때 일어난 일은 *「충전 손실 환산이
+    조용히 끊겼다」* 이고, 산출물의 전기차 값이 배터리 투입 기준으로 되돌아가되
+    **아무 검사도 그 사실을 말하지 않는다.**
+
+    ⇒ 이름을 **지목해** 한 번 더 못 박는다. ⚠ 값이 맞는지는 여기서 재지 않는다
+    (그것은 `tests/casegrid/test_appliance_load.py` 의 몫이다) — 여기서 재는 것은
+    *「그 읽기가 리포트 조립이 아니라 계산 구간에서 일어난다」* 하나다.
+    """
+    assert EV_CHARGING_LOSS_LEDGER_KEY in COMPUTE_PHASE_READ_KEYS, (
+        "선언에서 빠졌다 — 굳히는 줄과 함께 빠지면 두 집합 검사가 둘 다 "
+        "초록불이 되고, 그때 충전 손실 환산이 조용히 끊긴 것이 안 보인다"
+    )
+    missing = sorted(
+        name
+        for name, report in probed.items()
+        if EV_CHARGING_LOSS_LEDGER_KEY not in _frozen_get_side(report)
+    )
+    assert not missing, (
+        f"이 전건들이 계산 구간에서 `{EV_CHARGING_LOSS_LEDGER_KEY}` 를 읽지 "
+        f"않았다: {missing} — 배선이 끊겼거나 읽기가 굳히는 줄 뒤로 밀렸다"
     )
 
 

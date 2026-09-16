@@ -8,7 +8,11 @@
 
 1. **여섯 열이 서 있고 다섯이 대장에서 온다** — 값·단위·출처·계측 경계는
    지어낸 문면이 아니라 실행과 대장의 것과 **글자로 같아야** 한다.
-2. **「÷ 충전효율」이 보이되 곱해지지 않는다** — 인쇄된 총계가 대장 값 그대로다.
+2. ★ **「÷ (1 − 충전 손실률)」이 곱해졌고, 그래서 «보인다»** (R71/WP-1). 종전에는
+   그 항이 `미반영` 으로 서 있었다 — 그때 붙들 것은 *「보이되 곱해지지 않는다」*
+   였고 지금 붙들 것은 그 **반대**다: 인쇄된 총계가 대장 값을 나눈 수이고, 나눈
+   사실과 나눈 수가 표와 그 아래 절에 **글자로** 선다. ⛔ **계산에는 들어가는데
+   표에는 안 보이는 것**이 이 자리의 새 결함이며 그것을 이 검사가 막는다.
 3. ★★ **대장이 여전히 「배터리 투입 기준」이라 적고 있다** — 이 모듈은 그 문면을
    파싱하지 않고 **글자로 못 박아** 인쇄하므로, 대장이 그 말을 거두면 산출물이
    거짓말이 된다. 파싱 대신 **이 검사가 어긋나는 날 사람을 부른다.**
@@ -29,6 +33,7 @@ import pytest
 from core.assumption.provider import AssumptionSet
 from core.casegrid.appliance_load import (
     APPLIANCE_LOAD_UNIT,
+    EV_CHARGING_LOSS_LEDGER_KEY,
     EV_LOAD_LEDGER_KEY,
     EV_LOAD_TITLE,
     HEATPUMP_LOAD_LEDGER_KEY,
@@ -141,26 +146,57 @@ def test_the_printed_values_are_the_ones_this_run_used(report: CaseReport) -> No
         assert _row(lines, title)[1] == f"{value:,.0f}"
 
 
-def test_the_ev_formula_shows_the_charging_loss_term_without_multiplying_it(
-    report: CaseReport,
+def test_the_ev_formula_prints_the_charging_loss_it_actually_divided_by(
+    report: CaseReport, ledger: AssumptionSet
 ) -> None:
-    """⚠⚠ **「÷ 충전효율」이 보이되 어떤 수도 곱해지지 않는다.**
+    """★★★ **곱해지는 수는 «보여야» 한다** (R71/WP-1).
 
-    검토서 §3.1 이 그 항을 산식에 요구하고 대장은 *「손실 계수를 지어내 곱하지
-    않았다」* 고 적는다 — 둘 다 참이 되는 유일한 꼴이 **미반영으로 보이는 것**이다.
-    그래서 인쇄된 총계는 **실행값 그대로**여야 한다(0.9 로 나눈 흔적이 없다).
+    R67 이 지적한 결함이 *「항이 보이되 곱해지지 않는다」* 였다. 그것을 닫으면서
+    **그 반대의 결함**이 열린다 — *「곱해지는데 안 보인다」*. 안 보이면 이 표의
+    값(3,093)과 대장 행의 값(2,784)이 나란히 선 채로 읽는 사람에게 **어느 쪽이
+    오타인가**로 읽힌다.
+
+    ⇒ 산식 칸이 ⓐ **이 실행이 쓴 총계**로 시작하고 ⓑ **손실률 항**을 싣고
+    ⓒ **대장에서 읽은 그 수**를 인쇄해야 한다.
+
+    ⚠ 수를 리터럴로 적지 않는다 — 셋 다 대장·실행에서 읽어 맞댄다.
     """
     lines = demand_attribute_lines(report)
     ev_kwh = report.appliance_loads.ev_kwh
     assert ev_kwh is not None
     formula = _row(lines, EV_LOAD_TITLE)[5]
     assert formula.startswith(f"{ev_kwh:,.0f} =")
-    for term in ("대수", "연간 주행거리", "전비", "충전효율"):
+    for term in ("대수", "연간 주행거리", "전비", "충전 손실률"):
         assert term in formula
-    assert "미반영" in formula
+    # ⓒ 인쇄된 손실률이 **대장이 가진 그 수**다 — 지어낸 수가 아니다.
+    loss = ledger.items()[EV_CHARGING_LOSS_LEDGER_KEY]
+    assert f"{float(loss.value):g}" in formula
+    assert EV_CHARGING_LOSS_LEDGER_KEY in formula
+    # ⛔ 「미반영」은 이제 거짓이다 — 남아 있으면 산출물이 거짓말을 한다.
+    assert "미반영" not in formula
     # ⛔ 항의 수를 리터럴로 박지 않았다 — 꼴만 세우고 수는 대장을 가리킨다.
     assert "45.99" not in formula
     assert "6.03" not in formula
+
+
+def test_the_printed_ev_value_is_the_ledger_value_divided_by_one_minus_the_loss(
+    report: CaseReport, ledger: AssumptionSet
+) -> None:
+    """★★★ **표의 값과 대장 행의 값이 «다르고», 그 차이가 산식이 말한 그것이다.**
+
+    ⚠ **방향까지 잰다.** 곱하면 수전량이 줄어 결론축이 좋아지는데, 그 갈래는
+    산출물을 훑는 눈으로는 안 잡힌다 — `tests/casegrid/test_appliance_load.py::
+    test_the_ledger_ev_value_comes_out_converted_to_the_grid_side` 가 엔진 쪽에서
+    같은 부등호를 잰다. 여기서 재는 것은 **인쇄된 수**다.
+    """
+    ev_kwh = report.appliance_loads.ev_kwh
+    assert ev_kwh is not None
+    battery = float(ledger.items()[EV_LOAD_LEDGER_KEY].value)
+    loss = float(ledger.items()[EV_CHARGING_LOSS_LEDGER_KEY].value)
+    assert ev_kwh == pytest.approx(battery / (1.0 - loss))
+    lines = demand_attribute_lines(report)
+    assert _row(lines, EV_LOAD_TITLE)[1] == f"{ev_kwh:,.0f}"
+    assert ev_kwh > battery
 
 
 def test_ledger_still_says_the_ev_value_is_battery_side(ledger: AssumptionSet) -> None:
@@ -176,19 +212,45 @@ def test_ledger_still_says_the_ev_value_is_battery_side(ledger: AssumptionSet) -
     assert EV_BOUNDARY_LEDGER_PHRASE in haystack
 
 
-def test_the_boundary_section_says_the_value_is_smaller_than_metered_purchase(
+def test_the_boundary_section_names_both_boundaries_and_which_way_it_moved(
     report: CaseReport,
 ) -> None:
-    """계측 경계 절 — **어느 방향으로 틀렸는지**까지 적는다.
+    """계측 경계 절 — **두 경계와 옮긴 방향**을 글자로 적는다 (R71/WP-1).
 
-    「배터리 기준이다」만으로는 검토자가 그 값이 실제 수전량보다 큰지 작은지 모른다.
-    대장이 그 방향을 적었으므로(*「약 10% 낮게 잡혀 있다」*) 산출물도 적어야 한다.
+    종전에는 *「배터리 투입 기준이고 실제 수전량보다 작다」* 였다. 이제 표의 값은
+    **환산된 뒤**이므로 그 문장이 그대로면 거짓이 된다 — 적어야 할 것이 셋으로
+    늘었다: ⓐ 대장의 조사값이 무슨 기준인가 ⓑ 표의 값이 무슨 기준인가
+    ⓒ 어느 쪽이 큰가.
     """
     text = "\n".join(demand_attribute_lines(report))
-    assert "배터리 투입 기준" in text
-    assert "충전 손실이 빠져 있다" in text
-    assert "작다" in text
+    assert "배터리 투입 기준" in text  # ⓐ
+    assert "계통 수전 기준" in text  # ⓑ
+    assert "크다" in text  # ⓒ
+    # ⚠ **방향을 말로도 못 박는다** — 부등호만 맞고 말이 「곱한다」면 다음 사람이
+    #   소스를 그 말대로 고친다.
+    assert "곱하기가 아니라 나누기다" in text
 
+
+def test_the_boundary_section_says_the_loss_rate_is_an_assumption_not_a_survey(
+    report: CaseReport, ledger: AssumptionSet
+) -> None:
+    """★★★ **곱했다고 해서 「조사했다」가 되지 않는다.**
+
+    이 WP 가 한 일은 *「곱하되 그것이 가정임을 감추지 않는 것」* 이다. 값을
+    조사값에 섞지 않고 **자기 이름을 단 항목**으로 세운 것이 그 실물이고,
+    산출물은 그 사실을 **두 가지로** 적어야 한다: ⓐ 신뢰도가 `가정` 이라는 것
+    ⓑ 민감도 폭이 없고 그것이 「민감하지 않다」가 아니라는 것.
+
+    ⛔ 이 절이 사라지면 검토자는 3,093 을 **조사로 얻은 수**로 읽는다.
+    """
+    text = "\n".join(demand_attribute_lines(report))
+    loss = ledger.items()[EV_CHARGING_LOSS_LEDGER_KEY]
+    assert EV_CHARGING_LOSS_LEDGER_KEY in text
+    assert loss.confidence.value in text  # ⓐ 「가정」
+    assert "관례치 가정" in text
+    assert "폭을 주장할 근거가 없다" in text  # ⓑ
+    # ⚠ **이 단지로 좁힌 문면**은 그대로 남아야 한다 — 아래 검사와 같은 사실이다.
+    assert "**이 단지의** 충전 손실을 잰 값이 없다" in text
 
 def test_the_charging_efficiency_gap_names_the_number_it_refuses_to_borrow(
     report: CaseReport,

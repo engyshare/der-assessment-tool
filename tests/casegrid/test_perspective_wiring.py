@@ -128,12 +128,22 @@ def test_operator_perspective_keeps_the_conclusion_axis(report) -> None:
     `Σ_{y=1..20} ((1.025)^(y−1) − 1) ÷ 1.045^y` = **3.0200332** 이며, 손계산과
     「무엇이 안 움직였나」는 그 골든 파일의 **R69/WP-2 블록**이 갖는다.
     ⚠ **1년차는 한 원도 안 움직였다** — 계수가 `(1+r)^0 = 1.0` 이다.
+
+    ⚠⚠⚠⚠⚠⚠⚠ **R71/WP-1 이 −393,481,396 → −404,041,856원으로 옮겼다**
+    (**−10,560,460**). 전기차 충전 손실률 10%(대장 `load.ev.charging_loss`)가
+    서며 EV 수전량이 2,784 → 3,093.33kWh/호·년(+309.33)으로 늘었다 —
+    태양광으로 못 덮이는 몫이 계통 구매비로 가 결론축이 나빠졌다. 자가소비
+    몫도 함께 커져 편익(회피 기본요금)이 1년차 2,957,522 → 3,026,512원
+    (+68,990)으로 올랐으므로 순효과는 비용 증가분보다 작다(아래
+    `test_cost_total_row_prints_not_allocated_for_perspectives_without_cost_basis`
+    ·`test_benefit_total_row_always_prints_a_real_number` 가 그 두 칸을 각각
+    잰다).
     """
     operator = next(
         r for r in report.perspectives.results if r.perspective is Perspective.OPERATOR
     )
     assert int(operator.npv_value) == int(report.metrics[CONCLUSION_METRIC])
-    assert int(operator.npv_value) == -393_481_396
+    assert int(operator.npv_value) == -404_041_856
 
 
 @pytest.mark.req("FR-402-AC7")
@@ -218,7 +228,9 @@ def test_npv_row_prints_no_number_for_perspectives_without_cost_basis(report) ->
     # −360,695,500원이 됐다 (같은 함수의 ⚠⚠⚠⚠⚠ 절 참조).
     # ⚠⚠⚠⚠⚠⚠ R69/WP-2 가 전기요금 인상률을 배선하며 −360,695,500 →
     # −393,481,396원이 됐다 (같은 함수의 ⚠⚠⚠⚠⚠⚠ 절이 두 흐름의 분해를 갖는다).
-    assert "-393,481,396원" in npv_line, npv_line
+    # ⚠⚠⚠⚠⚠⚠⚠ R71/WP-1 이 EV 충전손실 10%를 반영하며 −393,481,396 →
+    # −404,041,856원이 됐다 (같은 함수의 ⚠⚠⚠⚠⚠⚠⚠ 절이 분해를 갖는다).
+    assert "-404,041,856원" in npv_line, npv_line
     cells = [cell.strip() for cell in npv_line.strip().strip("|").split("|")]
     assert "0원" not in cells, npv_line
     assert "0" not in cells, npv_line
@@ -276,7 +288,13 @@ def test_cost_total_row_prints_not_allocated_for_perspectives_without_cost_basis
     # ⚠ **첨두 절감도 같은 계수를 타는데 이 칸은 안 움직인다** — 그쪽은 비용이
     # 아니라 편익이며, 아래 `test_benefit_total_row_always_prints_a_real_number`
     # 가 그 +16,398,447 을 잰다. **둘이 함께 오르는 것이 이 배선의 요점**이다.
-    assert "576,409,928원" in cost_line, cost_line
+    # ⚠⚠⚠⚠⚠⚠⚠ R71/WP-1 — EV 충전손실 10%(대장 `load.ev.charging_loss`)가
+    # 반영되며 EV 수전량이 2,784 → 3,093.33kWh/호·년으로 늘어 전력 구매 비용
+    # 1년차가 13,813,659 → 14,541,526원(+727,867)이 됐다. 이 칸도 같은 계수를
+    # 타므로 14,541,526 × 25.5446576 = 371,458,303원(종전 352,865,190원,
+    # +18,593,113)이 되어 576,409,928 → **595,003,041원**이 됐다. 초기투자·고정
+    # O&M·교체비·잔존가치는 한 원도 안 움직였다 — EV 부하는 전력 구매에만 걸린다.
+    assert "595,003,041원" in cost_line, cost_line
 
 
 def test_benefit_total_row_always_prints_a_real_number(report) -> None:
@@ -359,12 +377,18 @@ def test_benefit_total_row_always_prints_a_real_number(report) -> None:
     (주민 59,150,440 · 사업자 75,548,887) `build_perspective_wiring(
     escalation_by_tag=…)` 으로 닫았다. 그래서 아래 「두 번」 세기가 **그 갈림을
     잡는 자리**이기도 하다.
+
+    ⚠⚠⚠⚠⚠⚠ **R71/WP-1 이 «두 칸을 함께» 다시 올렸다** — 75,548,887 →
+    **77,311,213원**(**+1,762,326**). EV 충전손실 10%로 EV 수전량이 늘자 같은
+    발전량에서 자가소비 몫이 커져 회피 기본요금(첨두 절감) 1년차가 2,957,522 →
+    **3,026,512원**(+68,990)이 됐고, 20년 단순 누계도 같은 계수(25.5446576)를
+    타 3,026,512 × 25.5446576 = **77,311,213원**이다.
     """
     text = render_markdown(report)
     benefit_line = next(line for line in text.splitlines() if line.startswith("| 편익 합계 |"))
     assert "미산출" not in benefit_line and "미배분" not in benefit_line
     # 참여 주민 · 사업자 두 칸이다 (윗 독스트링 ⚠⚠ 참조)
-    assert benefit_line.count("75,548,887원") == 2, benefit_line
+    assert benefit_line.count("77,311,213원") == 2, benefit_line
 
 
 def test_header_row_pairs_repository_and_user_vocabulary(report) -> None:

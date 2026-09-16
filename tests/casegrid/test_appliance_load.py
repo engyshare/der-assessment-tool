@@ -47,8 +47,10 @@ from pathlib import Path
 import pytest
 import yaml
 
+from core.assumption.provider import AssumptionSet
 from core.casegrid.appliance_load import (
     APPLIANCE_LOAD_UNSPECIFIED,
+    EV_CHARGING_LOSS_LEDGER_KEY,
     EV_LOAD_FIELD,
     EV_LOAD_LEDGER_KEY,
     EV_LOAD_TITLE,
@@ -59,6 +61,8 @@ from core.casegrid.appliance_load import (
     ApplianceLoads,
     resolve_appliance_load,
     resolve_appliance_loads,
+    resolve_charging_loss,
+    with_ledger_defaults,
 )
 from core.casegrid.e2e_runner import run_single_case_e2e
 from core.casegrid.ledger_levels import build_level_map
@@ -380,3 +384,123 @@ def test_the_two_ledger_rows_hold_a_value_with_its_notes_and_source() -> None:
                 f"{key} 에 `{field}` 가 비어 있다 — 값만 있고 근거가 없으면 "
                 "산출물이 그 수를 근거 없이 인쇄한다"
             )
+
+
+# ── R71/WP-1 — 충전 손실은 **쓰는 자리에서** 나뉜다 ────────────────────────
+#
+# 대장의 `load.ev.annual` 은 **배터리 투입 기준**(주행에 쓴 전기)이고 가구가
+# 계통에서 사는 전기는 그보다 충전 손실만큼 많다. 그 손실률이 별도 대장 항목
+# `load.ev.charging_loss` 로 섰고, 환산은 `with_ledger_defaults` 가 한다.
+#
+# ★ 이 묶음이 붙드는 것은 **넷**이다:
+#   ① 대장이 답한 값이 나뉘어 나온다 (방향까지 — 나누기지 곱하기가 아니다)
+#   ② 사용자가 적은 수에는 걸리지 않는다
+#   ③ 대장이 손실률 항목을 갖지 않으면 **아무 일도 일어나지 않는다**
+#   ④ 1 이상의 손실률은 3요소를 갖춘 거부다 (0 으로 나누기·음수 부하)
+
+
+def _deployed_ledger() -> AssumptionSet:
+    """배포 대장 그대로 — 수를 리터럴로 박지 않기 위해 여기서 읽는다."""
+    return AssumptionSet.load_from_yaml(str(_ASSUMPTIONS))
+
+
+def _ledger_without_charging_loss() -> AssumptionSet:
+    """손실률 항목만 **없는** 대장 — R71 이전 상태를 실물로 되살린다."""
+    base = _deployed_ledger()
+    return AssumptionSet(
+        name=base.set_name,
+        version=base.set_version,
+        items={
+            key: item
+            for key, item in base.items().items()
+            if key != EV_CHARGING_LOSS_LEDGER_KEY
+        },
+        price_basis=base.price_basis,
+    )
+
+
+def test_the_ledger_ev_value_comes_out_converted_to_the_grid_side() -> None:
+    """★★★ ① **대장이 답한 전기차 값이 `÷ (1 − 손실률)` 로 나와야 한다.**
+
+    ⚠ **방향이 이 검사의 전부다.** 곱하면 수전량이 줄어 계통 구매비가 줄고
+    순현재가치가 **좋아진다** — 틀렸는데 좋아 보이는 갈래라 눈으로는 안 잡힌다.
+    그래서 「대장 값보다 크다」를 부등호로도 한 번 더 못 박는다.
+
+    ⚠ 수(2,784 · 0.10 · 3,093)를 리터럴로 적지 않는다 — 대장이 정본이고,
+    박으면 대장이 갱신되는 날 이 검사가 조용히 낡는다(이 파일 머리말 ⚠ 절).
+    """
+    ledger = _deployed_ledger()
+    battery = ledger.get(EV_LOAD_LEDGER_KEY)
+    loss = ledger.get(EV_CHARGING_LOSS_LEDGER_KEY)
+    assert battery is not None and loss is not None, (
+        "대장이 두 항목을 다 갖고 있어야 이 검사가 뜻을 갖는다"
+    )
+    filled = with_ledger_defaults(NO_APPLIANCE_LOADS, ledger)
+    assert filled.ev_kwh == pytest.approx(
+        float(battery.value) / (1.0 - float(loss.value))
+    )
+    assert filled.ev_kwh > float(battery.value), (
+        "계통 수전량이 배터리 투입량보다 작게 나왔다 — 나눗셈이 곱셈으로 "
+        "뒤집혔다. 손실이 있으면 같은 양을 배터리에 넣기 위해 계통에서 "
+        "**더 사야** 한다"
+    )
+    # ⚠ 히트펌프는 **손대지 않는다** — 환산은 전기차 칸의 것이다.
+    heatpump = ledger.get(HEATPUMP_LOAD_LEDGER_KEY)
+    assert heatpump is not None
+    assert filled.heatpump_kwh == pytest.approx(float(heatpump.value))
+
+
+def test_the_conversion_does_not_touch_a_number_the_user_typed() -> None:
+    """★★ ② **사용자가 적은 수에는 걸리지 않는다.**
+
+    시나리오 yaml·화면이 적은 수가 어느 경계의 것인지 — 배터리 투입인지 계통
+    수전인지 — 는 **적은 사람만 안다.** 거기에 저장소가 10%를 조용히 얹으면
+    화면이 인쇄하는 수와 사용자가 적은 수가 갈리고, 그 어긋남은 「대장이
+    이겼다」와 구별되지 않는다.
+    """
+    typed = 1234.0
+    filled = with_ledger_defaults(
+        resolve_appliance_loads({EV_LOAD_FIELD: typed}), _deployed_ledger()
+    )
+    assert filled.ev_kwh == pytest.approx(typed)
+
+
+def test_without_the_loss_row_the_output_is_what_it_was_before_r71() -> None:
+    """★★★ ③ **대장이 손실률을 갖지 않으면 아무 일도 일어나지 않는다.**
+
+    소스가 0.10 을 기본값으로 메우면 **대장을 비우는 것으로 「손실을 반영하지
+    않는다」를 표현할 길이 없어지고**, 그 기본값은 대장에 없는 가정이 소스에
+    사는 것이다(`NFR-202`). ⇒ 항목이 없으면 배터리 투입 기준 값 그대로다.
+    """
+    ledger = _deployed_ledger()
+    battery = ledger.get(EV_LOAD_LEDGER_KEY)
+    assert battery is not None
+    filled = with_ledger_defaults(NO_APPLIANCE_LOADS, _ledger_without_charging_loss())
+    assert filled.ev_kwh == pytest.approx(float(battery.value))
+
+
+@pytest.mark.parametrize("bad", [1.0, 1.5, -0.1, "0.9x", True, float("nan")])
+def test_a_loss_rate_outside_zero_to_one_is_rejected_with_three_elements(
+    bad: object,
+) -> None:
+    """★★ ④ `1.0` 은 **0 으로 나누기**이고 그보다 크면 **부하가 음수**가 된다.
+
+    음수 부하는 설비 없는 발전이며, `resolve_appliance_load` 가 부하 칸에 대해
+    막는 것과 **같은 자리**다. 거부는 3요소를 갖춘다(`NFR-303`).
+    """
+    with pytest.raises(ValidationError) as excinfo:
+        resolve_charging_loss(bad)
+    error = excinfo.value
+    assert error.field == EV_CHARGING_LOSS_LEDGER_KEY
+    assert error.reason.strip() and error.action.strip()
+    # ⚠ 고칠 자리를 **가리켜야** 한다 — 사유만 있고 갈 곳이 없으면 3요소가 아니다.
+    assert EV_CHARGING_LOSS_LEDGER_KEY in error.action
+
+
+@pytest.mark.parametrize("blank", [None, "", "   "])
+def test_a_blank_loss_rate_is_not_specified_rather_than_zero(blank: object) -> None:
+    """⚠ 빈 칸은 **「적지 않았다」**이지 「손실이 0 이다」가 아니다.
+
+    부하 칸이 `None` 과 `0.0` 을 가르는 것과 같은 규약이다(이 모듈 머리말 ⚠).
+    """
+    assert resolve_charging_loss(blank) is None

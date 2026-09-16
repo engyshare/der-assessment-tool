@@ -123,7 +123,7 @@ def test_control_group_the_real_ledger_still_shows_a_shortfall() -> None:
     이 대조군이 없으면 「흑자 경로가 돈다」와 「늘 그 문면이 나온다」가
     구별되지 않는다(모듈 독스트링 참조). `fixtures/golden/
     scenario_subsidy_80.yaml`(기존 골든)이 같은 `subsidy_rate=0.80` 을
-    진짜 대장으로 매 회귀에서 재는 값(`npv_won: -232681396`)과 일치해야
+    진짜 대장으로 매 회귀에서 재는 값(`npv_won: -243241856`)과 일치해야
     한다 — 이 실측이 그 값과 어긋나면 이 파일이 아니라 진짜 대장이나
     `core/` 가 움직인 것이다.
     ⚠ **이 도입부의 수는 R66/WP-5 때 갱신이 빠져 `-167457263` 에 멈춰 있었다**
@@ -242,13 +242,32 @@ def test_control_group_the_real_ledger_still_shows_a_shortfall() -> None:
     이 계수를 타는데, 그 시험은 수를 단언하지 않고 **갈래(흑자/결손)** 만
     보므로 값이 움직여도 재는 것이 바뀌지 않는다.
     ⚠ **오라클은 이번에도 한 자도 느슨해지지 않았다** — 여전히 완전 일치(`==`)다.
+
+    ## ⚠ 값이 아홉 번째로 바뀌었다 — 역시 재는 것은 그대로다 (R71/WP-1)
+
+    전기차 충전손실 10%가 새 대장 항목 `load.ev.charging_loss`(가정)로 섰다.
+    배터리 투입 기준 조사값(`load.ev.annual` 2,784)을 계통 수전 기준으로
+    환산(`÷ (1 − 0.10)`)해 가구당 전기차 수전량이 약 3,093 kWh/호·년(+11.1%)이
+    됐고, 늘어난 부하는 태양광으로 못 덮이는 만큼 계통 구매비로 가 결론축이
+    나빠지는 방향으로 움직였다. `-199895500` 이 아니라 `-232681396`(R69/WP-2
+    적용 후 값)에서 시작해 `-243241856`(**−10,560,460**)이 됐다. 산식·근거는
+    `docs/assumptions.yaml` 의 `load.ev.charging_loss` 항목이 갖는다.
+    ⚠ **이번에도 세 시나리오의 이동 폭이 «같다»** — 움직인 것이 운영
+    현금흐름(계통 구매비 증가)이고 초기투자가 1원도 안 움직여 보조율이 나눌
+    대상이 없다.
+    ⚠ **파생 대장은 손대지 않았다** — 이 대조군은 `assumptions_path=
+    REAL_ASSUMPTIONS_PATH`(진짜 대장)로 도니 `load.ev.charging_loss` 를 이미
+    그대로 읽는다. `_LEDGER_VARS` 의 스윕 축이 아니므로 위쪽 흑자 시험이 쓰는
+    파생 대장(`fixtures/probe/assumptions_probe_gap_margin.yaml`)에는 이 키가
+    필요 없다.
+    ⚠ **오라클은 이번에도 한 자도 느슨해지지 않았다** — 여전히 완전 일치(`==`)다.
     """
     report = build_case_report(PROBE_SCENARIO_PATH, assumptions_path=REAL_ASSUMPTIONS_PATH)
 
     assert report.recovers_within_horizon is False
-    assert report.metrics["npv"] == -232681396.0, (
+    assert report.metrics["npv"] == -243241856.0, (
         "대조군의 순현재가치가 fixtures/golden/scenario_subsidy_80.yaml 의 "
-        "실측(-232681396)과 어긋난다 — 진짜 대장이나 core/ 가 움직였다는 뜻이다"
+        "실측(-243241856)과 어긋난다 — 진짜 대장이나 core/ 가 움직였다는 뜻이다"
     )
 
     rendered = render_markdown(report)

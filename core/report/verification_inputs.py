@@ -60,6 +60,7 @@ from core.casegrid.appliance_load import (
     APPLIANCE_SEASON_SHARE_FIELD,
     APPLIANCE_SEASON_SHARE_TITLE,
     APPLIANCE_SEASON_SHARE_UNSPECIFIED,
+    EV_CHARGING_LOSS_LEDGER_KEY,
     EV_LOAD_FIELD,
     EV_LOAD_LEDGER_KEY,
     EV_LOAD_TITLE,
@@ -290,7 +291,8 @@ def execution_input_lines(report: CaseReport) -> list[str]:
         f"안 적으면 대장 `{HEATPUMP_LOAD_LEDGER_KEY}` |",
         f"| {EV_LOAD_TITLE} | {_appliance_cell(loads.ev_kwh)} "
         f"| 시나리오 yaml `{EV_LOAD_FIELD}` · 화면 `/ui/run` 칸 — "
-        f"안 적으면 대장 `{EV_LOAD_LEDGER_KEY}` |",
+        f"안 적으면 대장 `{EV_LOAD_LEDGER_KEY}` ÷ (1 − 대장 "  # noqa: RUF001
+        f"`{EV_CHARGING_LOSS_LEDGER_KEY}`) |",
         f"| **추가 부하 소계 (HP+EV)** | {subtotal_cell} "
         "| 히트펌프 + 전기차 — 러너의 `extra_appliance_load_kwh` 로 가는 것은 "
         "**이 수**다 |",

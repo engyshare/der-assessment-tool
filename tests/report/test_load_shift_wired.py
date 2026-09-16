@@ -64,6 +64,21 @@ _GOLDEN = _REPO_ROOT / "fixtures" / "golden" / "scenario_unsubsidized.yaml"
 _LOAD = "e2e-load"
 _PV = "e2e-pv"
 
+#: ★★ **탐침 전용 발전 여유 — R71/WP-1-fix.** `share=0` 탐침(잉여를 되살리는
+#: 자리, R67/WP-N1d)이 R71/WP-1 의 EV 충전손실(부하 +309.33kWh/호·년)에 스텝
+#: 18 한 곳·0.2574kWh 라는 극히 얇은 마진으로 서 있었고, 그 부하 증가가 그
+#: 마진을 통째로 먹어 잉여가 0 이 됐다(오케 판정 §7ⓑ — 탐침의 발전을 «넉넉히»
+#: 키운다). 대장 `capacity_factor.pv_rooftop`(태양광 이용률 · 기본 0.15)을
+#: **오버라이드로 2배**(0.30) 세운다 — 이 항목이 R67/WP-N2 가 여는 발전량의
+#: 유일한 승수(`generation_total_kwh = pv_capacity_kw × 이 값 × …`)이고,
+#: `pv_capacity_kw` 자신은 `_DESIGN_VARS`(설계 변수)라 배포 진입점
+#: (`build_case_report`)이 `case_values={}`(항상 `base`)로 고정해 대장
+#: 오버라이드가 닿지 않는다(`core/casegrid/ledger_levels.py::build_level_map`
+#: 실측 — `_DESIGN_VARS` 는 `overrides` 인자를 아예 보지 않는다). ⇒ **새 통로를
+#: 만들지 않고** 발전량을 늘리는 기존 대장 키를 재사용한다.
+#: ⚠ 골든 픽스처는 그대로다 — 이 배수는 이 헬퍼 안에서만 산다.
+_PROBE_PV_CAPACITY_FACTOR = 0.30
+
 
 def _ledger_share() -> float:
     """대장이 정한 비율. **여기에 수를 적지 않는다** — 대장이 정본이다."""
@@ -80,17 +95,39 @@ def _report(share: float | None = None, **fields_given: object) -> CaseReport:
     `tempfile.TemporaryDirectory()` 안이다 — `app/services/ui_run.py::
     run_ui_case` 가 배포 경로에서 하는 것과 같은 모양이며, 그래야 이 검사가
     사용자가 실제로 지나는 통로(**전용 필드가 아니라 대장 오버라이드**)를 잰다.
+
+    ★★ **`share` 가 없거나 0 일 때만 탐침 발전 여유(`_PROBE_PV_CAPACITY_FACTOR`)를
+    싣는다.** `share=0`(R67/WP-N1d 의 잉여 되살리기)과 기본 실행(`share=None`)은
+    **같은 발전량이어야** 한다 — `test_moving_the_load_does_not_move_the_totals`
+    가 그 둘의 연간 발전 총량이 같은지를 재기 때문이다(둘 다 올리면 등식이
+    유지된다). ⚠ **비율을 «흔드는» 호출(`share=5·50·100·150`)에는 얹지 않는다**
+    — `test_more_shiftable_share_moves_more_until_the_surplus_caps_it` 이 «그 날
+    잉여 상한»의 **크기 자체**를 재므로, 그 상한을 함께 올리면 50%·100% 가
+    갈리는 실측(§ 그 검사 독스트링)이 깨진다. 이 축은 **잉여를 없애 정체를
+    보는 검사**이지 이 여유가 지키려는 「배포 경로가 살아 있는가」 검사가
+    아니다.
     """
     fields: dict[str, Any] = yaml.safe_load(_GOLDEN.read_text(encoding="utf-8")) or {}
     fields.update(fields_given)
+    overrides: list[dict[str, object]] = []
+    if share is None or share == 0:
+        overrides.append(
+            {
+                "key": "capacity_factor.pv_rooftop",
+                "value": _PROBE_PV_CAPACITY_FACTOR,
+                "reason": "탐침의 잉여 마진을 넉넉히 키운다 (R71/WP-1-fix §C)",
+            }
+        )
     if share is not None:
-        fields["assumption_overrides"] = [
+        overrides.append(
             {
                 "key": DR_SHIFTABLE_SHARE_LEDGER_KEY,
                 "value": share,
                 "reason": "이 검사가 축을 흔든다",
             }
-        ]
+        )
+    if overrides:
+        fields["assumption_overrides"] = overrides
     with tempfile.TemporaryDirectory() as workspace:
         path = Path(workspace) / _GOLDEN.name
         path.write_text(
