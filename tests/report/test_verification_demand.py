@@ -280,22 +280,43 @@ def test_the_charging_efficiency_gap_names_the_number_it_refuses_to_borrow(
     assert "왕복" in text and "계측 경계가 아니" in text, text
 
 
-def test_the_heatpump_breakdown_is_pointed_at_not_tabulated(
+def test_the_heatpump_breakdown_reports_the_ledger_subitems_now_exist(
     report: CaseReport, ledger: AssumptionSet
 ) -> None:
-    """★ ⓒ — 난방·냉방·급탕은 **대장 항목이 아니므로** 표가 되지 않는다.
+    """★ ⓒ — R71/WP-2 가 난방·냉방·급탕을 **대장 하위 항목으로 세웠다.**
 
-    ⚠ 앞머리에서 **그 사실 자체를 실물로 다시 잰다** — 대장에 하위 셋이 서는 날
-    이 검사가 빨간불이 되어야 하고, 그때 할 일은 「인쇄하기」다.
+    ⚠ 이 시험은 종전에 「대장 항목이 아니므로 표가 되지 않는다」를 잰
+    `test_the_heatpump_breakdown_is_pointed_at_not_tabulated` 였다 — 그 앞머리가
+    스스로 예고한 대로, 대장에 하위 셋이 서자 그 시험이 빨간불이 됐고 할 일은
+    「인쇄하기」였다. 이 시험은 그 갱신을 잰다.
     """
-    heatpump_keys = [key for key in ledger.items() if key.startswith("load.heatpump")]
-    assert heatpump_keys == [HEATPUMP_LOAD_LEDGER_KEY], heatpump_keys
+    heatpump_keys = sorted(
+        key for key in ledger.items() if key.startswith("load.heatpump")
+    )
+    assert heatpump_keys == sorted(
+        [
+            HEATPUMP_LOAD_LEDGER_KEY,
+            "load.heatpump.heating.annual",
+            "load.heatpump.cooling.annual",
+            "load.heatpump.hotwater.annual",
+        ]
+    ), heatpump_keys
     lines = demand_attribute_lines(report)
     text = "\n".join(lines)
-    assert "난방·냉방·급탕 분해는 이 표에 없다" in text
-    assert "대장 항목이 아니다" in text
-    assert "사람의 판정 대기" in text
-    # ⛔ 산문에서 뽑아 온 세 수가 표 행이 되지 않았다.
+    # ⓐ 하위 셋이 섰다는 사실과, 그것이 ⓑ 부분 표에 저절로 인쇄된다는 설명이
+    #    있어야 한다 — 「대장 항목이 아니다」라는 옛 문면은 이제 거짓이다.
+    assert "대장 하위 항목 셋이 섰다" in text
+    assert "load.heatpump.heating.annual" in text
+    assert "load.heatpump.cooling.annual" in text
+    assert "load.heatpump.hotwater.annual" in text
+    assert "대장 항목이 아니다" not in text
+    # ⓑ 계산 경로는 그대로다 — 표시·독립 민감도 전용이라는 것을 적는다.
+    assert "표시·독립 민감도 전용" in text
+    # ⓒ 열량·COP 을 별도 열로 두는 것은 여전히 멈춘 자리다(새 대장 필드가
+    #    필요해 이 WP 범위를 넘는다).
+    assert "열량" in text and "COP" in text and "사람의 판정으로 남긴다" in text
+    # ⛔ 이 표(여섯 속성 표) 자체에는 난방·냉방·급탕이 새 행으로 서지 않았다 —
+    #    그 셋은 ⓑ 부분 표(대장 접두 필터)가 인쇄하며 여기서 다시 짓지 않는다.
     assert not any(cells[0].startswith(("난방", "냉방", "급탕")) for cells in _cells(lines))
 
 

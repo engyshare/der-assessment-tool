@@ -525,9 +525,13 @@ def test_the_stage_one_file_carries_the_six_attributes_of_every_demand_input(
     stage1 = split_stages(_verification_text(tmp_path))[0].body
     for line in DEMAND_ATTRIBUTE_HEAD:
         assert line in stage1, "1단계에 여섯 속성 표의 머리가 없다"
-    # 멈춘 자리 둘이 **글자로** 서 있다 — 빈칸은 「없다」와 「싣지 못했다」를 가르지
-    # 못하고, 이 둘은 사람의 판정을 기다리는 자리다(검토서 §3.1 · §4.4).
-    assert "난방·냉방·급탕 분해는 이 표에 없다" in stage1
+    # 멈춘 자리 — 빈칸은 「없다」와 「싣지 못했다」를 가르지 못하고, 이 둘은
+    # 사람의 판정을 기다리는 자리다(검토서 §3.1 · §4.4). 히트펌프 하위 항목
+    # 자체는 R71/WP-2 가 세웠으나(더 이상 「이 표에 없다」가 아니다), 열량·COP
+    # 를 별도 열로 두는 것은 여전히 멈춰 있다 — 자세한 문면은
+    # `tests/report/test_verification_demand.py` 가 잰다.
+    assert "난방·냉방·급탕 분해" in stage1
+    assert "사람의 판정으로 남긴다" in stage1
     assert "검증 상태(계산됨 · 출처 확인 · 조사 인용 · 가정)는 대장이 갖고 있지 않다" in stage1
 
 

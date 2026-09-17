@@ -504,3 +504,57 @@ def test_a_blank_loss_rate_is_not_specified_rather_than_zero(blank: object) -> N
     부하 칸이 `None` 과 `0.0` 을 가르는 것과 같은 규약이다(이 모듈 머리말 ⚠).
     """
     assert resolve_charging_loss(blank) is None
+
+
+# ── 히트펌프 하위 항목 셋 — 합이 부모와 어긋나면 안 된다 (R71/WP-2) ─────────
+#
+# `load.heatpump.annual` 은 여전히 실행이 읽는 자리이고, 새로 세운
+# `load.heatpump.{heating,cooling,hotwater}.annual` 은 분해 표시·독립
+# 민감도 전용이라 계산 경로에서 읽히지 않는다(WP-2 §1). 그래서 둘을 잇는
+# 것은 배선이 아니라 **이 시험 하나**뿐이다 — 부모만 고치고 하위 셋을
+# 잊거나, 하위 셋만 고치고 부모를 잊는 사고를 여기서 잡는다.
+_HEATPUMP_SUBITEM_SUFFIXES = ("heating", "cooling", "hotwater")
+
+
+def _heatpump_subitem_key(suffix: str) -> str:
+    stem = HEATPUMP_LOAD_LEDGER_KEY.rsplit(".", 1)[0]  # "load.heatpump"
+    return f"{stem}.{suffix}.annual"
+
+
+@pytest.mark.parametrize("level", ["low", "base", "high"])
+def test_heatpump_subitem_sensitivities_sum_to_the_parent(level: str) -> None:
+    """세 하위 항목의 `sensitivity.<level>` 합이 부모의 것과 **소수 첫째
+    자리까지** 같아야 한다 — `load.heatpump.annual` 의 유도 근거가 적은
+    합산 그대로다(base 2,075+712.4+501.6=3,289.0 · low
+    1,779+600+425=2,804 · high 2,490+814.8+658=3,962.8).
+
+    ⚠ `sensitivity` 는 `AssumptionItem`(`core/assumption/provider.py`)이
+    나르지 않으므로 대장 파일을 직접 읽는다 — `AssumptionSet` 을 거치면
+    `low`·`high` 가 애초에 없다.
+    """
+    raw = yaml.safe_load(_ASSUMPTIONS.read_text(encoding="utf-8"))
+    rows = {row["key"]: row for row in raw["assumptions"]}
+    parent_row = rows[HEATPUMP_LOAD_LEDGER_KEY]
+    subitem_sum = sum(
+        rows[_heatpump_subitem_key(suffix)]["sensitivity"][level]
+        for suffix in _HEATPUMP_SUBITEM_SUFFIXES
+    )
+    assert subitem_sum == pytest.approx(parent_row["sensitivity"][level], abs=0.05), (
+        f"{level}: 하위 항목 합 {subitem_sum} 이 부모 "
+        f"{HEATPUMP_LOAD_LEDGER_KEY} 의 {parent_row['sensitivity'][level]} "
+        "과 소수 첫째 자리까지 맞지 않는다 — 한쪽만 고치고 잊은 것인지 "
+        "확인하십시오"
+    )
+
+
+def test_heatpump_subitems_are_not_read_by_the_runner() -> None:
+    """★ 하위 셋은 **표시·독립 민감도 전용**이다 — `load.heatpump.annual`
+    자신만 부모 값으로 실행을 돌아도 종전과 같은 수를 낸다는 것을
+    간접적으로 확인한다(직접 배선 확인은 WP-2 범위 밖 — §1).
+    """
+    ledger = _deployed_ledger()
+    for suffix in _HEATPUMP_SUBITEM_SUFFIXES:
+        key = _heatpump_subitem_key(suffix)
+        assert key in ledger.items(), f"{key} 가 대장에 없다"
+    # 부모 키는 여전히 존재하고, 러너가 읽는 상수도 부모를 그대로 가리킨다.
+    assert HEATPUMP_LOAD_LEDGER_KEY == "load.heatpump.annual"
