@@ -51,6 +51,7 @@ from core.casegrid.appliance_load import (
     HEATPUMP_LOAD_FIELD,
 )
 from core.casegrid.household_scale import HOUSEHOLD_COUNT_FIELD
+from core.casegrid.ledger_levels import DESIGN_CAPACITY_FIELD
 from core.casegrid.load_shift import (
     DR_SHIFTABLE_SHARE_LEDGER_KEY,
     resolve_shiftable_share,
@@ -144,6 +145,7 @@ def scenario_fields(
     ev_load_annual_kwh: str | float | None = None,
     appliance_load_season_shares: Mapping[str, str] | None = None,
     dr_shiftable_share_pct: str | float | None = None,
+    design_capacity: Mapping[str, str | float] | None = None,
 ) -> dict[str, Any]:
     """골든 시나리오 + 화면이 고른 것 → 넘길 매핑.
 
@@ -210,6 +212,16 @@ def scenario_fields(
     항목**이므로 시나리오 필드를 새로 세우지 않고 **오버라이드 한 줄**로
     얹는다(`_overrides_with_shift`). 그 판단의 정본은
     `core/report/case_report.py` 의 ★★★ 절과 `.orch/R64/result_7.md` 판정 ㉳ 다.
+
+    ## ★★ `design_capacity` — **키 단위로 「빈 칸이면 그 키를 넣지 않는다」**
+    (R71/WP-4)
+
+    PV·ESS 용량과 ESS 정격출력을 바꾸는 통로다. `household_count` 와 같은
+    규약이되 단위가 매핑이라 **키 하나씩** 적용된다 — `{"pv_capacity_kw": 30}`
+    처럼 일부만 적으면 나머지 키는 대장/설계변수 기본값으로 돈다. 검증은
+    `core/casegrid/ledger_levels.py::resolve_design_capacity` 하나가 하며,
+    여기서는 받은 매핑을 그대로 싣는다 — 미리 걸러 내면 거부 문면이 두 곳에
+    생긴다(위 갈래·오버라이드와 같은 판단).
     """
     available = golden_scenario_names()
     if name not in available:
@@ -241,6 +253,8 @@ def scenario_fields(
     ):
         if given is not None and given != "":
             fields[field] = given
+    if design_capacity:
+        fields[DESIGN_CAPACITY_FIELD] = dict(design_capacity)
     return fields
 
 
@@ -307,6 +321,7 @@ def run_ui_case(
     ev_load_annual_kwh: str | float | None = None,
     appliance_load_season_shares: Mapping[str, str] | None = None,
     dr_shiftable_share_pct: str | float | None = None,
+    design_capacity: Mapping[str, str | float] | None = None,
 ) -> UiRun:
     """화면이 고른 것으로 **한 번 돌린다.**
 
@@ -345,6 +360,7 @@ def run_ui_case(
         ev_load_annual_kwh=ev_load_annual_kwh,
         appliance_load_season_shares=appliance_load_season_shares,
         dr_shiftable_share_pct=dr_shiftable_share_pct,
+        design_capacity=design_capacity,
     )
     text = yaml.safe_dump(fields, allow_unicode=True, sort_keys=False)
     report = case_report_for(name, fields, text, assumptions_path=_ASSUMPTIONS)

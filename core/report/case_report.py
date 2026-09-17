@@ -100,11 +100,13 @@ from core.casegrid.household_scale import (
     resolve_household_count,
 )
 from core.casegrid.ledger_levels import (
+    DESIGN_CAPACITY_FIELD,
     build_level_map,
     design_variables,
     ledger_backed_variables,
     ledger_unit_scales,
     required_scalar,
+    resolve_design_capacity,
 )
 from core.casegrid.load_shift import (
     DR_SHIFTABLE_SHARE_LEDGER_KEY,
@@ -781,7 +783,38 @@ def build_case_report(
     # 생기기 전과 같은 경로를 돌게 하는 것이 그 동일성이고, 그것이 결론축
     # 불변(무보조 `npv`)의 근거다.
     provider = apply_scenario_overrides(provider, scenario.get(ASSUMPTION_OVERRIDES_FIELD))
-    level_map = build_level_map(assumptions_path, overrides=provider.get_overrides())
+    # ★★★ **설계 변수(PV·ESS 용량·ESS 정격출력) 오버라이드도 시나리오에서
+    # 읽는다** (R71/WP-4 · `.orch/R71/result_3.md` 지점1-ⓑ 채택 · 오케 판정
+    # `.orch/R71/WP-4.md` §0). **통로는 이 필드 하나다** — `household_count` 와
+    # 같은 자리다. ⚠ **`build_level_map` 보다 앞이어야 한다** — 뒤로 밀면 5.1·
+    # 4.4 절이 읽는 탐색 구간의 `base` 가 오버라이드를 못 보고, 그 어긋남은
+    # 아무 예외도 내지 않는다.
+    design_capacity = resolve_design_capacity(scenario.get(DESIGN_CAPACITY_FIELD))
+    if "ess_power_kw" in design_capacity:
+        # ⚠⚠ **ESS 정격출력은 이 라운드에서 배선하지 않는다.** 값을 조용히
+        # 무시하면 「사용자가 적은 값이 안 먹는다」는 이 저장소가 가장 경계하는
+        # 형태(NFR-202 의 근거)가 되므로, 무시하는 대신 **거부한다**. 왜
+        # 못 하는지: `core/casegrid/ess_build.py::ESS_POWER_KW` 는
+        # `core/casegrid/seasonal_dispatch.py::build_and_dispatch_case` 를 거쳐야
+        # 닿는데 그 파일이 **코드 500/500**(`scripts/check_file_size.py
+        # --code-strict` 실측, R71/WP-4 착수)으로 `NFR-206` 상한에 이미 닿아
+        # 있다 — 한 줄이라도 보태면 그 상한을 넘긴다(빈 슬롯 0줄). 상한을 올려
+        # 푸는 것은 금지다(spec §16.5). 자세한 경위는 `.orch/R71/result_4.md`
+        # §하지 않은 것이 갖는다.
+        raise ValidationError(
+            field="design.capacity.ess_power_kw",
+            reason="ess_power_kw: 아직 배선되어 있지 않습니다",
+            action=(
+                "pv_capacity_kw·ess_capacity_kwh 만 지정하십시오 — ESS 정격출력 "
+                "오버라이드는 core/casegrid/seasonal_dispatch.py 가 NFR-206 코드 "
+                "줄 상한에 닿아 있어 이후 라운드에서 그 상한을 먼저 다뤄야 합니다"
+            ),
+        )
+    level_map = build_level_map(
+        assumptions_path,
+        overrides=provider.get_overrides(),
+        design_capacity=design_capacity,
+    )
     horizon_years = provider.analysis_years()
     subsidy_rate = float(scenario["subsidy_rate"])
     scheme = _scheme_for(subsidy_rate)

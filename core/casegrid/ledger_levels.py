@@ -72,6 +72,7 @@ from typing import Any
 import yaml  # type: ignore[import-untyped]
 
 from core.contracts.assumptions import AssumptionProvider
+from core.contracts.validation import ValidationError
 
 #: (케이스 변수, 대장 키, 배율). 배율은 **단위 환산**이며 값이 아니다 —
 #: 대장의 `%/년` 을 러너가 쓰는 비율로 옮긴다.
@@ -348,6 +349,92 @@ _DESIGN_VARS: tuple[tuple[str, str, str, tuple[tuple[str, float], ...]], ...] = 
 #: 수준 이름. 대장의 `sensitivity` 가 이 셋을 갖지 않으면 거부한다.
 LEVEL_NAMES: tuple[str, str, str] = ("low", "base", "high")
 
+#: 시나리오 yaml 이 설계 변수(PV·ESS 용량·ESS 정격출력)를 오버라이드하는
+#: **필드 이름** (R71/WP-4 · `.orch/R71/result_3.md` 지점1-ⓑ 채택).
+#:
+#: ⚠ **통로는 이 필드 하나다** — `core/casegrid/household_scale.py::
+#: HOUSEHOLD_COUNT_FIELD` 와 같은 층·같은 규약이다. 대장 항목으로 올리지
+#: 않은 이유(안 ⓐ 기각)는 `pv_capacity_kw`·`ess_capacity_kwh` 가 「시장에서
+#: 관측한 불확실 값」이 아니라 **사업자가 고르는 설계**이기 때문이다(위
+#: `_DESIGN_VARS` 옆 3분류 표) — 대장에 올리면 그 분류를 어긴다.
+DESIGN_CAPACITY_FIELD = "design_capacity"
+
+#: `ValidationError.field` 용 **점으로 이은 경로**(NFR-303 · 그 생성자가
+#: 공백 없는 점 표기를 강제한다). 시나리오 yaml 키(위 `DESIGN_CAPACITY_FIELD`,
+#: 밑줄 표기)와 다른 자리다 — `core/casegrid/appliance_load.py::
+#: APPLIANCE_SEASON_SHARE_FIELD`(yaml 키) ·
+#: `APPLIANCE_SEASON_SHARE_FIELD_KEY`(거부 필드)가 같은 짝을 이미 쓴다.
+_DESIGN_CAPACITY_FIELD_KEY = "design.capacity"
+
+#: 이 필드가 받는 키. `pv_capacity_kw`·`ess_capacity_kwh` 는 `_DESIGN_VARS`
+#: 와 이름이 같다(그 변수의 `base` 자리에 얹는다). `ess_power_kw` 는
+#: `_DESIGN_VARS` 에 **없다** — 탐침표가 아니라
+#: `core/casegrid/ess_build.py::ESS_POWER_KW` 모듈 상수를 대신한다(그 값을
+#: 흔들어 보는 §7 후보군은 이 라운드 범위가 아니다 — `.orch/R71/WP-4.md` §0).
+_DESIGN_CAPACITY_KEYS = frozenset({"pv_capacity_kw", "ess_capacity_kwh", "ess_power_kw"})
+
+
+def _design_capacity_rejected(reason: str) -> ValidationError:
+    """거부 하나 — **3요소를 갖춘다** (`NFR-303`).
+
+    문면을 한 곳에만 둔다 — `core/casegrid/household_scale.py::_rejected` 와
+    같은 판단이다.
+    """
+    return ValidationError(
+        field=_DESIGN_CAPACITY_FIELD_KEY,
+        reason=reason,
+        action=(
+            f"{DESIGN_CAPACITY_FIELD} 는 pv_capacity_kw·ess_capacity_kwh·"
+            "ess_power_kw 중 일부만 골라 0보다 큰 수로 적으십시오 — 적지 않은 "
+            "키는 대장/설계변수 기본값으로 돌아갑니다"
+        ),
+    )
+
+
+def resolve_design_capacity(value: object | None) -> Mapping[str, float]:
+    """시나리오의 `design_capacity` → {변수 이름: 한 호분 값}.
+
+    `None` 이 **「적지 않았다」**이며 그때 빈 매핑을 낸다 — 호출부
+    (`build_level_map`·`core/report/case_report.py`)는 빈 매핑을 「모두
+    기본값」으로 읽는다. `core/casegrid/household_scale.py::
+    resolve_household_count` 와 같은 「미지정과 기본값은 다른 진술」 규약이다.
+
+    ## ★ 키 단위로 받는다 — all-or-nothing 이 아니다
+
+    세 키 중 일부만 있어도 된다(예: PV 만 바꾸고 ESS 는 대장/설계변수 기본값
+    유지). 한 키가 빠졌다고 전체를 기본값으로 되돌리면 §7 후보군이 「PV 만
+    바꿔 본다」 같은 실험을 못 한다(`.orch/R71/WP-4.md` §2-①).
+
+    ⚠ **여기서 `level_map` 에 얹지 않는다.** 이 함수는 검증된 `{키: 값}` 만
+    내놓고, `base` 자리에 얹는 것은 `build_level_map` 하나다 — 두 번 얹으면
+    어느 쪽이 이겼는지 산출물에서 알 수 없다(이 파일 머리말의 ★★★ 절과 같은
+    판단).
+    """
+    if value is None:
+        return MappingProxyType({})
+    if not isinstance(value, Mapping):
+        raise _design_capacity_rejected(
+            f"{DESIGN_CAPACITY_FIELD} 는 매핑이어야 합니다 (받은 값 {value!r})"
+        )
+    unknown = sorted(set(value) - _DESIGN_CAPACITY_KEYS)
+    if unknown:
+        raise _design_capacity_rejected(
+            f"모르는 키 {', '.join(unknown)} — 쓸 수 있는 키: "
+            f"{', '.join(sorted(_DESIGN_CAPACITY_KEYS))}"
+        )
+    resolved: dict[str, float] = {}
+    for key, raw in value.items():
+        if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+            raise _design_capacity_rejected(f"{key} 의 값이 수가 아닙니다: {raw!r}")
+        try:
+            number = float(raw)
+        except (TypeError, ValueError):
+            raise _design_capacity_rejected(f"{key} 의 값이 수가 아닙니다: {raw!r}") from None
+        if not number > 0:
+            raise _design_capacity_rejected(f"{key} 는 0보다 커야 합니다 (받은 값 {number!r})")
+        resolved[key] = number
+    return MappingProxyType(resolved)
+
 
 def modelling_only_variables() -> tuple[str, ...]:
     """대장에서 오지 않는 변수 이름 — 검사가 이 목록을 읽는다."""
@@ -524,7 +611,10 @@ def _with_overridden_base(
 
 
 def build_level_map(
-    assumptions_path: Path, *, overrides: Mapping[str, Any] | None = None
+    assumptions_path: Path,
+    *,
+    overrides: Mapping[str, Any] | None = None,
+    design_capacity: Mapping[str, float] | None = None,
 ) -> Mapping[str, Mapping[str, float]]:
     """대장을 읽어 `run_single_case_e2e(level_map=...)` 에 넘길 수준표를 만든다.
 
@@ -534,11 +624,18 @@ def build_level_map(
     움직이지 않는 근거가 그 동일성이다. 얹히는 자리가 `base` 뿐인 사유와 축이
     아닌 키를 거부하지 않는 사유는 이 파일 머리말에 있다.
 
+    `design_capacity` 는 **이미 검증된** `_DESIGN_VARS` 변수 이름 → 한 호분
+    값이다(`resolve_design_capacity()`). `overrides` 와 자리가 다른 이유는
+    `_DESIGN_VARS` 가 `_LEDGER_VARS` 와 다른 루프(아래)를 도는 것과 같다 —
+    설계 변수는 대장 키가 없어 `대장 키 → 값` 매핑에 실을 수 없다. 없거나
+    비면 **종전과 같은 표**가 나온다(R71/WP-4).
+
     반환값은 전부 읽기 전용이다 — 케이스 그리드는 병렬로 돌고, 한 번의 변형이
     다른 케이스의 결과를 조용히 바꾼다 (NFR-205).
     """
     items = _index_by_key(assumptions_path)
     edited: Mapping[str, Any] = overrides or {}
+    design_edited: Mapping[str, float] = design_capacity or {}
     level_map: dict[str, Mapping[str, float]] = {}
 
     for var_name, ledger_key, scale in _LEDGER_VARS:
@@ -557,6 +654,16 @@ def build_level_map(
         level_map[var_name] = MappingProxyType(dict(levels))
 
     for var_name, _unit, _label, levels in _DESIGN_VARS:
-        level_map[var_name] = MappingProxyType(dict(levels))
+        # ★ **오버라이드는 `base` 한 자리에만 얹는다** — `low`·`high` 탐색
+        # 구간은 그대로 둔다(`.orch/R71/WP-4.md` §2-② · 이 파일 머리말 ⚠⚠).
+        # `_with_overridden_base` 를 그대로 재사용한다 — 스케일 `1.0` 인
+        # 이유는 `design_capacity` 값이 이미 케이스 변수와 같은 단위(kW·
+        # kWh)이기 때문이다(대장 오버라이드처럼 단위 환산이 필요 없다).
+        if var_name in design_edited:
+            level_map[var_name] = _with_overridden_base(
+                dict(levels), var_name, design_edited[var_name], 1.0
+            )
+        else:
+            level_map[var_name] = MappingProxyType(dict(levels))
 
     return MappingProxyType(level_map)

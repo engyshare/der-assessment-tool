@@ -27,7 +27,9 @@ from core.casegrid.ledger_levels import (
     build_level_map,
     ledger_backed_variables,
     modelling_only_variables,
+    resolve_design_capacity,
 )
+from core.contracts.validation import ValidationError
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS_YAML = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -390,3 +392,116 @@ def test_the_grid_supply_allowance_is_a_sweep_axis_read_from_the_ledger() -> Non
         "근거 법령·고시를 확인하지 않았는데 출처·신뢰도가 올라갔다 — "
         "「30%」의 출처는 사용자 문면 하나다"
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# design_capacity — R71/WP-4 (PV·ESS 용량·ESS 정격출력을 바꾸는 통로)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def test_resolve_design_capacity_of_none_is_unspecified() -> None:
+    """`None` 이 **「적지 않았다」**다 — 빈 매핑을 낸다.
+
+    `core/casegrid/household_scale.py::resolve_household_count` 와 같은
+    「미지정과 기본값은 다른 진술」 규약이다.
+    """
+    assert resolve_design_capacity(None) == {}
+
+
+def test_resolve_design_capacity_accepts_a_partial_mapping() -> None:
+    """세 키 중 **일부만** 있어도 된다 — all-or-nothing 이 아니다.
+
+    한 키가 빠졌다고 전체를 기본값으로 되돌리면 §7 후보군이 「PV 만 바꿔
+    본다」 같은 실험을 못 한다(`.orch/R71/WP-4.md` §2-①).
+    """
+    resolved = resolve_design_capacity({"pv_capacity_kw": 30.0})
+    assert dict(resolved) == {"pv_capacity_kw": 30.0}
+
+
+def test_resolve_design_capacity_accepts_all_three_keys() -> None:
+    """세 키(PV·ESS 용량·ESS 정격출력)를 전부 받는다 — 문서 예시 그대로."""
+    resolved = resolve_design_capacity(
+        {"pv_capacity_kw": 60.0, "ess_capacity_kwh": 200.0, "ess_power_kw": 100.0}
+    )
+    assert dict(resolved) == {
+        "pv_capacity_kw": 60.0,
+        "ess_capacity_kwh": 200.0,
+        "ess_power_kw": 100.0,
+    }
+
+
+def test_resolve_design_capacity_coerces_form_strings() -> None:
+    """화면 폼이 보내는 **문자열**도 받는다 — `household_count` 와 같은 관용."""
+    resolved = resolve_design_capacity({"pv_capacity_kw": "30.0"})
+    assert dict(resolved) == {"pv_capacity_kw": 30.0}
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "5.0",  # 매핑이 아니라 문자열
+        ["pv_capacity_kw", 5.0],  # 매핑이 아니라 목록
+    ],
+)
+def test_resolve_design_capacity_rejects_a_non_mapping(raw: object) -> None:
+    with pytest.raises(ValidationError) as excinfo:
+        resolve_design_capacity(raw)
+    assert "design_capacity" in str(excinfo.value.reason)
+
+
+def test_resolve_design_capacity_rejects_an_unknown_key() -> None:
+    """모르는 키는 조용히 무시하지 않고 **3요소로** 거부한다 (`NFR-303`)."""
+    with pytest.raises(ValidationError) as excinfo:
+        resolve_design_capacity({"battery_capacity_kw": 5.0})
+    error = excinfo.value
+    assert "battery_capacity_kw" in error.reason
+    assert error.action, "어떻게 고치라는지 말하지 않는다"
+
+
+@pytest.mark.parametrize("raw", [0.0, -1.0, "0", float("nan"), True, None])
+def test_resolve_design_capacity_rejects_non_positive_or_non_numeric(raw: object) -> None:
+    with pytest.raises(ValidationError):
+        resolve_design_capacity({"pv_capacity_kw": raw})
+
+
+@pytest.mark.req("NFR-202-M1")
+def test_build_level_map_overrides_only_the_base_of_a_design_variable() -> None:
+    """`design_capacity` 는 **`base` 한 자리**에만 얹는다 — 탐색 구간은 그대로.
+
+    `.orch/R71/WP-4.md` §2-② — 대장/설계변수 표의 low·high 탐침 폭은
+    사용자가 기준값을 고쳐도 유지된다(이 파일 머리말 ⚠⚠ 절과 같은 규약).
+    """
+    without = build_level_map(_ASSUMPTIONS_YAML)["pv_capacity_kw"]
+    with_override = build_level_map(
+        _ASSUMPTIONS_YAML,
+        design_capacity=resolve_design_capacity({"pv_capacity_kw": 30.0}),
+    )["pv_capacity_kw"]
+
+    assert with_override["base"] == 30.0
+    assert with_override["low"] == without["low"]
+    assert with_override["high"] == without["high"]
+    assert without["base"] != 30.0, "기준값이 이미 30.0 이면 이 시험이 아무것도 재지 못한다"
+
+
+@pytest.mark.req("NFR-202-M1")
+def test_build_level_map_without_design_capacity_is_unchanged() -> None:
+    """**안 주면 종전과 같은 표** — 골든 3종의 결론축 불변의 근거다."""
+    plain = build_level_map(_ASSUMPTIONS_YAML)
+    explicit_empty = build_level_map(_ASSUMPTIONS_YAML, design_capacity={})
+    assert dict(plain["pv_capacity_kw"]) == dict(explicit_empty["pv_capacity_kw"])
+    assert dict(plain["ess_capacity_kwh"]) == dict(explicit_empty["ess_capacity_kwh"])
+
+
+@pytest.mark.req("NFR-202-M1")
+def test_build_level_map_ignores_ess_power_kw_it_is_not_a_design_var() -> None:
+    """`ess_power_kw` 는 `_DESIGN_VARS` 밖이다 — `level_map` 에 새 키를 만들지 않는다.
+
+    탐침표에 올리지 않는다는 결정(`.orch/R71/WP-4.md` §2-③)의 반대편 확인:
+    이 키가 수준표 어디에도 새로 나타나지 않아야 한다 — 다른 통로
+    (`core/report/case_report.py`)가 그 값을 직접 읽어 쓴다.
+    """
+    level_map = build_level_map(
+        _ASSUMPTIONS_YAML,
+        design_capacity=resolve_design_capacity({"ess_power_kw": 100.0}),
+    )
+    assert "ess_power_kw" not in level_map

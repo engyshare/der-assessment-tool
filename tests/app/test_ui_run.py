@@ -326,6 +326,36 @@ def test_a_scenario_that_carries_overrides_runs_on_the_changed_values(
     assert changed[DR_SHIFTABLE_SHARE_LEDGER_KEY].reason is not None
 
 
+def test_a_scenario_that_carries_design_capacity_runs_on_the_changed_values(
+    tmp_path: Path,
+) -> None:
+    """★★ `design_capacity` 를 실은 시나리오는 **다른 수**를 낸다 (R71/WP-4).
+
+    ⚠ **화면 폼 칸을 아직 달지 않았다** — 이 라운드가 여는 것은
+    `app/services/ui_run.py::scenario_fields`(서비스 층) 하나이고, `/ui/run`
+    라우터·템플릿 칸은 `.orch/R71/WP-4.md` §3 「바꿔도 되는 파일」 밖이다.
+    그래서 위 오버라이드 검사와 같은 모양으로 **화면을 지나지 않고**
+    `scenario_fields()` 가 지은 매핑을 바로 `build_case_report()` 로 돌린다.
+    """
+    fields = scenario_fields(_SCENARIO, design_capacity={"pv_capacity_kw": 120.0})
+    path = tmp_path / f"{_SCENARIO}.yaml"
+    path.write_text(
+        yaml.safe_dump(fields, allow_unicode=True, sort_keys=False), encoding="utf-8"
+    )
+
+    report = build_case_report(path, assumptions_path=_ASSUMPTIONS)
+
+    assert float(report.metrics["npv"]) != _golden_npv(), (
+        "design_capacity 를 실었는데 결론축이 그대로다 — 통로가 실행에 닿지 않았다"
+    )
+
+
+def test_an_empty_design_capacity_does_not_carry_the_field(tmp_path: Path) -> None:
+    """빈 매핑(`{}`)은 「적지 않았다」다 — `household_count` 의 빈 문자열과 같은 규약."""
+    fields = scenario_fields(_SCENARIO, design_capacity={})
+    assert "design_capacity" not in fields
+
+
 #: 실증단지 규모를 고르는 화면 칸의 이름 — 폼과 질의가 **같은 글자**를 써야
 #: 사람이 넣은 값이 실행에 닿는다 (R64/WP-1 · 착수 47ⓐ).
 _HOUSEHOLD_FIELD = 'name="household_count"'
