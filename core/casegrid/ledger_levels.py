@@ -73,6 +73,8 @@ import yaml  # type: ignore[import-untyped]
 
 from core.contracts.assumptions import AssumptionProvider
 from core.contracts.validation import ValidationError
+from core.der.ess import ESSOperatingMode
+from core.der.pv import PVAllocationPriority
 
 #: (케이스 변수, 대장 키, 배율). 배율은 **단위 환산**이며 값이 아니다 —
 #: 대장의 `%/년` 을 러너가 쓰는 비율로 옮긴다.
@@ -433,6 +435,114 @@ def resolve_design_capacity(value: object | None) -> Mapping[str, float]:
         if not number > 0:
             raise _design_capacity_rejected(f"{key} 는 0보다 커야 합니다 (받은 값 {number!r})")
         resolved[key] = number
+    return MappingProxyType(resolved)
+
+
+#: 시나리오 yaml 이 **운전 구성 선택**(ESS 운전 방법 · PV 잉여 배분 순서)을
+#: 고르는 **필드 이름** (R71/WP-6 · 오케 판정 `.orch/R71/WP-6.md` §2②).
+#:
+#: ## ★ 왜 대장 항목이 아니라 시나리오 필드인가
+#:
+#: 위 `DESIGN_CAPACITY_FIELD` 와 **같은 판단이다.** 이 둘은 「시장에서 관측한
+#: 불확실 값」이 아니라 **사업자가 고르는 구성**이고, 대장은 값(전제)의
+#: 소유자이지 구성 선택의 소유자가 아니다. 반대로 같은 개선 방안이 함께 쓰는
+#: 단가 둘(`benefit.cp_price`·`benefit.nwas_price`)은 **값**이라 대장에 이미
+#: 있고, 그것을 바꾸는 통로는 `assumption_overrides` 다 — 그 둘을 이 필드로
+#: 또 열면 통로가 둘이 되고 그때 어느 것이 이겼는지 산출물에서 알 수 없다.
+#:
+#: ⛔ **`ess_charge_source` 는 이 필드가 받지 않는다.** 지금 구성에서 「계통」을
+#: 고르면 `비-태양광 ESS 방전분이 총 역송량을 초과합니다` 로 거부된다
+#: (`.orch/R71/result_5.md` 실측) — 받는 키로 세우면 「적을 수 있다고 해 놓고
+#: 늘 거부한다」가 된다.
+OPERATION_OPTIONS_FIELD = "operation_options"
+
+#: `ValidationError.field` 용 **점으로 이은 경로**(NFR-303) —
+#: `_DESIGN_CAPACITY_FIELD_KEY` 와 같은 짝이다.
+_OPERATION_OPTIONS_FIELD_KEY = "operation.options"
+
+#: 받는 키 → **그 키가 받을 수 있는 값**.
+#:
+#: ⚠⚠ **값은 「열거 이름」이 아니라 「한국어 값」이다.** `"GRID_DISCHARGE"` 를
+#: 그대로 넘기면 러너 깊은 곳에서 `ValueError: tuple.index(x): x not in tuple`
+#: 로 터진다 — 3요소가 없는 오류이고 어느 칸이 틀렸는지도 말하지 않는다.
+#: 그래서 여기서 **값으로** 맞대어 본다.
+#:
+#: ⚠ **값 문면을 여기 베끼지 않는다** — 열거가 정본이고 그 `.value` 를 읽는다.
+#: 베끼면 `core/der/ess.py` 가 spec 문면을 다듬는 날 한쪽이 남는다.
+#: ⚠ `PVAllocationPriority.PRICE_BASED`(「가격 기반」)는 **뺀다** — 구현이 없어
+#: `core/der/pv.py::resolve_pv_allocation_priority()` 가 거부하는 갈래다(그
+#: 독스트링). 받을 수 있는 값으로 적으면 「적으라고 해 놓고 거부한다」가 된다.
+_OPERATION_OPTION_CHOICES: Mapping[str, tuple[str, ...]] = MappingProxyType({
+    "ess_operating_mode": tuple(mode.value for mode in ESSOperatingMode),
+    "pv_allocation_priority": tuple(
+        choice.value
+        for choice in PVAllocationPriority
+        if choice is not PVAllocationPriority.PRICE_BASED
+    ),
+})
+
+
+def _operation_options_rejected(reason: str) -> ValidationError:
+    """거부 하나 — **3요소를 갖춘다** (`NFR-303`).
+
+    `_design_capacity_rejected` 와 같은 판단으로 문면을 한 곳에만 둔다.
+    ★ **`action` 이 받을 수 있는 값을 «모두» 적는다** — 이 축의 값은 한국어
+    문면이라 사용자가 열거 이름(`GRID_DISCHARGE`)이나 비슷한 말(「계통방전」)을
+    적기 쉽고, 목록이 없으면 거부 문면이 *「틀렸다」* 로만 끝난다.
+    """
+    allowed = " / ".join(
+        f"{key}: {' · '.join(values)}" for key, values in _OPERATION_OPTION_CHOICES.items()
+    )
+    return ValidationError(
+        field=_OPERATION_OPTIONS_FIELD_KEY,
+        reason=reason,
+        action=(
+            f"{OPERATION_OPTIONS_FIELD} 에는 다음 값만 적으십시오 — {allowed}. "
+            "적지 않은 키는 종전 동작(러너 기본값)으로 돌아갑니다"
+        ),
+    )
+
+
+def resolve_operation_options(value: object | None) -> Mapping[str, str]:
+    """시나리오의 `operation_options` → {러너 인자 이름: 한국어 값}.
+
+    `None` 이 **「적지 않았다」**이며 그때 빈 매핑을 낸다 — 호출부
+    (`core/report/case_report.py`)는 빈 매핑을 「러너 기본값 그대로」로 읽어
+    두 인자에 `None` 을 넘긴다. `resolve_design_capacity` 와 같은 「미지정과
+    기본값은 다른 진술」 규약이다.
+
+    ## ★ 키 단위로 받는다 — all-or-nothing 이 아니다
+
+    둘 중 하나만 적어도 된다(예: 배분 순서만 「배터리 우선」으로 바꾸고 운전
+    방법은 배포 기본값 유지). 한 키가 빠졌다고 둘 다 되돌리면 *「배분만 바꿔
+    본다」* 같은 실험을 못 한다.
+
+    ⚠ **여기서 열거로 승격하지 않는다.** 승격·미구현 갈래 거부는
+    `core/der/pv.py::resolve_pv_allocation_priority()` 와 러너가 지고, 이
+    함수는 **문자열로** 넘긴다(`FR-105-AC5` 의 관례 — 케이스 그리드가 문자열로
+    값을 건넨다). 두 곳에서 승격하면 어느 쪽이 이겼는지 산출물에서 알 수 없다.
+    """
+    if value is None:
+        return MappingProxyType({})
+    if not isinstance(value, Mapping):
+        raise _operation_options_rejected(
+            f"{OPERATION_OPTIONS_FIELD} 는 매핑이어야 합니다 (받은 값 {value!r})"
+        )
+    unknown = sorted(str(key) for key in set(value) - set(_OPERATION_OPTION_CHOICES))
+    if unknown:
+        raise _operation_options_rejected(
+            f"모르는 키 {', '.join(unknown)} — 쓸 수 있는 키: "
+            f"{', '.join(sorted(_OPERATION_OPTION_CHOICES))}"
+        )
+    resolved: dict[str, str] = {}
+    for key, raw in value.items():
+        choices = _OPERATION_OPTION_CHOICES[key]
+        if not isinstance(raw, str) or raw not in choices:
+            raise _operation_options_rejected(
+                f"{key} 의 값 {raw!r} 은 받을 수 있는 값이 아닙니다 — 열거 이름이 아니라 "
+                f"{' · '.join(choices)} 중 하나를 적으십시오"
+            )
+        resolved[key] = raw
     return MappingProxyType(resolved)
 
 

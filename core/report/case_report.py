@@ -101,12 +101,14 @@ from core.casegrid.household_scale import (
 )
 from core.casegrid.ledger_levels import (
     DESIGN_CAPACITY_FIELD,
+    OPERATION_OPTIONS_FIELD,
     build_level_map,
     design_variables,
     ledger_backed_variables,
     ledger_unit_scales,
     required_scalar,
     resolve_design_capacity,
+    resolve_operation_options,
 )
 from core.casegrid.load_shift import (
     DR_SHIFTABLE_SHARE_LEDGER_KEY,
@@ -195,6 +197,23 @@ REC_PRICE_LEDGER_KEY = "benefit.rec_price"
 #: 없는 이유는 그 파일 옆 주석에 있다(폭을 지어낼 수 없어 스윕 축이 아니다).
 REC_WEIGHT_LEDGER_KEY = "benefit.rec_weight_pv"
 
+#: **계통 급전 편익 두 갈래의 단가**를 담은 대장 키 (R51/WP-7 이 등재했고
+#: R71/WP-6 이 배선했다). `REC_PRICE_LEDGER_KEY` 와 **같은 통로**이며 이유도
+#: 같다 — 러너에 리터럴을 두면 대장을 고쳐도 옛 값이 쓰인다(`NFR-202`).
+#:
+#: ★★ **이 두 줄이 없는 동안 대장이 거짓을 적고 있었다** (R71/WP-5 실측).
+#: 두 항목의 `applicable_scope` 가 *「실행 경로가 이 값을 … 단가로 읽는다」* 고
+#: 쓰는데 리포트 경로는 그 값을 러너에 **넘기지 않았고**, 그래서 대장을 아무리
+#: 고쳐도 `NWAs`·`CP` 편익이 0원이었다. 「선언·계산은 있는데 읽는 쪽이 없다」 —
+#: 이 파일 `_LEDGER_VARS` 계열이 이미 두 번 만난 형태다.
+#:
+#: ⚠ **지금 둘 다 `track: default0` · `value: 0` 이다** — 그래서 이 배선은
+#: 결론축을 1원도 움직이지 않는다(0 을 넘기는 것이 러너 기본값 `0.0` 과 같다).
+#: 크기를 갖는 것은 사용자가 `assumption_overrides` 로 단가를 올리고 아래
+#: `OPERATION_OPTIONS_FIELD` 로 운전 방법을 고른 실행뿐이다.
+NWAS_PRICE_LEDGER_KEY = "benefit.nwas_price"
+CP_PRICE_LEDGER_KEY = "benefit.cp_price"
+
 #: 분산편익 크레딧 대장 키 다섯 (R53/WP-1 · R54/WP-3 — 대장이 다섯 칸으로
 #: 나뉘었다). `REC_PRICE_LEDGER_KEY` 와 같은 통로. `DistributedSubItems`
 #: 필드명과 짝지어 `_read_distributed_sub_items()` 가 다섯을 한 번에 읽는다.
@@ -266,6 +285,14 @@ COMPUTE_PHASE_READ_KEYS: frozenset[str] = frozenset(
         # `run_single_case_e2e(...)` 호출보다 앞이며, 읽은 수가 러너로 가는
         # `extra_appliance_load_kwh` 를 바꾼다(위 셋과 같은 기준).
         EV_CHARGING_LOSS_LEDGER_KEY,
+        # ★★★ **계통 급전 편익 두 갈래의 단가** (R71/WP-6). 계산 구간이
+        # `required_scalar()` 로 읽어 **러너 인자로** 넘긴다(`REC_PRICE_LEDGER_KEY`
+        # 와 같은 자리·같은 기준) — 그래서 이 선언 안에 든다.
+        # ⚠ **선언을 넓혀 통과시킨 것이 아니다.** 두 읽기는
+        # `run_single_case_e2e(...)` 호출 **안**에서 일어나고 그 값이 편익
+        # 금액을 정한다 — 산출물 조립이 아니라 계산이다.
+        NWAS_PRICE_LEDGER_KEY,
+        CP_PRICE_LEDGER_KEY,
     }
     | {key for _field, key in DISTRIBUTED_CREDIT_LEDGER_KEYS}
 )
@@ -810,6 +837,15 @@ def build_case_report(
                 "줄 상한에 닿아 있어 이후 라운드에서 그 상한을 먼저 다뤄야 합니다"
             ),
         )
+    # ★★★ **운전 구성 선택(ESS 운전 방법 · PV 잉여 배분 순서)도 시나리오에서
+    # 읽는다** (R71/WP-6 · 오케 판정 `.orch/R71/WP-6.md` §2②). 위
+    # `design_capacity` 와 **나란한 필드 하나**이며 해석·거부는 전부
+    # `resolve_operation_options()` 가 진다(이 파일은 `NFR-206` 코드 줄 상한에
+    # 가까이 닿아 있어 여기서 해석하면 자리가 없다).
+    # ⚠ **빈 매핑이면 아래 두 인자가 `None` 이 되고 그때 러너는 종전 경로를
+    # 그대로 지난다** — 골든 셋에 이 필드가 없으므로 그 동일성이 결론축 불변의
+    # 근거다.
+    operation_options = resolve_operation_options(scenario.get(OPERATION_OPTIONS_FIELD))
     level_map = build_level_map(
         assumptions_path,
         overrides=provider.get_overrides(),
@@ -986,6 +1022,18 @@ def build_case_report(
         rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
         distributed_sub_items=distributed_sub_items,
         baseline_arrangement=baseline_arrangement,
+        # ★★★ **계통 급전 편익 두 갈래의 단가와 운전 구성 선택** (R71/WP-6).
+        # 단가 둘은 **대장**에서 오고(`assumption_overrides` 가 사용자 통로),
+        # 선택 둘은 **시나리오 필드**에서 온다 — 값과 구성 선택의 소유자가
+        # 다르기 때문이다(`OPERATION_OPTIONS_FIELD` 옆 주석).
+        # ⚠ **넷이 한 묶음이다.** 단가만 올리면 `NWAs`·`CP` 는 켜지지 않고
+        # (운전 방법이 「자가소비 우선」이면 `enabled=False`), 운전 방법만
+        # 고르면 단가가 0이라 편익이 0원인 채 `PeakShaving` 만 사라진다 —
+        # 어느 쪽도 예외를 내지 않는다.
+        nwas_price_won_per_kwh=required_scalar(provider, NWAS_PRICE_LEDGER_KEY, note="NWAs 단가"),
+        cp_price_won_per_kw_month=required_scalar(provider, CP_PRICE_LEDGER_KEY, note="CP 단가"),
+        ess_operating_mode=operation_options.get("ess_operating_mode"),
+        pv_allocation_priority=operation_options.get("pv_allocation_priority"),
         # ★ ⓒ 의 계측 선언 — 이것이 없으면 ⓒ 는 러너에서도 거부된다(R60/WP-3).
         pool_metering=pool_metering,
     )

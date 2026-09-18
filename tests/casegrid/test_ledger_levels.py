@@ -28,8 +28,11 @@ from core.casegrid.ledger_levels import (
     ledger_backed_variables,
     modelling_only_variables,
     resolve_design_capacity,
+    resolve_operation_options,
 )
 from core.contracts.validation import ValidationError
+from core.der.ess import ESSOperatingMode
+from core.der.pv import PVAllocationPriority
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS_YAML = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -505,3 +508,101 @@ def test_build_level_map_ignores_ess_power_kw_it_is_not_a_design_var() -> None:
         design_capacity=resolve_design_capacity({"ess_power_kw": 100.0}),
     )
     assert "ess_power_kw" not in level_map
+
+
+# ── `operation_options` — 운전 구성 선택의 통로 (R71/WP-6) ──────────────
+#
+# 이 축이 여는 것은 값이 아니라 **구성 선택**이다(`ess_operating_mode` ·
+# `pv_allocation_priority`). 그래서 대장 항목이 아니라 시나리오 필드이며,
+# 함수 단위의 규약은 위 `resolve_design_capacity` 계열과 같다 — 다만 값이
+# **한국어 문면**이라 「열거 이름을 적었다」를 거부하는 자리가 하나 더 있다.
+
+
+def test_resolve_operation_options_treats_none_as_unspecified() -> None:
+    """`None` 이 **「적지 않았다」**다 — 그때 빈 매핑이고 호출부는 `None` 을 넘긴다."""
+    assert dict(resolve_operation_options(None)) == {}
+
+
+def test_resolve_operation_options_accepts_the_korean_values() -> None:
+    """★ 받는 것은 **열거의 `.value`**(한국어 문면)이며 그대로 통과한다."""
+    resolved = resolve_operation_options(
+        {
+            "ess_operating_mode": ESSOperatingMode.SEMI_CENTRAL_DISPATCH.value,
+            "pv_allocation_priority": PVAllocationPriority.BATTERY_FIRST.value,
+        }
+    )
+    assert dict(resolved) == {
+        "ess_operating_mode": "준중앙급전 등록",
+        "pv_allocation_priority": "배터리 우선",
+    }
+
+
+def test_resolve_operation_options_takes_one_key_at_a_time() -> None:
+    """**키 단위로 받는다** — 배분 순서만 바꿔 보는 실험이 성립해야 한다."""
+    assert dict(resolve_operation_options({"pv_allocation_priority": "배터리 우선"})) == {
+        "pv_allocation_priority": "배터리 우선"
+    }
+
+
+def test_resolve_operation_options_is_read_only() -> None:
+    """돌려준 매핑은 **읽기 전용**이다 (NFR-205) — 호출부가 서로를 바꾸지 않는다."""
+    resolved = resolve_operation_options({"ess_operating_mode": "계통 방전"})
+    with pytest.raises(TypeError):
+        resolved["ess_operating_mode"] = "자가소비 우선"  # type: ignore[index]
+
+
+def _rejection(value: object) -> ValidationError:
+    with pytest.raises(ValidationError) as caught:
+        resolve_operation_options(value)
+    return caught.value
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"ess_charge_source": "계통"},
+        {"ess_operating_mode": "GRID_DISCHARGE"},
+        {"pv_allocation_priority": "가격 기반"},
+        {"ess_operating_mode": 3},
+        ["ess_operating_mode"],
+    ],
+    ids=["모르는 키", "열거 이름", "미구현 갈래", "수를 적었다", "매핑이 아니다"],
+)
+def test_every_rejection_carries_the_three_elements(value: object) -> None:
+    """★★ 거부는 **셋을 다 갖춘다** (`NFR-303`) — WP-5 가 *「3요소를 갖추지 않은
+    유일한 자리」* 라고 적은 곳이 이 축이었다.
+
+    `action` 이 **받을 수 있는 값을 모두 적는지**까지 본다 — 이 축의 값은
+    한국어 문면이라 목록이 없으면 사용자가 무엇을 적어야 하는지 알 수 없다.
+    """
+    error = _rejection(value)
+    assert error.field == "operation.options"
+    assert error.reason.strip()
+    assert "준중앙급전 등록" in error.action
+    assert "배터리 우선" in error.action
+
+
+def test_an_unknown_key_is_named_in_the_reason() -> None:
+    """모르는 키는 **이름이 사유에 뜬다** — 조용히 무시하지 않는다."""
+    assert "ess_charge_source" in _rejection({"ess_charge_source": "계통"}).reason
+
+
+def test_an_enum_name_is_refused_and_told_to_use_the_value() -> None:
+    """★★★ **`"GRID_DISCHARGE"` 를 거부한다** — 그냥 넘기면 러너 깊은 곳에서
+    `ValueError: tuple.index(x): x not in tuple` 로 터진다(3요소 없음)."""
+    reason = _rejection({"ess_operating_mode": "GRID_DISCHARGE"}).reason
+    assert "GRID_DISCHARGE" in reason
+    assert "계통 방전" in reason
+
+
+def test_the_unimplemented_allocation_branch_is_not_offered() -> None:
+    """`PRICE_BASED`(「가격 기반」)는 **받을 수 있는 값 목록에 없다** — 구현이 없어
+    `core/der/pv.py::resolve_pv_allocation_priority()` 가 거부하는 갈래다."""
+    assert "가격 기반" not in _rejection({"pv_allocation_priority": "가격 기반"}).action
+
+
+def test_the_choices_come_from_the_enums_not_from_a_copy() -> None:
+    """★ 값 목록의 정본은 **열거**다 — 베낀 문면이면 `core/der` 를 고치는 날 갈린다."""
+    action = _rejection({"ess_operating_mode": "없는 값"}).action
+    for mode in ESSOperatingMode:
+        assert mode.value in action
