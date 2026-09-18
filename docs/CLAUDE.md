@@ -5,6 +5,7 @@
 - 정본 사본 — `domain-rules.md` · `evidence-standard.md`
 - 판정 기록 — `decisions-*.md`(라운드별 기록, 과거형)
 - 전제 대장 — `assumptions.yaml`(경제성 입력값 + 근거 부기)
+- 개선 방안 대장 — `improvements.yaml`(「바꾸면」의 목록. `assumptions.yaml` 과 섞지 말 것, `scripts/improvement_effects.py` 가 읽는다)
 - 자동 생성물 — `traceability.md`
 - 사람용 안내 — `README.md`(정본 사본 규약 세부 절차)
 

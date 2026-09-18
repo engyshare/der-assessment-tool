@@ -1,0 +1,255 @@
+# 개선 방안 대장 — 「무엇을 바꾸면 얼마나 좋아지는가」 (R71/WP-7)
+#
+# ★★★ 이 파일은 «지금 이 사업이 쓰는 값»이 아니라 «바꾸면»이다.
+#     `assumptions.yaml` 과 섞지 마라.
+#
+# 저쪽(`docs/assumptions.yaml`)은 지금 사업이 실제로 쓰는 값의 대장이고 이 파일은
+# 「그 값·구성을 이렇게 바꾸면」의 목록이다. 둘을 한 파일에 쓰면 기준선이 사라지고
+# 골든 3종(`fixtures/golden/scenario_*.yaml`)이 개선안마다 함께 움직인다 — 그러면
+# 「얼마나 좋아졌는가」를 견줄 상대가 없어진다. 그래서 방안은 **시나리오 오버레이**로만
+# 표현하며(오케 판정 `.orch/R71/WP-7.md` §2①), 이 파일은 그 오버레이의 목록이다.
+#
+# ⚠ 문면 한 가지 — 위 ★★★ 은 오케 지시문 §2② 가 요구한 문장과 같은 뜻이되 그것이
+#   쓴 낱말 하나를 바꿔 적었다. 사람이 읽는 자리에서 그 낱말(대장을 가리키는 옛말)을
+#   0건으로 두는 것이 이 저장소의 규약이기 때문이다(판정 R63b §1). 대장을 부르는 말은
+#   「분석 설정 대장」이다.
+#
+# ── 읽는 것은 `scripts/improvement_effects.py` 하나다 ─────────────────────────
+#
+#     PYTHONUTF8=1 ./.venv/Scripts/python.exe -m scripts.improvement_effects
+#
+# 그 도구가 방안마다 「기준 + 그 방안 하나」를 돌려 Δ 를 재고 다섯 절로 인쇄한다.
+# **한 번에 하나씩** 적용하며 조합은 재지 않는다 — 사용자 문면이 *「각각 제시」* 다.
+#
+# ── 한 항목의 칸 ─────────────────────────────────────────────────────────────
+#
+#   id            방안을 부르는 이름. 두 목록에 걸쳐 중복되면 도구가 거부한다
+#   title         사람이 읽는 한 줄
+#   lever         제도 | 구성 | 단가   (셋 중 하나)
+#   precondition  ⓐ배선 | ⓑ구성 | ⓒ제도·사업판단  (`.orch/R71/result_5.md` 의 3분류)
+#   rationale     왜 이것이 방안인가 — 한두 문장
+#   source        ★★ 이 값의 근거. **비워 둘 수 없다.** 근거가 없으면
+#                 「근거 없음 — 크기만 보는 가정」 이라고 적으며, 그때 도구는 그
+#                 표시를 산출물에 그대로 인쇄한다. 이 저장소는 *「없는 시장의 수익이
+#                 결론의 부호를 만든다」* 를 반복해 경계해 왔다
+#   apply         얹는 오버레이. 받는 키는 넷뿐이다 —
+#                 `assumption_overrides`(항목마다 `reason` 필수) ·
+#                 `operation_options` · `design_capacity` · `subsidy_rate`
+#                 ⛔ `design_capacity.ess_power_kw` 는 실행이 거부한다(아직 배선 없음)
+#
+# ⚠ `apply` 에 `pv_allocation_priority: 배터리 우선` 이 함께 적힌 방안들이 있다.
+#   그것은 조합이 아니라 **그 방안의 성립 조건**이다 — 역송이 0kWh 인 기본 배분
+#   (집 우선)에서는 잉여판매·REC 단가가 0kWh 에 곱해져 단가를 아무리 올려도 Δ=0 이다
+#   (`.orch/R71/result_5.md` §4 결정시험 B·D). 도구는 그 방안 행에
+#   「배분 변경을 포함한다」를 인쇄한다.
+
+improvements:
+  - id: pv_allocation_battery_first
+    title: "PV 잉여 배분을 「배터리 우선」으로 바꾼다 — 돈이 안 드는 운전 변경"
+    lever: "구성"
+    precondition: "ⓑ"
+    rationale: >-
+      기본 배분(집 우선)은 PV 잉여를 집에서 먼저 쓰고 남지 않아 계통으로 나가는
+      전력이 0kWh 다. 배터리 우선으로 바꾸면 역송이 생기고 잉여판매·REC 가 처음으로
+      0원을 벗어난다. **설비를 사지도 제도를 바꾸지도 않는다** — 운전 방법의 선택이다.
+    source: >-
+      `core/der/pv.py::PVAllocationPriority` 가 선언한 선택지이며 단가·비용을 손대지
+      않는다. 즉 이 방안에는 「틀릴 수 있는 값」이 없다.
+    apply:
+      operation_options:
+        pv_allocation_priority: "배터리 우선"
+
+  - id: surplus_sale_at_current_price
+    title: "위 배분 변경 + 현행 단가(110원/kWh)로 잉여를 판다 — 단가를 안 올린 효과"
+    lever: "구성"
+    precondition: "ⓑ"
+    rationale: >-
+      단가를 올리지 않고 **역송을 만드는 것만의 효과**를 가른다. 위 방안과 같은 크기가
+      나오는 것이 정상이며(오버라이드가 대장 값을 그대로 다시 적은 것이므로), 그
+      동일성이 곧 *「잉여판매 수입은 단가가 아니라 배분이 열었다」* 의 증거다.
+    source: >-
+      `docs/assumptions.yaml` `tariff.surplus_direct_sale` — `track: assume` ·
+      `value: 110` 원/kWh · 2026년 기준. 현행 값을 그대로 쓴다.
+    apply:
+      operation_options:
+        pv_allocation_priority: "배터리 우선"
+      assumption_overrides:
+        - key: "tariff.surplus_direct_sale"
+          value: 110
+          reason: "현행 대장 값을 그대로 적어 「단가를 안 올렸다」를 명시한다"
+
+  - id: surplus_sale_price_up
+    title: "위 + 잉여 판매단가를 150원/kWh 로 올린다"
+    lever: "단가"
+    precondition: "ⓒ"
+    rationale: >-
+      잉여 판매단가는 SMP 계열 정산단가이므로 사업자가 고르는 값이 아니다 — 제도·계약이
+      정한다. 그 단가가 대장이 스스로 적은 검토 상한까지 올랐을 때의 크기를 본다.
+    source: >-
+      `docs/assumptions.yaml` `tariff.surplus_direct_sale` 의
+      `sensitivity.high` = 150 원/kWh (`low 80 · base 110 · high 150`).
+      **대장 밖의 수를 지어내지 않았다.**
+    apply:
+      operation_options:
+        pv_allocation_priority: "배터리 우선"
+      assumption_overrides:
+        - key: "tariff.surplus_direct_sale"
+          value: 150
+          reason: "대장이 적은 검토 범위의 상한(sensitivity.high)"
+
+  - id: rec_price_up
+    title: "위 + REC 단가를 110원/kWh 로 올린다"
+    lever: "단가"
+    precondition: "ⓒ"
+    rationale: >-
+      REC 수익은 계통으로 나간 kWh 에 단가를 곱한다. 역송이 열린 뒤에야 단가가 뜻을
+      가지며, 그 단가는 인증서 시장이 정한다.
+    source: >-
+      `docs/assumptions.yaml` `benefit.rec_price` 의 `sensitivity.high` = 110 원/kWh
+      (`low 45 · base 70 · high 110`). ⚠ 단위는 `원/REC` 가 아니라 `원/kWh` 다.
+    apply:
+      operation_options:
+        pv_allocation_priority: "배터리 우선"
+      assumption_overrides:
+        - key: "benefit.rec_price"
+          value: 110
+          reason: "대장이 적은 검토 범위의 상한(sensitivity.high)"
+
+  - id: cp_registration
+    title: "준중앙급전 자원으로 등록해 용량정산금(CP)을 받는다"
+    lever: "제도"
+    precondition: "ⓒ"
+    rationale: >-
+      ESS 운전 방법을 「준중앙급전 등록」으로 두면 CP 편익이 켜진다(등록 용량 × 단가 ×
+      12개월). ⚠ 이 방안은 **피크 저감 편익을 포기하는 대가**를 함께 낸다 — 같은 ESS 를
+      두 목적에 동시에 쓸 수 없기 때문이며, 도구가 재는 Δ 는 그 상계 후의 값이다.
+    source: >-
+      ★ **근거 없음 — 크기만 보는 가정.** 대장 `benefit.cp_price` 는
+      `track: default0` · `value: 0` 이고 그 `derivation_method` 가 *「가정하지 않는다.
+      CP 는 현행 제도이나 분산특구 내 ESS 에 적용할 산정 기준이 부재하다」* 라고 적는다.
+      여기 적은 10,000 원/kW·월은 **제도 근거가 아니라 크기를 보려는 수**다.
+    apply:
+      operation_options:
+        ess_operating_mode: "준중앙급전 등록"
+      assumption_overrides:
+        - key: "benefit.cp_price"
+          value: 10000
+          reason: "개선 방안 평가용 가정값 — 제도 근거 없음"
+
+  - id: grid_tariff_down
+    title: "계통 구매단가를 100원/kWh 로 낮춘다 — 계약종별 변경"
+    lever: "단가"
+    precondition: "ⓒ"
+    rationale: >-
+      이 사업의 운영비는 현가의 98.7% 가 계통 전력 구매 한 항이다
+      (`.orch/R71/result_5.md` §1). 그 단가를 낮추는 것은 설비가 아니라 계약종별·요금제의
+      일이며, 값 하나로 표현되는 자리 중 결손에 가장 크게 닿는다.
+    source: >-
+      `docs/assumptions.yaml` `tariff.hv_single_contract.energy_only` 의
+      `sensitivity` 구간 안의 값 (`low 80 · base 120 · high 170`).
+      구간 하한(80)이 아니라 100 을 적은 이유는 `.orch/R71/result_5.md` §3ⓑ 가
+      **같은 값으로 이미 재 두어 대조가 되기 때문**이다.
+    apply:
+      assumption_overrides:
+        - key: "tariff.hv_single_contract.energy_only"
+          value: 100
+          reason: "대장이 적은 검토 범위 안의 값 · WP-5 실측과 대조되는 값"
+
+  - id: pv_capacity_up
+    title: "PV 용량을 한 호당 6.0kW 로 늘린다"
+    lever: "구성"
+    precondition: "ⓑ"
+    rationale: >-
+      PV 를 키우면 결론이 좋아진다 — 취득비가 늘어도 회피하는 구매 전력이 더 크기
+      때문이다. ⚠ 부호가 ESS 와 반대인 자리이므로 **둘을 「설비를 더 넣는다」로 묶어
+      읽지 말 것**(아래 `ess_capacity_down` 과 §5 참조).
+    source: >-
+      `core/casegrid/ledger_levels.py::_DESIGN_VARS` 의 PV 탐색 구간 안의 값
+      (`low 1.0 · base 3.0 · high 9.0` kW/호). 설계 용량은 시장에서 관측한 값이 아니라
+      **사업자가 고르는 설계**이므로 대장 항목이 아니다.
+    apply:
+      design_capacity:
+        pv_capacity_kw: 6.0
+
+  - id: ess_capacity_down
+    title: "ESS 용량을 한 호당 5.0kWh 로 줄인다 — 돈이 안 드는 자리"
+    lever: "구성"
+    precondition: "ⓑ"
+    rationale: >-
+      ESS 를 2배로 늘리면 결손이 9,558만원 더 커진다는 실측(`.orch/R71/result_5.md`
+      §3ⓐ)이 가리킨 반대 방향이다. 고정 O&M 은 용량 비례가 아닌데 취득비·교체비는
+      비례하므로, **줄이는 것이 개선 방안일 수 있다.** 설비를 덜 사는 일이라 제도·계약이
+      필요 없고 즉시 된다 — 그래서 실행 가능성이 가장 높은 자리일 수 있다.
+    source: >-
+      `core/casegrid/ledger_levels.py::_DESIGN_VARS` 의 ESS 탐색 구간 안의 값
+      (`low 2.0 · base 10.0 · high 30.0` kWh/호).
+    apply:
+      design_capacity:
+        ess_capacity_kwh: 5.0
+
+# ── 방안이 «아닌» 것 — 같은 축을 재지만 목록에서 빼는 것들 ────────────────────
+#
+# ★ 왜 같은 파일에 두는가: 이것들도 **같은 오버레이로 재는 축**이고, 재지 않으면
+#   산출물 §5 가 *「방안이 아니다」* 만 말하고 **크기를 말하지 못한다.** 다른 파일로
+#   가르면 그 절이 낡거나(축이 바뀌어도 §5 는 옛말을 한다) 도구가 수를 베껴 인쇄하게
+#   된다. 도구는 이 목록을 **§2 가 아니라 §5** 에 인쇄하며 합계(§4)에 넣지 않는다.
+# ⚠ 칸은 위와 같고 `why_not` 하나가 더 필수다 — 그 칸이 비면 도구가 거부한다.
+
+not_improvements:
+  - id: ev_load_zero
+    title: "전기차 충전 부하를 0 으로 둔다"
+    lever: "구성"
+    precondition: "ⓑ"
+    rationale: >-
+      한 호당 연 2,784kWh 인 전기차 충전 부하를 지우면 계통 구매가 그만큼 줄어 결손이
+      크게 작아진다. 크기로는 상위권이다.
+    source: >-
+      `docs/assumptions.yaml` `load.ev.annual` — `track: assume` · `value: 2784`
+      kWh/호·년. 0 은 「그 부하가 없는 사업」이라는 뜻이다.
+    why_not: >-
+      ⛔ 그 부하가 **이 사업의 목적**이다(오케 판정 `.orch/R71/WP-7.md` §2③ ·
+      `docs/decisions-2026-09-18-R71.md` §5 ⑤). *「목적을 지우면 경제성이 좋아진다」* 는
+      답은 방안이 아니다. ⇒ 이 크기는 **사업 규모의 지표**로만 읽는다.
+    apply:
+      assumption_overrides:
+        - key: "load.ev.annual"
+          value: 0
+          reason: "방안이 아니라 사업 규모를 재는 참고 축"
+
+  - id: heatpump_load_zero
+    title: "히트펌프 부하를 0 으로 둔다"
+    lever: "구성"
+    precondition: "ⓑ"
+    rationale: >-
+      한 호당 연 3,289kWh 인 히트펌프 부하를 지우면 같은 방향으로 결손이 작아진다.
+    source: >-
+      `docs/assumptions.yaml` `load.heatpump.annual` — `track: assume` ·
+      `value: 3289.0` kWh/호·년.
+    why_not: >-
+      ⛔ 위와 같다 — 냉난방·급탕의 전기화가 이 사업의 목적이다.
+      ⚠ 하위 항목(`load.heatpump.{heating,cooling,hotwater}.annual`)으로 쪼개 묻는 것은
+      **지금 안 된다** — 대장이 그 셋을 표시·독립 민감도 용도로 선언하고 계산 경로는
+      부모 키가 읽는다(`.orch/R71/result_5.md` §4).
+    apply:
+      assumption_overrides:
+        - key: "load.heatpump.annual"
+          value: 0.0
+          reason: "방안이 아니라 사업 규모를 재는 참고 축"
+
+  - id: ess_capacity_up
+    title: "ESS 용량을 한 호당 20.0kWh 로 늘린다"
+    lever: "구성"
+    precondition: "ⓑ"
+    rationale: >-
+      「저장장치를 더 넣자」가 개선 방안인지 묻는 자리다. 방향이 반대인 것을 함께 재어
+      `ess_capacity_down` 의 부호가 우연이 아님을 보인다.
+    source: >-
+      `core/casegrid/ledger_levels.py::_DESIGN_VARS` 의 ESS 탐색 구간 안의 값
+      (`low 2.0 · base 10.0 · high 30.0` kWh/호).
+    why_not: >-
+      ⛔ **악화된다.** 취득비·교체비는 용량에 비례하는데 이 구성에서 늘어난 저장으로
+      더 버는 돈이 그만큼 되지 않는다. 산출물이 이 수를 음수로 인쇄하는 것이
+      *「설비를 더 넣는다」가 이 사업의 답이 아니다* 의 증거다.
+    apply:
+      design_capacity:
+        ess_capacity_kwh: 20.0
