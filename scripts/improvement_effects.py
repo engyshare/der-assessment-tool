@@ -34,8 +34,10 @@
 
 - **조합.** 방안마다 「기준 + 그 방안 하나」다. §4 의 합계는 **단순 합**이며
   상호작용을 반영하지 않는다 — 함께 적용한 결과가 아니다.
-- **실행 가능성.** `precondition`(ⓐ배선·ⓑ구성·ⓒ제도)은 **대장이 적은 선언**을
-  나르는 것이고 이 도구가 판정한 것이 아니다. Δ 가 크다고 오늘 되는 것이 아니다.
+- **실행 가능성.** `precondition`(ⓐ배선·ⓑ구성·ⓒ제도)과 `feasibility`(제도가
+  허용하는가)는 **대장이 적은 판정**을 나르는 것이고 이 도구가 판정한 것이 아니다
+  (정본은 조사 `.orch/R71/result_9.md` 다). Δ 가 크다고 오늘 되는 것이 아니다 —
+  그래서 §2 가 **두 묶음**으로 서고 §4 합계가 `불가`·`미확인` 을 뺀다(R71/WP-10).
 - **근거.** `source` 칸이 *「근거 없음 — 크기만 보는 가정」* 인 방안의 Δ 는
   **크기일 뿐이다.** 이 저장소는 *「없는 시장의 수익이 결론의 부호를 만든다」* 를
   반복해 경계해 왔으므로 그 표시를 산출물에 그대로 인쇄한다.
@@ -102,6 +104,7 @@ from scripts.improvement_ledger import (
     REPO_ROOT,
     Effect,
     Improvement,
+    choose_without_overlap,
     load_improvements,
 )
 
@@ -238,6 +241,10 @@ def _head(
         "",
         "⚠ **방안은 위 대장 판 위에 얹은 오버레이다.** 대장이 바뀌면 아래 Δ 를 다시 "
         "재야 한다 — 이 표가 그 판을 적는 이유다.",
+        "",
+        "★★ **크기 순은 실행 순이 아니다 — 근거 축을 함께 보라.** §2 는 Δ 하나로 "
+        "세우지 않고 **「근거가 선 것」과 「지금은 못 하는 것」 두 묶음**으로 세우며, "
+        "§4 의 합계는 뒤 묶음을 **빼고** 낸다.",
     ]
 
 
@@ -320,38 +327,91 @@ def _now_section(report: CaseReport) -> list[str]:
     return lines
 
 
+#: §2 표의 머리. **`근거 축` 칸이 Δ 옆에 선다** — 크기와 근거를 함께 읽게 하는 것이
+#: 이 절의 목적이며(오케 판정 `.orch/R71/WP-10.md` §2④), 두 칸이 떨어져 있으면
+#: 사람이 크기만 보고 순서를 실행 순으로 읽는다.
+_EFFECT_TABLE_HEAD = (
+    "| # | id | 방안 | lever | 조건 | 근거 축 | Δnpv (원) | 적용 후 npv (원) "
+    "| Δ 연간 운영 순수지 (원) | 값의 근거 |",
+    "|---:|---|---|---|---|---|---:|---:|---:|---|",
+)
+
+
+def _grouped(effects: Sequence[Effect]) -> tuple[list[Effect], list[Effect]]:
+    """표현된 방안을 **두 묶음**으로 — 앞이 근거가 선 것, 뒤가 지금 못 하는 것.
+
+    ★ **각 묶음 «안에서»만 Δ 내림차순이다.** 크기 순 하나로 세우면 근거가 가장 얇은
+    것이 맨 위에 선다 — `cp_registration`(Δ 1위 · 조사 판정 `불가`)이 실제로 그랬고,
+    그러면 표가 *「할 수 있는 것」* 이 아니라 *「크면 좋겠는 것」* 을 위에 둔다
+    (오케 판정 `.orch/R71/WP-10.md` §0).
+    """
+    ranked = sorted(
+        (effect for effect in effects if effect.expressed),
+        key=lambda effect: -(effect.delta_won or 0),
+    )
+    return (
+        [effect for effect in ranked if effect.improvement.grounded],
+        [effect for effect in ranked if not effect.improvement.grounded],
+    )
+
+
+def _effect_rows(effects: Sequence[Effect], *, start: int) -> list[str]:
+    """표의 행들 — 번호는 두 묶음에 걸쳐 **이어 센다**."""
+    rows = []
+    for rank, effect in enumerate(effects, start=start):
+        item = effect.improvement
+        mark = "★ 근거 없음" if item.unsourced else "대장·선언에 근거"
+        rows.append(
+            f"| {rank} | `{item.id}` | {item.title} | {item.lever} | "
+            f"{item.precondition} | **{item.feasibility}** | "
+            f"**{_won(effect.delta_won)}** | "
+            f"{_won(effect.npv_won)} | {_won(effect.delta_annual_won)} | {mark} |"
+        )
+    return rows
+
+
 def _effects_section(effects: Sequence[Effect], base_npv: int) -> list[str]:
-    """§2 개선 방안별 기대효과 — **Δnpv 내림차순**. 음수도 그 자리에 인쇄한다."""
+    """§2 개선 방안별 기대효과 — **두 묶음**, 각 묶음 안에서 Δ 내림차순."""
+    grounded, ungrounded = _grouped(effects)
     lines = [
         "## §2 개선 방안별 기대효과 — 한 번에 하나씩 적용한 결과",
         "",
         f"기준 `npv` = **{base_npv:,}원**. Δ 는 그 기준 대비이며 방안마다 "
         "**「기준 + 그 방안 하나」**를 돌려 쟀다 — 사용자 문면이 *「각각 제시」* 다.",
         "",
-        "| # | id | 방안 | lever | 조건 | Δnpv (원) | 적용 후 npv (원) "
-        "| Δ 연간 운영 순수지 (원) | 근거 |",
-        "|---:|---|---|---|---|---:|---:|---:|---|",
+        "★★ **크기 순은 실행 순이 아니다 — 근거 축을 함께 보라.** 아래는 **두 묶음**"
+        "이다: 먼저 「근거가 선 것」(`확인`·`조건부`), 그 뒤에 「지금은 못 하는 것」"
+        "(`불가`·`미확인`). **각 묶음 안에서만** Δ 내림차순이다. ⚠ 뒤 묶음도 **Δ 를 "
+        "그대로 인쇄한다** — *「이만큼 크지만 지금은 못 한다」* 가 정보이므로 「없음」"
+        "으로 끝내지 않는다. 판정의 정본은 `.orch/R71/result_9.md` 이고 대장이 그것을 "
+        "`feasibility` 칸으로 나른다.",
+        "",
+        f"### ★ 근거가 선 방안 — `확인` · `조건부` ({len(grounded)}건)",
+        "",
+        *_EFFECT_TABLE_HEAD,
+        *_effect_rows(grounded, start=1),
+        "",
+        f"### ⛔ 지금은 못 하는 방안 — `불가` · `미확인` ({len(ungrounded)}건) · "
+        "**§4 합계에서 뺀다**",
+        "",
     ]
-    ranked = [effect for effect in effects if effect.expressed]
-    ranked.sort(key=lambda effect: -(effect.delta_won or 0))
-    for rank, effect in enumerate(ranked, start=1):
-        item = effect.improvement
-        mark = "★ 근거 없음" if item.unsourced else "대장·선언에 근거"
-        lines.append(
-            f"| {rank} | `{item.id}` | {item.title} | {item.lever} | "
-            f"{item.precondition} | **{_won(effect.delta_won)}** | "
-            f"{_won(effect.npv_won)} | {_won(effect.delta_annual_won)} | {mark} |"
-        )
-    adverse = [effect for effect in ranked if (effect.delta_won or 0) < 0]
+    if ungrounded:
+        lines += [*_EFFECT_TABLE_HEAD, *_effect_rows(ungrounded, start=len(grounded) + 1)]
+    else:
+        # ⚠ §3·§5 와 같은 규약 — 묶음이 비어도 절을 지우지 않고 **0건**이라고 적는다.
+        lines.append("**0건.** 이 대장의 방안 전부가 `확인` 또는 `조건부` 다.")
+    adverse = [
+        effect for effect in (*grounded, *ungrounded) if (effect.delta_won or 0) < 0
+    ]
     lines += [
         "",
-        "⚠ **악화되는 방안을 숨기지 않는다** — 정렬이 내림차순이므로 Δ 가 음수인 "
-        f"방안은 위 표 **맨 아래**에 그대로 선다(이번 실행 {len(adverse)}건).",
+        "⚠ **악화되는 방안을 숨기지 않는다** — 묶음 안의 정렬이 내림차순이므로 Δ 가 "
+        f"음수인 방안은 그 묶음 **맨 아래**에 그대로 선다(이번 실행 {len(adverse)}건).",
         "",
-        "### 방안마다 — 왜 이것이 방안인가 · 이 값의 근거",
+        "### 방안마다 — 왜 이것이 방안인가 · 이 값의 근거 · 제도가 허용하는가",
         "",
     ]
-    for effect in ranked:
+    for effect in (*grounded, *ungrounded):
         item = effect.improvement
         lines += [
             f"#### `{item.id}` — {item.title}",
@@ -361,8 +421,15 @@ def _effects_section(effects: Sequence[Effect], base_npv: int) -> list[str]:
             f"{_won(effect.delta_annual_won)}원",
             f"- **lever** {item.lever} · **조건** {item.precondition}",
             f"- **왜 방안인가** {item.rationale}",
-            f"- **근거** {item.source}",
+            f"- **값의 근거** {item.source}",
+            f"- **제도가 허용하는가 — `{item.feasibility}`** {item.feasibility_source}",
         ]
+        if not item.grounded:
+            lines.append(
+                f"- ⛔ **`{item.feasibility}` 이므로 §4 합계에서 빼었다.** 위 Δ 는 "
+                "«크기»이며 *「이만큼 크지만 지금은 못 한다」* 로 읽는다 — 그 크기를 "
+                "지우지 않는 이유는 제도가 열리면 무엇이 달라지는지가 정보이기 때문이다."
+            )
         if item.unsourced:
             lines.append(
                 "- ⚠⚠ **이 방안의 값에는 근거가 없다.** 위 Δ 는 «크기»일 뿐이며 "
@@ -410,32 +477,68 @@ def _refused_section(effects: Sequence[Effect]) -> list[str]:
 
 
 def _total_section(effects: Sequence[Effect], base_npv: int) -> list[str]:
-    """§4 합계와 그 한계 — **단순 합**이며 그래도 남는 결손을 함께 적는다."""
+    """§4 합계와 그 한계 — **네 수**(A·B·C·D)와 **건너뜀 목록**을 함께 적는다.
+
+    ⛔ **합 하나로는 거짓이 된다.** 이 절은 두 번 고쳐졌다 — 처음에는 `불가`(CP)의
+    Δ 를 품어 낙관적이었고(WP-10), 그다음에는 **같은 자리를 쓰는 방안을 여러 번
+    세어** *「결손의 9.5%만 남는다」* 로 읽혔다(검수 판정 `.orch/R71/WP-10-fix.md`
+    §0). 그 구성 하나를 실제로 적용한 값은 **결손의 49.2%가 남는** 것이었다.
+
+    ⇒ **A 가 쓸 수 있는 수다** — Δ 내림차순으로 훑어 **앞서 고른 것과 겹치지 않는
+    방안만** 더한다. B·C 는 「왜 A 가 그보다 작은가」를 보이려고 **함께 두되 쓰지
+    말라고 적는다.**
+    """
     gains = [
         effect for effect in effects if effect.expressed and (effect.delta_won or 0) > 0
     ]
-    total = sum(effect.delta_won or 0 for effect in gains)
-    remaining = base_npv + total
+    grounded = [effect for effect in gains if effect.improvement.grounded]
+    picked, skipped = choose_without_overlap(grounded)
+    usable = sum(effect.delta_won or 0 for effect in picked)
+    doubled = sum(effect.delta_won or 0 for effect in grounded)
+    everything = sum(effect.delta_won or 0 for effect in gains)
+    remaining = base_npv + usable
     share = remaining / base_npv * 100.0 if base_npv else 0.0
-    return [
+    lines = [
         "## §4 합계와 그 한계",
         "",
         "| 항목 | 값 |",
         "|---|---:|",
-        f"| Δ 가 양수인 방안 | {len(gains)}건 |",
-        f"| 그 Δ 의 **단순 합** | {total:,}원 |",
+        f"| ★ **A — 겹치지 않게 고른 {len(picked)}건의 합** | **{usable:,}원** |",
+        f"| B — 근거가 선 **전부**({len(grounded)}건)의 단순 합 | {doubled:,}원 |",
+        f"| C — `불가`·`미확인` 까지({len(gains)}건) 더한 합 | {everything:,}원 |",
         f"| 기준 `npv` | {base_npv:,}원 |",
-        f"| **그래도 남는 결손** | **{remaining:,}원** |",
-        f"| 그것이 원래 결손의 | **{share:.1f}%** |",
+        f"| ★ **D — A 를 적용했을 때 남는 결손** | **{remaining:,}원** |",
+        f"| D 가 원래 결손의 | **{share:.1f}%** |",
         "",
-        "⚠⚠ **상호작용 미반영 · 함께 적용한 결과가 아니다.** 위 합은 방안마다 따로 "
-        "재 Δ 를 더한 **단순 합**이며, 둘을 함께 적용하면 이 수가 나오지 않는다 — "
-        "예컨대 잉여판매와 REC 는 **같은 역송 kWh** 를 나눠 쓰고, 배분 변경을 포함한 "
-        "방안들은 그 변경분을 **서로 중복해 세고 있다.**",
+        "⛔⛔ **B 는 같은 개선을 여러 번 세므로 사업 판단에 쓰지 마라. 쓸 수 있는 것은 "
+        "A 다.** B 에 든 방안들이 **같은 자리**(같은 설계 용량 · 같은 운전 선택 · 같은 "
+        "대장 키)를 겹쳐 쓰며, 그 겹침은 단서로 덮을 크기가 아니다 — 아래 목록이 "
+        "**무엇이 무엇에 품혔는지** 적는다. C 는 거기에 *「제도가 마련되지 않는 한 0」* "
+        "인 크기까지 더한 수다.",
+        "",
+        f"### A 가 고른 것 {len(picked)}건 · 겹쳐서 건너뛴 것 {len(skipped)}건",
+        "",
+    ]
+    for effect in picked:
+        lines.append(f"- ★ **고름** `{effect.improvement.id}` — Δ {_won(effect.delta_won)}원")
+    for skip in skipped:
+        lines.append(
+            f"- **건너뜀** `{skip.effect.improvement.id}` — Δ "
+            f"{_won(skip.effect.delta_won)}원 · {skip.reason}"
+        )
+    lines += [
+        "",
+        "⚠ **건너뛴 것을 숨기지 않았다 — Δ 를 그대로 적는다.** 건너뜀은 *「그 방안이 "
+        "쓸모없다」* 가 아니라 *「이 합 안에서는 이미 세어졌다」* 는 뜻이며, 품은 쪽을 "
+        "못 하게 되면 건너뛴 쪽이 다시 후보가 된다. ⚠⚠ 그래도 **A 조차 「함께 적용한 "
+        "결과」가 아니다** — 겹치지 않는 자리 사이에도 상호작용이 남는다(실제로 "
+        "`small_ess_max_pv_export` 의 Δ 는 그것이 품은 방안들의 단순 합보다 **훨씬 "
+        "크다** · 대장 `rationale` 의 실측). ⇒ **A 는 상한도 하한도 아니다.**",
         "",
         "⚠ 결손의 배분도 함께 읽어야 한다 — §1 의 검산 줄이 초기투자·운영·교체잔존을 "
         "가른다. 운영 단계를 전부 고쳐도 초기투자 항은 그대로 남는다.",
     ]
+    return lines
 
 
 def _not_improvements_section(effects: Sequence[Effect]) -> list[str]:
