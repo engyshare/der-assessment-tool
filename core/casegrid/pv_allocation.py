@@ -34,7 +34,7 @@ import 한다 — **순환 import**가 되어 `lint-imports` 의 계층 계약�
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Final, cast
 
 from core.casegrid.operating_lines import DAYS_PER_YEAR
@@ -50,6 +50,7 @@ from core.cba.proforma import forfeited_self_consumption_row
 from core.contracts.der import DispatchContext
 from core.contracts.schemas import CashFlowRow
 from core.der.ess import ESSChargeSource, ESSOperatingMode
+from core.der.ess_schedule import ESSDischargeAllocation
 from core.der.load import Load
 from core.der.pv import PV, PVAllocationPriority, resolve_pv_allocation_priority
 
@@ -87,6 +88,120 @@ ESS_CHARGE_SOURCE_DEFAULT = ESSChargeSource.PV_SURPLUS
 #: 주석의 R51 블록이 갖는다. 되돌리려면 이 줄 하나를 `BATTERY_FIRST` 로
 #: 되돌리고 골든 셋을 다시 뽑는다.
 PV_ALLOCATION_PRIORITY_DEFAULT = PVAllocationPriority.HOUSEHOLD_FIRST
+
+#: ESS 방전 배분 **배포 기본값** — 「부하 추종」.
+#:
+#: ★★ **근거는 사용자 요구 5 다** (`docs/decisions-2026-09-06-R64.md` §4 —
+#: *「ESS는 가구의 전력 수요를 최우선적으로 대응할 수 있도록 운전되야 함」*).
+#: 종전 기본값인 「고정 창」은 방전창 안의 모든 시각에 **같은 양**을 실었다 —
+#: 수요가 0인 시각에도, 수요가 몰린 시각에도 같다. 그것은 「대응」이 아니므로
+#: **기본 실행이 사용자 요구를 만족하지 않았다.**
+#:
+#: ⚠⚠ **갈래만 세우고 기본값을 두는 것으로 피하지 않았다.** 같은 문서 §6 이
+#: *「기본 실행이 사용자 요구를 만족해야 한다」* 로 그것을 금지한다 —
+#: `PV_ALLOCATION_PRIORITY_DEFAULT` 를 R51/WP-6 이 뒤집은 것과 같은 자리다.
+#:
+#: ⚠ **「고정 창」은 지워지지 않았다** — 여전히 고를 수 있는 갈래이며(호출
+#: 인자·`case_values` 둘 다), **부하를 세우지 않는 실행에서는 이 상수가 그리로
+#: 떨어진다**(아래 `resolve_ess_discharge_inputs` 의 ★★ 절). 판정문은
+#: `core/der/ess_schedule.py::ESSDischargeAllocation` 이 갖는다.
+#:
+#: ★ **이 한 줄이 R64 의 결론축을 움직였다** — 세 골든 시나리오의 `npv` 가
+#: 각각 **−6,440원** 내려갔다. 경위는 세 골든 파일 머리말 주석의 R64/WP-6b
+#: 블록이 갖는다. 되돌리려면 이 줄 하나를 `FIXED_WINDOW` 로 되돌리고 골든
+#: 셋을 다시 뽑는다.
+ESS_DISCHARGE_ALLOCATION_DEFAULT = ESSDischargeAllocation.LOAD_FOLLOWING
+
+
+def resolve_ess_discharge_inputs(
+    discharge_allocation: ESSDischargeAllocation | str | None,
+    case_values: Mapping[str, object],
+    ctx: DispatchContext,
+    *,
+    household: Load | None,
+) -> tuple[ESSDischargeAllocation | str, list[float] | None]:
+    """방전 배분과 **그 배분이 따라갈 부하 시계열**을 함께 고른다 (사용자 요구 5).
+
+    돌려주는 짝은 `ESS(discharge_allocation=…, load_profile_kwh=…)` 에 그대로
+    들어간다. **둘을 한 함수가 내는 이유**는 그 둘이 조합으로만 성립하기
+    때문이다 — 「고정 창」인데 부하를 주면 `ESS` 가 거부하고, 「부하 추종」인데
+    부하가 없어도 거부한다(`core/der/ess_schedule.py::check_load_profile` 의
+    거부 넷). 두 자리에서 따로 고르면 그 조합이 조용히 갈린다.
+
+    우선순위는 **이미 있는 셋과 같은 모양**이다: 호출 인자 →
+    `case_values["ess_discharge_allocation"]`(문자열로 와도 받는다 —
+    `FR-105-AC5` 관례) → 모듈 상수(`ESS_DISCHARGE_ALLOCATION_DEFAULT`).
+
+    ⚠ **여기서 승격·거부하지 않는다.** `ESS` 자신이
+    `ess_schedule.coerce_discharge_allocation` 으로 문자열을 승격하고 선언
+    목록을 검사한다 — `ess_operating_mode`·`ess_charge_source` 와 같은 처리이며
+    (`_resolve_ess_dispatch_inputs` 독스트링의 ⚠ 절), 잘못된 값의 오류 메시지는
+    그 자원이 내는 것이 맞다. 아래 `!=` 비교가 문자열에도 성립하는 이유는
+    `ESSDischargeAllocation` 이 `StrEnum` 이기 때문이다 — 잘못된 값이면 그냥
+    거짓이 되고 실제 거부는 `ESS` 생성자가 한다
+    (`ess_build.py::_case_ess_spec` 의 `charge_source` 비교와 같은 판단).
+
+    ## ★★ **따라갈 수요가 없는 실행** — 모듈 상수만 「고정 창」으로 떨어진다
+
+    수요가 없는 실행이 둘 있다 — ⓐ 부하 자원을 아예 세우지 않은 실행(케이스
+    그리드·성능 측정·총량을 주지 않은 실행) ⓑ **총량을 0 으로 적은 실행**
+    (`annual_load_kwh=0.0` · 배분 순서 축을 재는 대조군이 그렇게 돈다).
+    둘 다 **따라갈 수요가 없다** — 그때 모듈 상수를 그대로 밀면 그런 실행이
+    전부 거부되는데, 그것은 *「가구 부하를 적지 않으면 사업을 평가할 수 없다」*
+    가 되어 이 WP 가 요구받은 것보다 넓다. `PV_ALLOCATION_PRIORITY_DEFAULT` 가
+    `household is None` 에서 다른 갈래로 떨어지는 것과 같은 자리다.
+
+    ⛔ **그 떨어짐은 조용하지 않다** — 리포트 0절 「운전 방식」 칸이 *세운
+    자원이 실제로 든 값*(`ESS.discharge_allocation`)을 인쇄하므로 그런 실행은
+    「고정 창」으로 적힌다(`e2e_runner.py::_resource_lines`).
+
+    ⛔ **호출자가 명시로 고른 「부하 추종」은 떨어뜨리지 않는다.** 수요가 없는데
+    부하 추종을 명시한 것은 **설정 오류**이고, `ESS` 가 *「시나리오에 가구
+    전기부하를 넣으십시오」* 라는 조치와 함께 거부한다 — 그 거부를 여기서
+    삼키면 리포트가 「부하 추종으로 돌았다」를 거짓으로 적게 된다.
+
+    ⚠ **이 판정은 계절이 갈리기 전에 한 번만** 내려야 한다 — 「이 실행에 수요가
+    있는가」는 **연간 수준의 사실**이다. 계절마다 다시 내리면 부하 형상이 어느
+    계절에서만 0 인 자산에서 갈래가 계절마다 달라지고,
+    `seasonal_dispatch._resolved_once` 가 그것을 거부한다. 그래서 배포 경로는
+    **연간등가 부하로 먼저 한 번 부르고**, 그 결과를 계절마다 인자로 되먹인다
+    (`build_and_dispatch_case`).
+    """
+    chosen = (
+        discharge_allocation
+        if discharge_allocation is not None
+        else case_values.get("ess_discharge_allocation")
+    )
+    if chosen is None:
+        profile = _demand_day_kwh(household, ctx)
+        if profile is None or ESS_DISCHARGE_ALLOCATION_DEFAULT is not (
+            ESSDischargeAllocation.LOAD_FOLLOWING
+        ):
+            return ESSDischargeAllocation.FIXED_WINDOW, None
+        return ESS_DISCHARGE_ALLOCATION_DEFAULT, profile
+    allocation = cast("ESSDischargeAllocation | str", chosen)
+    if allocation != ESSDischargeAllocation.LOAD_FOLLOWING or household is None:
+        return allocation, None
+    # 부호 규약: `Load.dispatch()` 는 소비를 **음수**로 싣는다
+    # (`_resolve_ess_dispatch_inputs` 의 `HOUSEHOLD_FIRST` 분기와 같은 뒤집기).
+    # ★ 형상을 자산에서 다시 읽지 않고 **세운 자원이 실제로 내는 하루**를
+    # 쓴다 — 자산에서 다시 읽으면 가구 수 배수·추가 기기 부하가 빠진 하루를
+    # 따라가게 되고, 그 어긋남은 아무 예외도 내지 않는다.
+    return allocation, [-v for v in household.dispatch(ctx).electric]
+
+
+def _demand_day_kwh(household: Load | None, ctx: DispatchContext) -> list[float] | None:
+    """그 실행의 **대표일 가구 수요**(양수 kWh). 따라갈 수요가 없으면 `None`.
+
+    ⚠ **「자원이 없다」와 「수요가 0 이다」를 같게 본다** — 「부하 추종」이
+    가리킬 대상이 없다는 점에서 둘은 같은 상태이며, `ESS` 의 거부문도 그 둘을
+    *「없거나 전부 0입니다」* 한 문장으로 묶는다
+    (`core/der/ess_schedule.py::check_load_profile`).
+    """
+    if household is None:
+        return None
+    profile = [-v for v in household.dispatch(ctx).electric]
+    return profile if any(v > 0.0 for v in profile) else None
 
 
 def _resolve_ess_dispatch_inputs(

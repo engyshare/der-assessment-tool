@@ -43,6 +43,7 @@ from core.casegrid.operating_lines import DAYS_PER_YEAR
 from core.cba.baseline import BaselineArrangement
 from core.report.case_report import CaseReport, build_case_report
 from core.report.narrative import render_markdown
+from core.report.unreflected import measured_over_seasons
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -107,33 +108,26 @@ def _maintain(reports: dict[str, CaseReport]) -> CaseReport:
 
 
 def _daily_self_consumption_kwh(report: CaseReport) -> float:
-    """본 실행의 대표일 자가소비(kWh) — **스텝마다 min(발전, 부하)**.
+    """본 실행의 **연간등가 하루** 자가소비(kWh) — 스텝마다 `min(발전, 부하)`.
 
     ⚠ 러너의 내부(잉여 시계열)를 읽지 않는다. 운전 결과로 드러난 사실에서
-    독립적으로 다시 세어야 *「포기 항의 물량이 실제 자가소비인가」* 가 재진다 —
-    같은 규약을 `core/report/unreflected.py::_measured_quantities` 가 쓴다.
+    독립적으로 다시 세어야 *「포기 항의 물량이 실제 자가소비인가」* 가 재진다.
+
+    ## ⚠⚠ R64/WP-4 — **접힌 하루가 아니라 계절마다 재어 일수로 가중 평균한다**
+
+    러너가 계절 넷을 각각 돌려 합산하게 되면서 포기 물량(잉여 시계열에서 온다)은
+    **계절을 알게** 됐는데, 이 오라클이 접힌 하루에서 재고 있어 241,707 대
+    246,337원으로 갈렸다 — `min` 이 비선형이라 평균 하루에서 재면 자가소비가
+    과대 계상된다. **허용오차를 키우지 않고 창을 맞췄다**(오라클이 재는 것은
+    그대로 *「물량이 실제 자가소비인가」* 다).
+
+    ⚠ 여기서 합산 규칙을 손으로 다시 쓰지 않고 배포 코드가 쓰는 그 함수
+    (`core/report/unreflected.py::measured_over_seasons`)를 부른다 — 규칙을 두
+    벌로 적으면 한쪽만 고쳐지는 날 이 오라클이 조용히 다른 것을 잰다.
     """
-    hours = report.dispatch_hours
-    names = tuple(hours[0].per_resource)
-    generation = [
-        name
-        for name in names
-        if all(hour.per_resource.get(name, 0.0) >= 0.0 for hour in hours)
-        and any(hour.per_resource.get(name, 0.0) > 0.0 for hour in hours)
-    ]
-    load = [
-        name
-        for name in names
-        if all(hour.per_resource.get(name, 0.0) <= 0.0 for hour in hours)
-        and any(hour.per_resource.get(name, 0.0) < 0.0 for hour in hours)
-    ]
-    return sum(
-        min(
-            sum(hour.per_resource.get(name, 0.0) for name in generation),
-            -sum(hour.per_resource.get(name, 0.0) for name in load),
-        )
-        for hour in hours
-    )
+    measured = measured_over_seasons(report.dispatch_hours, report.seasons)
+    assert measured is not None, "부하 자원이 서지 않아 자가소비를 잴 수 없다"
+    return measured.self_consumption
 
 
 @pytest.mark.req("FR-705-AC2")
@@ -335,42 +329,51 @@ def test_the_pool_compensation_price_is_a_default0_ledger_item() -> None:
     )
 
 
-#: ⓒ 가 본문에 더하는 줄 수 — **셋이며 자리가 각각 다르다**(R60/WP-3 실측).
+#: ⓒ 가 본문에 더하는 줄 수 — **둘이며 자리가 각각 다르다**(R67/WP-N1d 실측).
 #:
 #:   3.4 미반영 항목 표      `| 집합자원화 대가 | 반영 시 결과 개선 | … |`
-#:   6.3 미해소 항목 표      `| 미반영 | 집합자원화 대가 | 해소 조건 |`
 #:   4.x 결손 분해           `| └ ForfeitedSelfConsumption 포기한 자가소비 | … |`
 #:
-#: ★★ **미반영 항목 하나가 본문 두 줄을 만든다** — `unreflected_rows`(3.4)와
-#: `core/report/narrative.py:751`(6.3)이 같은 목록을 각각 한 줄씩 인쇄한다.
-#: 착수 시점의 예상은 「한 줄」이었고 실측은 **셋**이다.
-_POOL_BODY_LINES_ADDED = 3
+#: ★★★ **셋이었다 — 6.3 이 하나를 내려놓았다** (R67/WP-N1d).
+#: 종전에는 6.3 미해소 항목 표가 `| 미반영 | {label} | {resolves_when} |` 을
+#: 항목마다 한 줄씩 인쇄해서 **미반영 항목 하나가 본문 두 줄**(3.4 + 6.3)을
+#: 만들었다(R60/WP-3 실측 · 착수 시점의 예상은 「한 줄」이었다). 그 열은 **붙임 8
+#: 의 「해소 조건」 열과 같은 문자열**이었고, 양식이 그것을 붙임 8 에 배정한다
+#: (`docs/report-form-심의보고서.md:143`·`:286`). ⇒ 6.3 은 이제 **건수 한 줄**을
+#: 인쇄하고 항목별 전문은 붙임 8 이 진다 — 근거 전문은
+#: `core/report/narrative.py::_judgement_section` 의 6.3 주석이 진다.
+#:
+#: ⇒ ★ **이제 미반영 항목 하나는 본문 «한 줄»(3.4)만 만든다.** ⓒ 가 더하는
+#: 둘은 그 한 줄과 **결손 분해의 포기 항 한 줄**이다.
+_POOL_BODY_LINES_ADDED = 2
 
 
 @pytest.mark.req("FR-705-AC2")
-def test_the_pool_branch_adds_exactly_three_body_lines(
+def test_the_pool_branch_adds_exactly_two_body_lines(
     reports: dict[str, CaseReport],
 ) -> None:
-    """ⓑ 의 본문은 **움직이지 않고**, ⓒ 가 더하는 줄은 **셋**이다.
+    """ⓑ 의 본문은 **움직이지 않고**, ⓒ 가 더하는 줄은 **둘**이다.
 
     ## ★ 골든 쪽이 합격 조건이다 — 그리고 움직이지 않았다
 
-    양식의 본문 부피 상한(219줄)을 재는 검사는 **골든 시나리오**로 잰다
+    양식의 본문 부피 상한(**227줄**)을 재는 검사는 **골든 시나리오**로 잰다
     (`tests/report/test_overview_sections.py::
     test_body_stays_within_the_form_length_budget`). 이 WP 가 세운 것은 ⓒ 를
-    고른 실행에서만 서므로 그 수는 **218 그대로**여야 하고, 여기가 그것을
+    고른 실행에서만 서므로 ⓑ 는 그 상한 안에 있어야 하고, 여기가 그것을
     직접 잰다.
 
-    ## ⚠⚠ ⓒ 의 본문은 **221줄로 상한을 2줄 넘는다** — 이 WP 가 고치지 않았다
+    ## ★★★ ⓒ 의 본문도 **상한 안으로 돌아왔다** (R67/WP-N1d)
 
-    상한을 올려서 풀지 않았다(이미 다섯 번 밀린 자리이며 그 검사 독스트링이
-    200 → 219 의 경위를 전부 진다). 넘친 줄을 붙임으로 내리려면 본문 절
-    구성을 고쳐야 하고(`core/report/narrative.py` 의 6.3 절 · 3.4 절), 그
-    파일은 이 WP 의 소관 밖이다 — **경위와 실측을 `.orch/R60/result_3.md` 에
-    적었다.**
+    종전 이 자리는 *「ⓒ 의 본문은 221줄로 상한을 2줄 넘는다 — 이 WP 가 고치지
+    않았다」* 였고, 고치는 길을 *「본문 절 구성을 고쳐야 하고(`core/report/
+    narrative.py` 의 6.3 절 · 3.4 절) 그 파일은 이 WP 의 소관 밖이다」* 로
+    적어 두었다(`.orch/R60/result_3.md`). **R67/WP-N1d 가 그 문을 지났다** —
+    6.3 이 붙임 8 의 「해소 조건」 열을 되풀이하던 것을 끊었고(양식
+    `docs/report-form-심의보고서.md:143`·`:286` 이 그 열을 붙임 8 에 배정한다),
+    ⛔ **상한은 227 그대로 두었다.** 실측: 골든 본문 229 → **221줄**.
 
-    ⚠ 셋 중 어느 것도 뺄 수 없다: 3.4·6.3 은 지시문이 요구한 **미반영 항목
-    하나**가 만드는 두 줄이고(*「대가가 0인 이유가 산출물에서 사라지면 다음
+    ⚠ 남은 둘 중 어느 것도 뺄 수 없다: 3.4 의 한 줄은 지시문이 요구한 **미반영
+    항목의 항목명·방향·판정**이고(*「대가가 0인 이유가 산출물에서 사라지면 다음
     사람이 「대가가 0원인 사업」으로 읽는다」*), 결손 분해의 한 줄은 **포기
     항의 금액 그 자체**다(그것을 빼면 ⓒ 의 결론을 가른 수가 본문에서 사라진다).
 
@@ -383,7 +386,36 @@ def test_the_pool_branch_adds_exactly_three_body_lines(
     maintain_body = _body_lines(_maintain(reports))
     pool_body = _body_lines(_pool(reports))
 
-    assert len(maintain_body) <= 219, (
+    # ⚠ **상한을 219 → 220 으로 따라 올렸다 (R64/WP-6b).** 붙임 8 에 미반영 항목
+    # 「방전창 밖 가구 수요」가 늘면서 **ⓑ·ⓒ 양쪽**의 3.4 표에 같은 한 줄이 섰다
+    # — 갈래가 만든 줄이 아니므로 아래 **증분** 단언은 그대로 셋이다. 상한을
+    # 올린 근거 전문은 `test_overview_sections.py::
+    # test_body_stays_within_the_form_length_budget` 독스트링이 진다(이 파일이
+    # 사본을 두지 않는다 — 위 `_body_lines` 의 ⚠ 와 같은 이유다).
+    # ⚠ **220 → 222 로 다시 따라 올렸다 (R64/WP-7).** 붙임 8 에 미반영 항목
+    # 「수요반응 정산금 (시장 정산)」이 늘면서 **ⓑ·ⓒ 양쪽**의 3.4 표와 6절
+    # 「해소 조건」 표에 같은 두 줄이 섰다 — 이번에도 **갈래가 만든 줄이 아니므로**
+    # 아래 증분 단언은 그대로 셋이다. 근거 전문은 위와 같은 자리가 진다.
+    # ⚠ **222 → 224 로 다시 따라 올렸다 (R66/WP-2).** 대장에 PCS 스윕 축 둘이
+    # 오르면서 **ⓑ·ⓒ 양쪽**의 5.1 영향도 표에 같은 두 줄이 섰다 — 이번에도
+    # **갈래가 만든 줄이 아니므로** 아래 증분 단언은 그대로 셋이다. 근거 전문은
+    # 위와 같은 자리가 진다.
+    # ⚠ **224 → 226 으로 다시 따라 올렸다 (R66/WP-2-fix).** 붙임 8 에 「PCS 교체비」
+    # 가 늘면서 **ⓑ·ⓒ 양쪽**의 3.4 표와 6절 「해소 조건」 표에 같은 두 줄이 섰다 —
+    # 이번에도 **갈래가 만든 줄이 아니므로** 아래 증분 단언은 그대로 셋이다.
+    # ⚠ **226 → 227 로 다시 따라 올렸다 (R66/WP-5 · 오케스트레이터 판정).** 히트펌프
+    # 대장 항목의 제목이 「(난방+냉방)」 → **「(난방+냉방+급탕)」** 으로 늘면서
+    # **ⓑ·ⓒ 양쪽**의 2.2 전제 표에서 그 행이 한 줄을 더 썼다 — 이번에도 **갈래가
+    # 만든 줄이 아니므로** 아래 증분 단언은 그대로 셋이다.
+    # ⚠⚠ **이 라쳇이 무엇을 붙들고 무엇을 놓쳤는지는 사용자 판정 자리로 올라가 있다** —
+    # 양식이 요구하는 것은 **130~170줄**(`docs/report-form-심의보고서.md:82`)이고 이
+    # 상한은 **열 번** 밀려 227 이다. 근거 전문은 `tests/report/test_overview_sections.py::
+    # test_body_stays_within_the_form_length_budget` 독스트링의 ⛔⛔ 절이 진다
+    # (이 파일이 사본을 두지 않는다 — 위와 같은 이유다).
+    # ★★★ **R67/WP-N1d 는 라쳇을 «따라 올리지 않았다» — 내렸다.** 상한 227 은
+    # 그대로이고 본문이 229 → 221 로 줄었다(6.3 이 붙임 8 의 「해소 조건」 열을
+    # 되풀이하던 것을 끊었다). **열한 번째 밀기를 하지 않은 첫 라운드다.**
+    assert len(maintain_body) <= 227, (
         f"ⓑ 의 본문이 {len(maintain_body)}줄이다 — 이 WP 는 ⓒ 경로만 열었으므로 "
         "ⓑ 는 움직이지 않아야 한다. 상한을 올리지 말고 무엇이 늘었는지 보라"
     )

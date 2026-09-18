@@ -45,6 +45,34 @@ python scripts/check_task_mapping.py     # 작업 목록 인용 검사
 
 `check_source_rules.py`는 규칙 문서의 원본이 저장소 밖(로컬 노트)에 있을 때 `DER_VAULT_ROOT` 환경변수 또는 `--vault`로 그 위치를 받습니다. 지정하지 않으면 저장소 사본으로 대조하며, 사본은 원본과 바이트 동일해야 합니다.
 
+## 리포트를 파일로 뽑는 법 — **입구는 둘이고, 내용의 정본은 하나다**
+
+같은 문자열을 내는 CLI 가 **둘**입니다. 헷갈리지 않게 **다른 점만** 적습니다 — 내용은
+`core/report/verification.py::render_verification_markdown` **하나**가 정하고, 두 입구가
+내는 바이트는 **같습니다**(R64 실측: `diff` 무차이).
+
+```bash
+export PYTHONUTF8=1
+
+# ① 골든 시나리오를 «이름»으로 — 심의용/검증용 둘 다 · --out 을 빼면 stdout
+./.venv/Scripts/python.exe -m app.run.report_cli --kind verification     --scenario scenario_unsubsidized [--out 경로]
+
+# ② 시나리오 yaml 을 «경로»로 — 골든 밖의 파일도 받는다 · --out 은 필수
+./.venv/Scripts/python.exe scripts/dump_verification.py     --scenario fixtures/golden/scenario_unsubsidized.yaml --out 경로
+```
+
+| | ① `app.run.report_cli` | ② `scripts/dump_verification.py` |
+|---|---|---|
+| 시나리오를 무엇으로 받나 | **골든 이름** (목록 밖은 `rc=2`) | **경로** (골든 밖도 된다) |
+| 종류 | `--kind deliberation`(기본) · `verification` | 검증 보고서 하나 |
+| `--out` | 생략하면 **stdout** | **필수** |
+
+⚠ **둘을 합치지 않은 이유**(R64 판정): 겹치는 것은 「리포트를 세워 렌더러에 넘긴다」
+**세 줄**이고 **내용의 정본은 이미 하나**입니다. 하나로 합치면 `--scenario` 가 이름과
+경로를 **둘 다** 받아야 하고, 그러면 *「어느 쪽으로 읽을지」*를 판정하는 자리가 새로
+생깁니다 — 이 저장소가 거부의 자리를 하나로 두려고 애쓰는 것과 반대 방향입니다.
+⇒ **입구를 늘리지는 마십시오.** 셋째가 필요해 보이면 위 표에 왜 둘로 부족한지 먼저 적으십시오.
+
 ## 로컬 실행 (Docker — NFR-503)
 
 단일 컨테이너로 로컬 실행합니다 (`docker run` 1회).

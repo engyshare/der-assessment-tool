@@ -16,11 +16,21 @@
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
 from urllib.parse import urlencode
 
 from app.services.ui_charts import chart_description, chart_source, unwired_reason
+from core.casegrid.appliance_load import (
+    APPLIANCE_LOAD_UNIT,
+    APPLIANCE_LOAD_UNSPECIFIED,
+    APPLIANCE_SEASON_SHARE_UNSPECIFIED,
+    EV_LOAD_TITLE,
+    HEATPUMP_LOAD_TITLE,
+)
+from core.casegrid.household_scale import HOUSEHOLD_COUNT_UNSPECIFIED
+from core.casegrid.load_shift import DR_SHIFTABLE_SHARE_UNIT
 from core.cba.baseline import (
     POOL_PREREQUISITE_METERING,
     POOL_PREREQUISITE_TRANSFER,
@@ -32,6 +42,7 @@ from core.report._format import NO_VALUE, _won, _years
 from core.report.case_influences import CONCLUSION_METRIC, HEADLINE_METRIC
 from core.report.case_report import CaseReport
 from core.report.charts import chart_registry
+from web.render_load_shape import SEASON_SHARE_PREFIX, SHIFTABLE_SHARE_FIELD
 
 #: 영향도 인자에 **이을 대장 줄이 없을 때** 출처 칸이 인쇄하는 것.
 #:
@@ -91,6 +102,11 @@ def chart_query(
     arrangement: str,
     ownership_or_operation_transferred: bool,
     metering_separated: bool,
+    household_count: str = "",
+    heatpump_load_annual_kwh: str = "",
+    ev_load_annual_kwh: str = "",
+    dr_shiftable_share_pct: str = "",
+    appliance_season_shares: Mapping[str, str] | None = None,
 ) -> str:
     """그림 주소에 붙일 질의 문자열 — **결과 화면과 같은 실행을 그리게 한다.**
 
@@ -100,15 +116,90 @@ def chart_query(
 
     ⚠ 참·거짓 문면을 파이썬 것(`True`)으로 두지 않는다 — 받는 쪽은 FastAPI 의
     불리언 파서다.
+
+    ★★ **가구 수는 빈 칸이면 아예 붙이지 않는다** (R64/WP-1). 갈래처럼 빈 값을
+    붙여도 뜻은 같지만(받는 쪽이 `or None` 으로 낮춘다), 붙이면 **가구 수를
+    준 적 없는 실행의 그림 주소가 전부 바뀐다** — 그 주소는 심의에서 그대로
+    인용되는 자리다. 안 준 실행의 주소를 종전과 한 글자도 다르지 않게 둔다.
     """
-    return urlencode({
+    fields = {
         "scenario": scenario,
         "arrangement": arrangement,
         "ownership_or_operation_transferred": (
             "true" if ownership_or_operation_transferred else "false"
         ),
         "metering_separated": "true" if metering_separated else "false",
-    })
+    }
+    if household_count:
+        fields["household_count"] = household_count
+    # ★★ 기기 부하 둘도 **빈 칸이면 아예 붙이지 않는다** (R64/WP-2). 사유는 위
+    # 가구 수와 같다 — 안 준 실행의 그림 주소를 종전과 한 글자도 다르지 않게
+    # 둔다.
+    if heatpump_load_annual_kwh:
+        fields["heatpump_load_annual_kwh"] = heatpump_load_annual_kwh
+    if ev_load_annual_kwh:
+        fields["ev_load_annual_kwh"] = ev_load_annual_kwh
+    # ★★ 부하의 **형상** 둘도 같은 규약이다 (R64/WP-WEB ⓐⓑ) — 안 준 실행의
+    # 그림 주소를 종전과 한 글자도 다르지 않게 둔다.
+    # ⚠ 계절 몫은 **빈 칸까지 실어 보낸다.** 여기서 버리면 「일부만 적었다」가
+    # 그림 주소에서만 「그 계절을 안 적었다」로 바뀌고, 그때 화면은 거부인데
+    # 그림은 그려진다 — 사용자는 어느 쪽을 믿어야 하는지 알 수 없다.
+    if dr_shiftable_share_pct:
+        fields[SHIFTABLE_SHARE_FIELD] = dr_shiftable_share_pct
+    for season, share in (appliance_season_shares or {}).items():
+        fields[f"{SEASON_SHARE_PREFIX}{season}"] = share
+    return urlencode(fields)
+
+
+def _appliance_rows(report: CaseReport) -> tuple[dict[str, Any], ...]:
+    """결과 화면의 기기 부하 줄 둘 — **값이든 「미지정」이든 줄을 지우지 않는다.**
+
+    ⚠ 값이 없다고 줄을 빼면 「0으로 돌렸다」와 「히트펌프라는 축이 없다」가
+    화면에서 같아진다 — 붙임 1 의 `core/report/appendix_sections.py::
+    _appliance_load_row` 가 같은 판단을 적는다.
+
+    `data-*` 는 서식 이전의 **날값**(안 줬으면 비어 있다)이며 검사가 그것을
+    리포트와 대조한다 — 가구 수 칸이 이미 같은 규약을 따른다.
+    """
+    loads = report.appliance_loads
+    return tuple(
+        {
+            "label": label,
+            "value": (
+                f"{value:,.0f} {APPLIANCE_LOAD_UNIT}"
+                if value is not None
+                else APPLIANCE_LOAD_UNSPECIFIED
+            ),
+            "raw": "" if value is None else value,
+            "key": key,
+        }
+        for label, value, key in (
+            (HEATPUMP_LOAD_TITLE, loads.heatpump_kwh, "heatpump"),
+            (EV_LOAD_TITLE, loads.ev_kwh, "ev"),
+        )
+    )
+
+
+def _season_share_rows(report: CaseReport) -> tuple[dict[str, Any], ...]:
+    """ⓑ 계절 몫 줄 — **안 준 실행도 줄을 지우지 않는다.**
+
+    ⚠ 안 줬다고 줄을 빼면 「계절 몫을 겨울에 몰아 돌렸다」와 「그 축이 아예
+    없다」가 화면에서 같아진다 — `_appliance_rows` 가 같은 판단을 적었다.
+    그때 서는 줄 하나가 **왜 비었는지**를 글자로 갖는다
+    (`APPLIANCE_SEASON_SHARE_UNSPECIFIED` — 「미지정 — 기본 부하와 같은 계절
+    몫으로 돌았다」).
+
+    ⚠ **자산의 차례 그대로** 싣는다. 사전 순회 순서로 그리면 같은 실행이
+    판마다 다른 순서로 인쇄되고, 눈으로 견주는 사람이 그 차이를 변경으로
+    읽는다(`ApplianceSeasonShares.by_season` 이 그 차례를 지킨다).
+    """
+    shares = report.appliance_loads.season_shares
+    if shares is None:
+        return ({"season": APPLIANCE_SEASON_SHARE_UNSPECIFIED, "share": "", "raw": ""},)
+    return tuple(
+        {"season": name, "share": f"{share:g}", "raw": share}
+        for name, share in shares.by_season
+    )
 
 
 def chart_figures(*, query: str = "") -> tuple[dict[str, Any], ...]:
@@ -208,6 +299,36 @@ def run_result_context(
         # baseline_branch` 의 ⚠ — 이름만 실으면 검토자가 그 이름이 뜻하는
         # 기준선을 저장소 밖에서 찾아야 한다).
         "arrangement": report.baseline_arrangement.value,
+        # ★★ **몇 호로 돌았나** (R64/WP-1 · 착수 47ⓐ). 가구 수를 넣을 수 있게
+        # 해 놓고 결과가 그것을 안 적으면 확인할 방법이 없다 — 위 갈래와 같은
+        # 자리다. ⚠ **안 준 실행도 글자로 적는다**: 빈칸이면 검토자가 아래
+        # 모든 금액을 단지 전체의 것으로 읽고, 40호 단지라면 40배 틀리게
+        # 읽는다(`core/casegrid/household_scale.py::HOUSEHOLD_COUNT_UNSPECIFIED`).
+        "household_count": (
+            f"{report.household_count:,}호"
+            if report.household_count is not None
+            else HOUSEHOLD_COUNT_UNSPECIFIED
+        ),
+        "household_count_raw": report.household_count,
+        # ★★ **무엇을 얼마나 얹고 돌았나** (R64/WP-2 · 사용자 요구 2). 위
+        # 가구 수와 같은 자리이며 ⚠ **안 준 기기도 글자로 적는다** — 빈칸이면
+        # 검토자가 「히트펌프를 반영한 수」로 읽을 수 있고, 참고 표준 모델대로면
+        # 한 호의 총부하가 실제의 절반 남짓이 된다.
+        "appliance_loads": _appliance_rows(report),
+        "appliance_total": (
+            f"{report.appliance_loads.total_kwh:,.0f} {APPLIANCE_LOAD_UNIT}"
+        ),
+        # ★★★ **부하의 형상을 무엇으로 돌았나** (R64/WP-WEB ⓐⓑ). 위 기기
+        # 부하와 같은 자리이며 사유도 같다 — 화면에서 바꿀 수 있게 해 놓고
+        # 결과가 그것을 안 적으면 확인할 방법이 없다.
+        # ⚠⚠ 이 둘은 **총량을 안 바꾸고 시각·계절만 바꾼다.** 그래서 위
+        # 「기기 부하 합계」와 같은 줄에 두지 않는다 — 같이 두면 검토자가
+        # 「부하가 늘었다」로 읽는다.
+        "dr_shiftable_share": (
+            f"{report.dr_shiftable_share_pct:g} {DR_SHIFTABLE_SHARE_UNIT}"
+        ),
+        "dr_shiftable_share_raw": report.dr_shiftable_share_pct,
+        "appliance_season_shares": _season_share_rows(report),
         "branch": {
             "without": report.baseline_branch.without_description,
             "with": report.baseline_branch.with_description,

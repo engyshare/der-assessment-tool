@@ -79,6 +79,24 @@ LEVEL_MAP = {
     #: 시험하지 못한다(1/2 로 갈리면 65,001 은 32,500.5 씩이다).
     "ess_fixed_om": MappingProxyType({"base": 65_001.0}),
     "ess_replacement": MappingProxyType({"base": 350_000.0}),
+    # ★ R66/WP-2 — PCS 둘. 러너는 이 둘에 **기본값을 두지 않으므로**
+    # (`ledger_levels.py` 의 그 줄 · `grid_purchase_price` 와 같은 판단)
+    # 탐침 수준표도 갖고 있어야 한다. 값은 대장의 사본이 아니다.
+    "ess_pcs_unit_cost": MappingProxyType({"base": 250_000.0}),
+    "ess_pcs_share": MappingProxyType({"base": 0.20}),
+    # ★ R66/WP-5 — 동시율. 러너가 기본값을 두지 않으므로 탐침도 갖고 있어야
+    # 한다. **끈 값(1.0 = 100%)을 준다** — 사유는
+    # `tests/casegrid/test_coincidence_factor_wiring.py` 머리말이 갖는다.
+    "coincidence_factor": MappingProxyType({"base": 1.0}),
+    # ⚠ **이용률은 탐침값이다** — R67/WP-N2 가 이 축을 대장으로 올렸다
+    # (`capacity_factor.pv_rooftop`). **종전 소스 상수와 같은 값**을 주어 이
+    # 파일의 수가 그 이동에 한 원도 움직이지 않게 한다.
+    "pv_capacity_factor": MappingProxyType({"base": 0.15}),
+    # ★ R69/WP-2 — 전기요금 인상률. 러너가 요구한다(기본값을 두지 않는 것이
+    # 규칙이다). **0 은 대장의 사본이 아니라 중립값이다** — 계수가 전 연차
+    # 1.0 이 되어 이 축을 배선하기 전과 원 하나까지 같다(`replacement_real_trend`
+    # 와 같은 규약이며, 이 파일은 그 축을 재지 않는다).
+    "tariff_escalation": MappingProxyType({"base": 0.0}),
     **design_levels(),
 }
 

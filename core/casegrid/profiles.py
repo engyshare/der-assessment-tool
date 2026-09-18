@@ -48,18 +48,23 @@ R56 이전에는 대표일 하나를 365번 되풀이하는 것이 전부여서,
 이전과 **원소 하나까지 같다**(`tests/casegrid/test_seasonal_axis.py` 가 손계산과
 대조한다).
 
-⚠⚠⚠ **계절을 채워도 「겨울 하루 < 여름 하루」는 결론에 서지 않는다.** 배포
-실행은 24스텝 하루를 돌려 365배로 연간화하므로, 계절이 여럿인 자산은
-`representative_day()` 가 내는 **몫 가중 평균 하루** 하나로 접혀 들어간다
-(`e2e_runner`). 접지 않고 `spread()` 를 그대로 넘기면 앞 하루가 **첫 계절의
-하루**가 되어 연간 총량이 대장과 어긋난다 — R60/WP-4 가 실측한 자리다. 그래서
-계절 몫이 담는 차이는 **선언돼 있고 운전에는 서지 않으며**, 그 결손은 붙임 8 이
+★★★ **계절을 채우면 「겨울 하루 < 여름 하루」가 결론에 선다** (R64/WP-4 ·
+사용자 요구 3). 배포 실행은 이제 계절마다 하루를 각각 돌려 **계절일수로 가중
+합산한다** — `core/casegrid/seasonal_dispatch.py::_season_inputs` 가 아래
+`representative_day_by_season()` 을 발전·부하 양쪽에서 부른다. 계절 몫이 담는
+차이는 **선언에서 운전으로 넘어왔다.**
+
+⚠ **그래도 접힌 하루가 함께 선다.** 러너는 계절별 하루와 별도로 연간등가 하루
+한 벌(`spread_over_representative_day()`)을 세워 **연간등가 배터리**를 그 위에
+올린다. 접지 않고 `spread()` 를 계절별 자리에 그대로 넘기면 앞 하루가 **첫
+계절의 하루**가 되어 연간 총량이 대장과 어긋난다 — R60/WP-4 가 실측한 자리다.
+⚠ **남은 결손은 요일 변동과 계절 몫·형상의 실측**이며, 그것을 붙임 8 이
 신고한다(`core/report/unreflected.py`).
 """
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -253,7 +258,9 @@ class DailyShape:
         ⚠⚠ **이 하루는 계절 간 차이를 담지 못한다** — 담는 것이 목적이 아니다.
         「겨울 하루 < 여름 하루」를 운전에 세우려면 계절마다 대표일을 돌려 합산해야
         하고, 그것은 이 자료형이 아니라 **러너의 구조**다. 그 결손은 붙임 8 이
-        신고한다(`core/report/unreflected.py::_season_reason`).
+        신고한다(`core/report/unreflected.py::_season_reason`). ★ 그 운전이
+        필요로 하는 자료는 아래 `representative_day_by_season()` 이 낸다 —
+        **자료는 섰고 운전은 아직 서지 않았다.**
         """
         # ⚠ **연산 차례가 `spread()` 와 같아야 한다.** `total × share ÷ days` 를
         # 먼저 짓고 가중치를 곱한다 — `spread()` 의 `per_day` 와 **같은 식**이며,
@@ -268,6 +275,64 @@ class DailyShape:
             )
             for j in range(steps)
         )
+
+    def representative_day_by_season(
+        self, total: float, *, days: int
+    ) -> tuple[tuple[Season, tuple[float, ...], int], ...]:
+        """계절마다 (계절, **그 계절의 대표일 한 벌**, 그 계절의 일수).
+
+        `representative_day()` 의 형제이며 **접기 전 해상도**다. 그쪽은 계절을
+        몫 가중 평균으로 접어 하루 하나를 내고, 이쪽은 접지 않고 계절 수만큼
+        낸다 — 같은 자산의 다른 해상도이지 다른 자산이 아니다.
+
+        ## 산식
+
+            day_계절[j] = total × share_계절 / 계절일수 × weight_계절[j]
+
+        `spread()` 의 `per_day` 와 **같은 식이며 연산 차례도 같다** —
+        그래서 이 하루는 `spread()` 가 그 계절에 펴는 하루하루와 부동소수
+        마지막 자리까지 같다. 두 곳이 다른 하루를 뜻하게 되면 「계절별로 돌린
+        결과」와 「이어 붙인 결과」가 조용히 어긋난다.
+
+        ## 성립하는 항등식
+
+            Σ_계절 ( Σ_j day_계절[j] × 계절일수 ) == total       연간 총량 보존
+            Σ_계절 계절일수 == days                              달력이 닫힌다
+
+        앞의 것은 계절마다 `Σ_j weight == 1`(`_normalised()` 가 강제한다)이므로
+        `Σ_j day_계절[j] × 계절일수 == total × share_계절` 이고, 몫의 합이 1
+        (`__post_init__` 이 강제한다)이기 때문에 성립한다. 뒤의 것은 일수를
+        새로 세지 않고 **`spread()` 와 같은 `_calendar_days()`** 에서 받기
+        때문에 성립한다 — 두 곳에서 따로 세면 한쪽만 고쳐진다.
+
+        ⚠ **계절 하나(`연중`)면 그 대표일이 `representative_day()` 와 원소
+        하나까지 같다.** 몫이 1 이고 그때 `_calendar_days()` 가 주는 일수가
+        `days` 전부이므로 위 식이 그쪽 식과 글자 그대로 같아진다.
+
+        ⚠⚠ **차례에 무감하다.** 이 메서드는 계절을 적은 차례대로 내놓을 뿐
+        이어 붙이지 않으므로, 차례를 바꾸면 **묶음의 차례만** 바뀌고 어느
+        계절의 하루도 달라지지 않는다. `spread()` 는 다르다 — 그쪽은 차례가
+        곧 연중 시간 순서라 앞 하루가 첫 계절의 하루가 되고, R60/WP-4 가
+        실측한 *「차례만 바꿔도 연간 발전이 +281kWh 생긴다」* 가 그 자리였다.
+
+        ★ **배포 경로가 이것을 부른다** (R64/WP-4 · 사용자 요구 3). 계절마다
+        돌려 계절일수로 가중 합산하는 운전은 **러너의 구조**이며 이 자료형의
+        몫이 아니다 — 부르는 자리는 `seasonal_dispatch.py::_season_inputs`(발전)
+        와 `appliance_load.py::ApplianceSeasonShares.load_days`(부하)다.
+        ⚠ 접힌 `representative_day()` 도 여전히 선다 — 연간등가 배터리가 그
+        하루를 따라간다(모듈 머리말 ⚠ 절).
+        """
+        calendar = self._calendar_days(days)
+        by_season: list[tuple[Season, tuple[float, ...], int]] = []
+        for (season, weights), season_days in zip(self.by_season, calendar, strict=True):
+            # ⚠ `spread()` 와 **같은 차례로** 짓는다 — `per_day` 를 먼저 세우고
+            # 가중치를 곱한다. 묶는 차례를 바꾸면 값이 1 ULP 어긋나고, 그러면
+            # 위 ⚠ 의 「원소 하나까지 같다」가 거짓이 된다.
+            per_day = total * season.share / season_days
+            by_season.append(
+                (season, tuple(per_day * weight for weight in weights), season_days)
+            )
+        return tuple(by_season)
 
     def spread_over_representative_day(self, total: float, *, days: int) -> list[float]:
         """`representative_day()` 를 `days` 일 되풀이한 연간 시계열.
@@ -326,6 +391,63 @@ def _normalised(raw: list[float], *, key: str) -> tuple[float, ...]:
             "그 자원의 에너지가 통째로 사라집니다"
         )
     return tuple(weight / total for weight in raw)
+
+
+def weights_from_hour_ranges(
+    ranges: Sequence[Sequence[int]], *, steps: int, key: str
+) -> tuple[float, ...]:
+    """**구간**을 스텝 가중치 한 벌로 편다 — 구간 안은 균등이다 (R67/WP-N1b).
+
+    ## 왜 24개를 적지 않고 구간을 적는가
+
+    사용자 판정(`docs/decisions-2026-09-08-R67.md` · R66 §1ⓒ)이 *「24스텝
+    가중치로 자산에 싣고 코드에 시각을 박지 않는다 · **구간 안은 균등**」* 을
+    정했다. 그 「구간 안은 균등」을 자산이 24개 숫자로 옮겨 적으면 **합을 손으로
+    1 로 맞춰야** 하고, 구간을 한 시간 넓힐 때 24개가 함께 갈려 무엇이 바뀐
+    것인지 읽히지 않는다. 구간을 적으면 이 함수가 펴고 **합이 구조적으로 1**
+    이다 — 판정하는 자리를 늘리지 않고 아래 `_normalised()` 를 그대로 지난다.
+
+    ## 꼴과 관례
+
+    `ranges` 는 `[[7, 9], [19, 21]]` 처럼 **[첫 스텝, 마지막 스텝]** 짝의
+    목록이고 **양끝을 포함한다** — `[7, 9]` 는 스텝 7·8·9 셋이며, 자산 머리말의
+    관례(*「인덱스 0 이 00~01시다」*)로 읽으면 07~08 · 08~09 · 09~10시다.
+
+    ⚠ **구간 사이는 「시간수 비례」가 된다** — 구간마다 스텝에 1 을 놓고 합으로
+    나누므로, 3시간 구간 둘은 반반이고 3시간과 6시간이면 1:2 다. 사용자가
+    구간 사이의 배분을 정하지 않았으므로 **새 수를 발명하지 않는 갈래**를
+    고른 것이다(WP-N1b §2-2).
+    ⚠ **겹친 구간은 두 번 세지 않는다.** 한 스텝은 「쓴다」 아니면 「안 쓴다」
+    이며, 겹침으로 2 를 놓으면 사람이 구간을 하나 더 적었을 뿐인데 그 시각의
+    가중치가 두 배가 된다.
+
+    ⛔ **스텝 수를 이 함수가 정하지 않는다** — 부르는 쪽이 형상 자산의
+    `steps` 를 준다. 여기서 24 를 박으면 자산을 15분(96스텝)으로 넓히는 날
+    이 함수만 낡는다.
+    """
+    if not ranges:
+        raise ValueError(
+            f"형상 {key!r} 에 구간이 하나도 없습니다 — 배분할 자리가 없어 "
+            "그 기기의 에너지가 통째로 사라집니다"
+        )
+    raw = [0.0] * steps
+    for entry in ranges:
+        bounds = [int(value) for value in entry]
+        if len(bounds) != 2:
+            raise ValueError(
+                f"형상 {key!r} 의 구간 {list(entry)!r} 이 [첫 스텝, 마지막 "
+                "스텝] 두 수가 아닙니다"
+            )
+        first, last = bounds
+        if not 0 <= first <= last < steps:
+            raise ValueError(
+                f"형상 {key!r} 의 구간 {bounds!r} 이 스텝 범위 0~{steps - 1} "
+                "안에 들어오지 않거나 앞뒤가 뒤집혔습니다 — 양끝을 포함하는 "
+                "[첫 스텝, 마지막 스텝] 꼴이어야 합니다"
+            )
+        for step in range(first, last + 1):
+            raw[step] = 1.0
+    return _normalised(raw, key=key)
 
 
 def _by_season_from(item: Mapping[str, Any], *, key: str) -> tuple[

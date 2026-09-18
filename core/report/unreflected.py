@@ -44,10 +44,30 @@ from core.casegrid.models import (
     ONE_OFF_SALVAGE,
     CaseBasis,
 )
+from core.casegrid.operating_lines import DAYS_PER_YEAR
 from core.casegrid.profiles import PROFILE_PATH, Season, load_daily_shapes
 from core.cba.baseline import BaselineArrangement
 from core.report.case_report import CaseReport
 from core.report.dispatch_notes import DispatchHour
+
+# ★ **운전에서 수량을 「재는」 일은 이 파일 것이 아니다** (R64/WP-4) — 계절마다
+# 재어 일수로 가중 평균하는 코드가 늘면서 이 파일이 `NFR-206` 코드 줄 상한
+# (500)을 넘겼고(실측 507), `core/report/measured_run.py` 로 뽑았다. 그 모듈
+# 머리말이 가른 선을 적는다: **재는 것과 판정하는 것.**
+# ⚠ **재수출이다** — `unreflected.py::_measured_quantities` 를 이름으로 가리키는
+# 문면들이 그대로 참이다(`check_docstring_references.py` 가 재수출을 인정한다).
+from core.report.measured_run import (
+    MeasuredQuantities as _MeasuredQuantities,
+)
+from core.report.measured_run import (
+    _measured_quantities,  # noqa: F401
+    discharge_coverage_over_seasons,
+    measured_over_seasons,
+)
+
+# ★ **판정 하나를 뗀 자리** (R66/WP-2-fix) — 같은 사유(코드 줄 상한)이고 가른 선만
+# 다르다. 그 모듈 머리말이 정본이며, **방향이 한쪽인 이유**(순환)도 거기 있다.
+from core.report.unreflected_pcs import LABEL_PCS_REPLACEMENT, pcs_replacement_gap
 
 #: 반영하면 결론이 **좋아지는** 항목.
 DIRECTION_FAVORABLE = "반영 시 결과 개선"
@@ -122,67 +142,7 @@ class UnreflectedItem:
         return JUDGED_MEASURED if self.measured else JUDGED_METHOD
 
 
-@dataclass(frozen=True)
-class _MeasuredQuantities:
-    """**본 실행**의 운전에서 잰 수량 (대표일, kWh).
 
-    ⚠ 이름이 `_AssumedQuantities` 였다. R48 이 본 실행에 가구 부하를 세우기
-    전에는 이 수를 붙임 7 **둘째 표**(형상을 가정해 다시 돌린 운전)에서 재었기
-    때문이다. R49/★A 가 그 둘째 표를 지웠고, 지금 재는 대상은 **결론이 그 위에
-    서 있는 본 실행**(`CaseReport.dispatch_hours`)이다 — 「가정(assumed)」
-    어휘를 남겨 두면 다음 사람이 이 수를 *결론과 무관한 곁가지*로 읽는다.
-    """
-
-    self_consumption: float
-    #: 부하 자원의 대표일 소비 합계(양수). 자가소비량이 무엇의 일부인지를
-    #: 붙임 8 이 밝히려면 분모가 필요하다.
-    load: float
-    grid_import: float
-    grid_export: float
-
-
-def _measured_quantities(
-    hours: tuple[DispatchHour, ...],
-) -> _MeasuredQuantities | None:
-    """본 실행의 운전에서 자가소비·부하·수전·송전을 잰다.
-
-    **자가소비 = 스텝마다 min(발전, 부하)** 다. 발전 자원은 전 스텝이 0 이상,
-    부하 자원은 전 스텝이 0 이하인 것으로 가른다 — 이름으로 가르면 자원이
-    늘 때마다 여기를 고쳐야 하고, 고치지 않으면 조용히 0 이 된다. 충·방전을
-    함께 하는 자원(ESS)은 어느 쪽도 아니므로 빠진다.
-    """
-    if not hours:
-        return None
-    names = tuple(hours[0].per_resource)
-    generation = [
-        name
-        for name in names
-        if all(hour.per_resource.get(name, 0.0) >= 0.0 for hour in hours)
-        and any(hour.per_resource.get(name, 0.0) > 0.0 for hour in hours)
-    ]
-    load = [
-        name
-        for name in names
-        if all(hour.per_resource.get(name, 0.0) <= 0.0 for hour in hours)
-        and any(hour.per_resource.get(name, 0.0) < 0.0 for hour in hours)
-    ]
-    if not load:
-        return None
-    matched = sum(
-        min(
-            sum(hour.per_resource.get(name, 0.0) for name in generation),
-            -sum(hour.per_resource.get(name, 0.0) for name in load),
-        )
-        for hour in hours
-    )
-    return _MeasuredQuantities(
-        self_consumption=matched,
-        load=-sum(
-            hour.per_resource.get(name, 0.0) for hour in hours for name in load
-        ),
-        grid_import=sum(hour.grid_import for hour in hours),
-        grid_export=sum(hour.grid_export for hour in hours),
-    )
 
 def _replacement_items(basis: CaseBasis) -> list[UnreflectedItem]:
     """교체비·잔존가치가 **프로포마에 실렸는가** — 실린 흐름으로 판정한다.
@@ -569,6 +529,28 @@ def _purchase_item(
     ]
 
 
+def _pcs_replacement_item(report: CaseReport) -> list[UnreflectedItem]:
+    """★ **초기투자에는 섰는데 생애주기에 없는 설비** — PCS 교체비 (R66/WP-2-fix).
+
+    판정과 칸 셋(크기·사유·해소 조건)은 `core/report/unreflected_pcs.py::
+    pcs_replacement_gap` 이 갖는다 — **왜 이 파일에 두지 않았는지**(항목 하나가
+    47줄이고 이 파일은 여유 10줄이었다)와 **왜 방향이 한쪽인지**(순환)는 그
+    모듈 머리말이 정본이다. 여기 남는 것은 **라벨·방향·`measured` 를 붙여 붙임 8
+    의 한 행으로 세우는 일**뿐이다.
+
+    ⚠ **`measured=True` 다.** 이 항목은 *「PCS 가 초기투자에 있는가」* 와 *「그
+    설비의 교체가 계상됐는가」* 를 **매 실행 결과에서 재어** 판정한다(그 모듈의
+    판정 재료 ⓐ·ⓑ) — 값과 무관한 방법의 한계가 아니라, **수명이 켜지는 순간
+    사라지는** 항목이다. 크기의 이동폭만 어림이며 그 사실은 `magnitude` 문면이
+    스스로 적는다(*「어림 · … 10년을 가정하면」*).
+    """
+    gap = pcs_replacement_gap(report)
+    if gap is None:
+        return []
+    return [UnreflectedItem(label=LABEL_PCS_REPLACEMENT, direction=DIRECTION_ADVERSE,
+                            measured=True, **gap)]
+
+
 def _variable_om_item(basis: CaseBasis) -> list[UnreflectedItem]:
     """**변동 O&M 이 프로포마에 실렸는가** — 비용 항목으로 판정한다 (R43-C).
 
@@ -732,20 +714,22 @@ def _flat_generation_item(
 def _season_reason(seasons: tuple[Season, ...], *, confidence: str) -> str:
     """**비어 있는 자리** — 계절 수가 가르는 두 상태를 갈라 적는다.
 
-    하나면 *축은 섰으나 값이 비었다*, 여럿이면 *선언은 됐으나 운전이 그 차이를
-    쓰지 않는다*. 한 문장으로 뭉뚱그리면 둘 중 하나가 거짓이 된다.
+    하나면 *축은 섰으나 값이 비었다*, 여럿이면 *계절은 운전에 섰고 **요일이**
+    남았다*. 한 문장으로 뭉뚱그리면 둘 중 하나가 거짓이 된다.
 
-    ## ⚠⚠⚠ 「접었다」로 적으면 거짓이다 (R60/WP-4-fix)
+    ## ⚠⚠⚠ R64/WP-4 가 「계절 간 하루 차이」를 닫았다 — 문면이 그것을 따라간다
 
-    종전 문면은 *「계절 4개(…)로 접었다」* 였고, 그것은 계절이 **운전을 가른다**
-    고 읽힌다. 실제로는 다르다 — 배포 실행은 24스텝 하루를 365배로 연간화하므로,
-    계절이 여럿인 자산은 `DailyShape.representative_day()` 가 내는 **몫 가중 평균
-    하루 한 벌**로 접혀 들어간다. 그래서 *「겨울 하루의 발전이 여름 하루보다
-    작다」* 는 **선언돼 있고 결론에는 서지 않는다.**
+    종전 문면은 *「배포 실행은 몫 가중 평균 대표일 1벌을 연간화 · 계절 간 하루
+    차이 결론 미반영」* 이었다. **그 진술이 이 라운드에 거짓이 됐다** — 러너가
+    계절 넷의 대표일을 각각 돌려 계절일수로 가중 합산한다
+    (`core/casegrid/seasonal_dispatch.py`). 문면을 그대로 두면 산출물이
+    **자기가 한 일을 부정하면서** 그 결과를 싣는다(R60/WP-4-fix 가 반대
+    방향으로 같은 자리를 고쳤다).
 
-    ⚠⚠ **「미반영이 줄었다」를 「결손이 해소됐다」로 적지 않는다.** 채운 것은
-    **가정값**이고 운전은 그 차이를 쓰지 않는다 — 둘 다 말해야 다음 사람이
-    가정값을 실측으로, 선언을 반영으로 읽지 않는다(사용자 판정 §3 2항).
+    ⚠⚠ **그렇다고 항목을 지우지 않는다.** 닫힌 것은 갈래 ⓐ 하나이고 ⓑ(요일)와
+    ⓒ(값의 실측)는 **그대로 남는다** — 특히 계절 몫·형상은 여전히 **가정값**
+    이다. 「반영했다」와 「그 값이 맞다」는 다른 말이며, 둘을 함께 적어야 다음
+    사람이 가정값을 실측으로 읽지 않는다(사용자 판정 §3 2항).
 
     `confidence` 를 자산에서 받아 적는 이유는 **여기에 「가정」을 리터럴로 박으면**
     회신이 와서 자산이 `확정` 이 되는 날 리포트만 낡기 때문이다.
@@ -757,9 +741,11 @@ def _season_reason(seasons: tuple[Season, ...], *, confidence: str) -> str:
     names = " · ".join(season.name for season in seasons)
     return (
         f"계절 {len(seasons)}개({names})와 계절별 몫(`share`) 선언됨 · "
-        f"그 값의 신뢰도 「{confidence}」 · 배포 실행은 몫 가중 평균 대표일 "
-        "1벌을 연간화 (`DailyShape.representative_day`) · "
-        "계절 간 하루 차이 결론 미반영 · 요일 변동 없음"
+        f"그 값의 신뢰도 「{confidence}」 · 배포 실행은 계절마다 대표일을 각각 "
+        "돌려 계절일수로 가중 합산한다 "
+        "(`DailyShape.representative_day_by_season`) · "
+        "**남은 것은 요일 변동과 그 계절 값의 실측이다** — 주중·주말 대표일을 "
+        "가르지 않고, 계절 몫·형상은 아직 실측이 아니다"
     )
 
 
@@ -771,17 +757,20 @@ def _season_resolves_when(seasons: tuple[Season, ...], *, steps: int) -> str:
     훨씬 성긴 자산으로 접힌다.** 한쪽만 적으면 요구를 실제보다 크게 적는
     것이고, 검토자는 그것을 *「그러면 당장은 못 한다」* 로 읽는다.
 
-    ## ★★ 계절이 선 뒤의 셋 (R60/WP-4-fix)
+    ## ★★ 계절이 선 뒤의 셋 (R60/WP-4-fix) — **ⓐ 는 R64/WP-4 가 닫았다**
 
-        ⓐ 계절 간 하루 차이   러너가 계절마다 대표일을 돌려 합산해야 닫힌다.
-                             **자산이 아니라 운전 구조**다 — 값은 이미 있다
-        ⓑ 요일 변동          주중·주말 대표일을 갈라야 닫힌다
+        ⓐ 계절 간 하루 차이   ✔ **닫혔다** (R64/WP-4). 러너가 계절마다 대표일을
+                             돌려 계절일수로 가중 합산한다
+                             (`core/casegrid/seasonal_dispatch.py`)
+        ⓑ 요일 변동          주중·주말 대표일을 갈라야 닫힌다 — **그대로 남는다**
         ⓒ 값 자체            지금 자산에 있는 계절 몫·형상은 **가정값**이다.
-                             TMY·가구 실측이 오면 갈아 끼운다
+                             TMY·가구 실측이 오면 갈아 끼운다 — **그대로 남는다**
 
-    ⚠⚠ **ⓐ 를 ⓒ 로 적지 않는다.** 종전 문면은 *「계절은 자산의 `seasons:` 로
-    접혔다」* 여서, 계절 차이가 결론에 서지 않는 것을 **값이 없어서**로 읽히게
-    했다. 값은 있고 **운전이 그것을 쓰지 않는다** — 고칠 자리가 다르다.
+    ⚠⚠ **ⓐ 가 닫혔다고 ⓒ 를 함께 닫지 않는다.** 「운전이 그 차이를 쓴다」와
+    「그 값이 맞다」는 다른 말이다 — 지금 쓰는 계절 몫·형상은 여전히 자산의
+    가정값이고, 실측이 오면 결론이 다시 움직인다. 한 문장으로 뭉치면 다음
+    사람이 가정값을 실측으로 읽는다(R60/WP-4-fix 가 반대 방향으로 같은 자리를
+    경고했다: 그때는 **값은 있고 운전이 안 쓰는** 상태였다).
 
     ⚠ **몫을 빼놓지 않는다.** 계절별 형상만 채우고 총량을 일수에 비례해
     나누면 겨울 하루와 여름 하루가 **같아진다** — 계절을 넣고도 계절 차이를
@@ -792,21 +781,25 @@ def _season_resolves_when(seasons: tuple[Season, ...], *, steps: int) -> str:
     if len(seasons) == 1:
         return (
             f"자산(`{_PROFILE_ASSET}`)의 `seasons:` 에 계절별 대표일 형상과 "
-            "**계절별 몫(`share`)** 을 함께 채우면 계절이 접힌다 "
+            "**계절별 몫(`share`)** 을 함께 채우면 계절이 운전에 선다 "
             f"(계절마다 {steps}스텝 대표일 한 벌 · {_STEPS_PER_YEAR:,} 전량 불필요 · 몫 "
             "없이 형상만 채우면 계절 간 하루 에너지가 같아진다) · 요일 변동은 "
             f"그것으로도 남으며 {annual}에서 닫힌다"
         )
     return (
-        # ⓐ **계절 간 하루 차이** — 자산이 아니라 러너가 여는 갈래다.
-        f"ⓐ 계절 간 하루 차이 — 계절 {len(seasons)}개의 대표일을 각각 돌려 "
-        f"합산하는 운전 (지금은 몫 가중 평균 대표일 1벌 · 계절마다 {steps}스텝 "
-        "형상과 몫(`share`)은 자산에 이미 있다) · "
+        # ⓐ **계절 간 하루 차이** — R64/WP-4 가 닫았다. 지운 것이 아니라
+        # 「무엇이 닫혔는가」를 적는다 — 지우면 다음 사람이 ⓑ·ⓒ 를 보고
+        # 「계절은 원래 반영됐던 것」으로 읽는다.
+        f"ⓐ 계절 간 하루 차이 — ✔ 닫힘 (계절 {len(seasons)}개의 대표일을 각각 "
+        "돌려 계절일수로 가중 합산한다 · R64/WP-4) · "
         # ⓑ 계절을 채워도 남는 갈래. 종전 문면이 갖고 있던 것이다.
         "ⓑ 요일 변동 — 주중·주말 대표일 분리 · "
         # ⓒ 값 자체. 지금 있는 것은 가정값이므로 실측이 오면 자산을 간다.
-        f"ⓒ 계절 몫·형상의 실측 — 지역 일사량 시계열(TMY)·가구 실측으로 자산의 "
-        f"`seasons:` 교체, 그리고 {annual}"
+        # ⚠ **몫(`share`)을 이름으로 적는다** — 형상만 채우고 몫을 비우면 겨울
+        # 하루와 여름 하루가 같아진다(`Season.share` 가 그 차이를 담는 유일한
+        # 자리다). `tests/report/test_seasonal_unreflected.py` 가 그 이름을 붙든다.
+        f"ⓒ 계절 몫(`share`)·형상의 실측 — 지역 일사량 시계열(TMY)·가구 실측으로 "
+        f"자산의 `seasons:` 교체, 그리고 {annual}"
     )
 
 
@@ -829,10 +822,14 @@ def _season_item(
     **그보다 성긴 갈래**다.
 
     ⚠ **계절을 넷 선언해도 항목은 남고 이름도 그대로다** — 「계절·**요일** 변동」.
-    요일이 그대로 미반영인 것에 더해, **계절도 아직 미반영이다**: 자산은 계절
-    넷과 몫을 선언하지만 배포 실행은 그것을 몫 가중 평균 하루 한 벌로 접어 쓰므로
-    계절 간 하루 차이가 결론에 서지 않는다(R60/WP-4-fix). 그래서 이름에서 「계절」
-    을 떼지 않았다 — 떼면 남아 있는 결손의 절반이 표에서 사라진다.
+
+    ⚠⚠ **이 ⚠ 의 근거가 R64/WP-4 에 바뀌었다.** 종전 근거는 *「계절도 아직
+    미반영이다 — 배포 실행이 몫 가중 평균 하루 한 벌로 접어 쓴다」*(R60/WP-4-fix)
+    였고, **그 진술은 이제 거짓이다**: 러너가 계절마다 대표일을 돌려 계절일수로
+    가중 합산한다. 그런데도 이름에서 「계절」을 떼지 않는 이유가 둘 남았다 —
+    ① **요일이 그대로 미반영**이고 ② **계절 몫·형상이 아직 가정값**이라 그 값이
+    실측으로 바뀌면 결론이 다시 움직인다(해소 조건 ⓑ·ⓒ). 이름을 「요일 변동」
+    으로 좁히면 ② 가 표에서 사라지고, 사라진 것은 아무도 못 본다.
 
     ## 자산을 여기서 직접 읽는 근거
 
@@ -877,8 +874,103 @@ def _season_item(
     ]
 
 
+def _discharge_window_item(report: CaseReport) -> list[UnreflectedItem]:
+    """**방전창 밖의 가구 수요** — 재어 판정한다 (R64/WP-6b · 사용자 요구 5).
+
+    ## 왜 이 행이 붙임 8 에 서는가 (판정 ④)
+
+    R64/WP-6b 가 방전 배분의 배포 기본값을 「부하 추종」으로 바꿨다 — 그러면
+    리포트 0절의 「운전 방식」 칸이 *「방전 배분: 부하 추종」* 을 인쇄한다.
+    그 문면만 두면 **하루 종일 수요를 최우선으로 따라간다**로 읽히는데, 실제로
+    따라가는 것은 **방전창 안**뿐이다. 창을 넓히면 충전 계획과 순환하므로
+    (`core/report/measured_run.py::DischargeCoverage` 의 ⛔ 절) 그 결손은 이
+    라운드가 고칠 수 있는 것이 아니다 — **고칠 수 없는 것은 재어서 드러낸다**
+    는 것이 이 파일이 하는 일이다.
+
+    ⛔ **문장으로 박지 않는다.** *「저녁 18~21시에만 방전한다」* 로 적으면 운전
+    방법을 바꾼 실행에서 리포트가 틀린 창을 계속 인쇄한다(모듈 머리말 ★).
+    **매 실행 운전 결과에서 재고**, 잴 것이 없으면 이 행이 스스로 빠진다 —
+    저장장치나 가구 부하가 없는 실행이 그렇다.
+
+    ⚠ **방향을 지어내지 않는다.** 창을 넓히면 계통 수전(비용)이 줄지만 그
+    에너지는 잉여 판매(편익)에서 온 것이라 송전도 함께 준다 — 두 단가의 차와
+    저장 여유가 정하는 값이며 이 자리는 그것을 재지 않았다.
+    """
+    coverage = discharge_coverage_over_seasons(report.dispatch_hours, report.seasons)
+    if coverage is None or coverage.load_total <= 0.0:
+        return []
+    share = coverage.load_outside / coverage.load_total
+    return [
+        UnreflectedItem(
+            label="방전창 밖 가구 수요",
+            direction=DIRECTION_UNKNOWN,
+            magnitude=(
+                f"수량 측정 · 대표일 가구 부하 {coverage.load_total:,.4f}kWh 중 "
+                f"방전이 난 스텝({coverage.steps_discharging:,.1f}/"
+                f"{coverage.steps:,.0f}스텝) **밖** "
+                f"{coverage.load_outside:,.4f}kWh ({share:.1%}) · "
+                f"그 스텝의 계통 수전 {coverage.grid_import_outside:,.4f}kWh/일 "
+                f"(연간화 {coverage.grid_import_outside * DAYS_PER_YEAR:,.0f}kWh)"
+            ),
+            reason=(
+                "방전 시간대(`ESS.discharge_hours`)를 운전 방법이 정하고 방전 "
+                "배분은 그 안에서만 나눈다 · 창을 부하로 정하면 충전 계획"
+                "(`ess_schedule.pv_surplus_charge_kwh_by_hour` — 방전창을 뺀 "
+                "시각에 충전)과 서로를 참조해 계획이 순환한다"
+            ),
+            resolves_when=(
+                "충전·방전 계획을 한 번에 세우는 최적화 배선 (창을 넓히는 것으로는 "
+                "닫히지 않는다) · 또는 방전창이 가구 수요와 겹치는 운전 방법 선택"
+            ),
+            measured=True,
+        )
+    ]
+
+
 #: 방법 자체의 한계 — **값과 무관하게 성립**하므로 재지 않는다.
 _METHOD_LIMITS: tuple[UnreflectedItem, ...] = (
+    #: ★★★ **수요반응 정산금** — R64/WP-7 이 세웠다 (사용자 판정 §5).
+    #:
+    #: 사용자가 고른 갈래는 *「(가)만. 집 전체 가전 부하 중 비율로 간단히」*
+    #: 였다 — 낮 PV 잉여 시각으로 부하를 옮겨 **자가소비를 늘리는** 갈래
+    #: 하나이고, 계통이 감축을 요청할 때 받는 **정산금**(갈래 (나))은
+    #: 하지 않는다. 그 갈래를 하려면 「감축량 × 정산단가」의 **정산단가**가
+    #: 있어야 하는데 대장에 없다.
+    #:
+    #: ⚠⚠ **크기를 추정하지 않는다.** 사용자가 건넨 참고자료의 결함 1 이
+    #: 정확히 그 형태였다 — *「★ V2G 시장 미개설, 1~2만원/일 범위 중간값」*
+    #: 이라 적힌 수익 250만원/년이 편익의 57.7% 를 차지하고 그것을 빼면
+    #: 결론의 부호가 뒤집힌다(`docs/decisions-2026-09-06-R64.md` §2).
+    #: **없는 시장의 수익이 결론의 부호를 만드는 것**을 우리가 되풀이하지
+    #: 않는다. 그래서 이 행은 **금액 없이 방향만** 적는다.
+    #:
+    #: ⚠ **`measured=False` 인 이유**: 이 결손은 이 실행의 값이 아니라
+    #: **매핑이 없다는 사실**에서 나온다(`docs/traceability.md` 의
+    #: `FR-401-AC2.DemandResponse` 행이 **미매핑**이다). 구성을 바꿔도 이
+    #: 행은 그대로다.
+    UnreflectedItem(
+        label="수요반응 정산금 (시장 정산)",
+        direction=DIRECTION_FAVORABLE,
+        magnitude=(
+            "미정량 · 감축량에 곱할 정산단가가 대장에 없다 (크기를 "
+            "추정하지 않는다 — 없는 시장의 수익이 결론의 부호를 만든다)"
+        ),
+        reason=(
+            # RUF001: 「×」는 검토자가 읽는 **조항 문면 그대로**다 —
+            # `seasonal_dispatch.dispatch_note`·`operating_lines.benefit_line()`
+            # 이 같은 이유로 같은 면제를 쓴다(대상을 좁히는 면제이지 규칙을
+            # 넓히는 것이 아니다).
+            "`FR-401-AC2.DemandResponse`(감축량 × 정산단가) **미매핑** · "  # noqa: RUF001
+            "부하 이동은 자가소비 최적화만 한다 (사용자 판정 2026-09-06 §5 — "
+            "*「(가)만」*) · 절감은 사는 전기가 줄어 요금 계산에서 나온다"
+        ),
+        resolves_when=(
+            "수요반응 정산단가 확보 + 제도 참여 요건 확인 (계통운영기관·"
+            "배전사업자) · 요금 인센티브와의 배타 규칙 판정 "
+            "(`rule.dr_tariff_incentive_exclusion`)"
+        ),
+        measured=False,
+    ),
     UnreflectedItem(
         label="확률적 불확실성 (몬테카를로)",
         direction=DIRECTION_UNKNOWN,
@@ -900,7 +992,10 @@ def build_unreflected(report: CaseReport) -> tuple[UnreflectedItem, ...]:
     # ★ **본 실행에서 잰다 (R49/★A).** 종전에는 `report.assumed_hours`(붙임 7
     # 둘째 표)를 읽었다. 그 표가 사라졌고, 본 실행이 이미 부하를 세우고 도므로
     # **가정 운전이 아니라 결론이 그 위에 선 실제 운전에서** 잰 값이다.
-    measured = _measured_quantities(report.dispatch_hours)
+    # ★★ **계절마다 재어 일수로 가중 평균한다** (R64/WP-4) — 접힌 하루에서 재면
+    # `min(발전, 부하)` 가 비선형이라 자가소비를 과대 계상하고, 그 수가 리포트
+    # 0절의 자가소비율과 갈린다(`measured_over_seasons` 독스트링의 실측).
+    measured = measured_over_seasons(report.dispatch_hours, report.seasons)
     return (
         *_replacement_items(basis),
         *_unread_items(report),
@@ -915,7 +1010,15 @@ def build_unreflected(report: CaseReport) -> tuple[UnreflectedItem, ...]:
         # 바로 위와 **같은 갈래**다 — 프로포마 비용 행이 비었는가. 붙여 두어
         # 검토자가 「빠진 비용 행」을 한 자리에서 읽게 한다.
         *_variable_om_item(basis),
+        # ★ **같은 갈래의 셋째** — 위 둘이 「프로포마 비용 행이 비었는가」라면 이
+        # 행은 **「부품의 수명을 세우지 않았는가」**다 (R66/WP-2-fix). 초기투자에는
+        # PCS 가 섰는데 20년 동안 한 번도 갱신하지 않는다 — 붙여 두어 검토자가
+        # **누락된 비용**을 한 자리에서 읽게 한다.
+        *_pcs_replacement_item(report),
         *_flat_generation_item(basis, report.dispatch_hours),
+        # ★ **운전이 무엇을 못 덮었는가** — 위 두 행(발전 형상 · 비용 행)과 달리
+        # 이 행은 **배선이 끝난 뒤에도 남는** 결손이다 (R64/WP-6b · 요구 5).
+        *_discharge_window_item(report),
         *_season_item(report.dispatch_hours),
         *_METHOD_LIMITS,
     )
@@ -952,11 +1055,20 @@ def unreflected_direction_tally(items: tuple[UnreflectedItem, ...]) -> str:
 
 
 def unreflected_section(items: tuple[UnreflectedItem, ...]) -> list[str]:
-    """붙임 8 — 미반영 항목 **전문**. 절충안의 뒤 절반."""
+    """붙임 8 — 미반영 항목 **전문**. 절충안의 뒤 절반.
+
+    ⚠ **「해소 조건」 열의 소유자가 이 붙임이다** (R67/WP-N1d). 종전에는 본문
+    6.3 이 항목마다 같은 문자열을 한 줄씩 되풀이해 인쇄했고, 그래서 항목이
+    하나 늘 때마다 본문이 **두 줄**(3.4 + 6.3) 자랐다. 양식이 그 열을 이
+    붙임에 배정하므로(`docs/report-form-심의보고서.md` 두 곳) 6.3 은 이제
+    **건수 한 줄**로 이 자리를 가리킨다 — `narrative.py::_judgement_section`
+    의 ★★★ 절이 그 경위와, 같은 양식이 다른 줄에서 어긋나는 자리를 갖는다.
+    """
     lines = [
         "## 붙임 8. 미반영 항목",
         "",
-        "본문 3.4 가 항목명과 방향만 실은 항목의 전건이다.",
+        "본문 3.4 가 항목명과 방향만 실은 항목의 전건이며, **「해소 조건」 열의 "
+        "전문은 이 붙임이 진다**(본문 6.3 은 건수로 이 자리를 가리킨다).",
         "",
     ]
     if not items:

@@ -29,7 +29,12 @@ from core.report.case_report import (
 )
 from core.report.combined import build_coupled_sweeps
 from core.report.narrative import NONE_IN_RANGE, SOLO_SWEEP, render_markdown
-from tests.report.conftest import report_rec_terms, report_shapes
+from tests.report.conftest import (
+    report_household_wiring,
+    report_rec_terms,
+    report_shapes,
+    report_shift_share,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -147,6 +152,12 @@ def _conclusion_at(level_map, assignment, horizon: int) -> float:
         daily_shapes=report_shapes(),
         annual_load_kwh=probe["household_load_annual_kwh"]["base"],
         rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
+        # ★ **부하 이동도 같은 배선** (R64/WP-7 · 사용자 요구 2) — 안 넘기면
+        # 리포트(옮긴 하루)와 재실행(옮기지 않은 하루)이 서로 다른 사업을 그린다.
+        dr_shiftable_share_pct=report_shift_share(),
+        # ★★ **단지 규모·기기 부하·계절 몫도 같은 배선** (R65/WP-2c) — 안 넘기면
+        # 리포트(20호 단지)의 수를 **한 호짜리** 재실행과 맞대게 된다.
+        **report_household_wiring(),
     )
     return float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
 

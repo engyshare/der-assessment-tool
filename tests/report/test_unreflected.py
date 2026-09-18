@@ -21,8 +21,15 @@ from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 from core.casegrid.models import COST_TAG_VARIABLE_OM
 from core.report.case_report import build_case_report
+from core.report.measured_run import (
+    DischargeCoverage,
+    discharge_coverage,
+    discharge_coverage_over_seasons,
+)
 from core.report.narrative import render_markdown
 from core.report.unreflected import (
     DIRECTION_ADVERSE,
@@ -638,3 +645,117 @@ def test_without_a_run_to_measure_the_self_consumption_row_is_unmeasured() -> No
     """
     blind = replace(_report(), dispatch_hours=())
     assert _self_consumption_row(blind).direction == DIRECTION_UNKNOWN
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# R64/WP-6b — **방전창 밖 가구 수요** (사용자 요구 5 배선이 남긴 결손)
+# ─────────────────────────────────────────────────────────────────────────
+
+_DISCHARGE_WINDOW_LABEL = "방전창 밖 가구 수요"
+
+
+def _discharge_window_row(items):
+    return next((i for i in items if i.label == _DISCHARGE_WINDOW_LABEL), None)
+
+
+def test_the_discharge_window_gap_is_measured_not_asserted() -> None:
+    """★★★ **「부하 추종」이 참인 범위를 산출물이 스스로 말한다** (판정 ④).
+
+    R64/WP-6b 가 방전 배분의 배포 기본값을 「부하 추종」으로 바꿨고, 그래서
+    리포트 0절이 *「방전 배분: 부하 추종」* 을 인쇄한다. 그 문면만 두면 **하루
+    종일 수요를 최우선으로 따라간다**로 읽히는데 실제로 따라가는 것은 방전창
+    안뿐이다. 창을 넓히면 충전 계획과 순환하므로(같은 라운드가 실측했다) 그
+    결손은 고칠 수 있는 것이 아니다 — **고칠 수 없는 것은 재어서 드러낸다.**
+
+    ⛔ 문장으로 박지 않는다 — *「저녁 18~21시에만 방전한다」* 로 적으면 운전
+    방법을 바꾼 실행에서 틀린 창을 계속 인쇄한다. 여기서는 **운전 결과에서
+    다시 재어** 그 수가 크기 칸에 실렸는지 본다.
+    """
+    report = _report()
+    item = _discharge_window_row(build_unreflected(report))
+    assert item is not None, (
+        "가구 부하와 저장장치가 함께 선 실행인데 붙임 8 에 이 행이 없다"
+    )
+    assert item.judged == JUDGED_MEASURED
+    assert item.direction == DIRECTION_UNKNOWN, (
+        "창을 넓히면 계통 수전(비용)과 잉여 판매(편익)가 함께 줄어든다 — "
+        f"한쪽만 보고 방향을 {item.direction} 로 단정했다"
+    )
+
+    coverage = discharge_coverage_over_seasons(report.dispatch_hours, report.seasons)
+    assert coverage is not None
+    assert f"{coverage.load_outside:,.4f}kWh" in item.magnitude, (
+        f"창 밖 부하({coverage.load_outside:,.4f}kWh)가 크기 칸에 없다"
+    )
+    assert 0.0 < coverage.load_outside < coverage.load_total, (
+        "창 밖 부하가 0 이거나 전부라면 이 실행으로는 이 성질을 잴 수 없다"
+    )
+
+
+def test_a_run_without_a_battery_or_a_load_has_no_discharge_window_row() -> None:
+    """★ **잴 것이 없으면 행이 스스로 빠진다** — 판정이지 문장이 아님을 고정한다.
+
+    저장장치가 쉬거나 부하 자원이 없는 실행에서 이 행을 인쇄하면 *하지 않은
+    대응을 못 했다고* 세는 것이 된다.
+    """
+    hours = _report().dispatch_hours
+    load_only = tuple(
+        replace(
+            hour,
+            per_resource={
+                name: value
+                for name, value in hour.per_resource.items()
+                if value <= 0.0 or name.endswith("-load")
+            },
+        )
+        for hour in hours
+    )
+    assert discharge_coverage(load_only) is None, (
+        "충·방전을 함께 하는 자원이 없는데 창 안팎을 갈랐다"
+    )
+    assert discharge_coverage(()) is None
+
+
+def test_the_coverage_is_weighted_by_season_days_not_read_off_the_folded_day() -> None:
+    """★★ **계절마다 재어 일수로 가중 평균한다** (`measured_over_seasons` 와 같은 사유).
+
+    접힌 하루에서 재면 *어느 계절엔가* 방전이 있었던 시각이 전 계절에서 방전이
+    있었던 것처럼 세어져 **창 밖 수요를 과소 계상한다.** 잉여가 없어 배터리가
+    쉬는 계절이 정확히 그 자리다.
+
+    ⚠ 지금 대장·자산으로는 네 계절 모두 방전이 있어 두 수가 같을 수 있다.
+    그래서 **계절을 지어내지 않고**, 계절을 준 경우와 안 준 경우가 각각 그
+    입력에서 재어진 값인지를 본다 — 계절을 주면 계절별 하루에서, 안 주면
+    접힌 하루에서 재야 한다.
+    """
+    report = _report()
+    folded = discharge_coverage(report.dispatch_hours)
+    seasonal = discharge_coverage_over_seasons(report.dispatch_hours, report.seasons)
+    assert folded is not None and seasonal is not None
+    assert isinstance(seasonal, DischargeCoverage)
+
+    # 계절을 주지 않으면 접힌 하루를 그대로 잰다 — 종전 그대로다.
+    assert discharge_coverage_over_seasons(report.dispatch_hours, ()) == folded
+
+    # 부하 총량은 선형이라 계절을 가중 평균해도 접힌 하루와 같다(성질 「가」).
+    assert seasonal.load_total == pytest.approx(folded.load_total)
+    # 창 밖 부하는 **선형이 아니다** — 계절마다 방전 시각이 다를 수 있으므로
+    # 계절에서 잰 값이 접힌 하루보다 작을 수 없다.
+    assert seasonal.load_outside >= folded.load_outside - 1e-9
+
+
+def test_the_body_row_says_the_name_and_the_direction_only() -> None:
+    """본문 3.4 표에 **항목명과 방향만** 실린다 — 붙임이 크기를 진다(절충안).
+
+    ⚠ 이 행이 본문에 서야 하는 이유는 양식 1절 A③ 이다 — 미반영 항목은 **결과와
+    함께** 읽혀야 한다. 붙임으로만 내리면 순현재가치가 확정 수치로 읽힌다.
+    """
+    items = build_unreflected(_report())
+    rows = unreflected_rows(items)
+    named = [row for row in rows if _DISCHARGE_WINDOW_LABEL in row]
+    assert len(named) == 1, rows
+    assert DIRECTION_UNKNOWN in named[0]
+
+    item = _discharge_window_row(items)
+    assert item is not None
+    assert item.magnitude not in named[0], "본문에 크기 칸이 새어 나왔다"

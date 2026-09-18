@@ -500,3 +500,126 @@ def test_a_name_that_beats_the_suffix_is_declared_where_it_is_visible() -> None:
             f"{name} 를 예외로 선언했는데 접미어가 이깁니다 — "
             f"`resolve_unit` 이 {resolve_unit(name)!r} 를 돌려줍니다"
         )
+
+
+# ── ⑦ R64/WP-6a 가 세운 방전 축 둘 — 라벨이 서로 구별되는가 ────────────
+#
+# WP-6a 가 `LABEL_BY_NAME` 에 `discharge_allocation`·`load_profile_kwh` 를 더하며
+# 그 자리에 설계 의도를 주석으로 적었다 — *「충전원과 직교한다. 라벨을 「운전
+# 방법」에 가깝게 적으면 `operating_mode` 와 화면에서 구별되지 않는다」*.
+# **그 의도가 지금 아무 데서도 재이지 않는다.** ⑤ 의 전건 검사는 라벨이 「있는가」를
+# 세지 두 라벨이 「갈리는가」를 보지 않고, ⑥ 은 소스 문면과의 어긋남을 본다.
+
+#: WP-6a 가 세운 두 축. ESS 생성자 인자이며 화면 카탈로그가 그것을 편다.
+_R64_DISCHARGE_AXES = ("discharge_allocation", "load_profile_kwh")
+
+
+def test_the_two_discharge_axes_declared_in_r64_have_labels() -> None:
+    """`discharge_allocation`·`load_profile_kwh` 가 **라벨을 갖는다** (성질 바).
+
+    ⑤ 의 전건 검사가 이미 「라벨 없는 파라미터 0개」를 세지만, 그 검사는 **이 둘을
+    이름으로 집지 않는다** — 두 축이 카탈로그에서 통째로 사라지면 셀 것이 없어져
+    그쪽은 초록불인 채로 남는다. 이름으로 집는 자리가 여기 하나 있어야 그때
+    빨간불이 난다.
+    """
+    for name in _R64_DISCHARGE_AXES:
+        assert name in LABEL_BY_NAME, (
+            f"`LABEL_BY_NAME` 에 {name} 가 없습니다 — 화면이 이 축을 변수명으로 "
+            "되돌려 인쇄합니다"
+        )
+        assert resolve_label(name).strip(), (
+            f"{name} 의 라벨이 비어 있습니다 — 선언은 서 있는데 화면에 나가는 "
+            "말이 없습니다"
+        )
+
+
+def test_the_discharge_allocation_label_is_not_the_operating_mode_label() -> None:
+    """★ **「방전 배분 방식」과 「운전 방법」이 갈린다** (성질 사).
+
+    WP-6a 의 주석이 적은 설계 의도가 이것이다 — 두 축은 **직교한다**. 하나는
+    *「어디서 받아 채우나」*(`charge_source`)와 짝이 되는 *「받아 둔 것을 언제
+    내보내나」* 이고, `operating_mode` 는 자원의 운전 방법이다. 라벨을 「운전
+    방법」에 가깝게 적으면 사용자는 같은 화면에서 두 칸을 **같은 것**으로 읽고,
+    한쪽만 채운 채 넘어간다.
+
+    ⚠ **같은 자원에서 본다.** 둘이 `ESS` 한 자원의 인자이므로 실제로 나란히 서는
+    화면이 있고, 그 화면이 이 결함이 사는 자리다. 표만 대조하면 「선언은 갈렸는데
+    카탈로그에서는 한쪽이 없다」를 놓친다.
+    """
+    assert LABEL_BY_NAME["discharge_allocation"] != LABEL_BY_NAME["operating_mode"], (
+        "`discharge_allocation` 과 `operating_mode` 의 라벨이 같습니다 — 두 축은 "
+        "직교하는데 화면에서는 구별되지 않습니다"
+    )
+
+    ess = {spec.name: spec for spec in resource_parameters("ESS")}
+    for name in ("discharge_allocation", "operating_mode"):
+        assert name in ess, (
+            f"`ESS` 의 카탈로그에 {name} 가 없습니다 — 이 검사가 전제한 "
+            "「같은 화면에 나란히 선다」가 깨졌습니다"
+        )
+    assert ess["discharge_allocation"].label != ess["operating_mode"].label, (
+        f"`ESS` 화면에서 두 칸의 라벨이 같습니다: "
+        f"{ess['discharge_allocation'].label!r}"
+    )
+
+
+def test_the_two_discharge_axes_reach_the_screen_with_their_labels() -> None:
+    """두 축이 **카탈로그를 지나서도** 라벨을 갖는다 (성질 아).
+
+    `LABEL_BY_NAME` 에 있다는 것과 **화면이 그것을 받는다**는 것은 다르다. 라벨은
+    `resolve_label()` 이 카탈로그를 세우는 길에 붙이며, 그 길이 끊기면 표는 그대로인데
+    화면만 변수명으로 돌아간다 — 그리고 그 상태는 **아무 오류도 내지 않는다**
+    (`resolve_label()` 이 없는 이름에 빈 문자열을 돌려주는 것은 규약이다).
+
+    ⚠ 옆의 전건 검사(`test_no_parameter_reaches_the_screen_without_a_label`)를
+    고치지 않고 여기 따로 세운다. 그쪽은 *「라벨 없는 것이 0개」* 를 세는 자리이고
+    이쪽은 *「이 둘이 거기 있다」* 를 집는 자리다 — 둘을 한데 두면 세는 것이
+    무엇인지 흐려진다.
+    """
+    found = {
+        spec.name: (tag, spec.label)
+        for tag, specs in catalogue().items()
+        for spec in specs
+        if spec.name in _R64_DISCHARGE_AXES
+    }
+
+    for name in _R64_DISCHARGE_AXES:
+        assert name in found, (
+            f"화면 카탈로그가 {name} 를 내지 않습니다 — 표에는 라벨이 있는데 "
+            f"사용자는 그 칸을 볼 수 없습니다. 카탈로그가 낸 것: {sorted(found)}"
+        )
+        tag, label = found[name]
+        assert label == LABEL_BY_NAME[name], (
+            f"{tag}.{name} 가 화면에 내는 라벨({label!r})이 `LABEL_BY_NAME` 의 "
+            f"선언({LABEL_BY_NAME[name]!r})과 다릅니다"
+        )
+
+@pytest.mark.req("UI-2-AC1")
+def test_the_two_ess_capex_axes_are_told_apart_by_their_labels() -> None:
+    """★ **ESS 초기투자의 단가는 둘이고 축이 다르다** — 화면이 그것을 라벨로 말한다
+    (R66/WP-2).
+
+    `capex_unit_won_per_kwh`(원/kWh · 저장용량당)와
+    `capex_pcs_won_per_kw`(원/kW · **정격출력당**)가 설정 화면에 **나란히** 선다.
+    두 라벨이 같은 말로 시작하면 사용자는 *「같은 값이 두 칸 있다」* 로 읽고,
+    그러면 한 칸에 다른 축의 수를 넣어도 아무 오류가 나지 않는다 — 값은 그럴듯한
+    크기이고 결론만 조용히 틀린다.
+
+    ⚠ **단위가 갈리는 것만으로는 부족하다.** 단위는 접미사 규약(`_won_per_kwh` ·
+    `_won_per_kw`)이 저절로 붙이므로 **개발자가 라벨을 잘못 적어도 단위는 옳게
+    나온다.** 그래서 여기서는 **라벨 문면**을 잰다 — 아래 둘째 단언이 그것이다.
+    """
+    specs = {spec.name: spec for spec in catalogue()["ESS"]}
+    for name, unit in (("capex_unit_won_per_kwh", "원/kWh"), ("capex_pcs_won_per_kw", "원/kW")):
+        assert name in specs, f"화면 카탈로그가 ESS.{name} 를 내지 않습니다"
+        assert specs[name].unit == unit, (
+            f"ESS.{name} 의 단위가 {specs[name].unit!r} 다 — {unit!r} 여야 한다"
+        )
+
+    per_kwh = specs["capex_unit_won_per_kwh"].label
+    per_kw = specs["capex_pcs_won_per_kw"].label
+    assert per_kwh != per_kw, "두 단가의 라벨이 같습니다 — 화면에서 구별되지 않습니다"
+    assert "정격출력" in per_kw, (
+        f"ESS.capex_pcs_won_per_kw 의 라벨({per_kw!r})이 **어느 축의 단가인지** "
+        "말하지 않습니다 — 저장용량당 단가와 나란히 서므로 라벨만으로 갈려야 합니다"
+    )

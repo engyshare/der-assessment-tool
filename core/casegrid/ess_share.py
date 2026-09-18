@@ -80,11 +80,21 @@ RESIDUAL_HOLDER_INDEX: Final[int] = -1
 #:
 #: ⚠ **`capex_unit_won_per_kwh` 를 여기 넣지 마라.** 단위당 값이므로 갈린
 #: 용량에 곱해지면 저절로 갈리고, 여기 넣으면 **몫의 제곱만큼 작아진다.**
+#: ⚠⚠ **R66/WP-2 가 더한 둘은 서로 반대편이다 — 판단을 여기 적어 둔다.**
+#:   · `capex_pcs_won_per_kw`(원/kW) → **여기 없다.** 위 `capex_unit_won_per_kwh`
+#:     와 같은 갈래인 **단위당** 값이며, 곱해지는 상대(`power_kw`)가 이 목록에
+#:     있으므로 **저절로 옳게 갈린다.** 넣으면 몫의 제곱만큼 작아진다.
+#:   · `pcs_cost_won`(원) → **여기 있다.** `ESS` 가 PCS **교체비**를 단위당이
+#:     아니라 **금액**으로 받으므로(`core/der/ess.py::ESS.__init__` 의
+#:     `pcs_cost_won`), 나누지 않으면 몫마다 **통짜 PCS 값**을 물어 몫 수만큼
+#:     곱해진다 — `fixed_om_won_per_year`·`capex_extra_won` 이 여기 있는 것과
+#:     **같은 사유**(자원 하나에 통째로 붙는 금액)다.
 PRORATED_FIELDS: Final[tuple[str, ...]] = (
     "capacity_kwh",
     "power_kw",
     "fixed_om_won_per_year",
     "capex_extra_won",
+    "pcs_cost_won",
 )
 
 #: 몫 선언이 **이기는** 제원 — 물리 제원에 있어도 몫이 준 것으로 덮는다.
@@ -215,8 +225,9 @@ def split_ess(
 
     | 제원 | 어떻게 |
     |---|---|
-    | `PRORATED_FIELDS` 의 넷 | **몫 비율로 나눈다** — 자원 하나에 통째로 붙는 값이다 |
-    | `capex_unit_won_per_kwh` · `rte_pct` · `soc_*` · 수명 제원 | **그대로 준다** |
+    | `PRORATED_FIELDS` 의 다섯 | **몫 비율로 나눈다** — 자원 하나에 통째로 붙는 값이다 |
+    | 단위당 단가 둘(`capex_unit_won_per_kwh`·`capex_pcs_won_per_kw`) | **그대로 준다** |
+    | `rte_pct` · `soc_*` · 수명 제원 | **그대로 준다** |
     | `operating_mode` | 몫이 선언한 것 하나. `mode_weights` 는 **주지 않는다** |
 
     둘째 줄이 그대로인 이유는 **단위당·비율 값이기 때문**이다 — 몫으로 나누면

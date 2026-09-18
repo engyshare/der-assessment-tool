@@ -9,7 +9,7 @@ R56/WP-1 이 형상 자산에 계절 축을 세웠다. 그 전까지 이 항목�
     ② 계절 수를 말한다 계절 넷인 배포 자산에서 문면이 계절 넷과 **신뢰도**를 말한다
     ③ ★★ 갈린다      계절 하나를 준 자산에서 `reason`·`resolves_when` 이 달라진다
     ④ 몫을 말한다      해소 조건이 형상만이 아니라 **몫(`share`)** 을 요구한다
-    ⑤ ★★ 남는 결손    계절 간 하루 차이가 **결론에 서지 않는다**를 말한다
+    ⑤ ★★ 남는 결손    **계절은 운전에 섰고**(R64/WP-4) 요일과 값의 실측이 남았다
 
 ⚠ ①②만 있으면 *「대상이 스스로 정한 문자열이 그 문자열이다」* 에 그친다 —
 ③ 이 **축이 실제로 읽힌다는 증명**이다. 계절 수를 읽지 않고 문면을 박아 두면
@@ -22,10 +22,15 @@ R60/WP-4 가 **배포 자산의 `seasons:` 를 가정으로 채웠다.** 그래�
 **계절 하나**가 된다 — 방향만 뒤집었고 재는 것은 같다(*「문면이 자산의 계절
 수를 읽는가」*).
 
-★★ 그리고 ⑤가 늘었다 — *「계절을 채워도 **계절 간 하루 차이는 결론에 서지
-않는다**」* 를 문면이 말하는가. 배포 실행은 몫 가중 평균 대표일 한 벌을
-365일로 연간화하므로 그 차이가 운전에 서지 않는데, 문면이 *「접혔다」* 로
-적으면 검토자는 **계절이 결론을 가른다**고 읽는다.
+★★ 그리고 ⑤가 늘었다 — 문면이 **지금 상태**를 정확히 적는가.
+
+## ⚠⚠ ⑤의 방향이 R64/WP-4 에 뒤집혔다
+
+R60/WP-4-fix 때 ⑤는 *「계절 간 하루 차이는 결론에 서지 **않는다**」* 를 붙들었다
+(그때 배포 실행이 몫 가중 평균 대표일 한 벌을 365일로 연간화했으므로 참이었다).
+**R64/WP-4 가 러너에 계절 합산을 세우면서 그 진술이 거짓이 됐고**, 그래서 ⑤는
+이제 *「계절은 운전에 섰고(ⓐ 닫힘) **요일과 값의 실측이 남았다**」* 를 붙든다.
+재는 것은 두 번 다 같다 — *「문면이 지금 상태를 정확히 적는가」*.
 
 ⚠⚠ **이 파일이 세우는 계절 일수·몫은 전부 시험용 가정값이며 사업 전망이
 아니다. 이 수를 리포트·검토서에 인용하지 마라.** 배포 자산
@@ -37,6 +42,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml  # type: ignore[import-untyped]
 
 from core.casegrid.profiles import (
@@ -45,6 +51,12 @@ from core.casegrid.profiles import (
     load_daily_shapes,
 )
 from core.report.case_report import build_case_report
+
+# ★★★ **재는 층을 정면(재수출)이 아니라 직접 부른다** (R64/WP-4-fix2 ·
+# `NFR-105` 게이트 ②). 이 파일이 `core.report.unreflected` 만 import 하는 동안
+# `core/report/measured_run.py` 는 **동반 시험이 없는 구현**으로 세어졌다 —
+# 재수출을 통해서만 닿으면 「어느 층이 막았는가」를 말할 수 없다.
+from core.report.measured_run import measured_over_seasons
 from core.report.narrative import render_markdown
 from core.report.unreflected import _season_item, build_unreflected
 
@@ -303,66 +315,91 @@ def test_the_resolution_asks_for_shares_and_not_shapes_alone() -> None:
 
 def test_the_wording_says_the_between_season_difference_does_not_reach_the_result(
 ) -> None:
-    """★★★ **N5** — 계절을 채워도 **계절 간 하루 차이는 결론에 서지 않는다**.
+    """★★★ **N5** — 계절은 **운전에 섰고**(ⓐ 닫힘) 요일과 실측이 **남았다**.
 
-    ## 이 검사가 막는 것
+    ## ⚠⚠⚠ 이 검사의 전제가 R64/WP-4 에 뒤집혔다 — 재는 것은 그대로다
 
-    배포 실행은 24스텝 하루를 365일로 연간화하므로, 계절이 여럿인 자산은
-    `DailyShape.representative_day()` 가 내는 **몫 가중 평균 하루 한 벌**로
-    접혀 들어간다(`core/casegrid/e2e_runner.py` 의 두 호출부). 그런데 문면이
-    *「계절 4개로 접었다」* 라고만 적으면 검토자는 **계절이 결론을 가른다**고
-    읽는다 — 그것이 R60/WP-4-fix 전의 상태였다.
+    종전 문면은 *「배포 실행은 몫 가중 평균 대표일 한 벌을 연간화한다 · 계절 간
+    하루 차이 결론 **미반영**」* 이었고 이 검사는 그 문장을 붙들고 있었다.
+    **R64/WP-4 가 러너에 계절 합산을 세우면서 그 문장이 거짓이 됐다** — 러너는
+    계절 넷의 대표일을 각각 돌려 계절일수로 가중 합산한다
+    (`core/casegrid/seasonal_dispatch.py`). 옛 문장을 계속 요구하면 이 검사는
+    **거짓을 지키는 검사**가 된다.
 
-    ⚠⚠ **「미반영이 줄었다」를 「결손이 해소됐다」로 적지 않는다**(사용자 판정
-    §3 2항). 그래서 셋을 함께 붙든다:
+    ⚠ **오라클은 한 자도 느슨해지지 않았다.** 재는 것은 여전히 *「문면이 지금
+    상태를 정확히 적는가」* 이고, 방향만 뒤집었다 — R60/WP-4-fix 가 이 자리를
+    반대 방향으로 고치면서 같은 판단을 한 번 했다(그때는 **값은 있고 운전이 안
+    쓰는** 상태를 적게 했다). 붙드는 조각은 오히려 하나 늘었다:
 
-        ⓐ 계절 넷과 몫이 **선언됐다**  · 그 값은 **가정**이다 (②가 신뢰도를 잰다)
-        ⓑ 배포 실행은 **평균 대표일 한 벌**을 연간화한다 → 계절 간 하루 차이 미반영
-        ⓒ 해소 조건이 **셋으로 갈린다** — 계절별 운전 · 요일 변동 · 8,760 실측
+        ⓐ 계절 합산이 **선다**            ← 새로 붙든다
+        ⓑ 「미반영」이라 적지 **않는다**   ← 옛 요구를 뒤집은 자리
+        ⓒ 요일과 **값의 실측**은 남는다    ← 「해소됐다」로 뭉치지 않는다
+        ⓓ 해소 조건은 여전히 **셋으로 갈리고** ⓐ 가 닫혔다고 적는다
 
-    ⚠ 문면 전체를 박지 않는다 — **담겨야 하는 조각**만 본다.
+    ⚠⚠ **「반영했다」를 「그 값이 맞다」로 적지 않는다**(사용자 판정 §3 2항).
+    계절 몫·형상은 여전히 자산의 **가정값**이며 ②가 그 신뢰도를 잰다.
     """
     item = _deployed_item()
 
-    # ⓑ — 무엇이 결론에 서지 않는가를 「비어 있는 자리」가 말한다.
-    assert "평균" in item.reason and "대표일" in item.reason, (
-        "「비어 있는 자리」 칸이 배포 실행이 **평균 대표일 한 벌**을 쓴다는 "
-        f"것을 말하지 않는다: {item.reason!r}"
+    # ⓐ — 계절이 **운전에 선다**를 말한다.
+    assert "각각" in item.reason and "가중 합산" in item.reason, (
+        "「비어 있는 자리」 칸이 배포 실행이 **계절마다 대표일을 각각 돌려 "
+        f"가중 합산한다**는 것을 말하지 않는다: {item.reason!r}"
     )
-    assert "계절 간 하루 차이" in item.reason, (
-        "문면이 **무엇이 결론에 서지 않는가**를 말하지 않는다 — 「접었다」로만 "
-        f"적으면 계절이 결론을 가른다고 읽힌다: {item.reason!r}"
+    assert "representative_day_by_season" in item.reason, (
+        "문면이 그 운전을 내는 자리를 **이름으로** 가리키지 않는다 — 이름이 "
+        f"없으면 다음 사람이 어디를 봐야 하는지 알 수 없다: {item.reason!r}"
     )
-    assert "미반영" in item.reason, (
-        f"계절 간 차이가 **미반영**임을 말하지 않는다: {item.reason!r}"
+    # ⓑ — 옛 상태(미반영)를 계속 적으면 거짓이다.
+    assert "미반영" not in item.reason, (
+        "문면이 아직 계절 간 차이를 **미반영**이라 적는다 — 러너가 계절을 "
+        f"각각 돌리게 된 지금 그 진술은 거짓이다: {item.reason!r}"
     )
     assert "접었다" not in item.reason, (
         "문면이 아직 「접었다」로 적는다 — 계절이 운전을 가른다고 읽힌다: "
         f"{item.reason!r}"
     )
+    # ⓒ — 남은 결손 둘을 **함께** 말한다.
+    assert "요일" in item.reason, (
+        f"요일 변동이 그대로 미반영임을 말하지 않는다: {item.reason!r}"
+    )
+    assert "실측" in item.reason, (
+        "계절 몫·형상이 **아직 실측이 아니다**를 말하지 않는다 — 「반영했다」와 "
+        f"「그 값이 맞다」는 다른 말이다: {item.reason!r}"
+    )
 
-    # ⓒ — 해소 조건 셋이 **각각** 서 있다.
+    # ⓓ — 해소 조건 셋이 **각각** 서 있고 ⓐ 는 닫혔다고 적힌다.
     resolves = item.resolves_when
     assert "ⓐ" in resolves and "ⓑ" in resolves and "ⓒ" in resolves, (
         f"해소 조건이 세 갈래로 갈려 있지 않다: {resolves!r}"
     )
-    assert "계절 간 하루 차이" in resolves, (
-        f"해소 조건 ⓐ(계절별 대표일 운전)가 없다: {resolves!r}"
+    assert "계절 간 하루 차이" in resolves and "닫힘" in resolves, (
+        "해소 조건 ⓐ(계절별 대표일 운전)가 **닫혔다고** 적혀 있지 않다 — "
+        f"지운 것이 아니라 닫힌 것으로 적어야 한다: {resolves!r}"
     )
     assert "요일 변동" in resolves, f"해소 조건 ⓑ(요일 변동)가 없다: {resolves!r}"
     assert "TMY" in resolves, f"해소 조건 ⓒ(실측)가 TMY 를 가리키지 않는다: {resolves!r}"
 
 
 def test_the_season_item_count_did_not_grow(tmp_path: Path) -> None:
-    """★★ **항목 수를 늘리지 않았다** — 본문 분량 예산의 여유가 1줄이다.
+    """★★ **항목 수를 늘리지 않았다** — 항목 수가 본문 줄 수를 정하기 때문이다.
 
-    미반영 항목 하나는 본문에 **두 줄**을 만든다(3.4 미반영 표 + 6.3 미해소
-    표에 두 번 인쇄된다 · R60/WP-3 실측). 본문 상한은 219줄이고 지금 218줄이라
-    **항목을 하나 늘리면 곧바로 넘는다.** 그래서 R60/WP-4-fix 는 계절 결손을
-    **새 항목으로 세우지 않고 같은 항목의 문면을 고쳤다.**
+    ⚠⚠ **아래 두 수가 R67/WP-N1d 로 갈렸다 — 옛 수를 인용하지 마라.**
+    종전에는 미반영 항목 하나가 본문에 **두 줄**을 만들었고(3.4 미반영 표 +
+    6.3 미해소 표에 **두 번** 인쇄됐다 · R60/WP-3 실측), 상한 219 · 실측 218 이라
+    *「항목을 하나 늘리면 곧바로 넘는다」* 였다. 그래서 R60/WP-4-fix 는 계절
+    결손을 **새 항목으로 세우지 않고 같은 항목의 문면을 고쳤다** — 그 판단은
+    지금도 옳다.
+
+    **지금은 항목 하나가 본문에 «한 줄»(3.4)이다.** R67/WP-N1d 가 6.3 의
+    항목별 되풀이를 **건수 한 줄**로 바꿨다(해소 조건의 전문은 붙임 8 이
+    진다 · `core/report/narrative.py::_judgement_section` 의 ★★★ 절).
+    상한은 **227**, 실측은 **221**(여유 6줄)이다.
+    ⚠ 그래도 **양식이 요구하는 것은 130~170줄**이다 — 여유가 생긴 것이지
+    양식을 지킨 것이 아니다.
 
     ⚠ 이 검사가 빨간불이면 상한을 올리지 말고 **문면으로 되돌려라** —
-    상한은 이미 다섯 번 밀린 자리다(`tests/report/test_overview_sections.py`).
+    상한은 이미 열 번 밀린 자리다(`tests/report/test_overview_sections.py`).
     """
     hours = _report().dispatch_hours
     assert len(_season_item(hours)) == 1, "배포 자산(계절 넷)에서 항목이 1건이 아니다"
@@ -370,3 +407,60 @@ def test_the_season_item_count_did_not_grow(tmp_path: Path) -> None:
         "계절 하나인 자산에서 항목이 1건이 아니다 — 상태에 따라 항목 수가 갈리면 "
         "본문 줄 수가 자산을 따라 움직인다"
     )
+
+
+# ── ★ **재는 층**을 직접 부르는 자리 (R64/WP-4-fix2 · `NFR-105` 게이트 ②) ───
+#
+# 위 시험들은 `core.report.unreflected`(판정 층)를 통과시켜 잰다. 수량을 **재는**
+# 것은 `core/report/measured_run.py` 이고, 그 층을 정면으로만 재면 *「어느 층이
+# 막았는가」* 를 말할 수 없다 — 아래가 그 층을 직접 잰다.
+
+
+def test_the_measuring_layer_reads_the_seasons_and_stops_without_a_run() -> None:
+    """★★★★ **재는 층 둘** — ⓐ 계절을 실제로 읽는다 ⓑ 잴 운전이 없으면 멈춘다.
+
+    ## ⓐ 왜 접힌 하루로는 안 되는가
+
+    자가소비는 스텝마다 `min(발전, 부하)` 이고 **그 min 은 비선형**이다. 계절을
+    일수로 가중 평균한 하루에서 재면 `min(평균, 평균)` 이 나오는데 한 해의 실제
+    자가소비는 `Σ min(그 계절 발전, 그 계절 부하) × 계절일수` 다 — 옌센에 따라
+    **접힌 하루 쪽이 더 크다.** R64/WP-4 가 러너에 계절 합산을 세우자 리포트
+    0절(계절을 안다)과 붙임 8(계절을 몰랐다)이 실제로 갈렸다
+    (`.orch/R64/result_4.md` ⑩ 의 (나) 둘).
+    ⚠ **부등호로 건다** — 두 수를 손으로 적으면 자산·대장이 움직일 때 이 시험만
+    옛 사업을 붙들고, 어느 쪽이 옳은지도 말하지 못한다.
+
+    ## ⓑ 잴 운전이 없으면 **계절을 보지 않는다**
+
+    `dispatch_hours` 를 비우는 것이 *「잴 본 실행이 없다」* 의 통로다(같은 파일
+    `tests/report/test_unreflected.py` 가 그 통로로 *「방향을 지어내지 않는가」*
+    를 잰다). 계절이 남아 있다고 그것으로 대신 재면 **비운 통로가 비워지지
+    않는다** — R64/WP-4 가 고치는 도중 실제로 그 구멍을 냈다
+    (`.orch/R64/result_4.md` ⑩ 의 열여덟 번째).
+    """
+    report = _report()
+    assert len(report.seasons) >= 2, (
+        f"배포 자산이 계절을 {len(report.seasons)}개만 낸다 — 아래 대조가 공허해진다"
+    )
+
+    folded = measured_over_seasons(report.dispatch_hours)
+    seasonal = measured_over_seasons(report.dispatch_hours, report.seasons)
+    assert folded is not None and seasonal is not None, "본 실행에서 재지 못했다"
+
+    # ⓐ — 계절을 주면 **다른 수**가 나오고, 그 방향은 옌센이 정한다.
+    assert seasonal.self_consumption < folded.self_consumption, (
+        f"계절을 주어도 자가소비가 그대로다(접힌 {folded.self_consumption:,.6f} · "
+        f"계절 {seasonal.self_consumption:,.6f}) — 재는 층이 계절을 읽지 않는다"
+    )
+    # ⚠ 총량은 그대로여야 한다 — 계절 가중 평균은 **선형**인 항에서는 접힌
+    #    하루와 같다(부하·수전·송전). 여기가 갈리면 가중이 틀린 것이다.
+    assert seasonal.load == pytest.approx(folded.load, rel=1e-9), (
+        f"부하 총량이 갈렸다(접힌 {folded.load} · 계절 {seasonal.load})"
+    )
+
+    # ⓑ — 잴 운전이 없으면 계절이 남아 있어도 **재지 않는다**.
+    assert measured_over_seasons((), report.seasons) is None, (
+        "본 실행이 비었는데 계절로 대신 쟀다 — 「잴 운전이 없다」를 비우는 통로가 "
+        "막혀 붙임 8 이 없는 운전 위에 방향을 인쇄한다"
+    )
+    assert measured_over_seasons(()) is None, "계절 없이도 빈 운전은 재이면 안 된다"

@@ -26,12 +26,12 @@ import yaml  # type: ignore[import-untyped]
 from core.casegrid.e2e_runner import (
     DAYS_PER_YEAR,
     HOURS_PER_YEAR,
-    PV_CAPACITY_FACTOR,
     run_single_case_e2e,
 )
 from core.casegrid.ledger_levels import build_level_map
 from core.casegrid.profiles import load_daily_shapes
 from core.report.case_report import build_case_report
+from tests.report.conftest import report_household_wiring
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -53,8 +53,26 @@ def _levels():
 
 
 def _load_kwh() -> float:
-    """대장이 정한 가구 부하 총량 (kWh/년)."""
+    """대장이 정한 **한 호**의 부하 총량 (kWh/년)."""
     return float(_levels()["household_load_annual_kwh"]["base"])
+
+
+def _site_load_kwh() -> float:
+    """**단지** 총부하 (kWh/년) — 리포트가 실제로 돌린 부하다 (R65/WP-2c).
+
+    산식은 러너의 것과 같다(`core/casegrid/seasonal_dispatch.py::
+    _load_total_kwh`): `(한 호 부하 + 그 호의 기기 부하) × 가구 수`.
+    ⚠ **여기에 수를 적지 않는다** — 셋 다 대장이 정본이고, 배선은
+    `tests/report/conftest.py::report_household_wiring` 하나가 갖는다.
+    ⚠ 가구 수를 안 준 실행에서는 배수가 1 · 기기 부하가 0 이라 위 함수와 같다.
+    """
+    wiring = report_household_wiring()
+    count, extra = wiring["household_count"], wiring["extra_appliance_load_kwh"]
+    assert count is None or isinstance(count, int), count
+    assert isinstance(extra, (int, float)), extra
+    # ⚠ **`count or 1` 을 적지 않는다** — 그 표현은 `0` 도 조용히 `1` 로 바꾼다
+    # (`core/casegrid/household_scale.py` 가 같은 함정을 적어 두었다).
+    return (_load_kwh() + float(extra)) * (1 if count is None else count)
 
 
 def test_a_shape_moves_energy_but_does_not_create_it() -> None:
@@ -73,7 +91,16 @@ def test_a_shape_moves_energy_but_does_not_create_it() -> None:
         daily_shapes=load_daily_shapes(),
         annual_load_kwh=_load_kwh(),
     )
-    expected = levels["pv_capacity_kw"]["base"] * PV_CAPACITY_FACTOR * HOURS_PER_YEAR
+    # ⚠ **이용률도 대장에서 읽는다** (R67/WP-N2). 종전에는 러너의 모듈 상수
+    # `PV_CAPACITY_FACTOR` 를 읽었는데, 그 값이 대장 항목
+    # (`capacity_factor.pv_rooftop`)이 된 뒤로는 그 이름이 사라졌다 —
+    # 리터럴 0.15 를 여기 적으면 그것이 사본이 되고 대장을 고쳐도 이 검사만
+    # 옛 값을 기대한다.
+    expected = (
+        levels["pv_capacity_kw"]["base"]
+        * levels["pv_capacity_factor"]["base"]
+        * HOURS_PER_YEAR
+    )
 
     for tag, outcome in (("평탄", plain), ("형상", shaped)):
         daily = sum(outcome.dispatch.per_resource["e2e-pv"].electric)
@@ -111,11 +138,16 @@ def test_the_load_shows_up_as_grid_import() -> None:
     )
 
     # ★ 부하 자원의 대표일 소비가 **대장 총량의 하루치**인가 — 형상은 배분이다.
+    # ⚠ **견줄 총량이 「단지」로 바뀌었다** (R65/WP-2c) — 대장의
+    # `load.household.annual` 은 **한 호**의 값이고, 리포트는 거기에 기기 부하를
+    # 더해 가구 수를 곱한 부하로 돈다. 한 호 값에 대고 재면 20호 실행에서
+    # 이 단언이 늘 빨간불이며, 그것은 형상 결함이 아니라 **재는 총량이 다른
+    # 것**이다. 재는 성질(「형상은 배분이지 값이 아니다」)은 그대로다.
     total_load = sum(
         -hour.per_resource.get(_LOAD, 0.0) for hour in report.dispatch_hours
     )
-    assert math.isclose(total_load * DAYS_PER_YEAR, _load_kwh(), rel_tol=1e-6), (
-        f"대표일 부하 {total_load:,.3f}kWh 의 연간화가 대장값과 다르다"
+    assert math.isclose(total_load * DAYS_PER_YEAR, _site_load_kwh(), rel_tol=1e-6), (
+        f"대표일 부하 {total_load:,.3f}kWh 의 연간화가 단지 총부하와 다르다"
     )
 
 

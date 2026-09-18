@@ -26,11 +26,23 @@
 ## 배선하지 못한 둘과 그 사유 (`UNWIRED`)
 
 `energy_balance`(월별) 와 `feasible_region`(2변수 격자)이다. 둘 다 「그릴 수
-있는데 안 그린 것」이 아니라 **`CaseReport` 에 재료가 없다**. 사유는 상수에
-그대로 적었다 — 「구현이 없다」와 「수집이 안 됐다」를 같게 읽지 않기 위해서다.
+있는데 안 그린 것」이 아니라 **`CaseReport` 에 그 축의 재료가 없다**. 사유는
+상수에 그대로 적었다 — 「구현이 없다」와 「수집이 안 됐다」를 같게 읽지 않기
+위해서다.
+
+## ⚠ R64/WP-5 — **계절 축이 섰다고 월 축이 선 것이 아니다**
+
+`CaseReport.seasons` 가 계절 넷을 싣게 됐으므로 `energy_balance` 의 옛 사유
+(*「이 실행의 운전 해상도는 대표일 24스텝 하나」*)는 **거짓**이 됐다. 그러나
+그 차트는 여전히 못 그린다 — **넷은 열둘이 아니다.** 계절 넷을 월 열두 칸
+축에 얹으면 그림이 「1월~4월」을 주장하고, 넷을 셋씩 펴면 같은 계절의 세 달이
+전부 같은 막대가 되어 **월별 변동이 없다**를 결과로 주장한다. 그래서 사유
+문면만 정확하게 바꾸고 `501` 은 그대로 둔다. 계절 축이 실제로 그려지는 자리는
+새 차트 `core/report/charts/seasonal_operation.py` 다.
 """
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from types import MappingProxyType
 from typing import Any
@@ -39,6 +51,11 @@ from core.contracts.schemas import CashFlowRow
 from core.contracts.validation import ValidationError
 from core.report.case_influences import CONCLUSION_METRIC
 from core.report.case_report import CaseReport
+from core.report.dispatch_notes import (
+    DEMAND_LABEL,
+    DispatchHour,
+    build_hourly_profile,
+)
 
 #: 결론 축의 화면 문면. 지표 **이름**은 `CONCLUSION_METRIC` 이 정본이고 여기는
 #: 축에 적을 사람 말이다 — `model_comparison` 이 `comparison_metric_label` 로
@@ -57,12 +74,14 @@ _OUTLAY_METRIC = "initial_outlay_won"
 #: (`core/report/charts/energy_balance.py::_LABELS` 가 같은 자리에서 같은 모양).
 UNWIRED: Mapping[str, str] = MappingProxyType({
     "energy_balance": (
-        "`CaseReport` 에 월별 시계열이 없다. 이 실행의 운전 해상도는 "
-        "**대표일 24스텝 하나**(`CaseReport.dispatch_hours`)이고 저장소는 월별 "
-        "변동을 모형화하지 않는다 — `core/casegrid/ess_share_benefits.py` 가 "
-        "「월별 변동을 여기서 지어내지 않는다」고 적고 같은 값을 12개월로 펴 "
-        "둔다. 대표일을 12로 펴면 열두 달이 전부 같은 막대가 되고, 그 그림은 "
-        "「계절 변동이 없다」를 결과로 주장한다"
+        "`CaseReport` 에 **월별** 시계열이 없다. 계절 넷은 있으나(R64/WP-4 · "
+        "`CaseReport.seasons`) 월은 열둘이고 넷을 열두 칸 축에 얹으면 그 그림이 "
+        "「1월~4월」을 주장한다. 넷을 셋씩 펴는 것도 답이 아니다 — 같은 계절의 "
+        "세 달이 전부 같은 막대가 되어 이번에는 「월 안의 변동이 없다」를 "
+        "결과로 주장한다. 저장소는 월별 변동을 모형화하지 않으며 "
+        "`core/casegrid/ess_share_benefits.py` 가 「월별 변동을 여기서 지어내지 "
+        "않는다」고 적고 같은 값을 12개월로 펴 둔다. 계절 축을 실제로 그리는 "
+        "그림은 `seasonal_operation` 이다"
     ),
     "feasible_region": (
         "`CaseReport` 에 2변수 격자가 없다. 2변수 재료는 `coupled_sweeps` "
@@ -110,6 +129,12 @@ _DESCRIPTIONS: Mapping[str, str] = MappingProxyType({
         "변형별 순현재가치를 막대로 나란히 놓은 그림이다. 0원 아래로 내려간 "
         "막대는 붉은색이며 분석기간 안에 회수하지 못한 변형이다"
     ),
+    "seasonal_operation": (
+        "계절마다 그 계절 대표일 하루를 따로 그린 그림이다. 구간 하나가 하루 "
+        "24스텝이고 세로 칸막이가 계절을 가른다. 0 위로 쌓인 막대는 자원이 "
+        "내보낸 전력(태양광 발전·저장장치 방전), 0 아래로 쌓인 막대는 받아들인 "
+        "전력(저장장치 충전)이며, 검은 파선이 그 계절 하루의 전력 수요다"
+    ),
     "tornado": (
         "인자를 하나씩 끝에서 끝까지 흔들었을 때 순현재가치가 움직인 폭을 큰 "
         "것부터 가로 막대로 놓은 그림이다. 결론이 뒤집히는 인자의 막대는 "
@@ -128,6 +153,11 @@ _SOURCES: Mapping[str, str] = MappingProxyType({
     "cost_benefit_pie": "CaseReport.basis.benefits · basis.costs (1년차)",
     "dispatch_stack": "CaseReport.dispatch_hours · basis.resources",
     "model_comparison": "CaseReport.variants · variant_labels",
+    "seasonal_operation": (
+        "CaseReport.seasons[].dispatch (계절 이름·일수는 자산 "
+        "fixtures/profiles/representative-day.yaml 이 정한 **가정값**이다) · "
+        "basis.resources"
+    ),
     "tornado": "CaseReport.influences",
 })
 
@@ -259,6 +289,87 @@ def _cost_benefit_pie(report: CaseReport) -> dict[str, Any]:
     return {"items": items}
 
 
+def _demand_names(
+    report: CaseReport, hours: tuple[DispatchHour, ...]
+) -> tuple[str, ...]:
+    """운전 결과에서 **수요 항목의 이름**을 가른다 — 부호로 가르지 않는다.
+
+    ⚠ **저장장치의 충전도 음수**라 부호만으로는 부하와 갈리지 않는다. 그래서
+    평가 대상 자원의 이름(`basis.resources`)에 **없는** 항목을 수요로 본다 —
+    두 곳이 같은 이름을 쓴다는 것이 이 리포트 안의 실제 이음쇠다.
+
+    ⚠ **연간등가 하루와 계절별 하루가 같은 가름을 쓴다.** 갈라 두면 한쪽만
+    자원이 늘거나 이름이 바뀌었을 때 두 그림이 서로 다른 것을 「수요」라고
+    부르게 되고, 그때 둘 다 그럴듯해 보인다.
+    """
+    resource_names = {line.name for line in report.basis.resources}
+    return tuple(sorted(
+        {name for hour in hours for name in hour.per_resource} - resource_names
+    ))
+
+
+#: 자원이 **아닌** `per_resource` 항목에 인쇄할 이름 — 곧 수요다.
+#:
+#: ⚠ 「부하」가 아니라 「가구 전력수요」로 적는다. 사용자 요구 문면이
+#: *「가구의 전력 수요, 발전, ESS 운전」* 이고, 화면은 그 말로 찾을 수 있어야
+#: 한다. `_demand_names` 가 가른 그 항목이며 가름은 여기서 다시 하지 않는다.
+#:
+#: ## ★★ R68/WP-3 — **글자를 여기 적어 두지 않는다**
+#:
+#: 종전에는 같은 글자가 이 파일과 `core/report/charts/seasonal_operation.py`
+#: 두 곳에 따로 적혀 있었고, 계층이 import 를 막아(`core` 는 `app` 을 알 수
+#: 없다) **검사가 두 글자를 맞댔다**. 방향은 막히지 않았다 — `app` → `core` 는
+#: 허용이므로 이쪽이 정본을 부르면 사본이 사라진다. 정본은
+#: `core/report/dispatch_notes.py::DEMAND_LABEL` 이며, 그 파일이 검증 보고서
+#: 표·심의 리포트 그림·이 화면이 **함께 부를 수 있는** 유일한 자리다.
+_DEMAND_LABEL = DEMAND_LABEL
+
+
+def resource_labels(report: CaseReport, keys: Sequence[str]) -> tuple[str, ...]:
+    """`per_resource` 의 **조인 키**를 화면에 인쇄할 **글자**로 옮긴다.
+
+    ## ⛔ 키를 바꾸는 함수가 아니다
+
+    `e2e-pv` 같은 이름은 리포트·귀속·시험이 서로를 맞추는 **조인 키**이고
+    (`core/casegrid/models.py::ResourceLine.name`), 이 함수가 내는 것은
+    **인쇄할 글자뿐**이다. 자료는 그대로 키로 남는다 — 키를 라벨로 갈아
+    끼우면 같은 이름을 쓰는 다른 자리(귀속 행·붙임 4·시험)가 조용히 어긋난다.
+
+    ## 왜 `kind` 인가 — **이 저장소가 이미 내린 판단이다**
+
+    `core/report/method_sections.py::_earner_cell` 이 같은 자리에서 적었다:
+    *「자원 이름이 아니라 `kind` 로 적는다. 귀속 행은 `ResourceLine.name` 으로
+    조인하고(`e2e-pv`), **그것은 심의위원이 읽을 이름이 아니다**」*. 검증 모드의
+    계절 표·순수요 표와 계절 운전 그림의 범례가 그 규약을 안 따르고 있었고
+    (독립 검증 `.orch/R65/result_V.md` ②-1 · ③-3), 여기가 그 하나뿐인 통로다.
+
+    ## 갈래 셋 — **하나도 조용히 지우지 않는다**
+
+    1. 대장에 있는 자원이고 `kind` 가 있으면 → `kind`
+       (`e2e-pv` → 「태양광 (옥상 고정형)」).
+    2. 대장에 **없는** 키는 수요다 → `_DEMAND_LABEL`. 가름은 `_demand_names`
+       와 **같은 이음쇠**(평가 대상 자원 이름에 없는 항목이 수요다)이며,
+       그래서 `e2e-load` 가 여기로 온다.
+    3. `kind` 가 빈 자원은 → **키를 그대로** 인쇄한다. 빈 글자를 내면 열이
+       이름 없이 서고, 열을 빼면 그 자원의 운전이 화면에서 통째로 사라진다.
+
+    ⚠⚠ **같은 글자가 둘이 되면 키를 덧붙인다.** 종류가 같은 자원이 둘인 실행
+    (저장장치 두 대 등)에서 라벨만 쓰면 두 열·두 계열이 화면에서 **한 이름**이
+    되고, 그러면 어느 쪽이 어느 자원인지 알 수 없다 — 그림에서는 사전 키가
+    겹쳐 계열 하나가 **사라진다.** 겹칠 때만 키가 다시 보이는 것은 위 3번과
+    같은 태도다: 사람 말로 못 적는 자리에서는 조인 키가 낫다.
+    """
+    kinds = {line.name: line.kind for line in report.basis.resources}
+    drafted = tuple(
+        kinds.get(key) or (key if key in kinds else _DEMAND_LABEL) for key in keys
+    )
+    repeated = Counter(drafted)
+    return tuple(
+        f"{label} ({key})" if repeated[label] > 1 else label
+        for key, label in zip(keys, drafted, strict=True)
+    )
+
+
 def _dispatch_stack(report: CaseReport) -> dict[str, Any]:
     """대표일 스텝별 자원 기여 + 부하 곡선.
 
@@ -283,10 +394,7 @@ def _dispatch_stack(report: CaseReport) -> dict[str, Any]:
         raise _unwired_error("dispatch_stack", "이 실행에 대표일 운전 결과가 없다")
 
     resource_names = tuple(line.name for line in report.basis.resources)
-    demand_names = sorted(
-        {name for hour in hours for name in hour.per_resource}
-        - set(resource_names)
-    )
+    demand_names = _demand_names(report, hours)
     if not demand_names:
         raise _unwired_error(
             "dispatch_stack",
@@ -338,6 +446,75 @@ def _model_comparison(report: CaseReport) -> dict[str, Any]:
     }
 
 
+def _seasonal_operation(report: CaseReport) -> dict[str, Any]:
+    """계절마다 그 계절 대표일의 자원 기여와 수요 — 사용자 요구 6.
+
+    ## ⚠ 계절 하루를 **다시 세우지 않는다** — 산출물이 실어 온 것을 편다
+
+    `SeasonRun.dispatch` 가 그 계절이 **실제로 돈** 하루이고
+    (`core/casegrid/seasonal_dispatch.py`), 여기서 하는 일은 그것을
+    `build_hourly_profile()` 로 스텝별로 펴는 것뿐이다 — 붙임 7 의 계절별 표가
+    쓰는 **바로 그 함수**다. 표시 층이 계절을 다시 접거나 펴면 인쇄된 계절과
+    결론이 선 계절이 갈릴 수 있고, 갈려도 둘 다 그럴듯해 보인다.
+
+    ⚠ 계절이 없는 실행에서는 **조용히 빈 그림을 내지 않고 거부한다** — 재료가
+    없다는 사실이 화면에 글자로 남아야 한다(`unwired_reason` 머리말).
+
+    ## ★ 범례에 인쇄할 글자를 함께 넘긴다 (R65/WP-4)
+
+    독립 검증(`.orch/R65/result_V.md` ③-3)이 잡은 것: 범례가 `e2e-pv`·`e2e-ess`
+    를 그대로 싣고 **수요만 한글**이라 표기가 갈렸다. `resource_labels` 가
+    검증 모드의 계절 표·순수요 표 열 이름과 **같은 함수**이므로 표와 그림이
+    같은 글자를 쓴다 — 갈라 두면 한쪽만 고쳐지고, 그때 둘 다 그럴듯해 보인다.
+
+    ⛔ **사전의 키를 라벨로 갈지 않는다.** `resource_dispatch` 의 키는 조인
+    키이고 차트의 `_checked` 가 계절끼리 그 키를 맞대 색을 고정한다. 종류가
+    같은 자원이 둘이면 라벨이 겹쳐 **계열 하나가 사전에서 사라진다.**
+    """
+    if not report.seasons:
+        raise _unwired_error(
+            "seasonal_operation",
+            "이 실행에 계절별 운전 결과가 없다 — 형상 자산이 계절을 선언하지 "
+            "않았거나 형상 없이 돈 실행이다. 연간등가 하루를 넷으로 복제하면 "
+            "네 계절이 전부 같은 그림이 되고, 그 그림은 「계절 변동이 없다」를 "
+            "결과로 주장한다",
+        )
+
+    resource_names = tuple(line.name for line in report.basis.resources)
+    seasons: list[dict[str, Any]] = []
+    for season in report.seasons:
+        hours = build_hourly_profile(season.dispatch)
+        demand_names = _demand_names(report, hours)
+        if not demand_names:
+            raise _unwired_error(
+                "seasonal_operation",
+                f"계절 {season.name!r} 의 운전에 수요 항목이 없다 — 자원별 "
+                "기여만으로는 수요 곡선을 그릴 수 없고, 수요를 지어내면 "
+                "막대가 무엇을 덮었는지가 거짓이 된다",
+            )
+        seasons.append({
+            "name": season.name,
+            "days": season.days,
+            "resource_dispatch": {
+                name: [float(hour.per_resource[name]) for hour in hours]
+                for name in resource_names
+                if all(name in hour.per_resource for hour in hours)
+            },
+            # ⚠ 부호를 여기서 **한 번만** 뒤집는다 — 수요는 받아들이는 쪽이라
+            # 운전 결과에서 음수이고, 곡선은 양수로 그린다.
+            "load": [
+                -sum(float(hour.per_resource[name]) for name in demand_names)
+                for hour in hours
+            ],
+        })
+    return {
+        "seasons": seasons,
+        "resource_labels": dict(
+            zip(resource_names, resource_labels(report, resource_names), strict=True)
+        ),
+    }
+
+
 def _tornado(report: CaseReport) -> dict[str, Any]:
     """인자별 영향도 — `FR-803-AC2`.
 
@@ -367,6 +544,7 @@ _BUILDERS = MappingProxyType({
     "cost_benefit_pie": _cost_benefit_pie,
     "dispatch_stack": _dispatch_stack,
     "model_comparison": _model_comparison,
+    "seasonal_operation": _seasonal_operation,
     "tornado": _tornado,
 })
 

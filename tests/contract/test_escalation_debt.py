@@ -28,16 +28,26 @@ R39-E 이전에는 `e2e_runner.py` 의 `cost_rows` 조립부가
 는 여전히 거짓이다 — 이 저장소가 열여섯 번 만난 「검사가 실제보다 넓게
 주장한다」의 형태다.
 
-**대상 밖(③, 판정 근거를 남긴다):** `energy_purchase_row()`(`GridPurchase`)와
-`fee_row()`(정산 수수료)는 애초에 `escalation_rate` **매개변수 자체가 없다**
-— 있는데 안 받는 것이 아니다. 두 함수의 독스트링이 그 이유를 적는다: 요금
-인상률은 비용·편익 **양쪽에 동시에** 실려야 NSPM 대칭이 맞는데, 편익 쪽
-경로(`tariff_escalation` 케이스 그리드 축)가 아직 파이프라인에 배선되지 않아
-`status.md`「미해결」에 이미 한 행으로 서 있다. 이 함수들에 `escalation_rate`
-가 없는 것은 **그 미해결 항목과 같은 사실의 다른 노출면**이며, 이 래칫이 새로
-붙들 부채가 아니다 — 그래서 아래 측정은 **`escalation_rate` 매개변수를 가진
-프로포마 행 함수만** 대상으로 한다(지금은 `fixed_om_row` 하나뿐이며, 이 목록도
-`inspect` 로 기계 판정한다 — 손으로 나열하지 않는다).
+**★★★ `energy_purchase_row()`(`GridPurchase`)가 대상 밖에서 «안»으로 들어왔다
+(R69/WP-2).** 종전에는 그 함수에 `escalation_rate` **매개변수 자체가 없었고**,
+사유는 *「요금 인상률은 비용·편익 양쪽에 동시에 실려야 NSPM 대칭이 맞는데 편익
+쪽 경로(`tariff_escalation` 케이스 그리드 축)가 아직 배선되지 않았다」* 였다.
+**R69/WP-2 가 그 편익 쪽을 배선했다** — 배포 경로에서 같은 요금표를 쓰는 편익은
+첨두 절감(`PeakShaving` ← `tariff.hv_single_contract.demand_charge`)이고, 이제
+비용 행과 그 편익이 **같은 `escalation_factor()`** 로 함께 오른다. 그래서 그
+함수는 지금 매개변수를 갖고, `e2e_runner.py` 의 호출도 그것을 넘긴다 — 아래
+측정에 **잡히되 부채가 아니다.**
+
+**대상 밖(③, 판정 근거를 남긴다):** `fee_row()`(정산 수수료)는 여전히
+`escalation_rate` **매개변수 자체가 없다** — 있는데 안 받는 것이 아니다. 그
+함수의 독스트링이 사유를 적는다(수수료는 요금 대비 **비율**이라 요금이 오르면
+저절로 따라 오르고, 여기서 또 올리면 이중 상승이다).
+`forfeited_self_consumption_row()` 도 같은 자리에 남아 있는데 사유가 다르다 —
+그 짝인 요금 차액 편익(`SelfConsumption`)이 배포 경로에 없어서 지금 계수를
+걸면 **비용만 오른다**(그 함수 독스트링의 R69/WP-2 절). 그래서 아래 측정은
+**`escalation_rate` 매개변수를 가진 프로포마 행 함수만** 대상으로 한다(지금은
+`fixed_om_row`·`energy_purchase_row` 둘이며, 이 목록도 `inspect` 로 기계
+판정한다 — 손으로 나열하지 않는다).
 
 **이 래칫이 주장하는 것은 「명목 기준이 지켜진다」가 아니다.** 주장하는 것은
 **「지켜지지 않는 자리의 목록이 지금 아는 것(`KNOWN_ESCALATION_DEBT`)보다
@@ -86,8 +96,8 @@ R39-E 이전에는 `e2e_runner.py` 의 `cost_rows` 조립부가
    `("row", tag)` 로 부채에 더한다. 태그를 문자열 상수로 읽을 수 없는 호출
    (예: 변수·속성 표현식)은 **라벨을 못 붙이므로 건너뛴다** — 확인 못 함이며
    부채로 세지 않는다(모르는 것을 부채로 세면 다음 사람이 없는 일을 한다).
-4. `escalation_rate` 매개변수 자체가 없는 함수(위 대상 밖 문단의
-   `energy_purchase_row`·`fee_row`)는 애초에 1) 의 목록에 들지 않으므로 이
+4. `escalation_rate` 매개변수 자체가 없는 함수(위 대상 밖 문단의 `fee_row`·
+   `forfeited_self_consumption_row`)는 애초에 1) 의 목록에 들지 않으므로 이
    경로가 아무 주장도 하지 않는다.
 
 ## 공통 §4 의 네 물음
@@ -104,9 +114,9 @@ R39-E 이전에는 `e2e_runner.py` 의 `cost_rows` 조립부가
    `e2e_runner.py` 가 생성하는 자원만, 행 경로는 `escalation_rate` 매개변수를
    가진 프로포마 행 함수의 호출만 본다. 레지스트리에 있지만 이 파일이 생성
    하지 않는 자원, `capex`·`replacement` 이름 패턴에 걸리지 않는 자원, 그리고
-   `escalation_rate` 매개변수 자체가 없는 행 함수(`energy_purchase_row`·
-   `fee_row` — 그 이유는 위 「대상 밖」 문단과 각 함수의 독스트링 참조)는
-   붙들지 못한다.
+   `escalation_rate` 매개변수 자체가 없는 행 함수(`fee_row`·
+   `forfeited_self_consumption_row` — 그 이유는 위 「대상 밖」 문단과 각 함수의
+   독스트링 참조)는 붙들지 못한다.
 ④ 수를 실었는가 — 싣지 않았다. 이 검사는 금액을 계산하지 않고 「인자가
    있는가/없는가」라는 구조적 사실만 본다. 그래서 검증할 「같은 층의 조건」이
    없다 — 존재 여부 자체가 정본이다.
@@ -210,8 +220,10 @@ def _measure_resource_escalation_debt() -> set[str]:
 
 def _row_generator_signatures() -> dict[str, inspect.Signature]:
     """`core/cba/proforma.py` 의 함수 중 `escalation_rate` 매개변수를 **가진**
-    것만 남긴다. 손으로 `fixed_om_row` 라 적지 않는다 — 지금은 그 함수
-    하나뿐이지만, 이 목록도 기계로 다시 판정한다(대상 밖 ③).
+    것만 남긴다. 손으로 이름을 적지 않는다 — 지금은 `fixed_om_row`·
+    `energy_purchase_row` 둘이지만(R69/WP-2 가 둘째를 더했다), 이 목록도
+    기계로 다시 판정한다(대상 밖 ③). **손으로 적었다면 그 라운드가 목록을
+    고치는 것을 잊었을 때 새 행이 조용히 대상 밖에 남았을 것이다.**
     """
     return {
         name: inspect.signature(fn)
@@ -232,9 +244,10 @@ def _row_construction_calls() -> list[ast.Call]:
 def _measure_row_escalation_debt() -> set[tuple[str, str]]:
     """② 프로포마 행 경로 — `("row", 행태그)` 의 집합.
 
-    `escalation_rate` 매개변수가 없는 행 함수(`energy_purchase_row`·
-    `fee_row`)는 `_row_generator_signatures()` 에 애초에 들지 않으므로 이
-    함수가 아무 주장도 하지 않는다(대상 밖 ③, 위 모듈 독스트링 참조).
+    `escalation_rate` 매개변수가 없는 행 함수(`fee_row`·
+    `forfeited_self_consumption_row`)는 `_row_generator_signatures()` 에 애초에
+    들지 않으므로 이 함수가 아무 주장도 하지 않는다(대상 밖 ③, 위 모듈 독스트링
+    참조). ⚠ `energy_purchase_row` 는 R69/WP-2 뒤로 **대상 안**이다.
     """
     generators = _row_generator_signatures()
     if not generators:

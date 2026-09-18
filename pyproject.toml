@@ -130,7 +130,24 @@ ignore = [
 "tests/*.py" = ["PLC0415"]
 
 [tool.mypy]
-python_version = "3.11"
+# ⚠ **`python_version` 을 박지 않는다 — 비워 두면 mypy 가 *실행 중인 인터프리터*
+# 버전으로 검사한다.** 그래서 CI(3.11)에서는 3.11 로, 저장소 `.venv`(3.13)에서는
+# 3.13 으로 검사되고, `requires-python = ">=3.11"` 의 지원 하한은 **CI 가 지킨다.**
+#
+# 종전에는 `python_version = "3.11"` 이 박혀 있었고, 그것이 로컬에서
+# **`mypy` 를 통째로 무력화**했다(2026-09-06 R64 실측):
+#   .venv/Lib/site-packages/numpy/__init__.pyi:737: error: Type statement is only
+#   supported in Python 3.12 and greater  [syntax]
+#   Found 1 error in 1 file (errors prevented further checking)
+# `.venv` 는 Python 3.13 이라 `numpy 2.5.1` 의 스텁이 3.12+ 문법(`type` 문)을 쓰는데,
+# 검사 목표가 3.11 이면 파서가 그 스텁에서 죽는다. ⚠⚠ 그러면 **`core` 를 한 파일도
+# 검사하지 못한 채 `rc=2`** 로 끝나고, 그것을 `| tail` 로 읽으면 `rc` 가 `tail` 의
+# 것(0)이 되어 **통과처럼 보인다.** 이 저장소가 반복해 잡아 온
+# 「검사가 통과했다 ≠ 검사가 무언가를 검사했다」의 한 형태다.
+#
+# ⛔ **`python_version = "3.13"` 으로 올려 풀지 마라.** 그러면 CI 는 3.11 로 시험을
+# 돌리는데 mypy 만 3.12+ 문법을 허용하게 되어, 3.11 에서 깨지는 코드가 형 검사를
+# 지난다 — 지원 하한 선언(`requires-python`)이 검사되지 않는 구멍이 생긴다.
 strict = true
 files = ["core"]
 

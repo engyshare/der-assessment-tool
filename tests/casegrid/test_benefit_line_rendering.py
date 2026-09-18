@@ -29,6 +29,7 @@ from __future__ import annotations
 import pytest
 
 from core.casegrid.e2e_runner import DAYS_PER_YEAR, _benefit_line
+from core.casegrid.operating_lines import annualise
 from core.contracts.der import DispatchResult
 from tests.contract.valuestream_probes import (
     PROBES,
@@ -112,3 +113,68 @@ def test_the_line_states_the_total_it_was_given() -> None:
             f"「{line.formula}」"
         )
         assert line.annual_won == _PROBE_AMOUNT
+
+
+#: 곱하기 **전에** 원 단위로 반올림한다는 사실을 적는 문면 조각. 한 자리에서만
+#: 정한다 — 두 검사가 각자 적으면 문면을 다듬는 날 한쪽만 낡는다.
+_ROUNDING_NOTE = "원 단위로 반올림한 뒤"
+
+
+@pytest.mark.req("FR-401-AC1")
+def test_the_line_says_the_daily_amount_is_rounded_before_the_multiply() -> None:
+    """★★ **창을 읽는 갈래만** 곱하기 전 반올림을 적는다 (R64/WP-FIX 결함 4).
+
+    종전 문면은 `대표일 잉여 역송 2.95kWh × 판매단가 110원/kWh × 365일 =
+    118,260원` 이었다. 인쇄된 피연산자를 그대로 곱하면 118,282.7 이라 **22.7원이
+    남고**, 손계산으로 따라오는 검토자는 그 22원이 어디서 왔는지 물을 자리가
+    없다. 실제 순서는 하루 금액을 원으로 만든 뒤 365를 곱하는 것이다.
+
+    ⚠ **연간 수량으로 산정하는 갈래에는 붙이지 않는다** — 거기서는 참이 아니다
+    (`cost_lines` 의 계통 구매도 연간 계산 뒤에 반올림하므로 정확히 닫힌다).
+    기대값은 `× 365일` 검사와 같은 자리, 곧 **레지스트리의 선언**에서 온다.
+    """
+    assert_every_stream_has_a_probe()
+    for cls in deployed_streams():
+        stream = cls(**PROBES[cls.tag])  # type: ignore[arg-type]
+        line = _benefit_line(stream, _PROBE_AMOUNT, "PV", _result())
+        printed = _ROUNDING_NOTE in line.formula
+        assert printed == cls.scales_with_dispatch_window, (
+            f"{cls.__qualname__}: 선언은 "
+            f"scales_with_dispatch_window={cls.scales_with_dispatch_window} "
+            f"인데 문면은 「{line.formula}」다"
+        )
+
+
+@pytest.mark.req("FR-401-AC1")
+def test_the_annual_amount_really_is_the_rounded_daily_times_the_days() -> None:
+    """★★★ 그 문면이 **참인가** — 연간화가 실제로 그 순서로 곱한다.
+
+    위 검사는 낱말이 있는가만 본다. 문면과 계산이 갈리면 그 문면은 거짓 진술이
+    되므로, 여기서 `annualise()` 의 실물을 재서 *「하루 금액(정수 원) × 365」*
+    임을 확인한다 — 반올림 자리가 `to_won()` 한 곳뿐이라는 `NFR-103` 경계가
+    이 등식의 근거다.
+
+    ⛔ 계산을 문면에 맞추는 것이 아니라 **문면을 계산에 맞춘** 것이므로, 이
+    등식이 깨지면 결론축이 움직였다는 뜻이다.
+    """
+    assert_every_stream_has_a_probe()
+    checked = 0
+    for cls in deployed_streams():
+        if not cls.scales_with_dispatch_window:
+            continue
+        stream = cls(**PROBES[cls.tag])  # type: ignore[arg-type]
+        window = _result()
+        daily = stream.annual_value(window, year=1)
+        assert daily == int(daily), (
+            f"{cls.__qualname__}: 하루 금액이 정수 원이 아니다 ({daily!r}) — "
+            "`to_won()` 을 지나지 않았다면 이 문면의 전제가 깨진다"
+        )
+        ((_, annual),) = annualise([stream], window)
+        assert annual == int(daily) * DAYS_PER_YEAR, (
+            f"{cls.__qualname__}: 연간 금액 {annual:,}원이 "
+            # RUF001: 실패 메시지가 산식 문면과 같은 모양이어야 대조가 된다.
+            f"하루 {int(daily):,}원 × {DAYS_PER_YEAR}일 과 다르다 — "  # noqa: RUF001
+            "문면이 적은 순서와 계산이 갈렸다"
+        )
+        checked += 1
+    assert checked >= 2, f"실제로 대조한 창 편익이 {checked}건이다"

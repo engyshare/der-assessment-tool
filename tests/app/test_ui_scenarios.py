@@ -34,7 +34,7 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.routers.ui_scenarios import DEMO_OWNER_ID
 from core.assumption.provider import AssumptionSet
-from core.report.case_report import REC_PRICE_LEDGER_KEY
+from core.casegrid.load_shift import DR_SHIFTABLE_SHARE_LEDGER_KEY
 
 #: 결과 화면이 **서식 이전의 날값**으로 함께 싣는 결론 축 — `run_result.html` 의
 #: `data-npv` 다. 서식을 입힌 문면만 보면 이 검사가 서식 문자열을 다시 짜 맞추게
@@ -89,10 +89,24 @@ def _npv_on_screen(body: str) -> float:
 def _a_ledger_key() -> str:
     """고쳐 볼 대장 항목 하나 — **실행 경로가 실제로 읽는** 것이어야 한다.
 
-    ⚠ 키를 소스에 박지 않고 `core.report.case_report.REC_PRICE_LEDGER_KEY` 를
-    쓴다. 저장소가 그 이름을 상수로 갖고 있고 `tests/app/test_ui_run.py` 가
-    **같은 사유로 같은 것**을 쓴다 — 오버라이드가 결론축을 움직이는지 재려면
-    그 계산이 실제로 읽는 항목이어야 한다.
+    ⚠ 키를 소스에 박지 않고 상수를 쓴다. 저장소가 그 이름을 갖고 있고
+    `tests/app/test_ui_run.py` 가 **같은 사유로 같은 것**을 쓴다 —
+    오버라이드가 결론축을 움직이는지 재려면 그 계산이 실제로 읽는 항목이어야 한다.
+
+    ## ⚠⚠ 키가 바뀌었다 — `benefit.rec_price` 는 **더 이상 축을 못 움직인다** (R67)
+
+    R67/WP-N1·N1b 가 부하의 계절·하루 축을 가르면서 **계통 송전이 0 kWh** 가 됐고
+    (잉여가 없어서가 아니라 DR 이동과 ESS 충전이 먼저 다 먹는다 — 디스패치 차례가
+    `pv_self_consumption → ess_charge → v2g_charge → grid_export` 로 송전이 맨 끝이다),
+    그래서 **`REC`·`SurplusSale` 연 편익이 0원**이다. 단가를 흔들어도 `0 × n = 0` 이라
+    결론축이 한 원도 안 움직인다. ⚠ **그 실행이 고장난 것이 아니다** — 그 상태 자체가
+    R67 의 결과이며 `fixtures/golden/*.yaml` 의 R67 이력 블록이 그 사실을 적는다.
+
+    ★ 오케가 대장 키 넷을 흔들어 재고 골랐다(2026-09-09 · 무보조 골든 기준):
+    `benefit.rec_price` · `tax.vat_rate` · `tariff.surplus_direct_sale` 은 **셋 다
+    −360,695,500 그대로**였고 `load.dr_shiftable_share` 만 움직였다. **같은
+    `required_scalar` 통로**이므로 이 검사가 재는 것은 한 자도 달라지지 않는다.
+    ⚠ 잉여 판매가 되살아나면 `benefit.rec_price` 로 되돌려도 된다.
 
     ★ 「대장에 있는 아무 수치 항목」으로는 부족하다는 것을 이 라운드가 실물로
     밟았다: `capex.pv.rooftop` 을 두 배로 고쳐도 이 골든 케이스의 `npv` 는
@@ -101,10 +115,10 @@ def _a_ledger_key() -> str:
     이 대장 **전건**을 싣기 때문에 「실렸다」와 「읽혔다」의 차이가 산출물에
     나타나지 않는다. 그 관찰은 `.orch/R63/result_S2.md` §7 이 갖는다.
     """
-    assert REC_PRICE_LEDGER_KEY in _ledger().items(), (
-        f"{REC_PRICE_LEDGER_KEY} 가 대장에서 사라졌다 — 이 검사가 낡았다"
+    assert DR_SHIFTABLE_SHARE_LEDGER_KEY in _ledger().items(), (
+        f"{DR_SHIFTABLE_SHARE_LEDGER_KEY} 가 대장에서 사라졌다 — 이 검사가 낡았다"
     )
-    return REC_PRICE_LEDGER_KEY
+    return DR_SHIFTABLE_SHARE_LEDGER_KEY
 
 
 def _changed_text(base: object) -> str:

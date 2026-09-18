@@ -28,6 +28,7 @@ R33 의 `_find_flip_threshold` 결함이 「임계값을 표시만」 하는 구
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -55,7 +56,12 @@ from core.report.shortfall import (
     SECTION_NUMBER as SHORTFALL_SECTION,
 )
 from core.report.shortfall import SENSITIVITY_SECTION
-from tests.report.conftest import report_rec_terms, report_shapes
+from tests.report.conftest import (
+    report_household_wiring,
+    report_rec_terms,
+    report_shapes,
+    report_shift_share,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -216,6 +222,11 @@ def test_support_at_the_ceiling_moves_the_conclusion_to_the_reported_residual() 
             scheme=_scheme_for(rate),
             daily_shapes=report_shapes(),
             annual_load_kwh=_load_kwh(),
+            # ★★ **단지 규모·기기 부하도 같은 배선** (R65/WP-2c · 사용자 요구
+            # *「가구수를 20가구로 설정」*) — 안 넘기면 리포트(20호 단지)의 수를
+            # **한 호짜리** 재실행의 0 선에 대고 재게 된다. `conftest.
+            # report_household_wiring` 이 그 함정을 적는다.
+            **report_household_wiring(),
         )
     assert refused.value.rule == "DV-1", (
         f"전환 지원율 {rate:.4%} 를 넣었는데 `DV-1` 이 아닌 "
@@ -235,7 +246,15 @@ def test_support_at_the_ceiling_moves_the_conclusion_to_the_reported_residual() 
         scheme=_scheme_for(MAX_SUBSIDY_RATE),
         daily_shapes=report_shapes(),
         annual_load_kwh=_load_kwh(),
+        # ★★ **단지 규모·기기 부하도 같은 배선** (R65/WP-2c · 사용자 요구
+        # *「가구수를 20가구로 설정」*) — 안 넘기면 리포트(20호 단지)의 수를
+        # **한 호짜리** 재실행의 0 선에 대고 재게 된다. `conftest.
+        # report_household_wiring` 이 그 함정을 적는다.
+        **report_household_wiring(),
         rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
+        # ★ **부하 이동도 같은 배선** (R64/WP-7 · 사용자 요구 2) — 안 넘기면
+        # 리포트(옮긴 하루)와 재실행(옮기지 않은 하루)이 서로 다른 사업을 그린다.
+        dr_shiftable_share_pct=report_shift_share(),
     )
     npv = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
 
@@ -392,7 +411,15 @@ def test_the_summary_row_carries_the_same_support_numbers_as_the_body() -> None:
             # 평탄 차이 128,194원)을 남겼다.
             daily_shapes=report_shapes(),
             annual_load_kwh=_load_kwh(),
+            # ★★ **단지 규모·기기 부하도 같은 배선** (R65/WP-2c · 사용자 요구
+            # *「가구수를 20가구로 설정」*) — 안 넘기면 리포트(20호 단지)의 수를
+            # **한 호짜리** 재실행의 0 선에 대고 재게 된다. `conftest.
+            # report_household_wiring` 이 그 함정을 적는다.
+            **report_household_wiring(),
             rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
+            # ★ **부하 이동도 같은 배선** (R64/WP-7 · 사용자 요구 2) — 안 넘기면
+            # 리포트(옮긴 하루)와 재실행(옮기지 않은 하루)이 서로 다른 사업을 그린다.
+            dr_shiftable_share_pct=report_shift_share(),
         )
         npv = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
         assert npv < 0.0, (
@@ -489,8 +516,10 @@ def test_the_flipping_branch_still_leads_with_the_support_rate(
     문장은 그때 **거짓**이다.
 
     ⚠ 붙임 3 은 여기서 보지 않는다. 그쪽 갈래는 프로퍼티가 아니라
-    `case_report._formulas()` 가 환산값에서 직접 판정하므로, 이 뒤집기로는
-    함께 움직이지 않는다.
+    `case_formulas.build_formulas()` 가 환산값에서 직접 판정하므로, 이
+    뒤집기로는 함께 움직이지 않는다 (R64/WP-2 가 그 함수를 `case_report` 에서
+    `core/report/case_formulas.py` 로 옮기며 이름을 밖으로 냈다 —
+    `NFR-206` 코드 스프롤 상한).
     """
     report = _report()
     monkeypatch.setattr(
@@ -608,7 +637,15 @@ def test_the_endpoint_values_are_paired_with_the_run_that_produced_them() -> Non
                 # 넘긴다. 이 재실행만 안 넘기면 부하 있는 리포트 수를 부하 없는
                 # 재실행과 맞대는 것이 되어 항상 갈린다.
                 annual_load_kwh=probe["household_load_annual_kwh"]["base"],
+                # ★★ **단지 규모·기기 부하도 같은 배선** (R65/WP-2c · 사용자 요구
+                # *「가구수를 20가구로 설정」*) — 안 넘기면 리포트(20호 단지)의 수를
+                # **한 호짜리** 재실행의 0 선에 대고 재게 된다. `conftest.
+                # report_household_wiring` 이 그 함정을 적는다.
+                **report_household_wiring(),
                 rec_price_won_per_unit=rec_price, rec_weight_pv=rec_weight,
+                # ★ **부하 이동도 같은 배선** (R64/WP-7 · 사용자 요구 2) — 안 넘기면
+                # 리포트(옮긴 하루)와 재실행(옮기지 않은 하루)이 서로 다른 사업을 그린다.
+                dr_shiftable_share_pct=report_shift_share(),
             )
             measured = float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC])
             assert reported == pytest.approx(measured, abs=1.0), (
@@ -786,16 +823,26 @@ def test_the_table_is_ordered_by_how_much_it_removes() -> None:
     변동폭 순이므로, 정렬을 빠뜨린 구현은 *「변동폭 순으로 인쇄하고 줄임 열만
     붙인」* 표가 되고 그것은 다른 우선순위를 가리킨다.
 
-    ★ 실물에서 **두 순서가 실제로 갈린다.** ⚠ **R52/WP-6 이 갈리는 자리를
-    옮겼다** — REC 편익이 대장에서 켜지며 `household_load_annual_kwh` 가
-    (자가소비·계통구매·REC 셋을 함께 흔드는 축이 되어) 변동폭·줄임 **양쪽
-    1위**로 함께 올라섰다(종전 1위였던 `grid_purchase_price`·`surplus_sale_
-    price` 는 REC 도입 전 실측이며 낡았다). 그래서 이제 1위가 아니라
-    **6위(`grid_purchase_price` ↔ `surplus_sale_price` 의 순서가 뒤집히는
-    자리)** 로 갈라지는 것을 확인한다 — 실측:
+    ## ⚠ 「자기가 정렬을 재는가」의 대조군이 R65 에 바뀌었다 — **경위째로 남긴다**
+
+    **그때(R52/WP-6 까지)**: 실물에서 두 순서가 갈리는 자리를 짚어 확인했다.
+    REC 편익이 대장에서 켜지며 `household_load_annual_kwh` 가 변동폭·줄임
+    **양쪽 1위**로 올라섰고(종전 1위였던 `grid_purchase_price`·
+    `surplus_sale_price` 는 REC 도입 전 실측이며 낡았다), 그래서 1위가 아니라
+    **6위**에서 갈라지는 것을 확인했다 — 실측:
 
         변동폭 순 …[5]=grid_purchase_price · [6]=surplus_sale_price
         줄임  순 …[5]=surplus_sale_price · [6]=grid_purchase_price
+
+    **지금(R65/WP-2c)**: 단지가 20호가 되면서 그 자리가 사라졌다 —
+    `surplus_sale_price` 가 양쪽 다 11위로 내려가 **세 시나리오 전부에서 두
+    순서가 완전히 같다**(실측). ⛔ 그렇다고 대조군을 지우면 이 검사는
+    *「변동폭 순으로 인쇄하고 줄임 열만 붙인」* 표에도 통과한다.
+
+    ⇒ ★ **대조군을 「실물이 마침 갈리는 자리」에서 「입력 순서를 흔든다」로
+    옮겼다** — 인자 목록을 **뒤집어** 넣고도 인쇄가 줄임 내림차순이면, 그
+    표는 받은 순서를 베낀 것이 아니다. 재는 것은 그대로 *「인쇄된 순서가
+    줄임 순인가」* 이고, 이제 **실물의 순위 분포에 기대지 않는다.**
     """
     for name in ("scenario_unsubsidized", "scenario_subsidy_80"):
         rows = _reduction_rows(_section(_report(name)))
@@ -805,16 +852,30 @@ def test_the_table_is_ordered_by_how_much_it_removes() -> None:
         )
 
     report = _report()
-    by_delta = [
+    before = [reduction for _v, reduction, _g in _reduction_rows(_section(report))]
+
+    # ★ 대조군 — **받은 순서를 뒤집어** 다시 인쇄한다. 정렬을 하지 않는 구현은
+    # 여기서 뒤집힌 순서를 그대로 싣는다.
+    flipped = replace(report, influences=tuple(reversed(report.influences)))
+    fed = [
         entry.variable
-        for entry in report.uncertain_influences
+        for entry in flipped.uncertain_influences
         if not entry.flips_conclusion
     ]
-    by_reduction = [variable for variable, _r, _g in _reduction_rows(_section(report))]
-    assert by_delta != by_reduction, (
-        "변동폭 순과 줄임 순 전체가 같아졌다 — 이 검사가 정렬을 재지 못한다. "
-        f"변동폭 {by_delta} · 줄임 {by_reduction}. 실물이 그렇게 바뀌었으면 "
-        "다른 갈래에서 순서를 재도록 고칠 것"
+    rows_after = _reduction_rows(_section(flipped))
+    printed_after = [variable for variable, _r, _g in rows_after]
+    assert fed != printed_after, (
+        "인자 목록을 뒤집었더니 인쇄 순서도 뒤집혔다 — 이 표는 정렬하지 않고 "
+        f"받은 순서를 베낀다. 넣은 순서 {fed} · 인쇄 {printed_after}"
+    )
+    # ⚠ **이름이 아니라 줄임 값의 열을 견준다** — 줄임이 같은 인자 둘
+    # (`pv_fixed_om`·`ess_fixed_om` 은 고정 O&M 이 같은 값이다)이 있어, 안정
+    # 정렬이 받은 순서를 그대로 두면 **이름 열만** 그 자리에서 갈린다. 그것은
+    # 정렬 결함이 아니라 동점이며, 값의 열은 어느 쪽이든 같다.
+    assert [reduction for _v, reduction, _g in rows_after] == before, (
+        "인자 목록을 뒤집었더니 인쇄된 줄임의 열이 달라졌다 — 줄임 순이 아니라 "
+        f"받은 순서에 기대고 있다. 원래 {before} · 뒤집은 뒤 "
+        f"{[reduction for _v, reduction, _g in rows_after]}"
     )
 
 

@@ -27,7 +27,12 @@ from core.casegrid.ledger_levels import (
     build_level_map,
     ledger_backed_variables,
     modelling_only_variables,
+    resolve_design_capacity,
+    resolve_operation_options,
 )
+from core.contracts.validation import ValidationError
+from core.der.ess import ESSOperatingMode
+from core.der.pv import PVAllocationPriority
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _ASSUMPTIONS_YAML = _REPO_ROOT / "docs" / "assumptions.yaml"
@@ -355,3 +360,249 @@ def test_every_tariff_ledger_item_is_a_sweep_axis_or_says_why_not() -> None:
         exemptions=_TARIFF_KEYS_OUTSIDE_THE_SWEEP,
         exemption_name="_TARIFF_KEYS_OUTSIDE_THE_SWEEP",
     )
+
+
+@pytest.mark.req("NFR-202-M1")
+def test_the_grid_supply_allowance_is_a_sweep_axis_read_from_the_ledger() -> None:
+    """★★ **계통 전력공급 허용 비율이 축에 있고 값이 대장에서 온다** (R67/WP-N3).
+
+    이 값은 **소스에 있던 상수를 옮긴 것이 아니라** 사용자 문면 하나에서 온
+    새 값이다(*「분산특구에서는 30% 이내에서 계통에서 전력공급을 허용」*). 그러니
+    축에서 빠지면 **저장소 어디에도 그 수를 흔들어 보는 자리가 없다** — 그것이
+    `capex.replacement_real_trend`(R41→R42)·`capex.pv.inverter_share`(R43)가
+    지났던 자리다.
+
+    ⚠⚠ **이 축은 결론축을 움직이지 않는다** — 걸리는 자리가 붙임 10 의 ESS
+    역산 소절 하나이고 그 소절은 진단이다. 그래서 5.1 은 이 축을 「미반영 —
+    측정 안 됨」으로 싣는다. **그것이 결함이 아니라 사실**이며, 이 검사가
+    재는 것은 *결론축에 든다*가 아니라 *대장 한 곳에서 값이 온다*다.
+
+    ⚠ 기대 수치를 여기 적지 않는다 — 대장을 다시 읽어 대조한다.
+    """
+    key = "policy.grid_supply_allowance"
+    axes = ledger_backed_variables()
+    assert axes.get("grid_supply_allowance") == key, (
+        f"`{key}` 가 스윕 축에서 빠졌다 — 사용자가 말한 30% 를 흔들어 볼 자리가 "
+        f"저장소에 없다: {sorted(axes)}"
+    )
+    item = _ledger_items()[key]
+    levels = build_level_map(_ASSUMPTIONS_YAML)["grid_supply_allowance"]
+    assert levels["base"] == item["value"] == item["sensitivity"]["base"]
+    assert 0.0 <= levels["low"] < levels["base"] < levels["high"] <= 1.0, (
+        f"허용 비율의 3수준이 소수(0~1) 밖으로 나갔다 — {dict(levels)}"
+    )
+    assert item["source"] is None and item["confidence"] == "가정", (
+        "근거 법령·고시를 확인하지 않았는데 출처·신뢰도가 올라갔다 — "
+        "「30%」의 출처는 사용자 문면 하나다"
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# design_capacity — R71/WP-4 (PV·ESS 용량·ESS 정격출력을 바꾸는 통로)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def test_resolve_design_capacity_of_none_is_unspecified() -> None:
+    """`None` 이 **「적지 않았다」**다 — 빈 매핑을 낸다.
+
+    `core/casegrid/household_scale.py::resolve_household_count` 와 같은
+    「미지정과 기본값은 다른 진술」 규약이다.
+    """
+    assert resolve_design_capacity(None) == {}
+
+
+def test_resolve_design_capacity_accepts_a_partial_mapping() -> None:
+    """세 키 중 **일부만** 있어도 된다 — all-or-nothing 이 아니다.
+
+    한 키가 빠졌다고 전체를 기본값으로 되돌리면 §7 후보군이 「PV 만 바꿔
+    본다」 같은 실험을 못 한다(`.orch/R71/WP-4.md` §2-①).
+    """
+    resolved = resolve_design_capacity({"pv_capacity_kw": 30.0})
+    assert dict(resolved) == {"pv_capacity_kw": 30.0}
+
+
+def test_resolve_design_capacity_accepts_all_three_keys() -> None:
+    """세 키(PV·ESS 용량·ESS 정격출력)를 전부 받는다 — 문서 예시 그대로."""
+    resolved = resolve_design_capacity(
+        {"pv_capacity_kw": 60.0, "ess_capacity_kwh": 200.0, "ess_power_kw": 100.0}
+    )
+    assert dict(resolved) == {
+        "pv_capacity_kw": 60.0,
+        "ess_capacity_kwh": 200.0,
+        "ess_power_kw": 100.0,
+    }
+
+
+def test_resolve_design_capacity_coerces_form_strings() -> None:
+    """화면 폼이 보내는 **문자열**도 받는다 — `household_count` 와 같은 관용."""
+    resolved = resolve_design_capacity({"pv_capacity_kw": "30.0"})
+    assert dict(resolved) == {"pv_capacity_kw": 30.0}
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "5.0",  # 매핑이 아니라 문자열
+        ["pv_capacity_kw", 5.0],  # 매핑이 아니라 목록
+    ],
+)
+def test_resolve_design_capacity_rejects_a_non_mapping(raw: object) -> None:
+    with pytest.raises(ValidationError) as excinfo:
+        resolve_design_capacity(raw)
+    assert "design_capacity" in str(excinfo.value.reason)
+
+
+def test_resolve_design_capacity_rejects_an_unknown_key() -> None:
+    """모르는 키는 조용히 무시하지 않고 **3요소로** 거부한다 (`NFR-303`)."""
+    with pytest.raises(ValidationError) as excinfo:
+        resolve_design_capacity({"battery_capacity_kw": 5.0})
+    error = excinfo.value
+    assert "battery_capacity_kw" in error.reason
+    assert error.action, "어떻게 고치라는지 말하지 않는다"
+
+
+@pytest.mark.parametrize("raw", [0.0, -1.0, "0", float("nan"), True, None])
+def test_resolve_design_capacity_rejects_non_positive_or_non_numeric(raw: object) -> None:
+    with pytest.raises(ValidationError):
+        resolve_design_capacity({"pv_capacity_kw": raw})
+
+
+@pytest.mark.req("NFR-202-M1")
+def test_build_level_map_overrides_only_the_base_of_a_design_variable() -> None:
+    """`design_capacity` 는 **`base` 한 자리**에만 얹는다 — 탐색 구간은 그대로.
+
+    `.orch/R71/WP-4.md` §2-② — 대장/설계변수 표의 low·high 탐침 폭은
+    사용자가 기준값을 고쳐도 유지된다(이 파일 머리말 ⚠⚠ 절과 같은 규약).
+    """
+    without = build_level_map(_ASSUMPTIONS_YAML)["pv_capacity_kw"]
+    with_override = build_level_map(
+        _ASSUMPTIONS_YAML,
+        design_capacity=resolve_design_capacity({"pv_capacity_kw": 30.0}),
+    )["pv_capacity_kw"]
+
+    assert with_override["base"] == 30.0
+    assert with_override["low"] == without["low"]
+    assert with_override["high"] == without["high"]
+    assert without["base"] != 30.0, "기준값이 이미 30.0 이면 이 시험이 아무것도 재지 못한다"
+
+
+@pytest.mark.req("NFR-202-M1")
+def test_build_level_map_without_design_capacity_is_unchanged() -> None:
+    """**안 주면 종전과 같은 표** — 골든 3종의 결론축 불변의 근거다."""
+    plain = build_level_map(_ASSUMPTIONS_YAML)
+    explicit_empty = build_level_map(_ASSUMPTIONS_YAML, design_capacity={})
+    assert dict(plain["pv_capacity_kw"]) == dict(explicit_empty["pv_capacity_kw"])
+    assert dict(plain["ess_capacity_kwh"]) == dict(explicit_empty["ess_capacity_kwh"])
+
+
+@pytest.mark.req("NFR-202-M1")
+def test_build_level_map_ignores_ess_power_kw_it_is_not_a_design_var() -> None:
+    """`ess_power_kw` 는 `_DESIGN_VARS` 밖이다 — `level_map` 에 새 키를 만들지 않는다.
+
+    탐침표에 올리지 않는다는 결정(`.orch/R71/WP-4.md` §2-③)의 반대편 확인:
+    이 키가 수준표 어디에도 새로 나타나지 않아야 한다 — 다른 통로
+    (`core/report/case_report.py`)가 그 값을 직접 읽어 쓴다.
+    """
+    level_map = build_level_map(
+        _ASSUMPTIONS_YAML,
+        design_capacity=resolve_design_capacity({"ess_power_kw": 100.0}),
+    )
+    assert "ess_power_kw" not in level_map
+
+
+# ── `operation_options` — 운전 구성 선택의 통로 (R71/WP-6) ──────────────
+#
+# 이 축이 여는 것은 값이 아니라 **구성 선택**이다(`ess_operating_mode` ·
+# `pv_allocation_priority`). 그래서 대장 항목이 아니라 시나리오 필드이며,
+# 함수 단위의 규약은 위 `resolve_design_capacity` 계열과 같다 — 다만 값이
+# **한국어 문면**이라 「열거 이름을 적었다」를 거부하는 자리가 하나 더 있다.
+
+
+def test_resolve_operation_options_treats_none_as_unspecified() -> None:
+    """`None` 이 **「적지 않았다」**다 — 그때 빈 매핑이고 호출부는 `None` 을 넘긴다."""
+    assert dict(resolve_operation_options(None)) == {}
+
+
+def test_resolve_operation_options_accepts_the_korean_values() -> None:
+    """★ 받는 것은 **열거의 `.value`**(한국어 문면)이며 그대로 통과한다."""
+    resolved = resolve_operation_options(
+        {
+            "ess_operating_mode": ESSOperatingMode.SEMI_CENTRAL_DISPATCH.value,
+            "pv_allocation_priority": PVAllocationPriority.BATTERY_FIRST.value,
+        }
+    )
+    assert dict(resolved) == {
+        "ess_operating_mode": "준중앙급전 등록",
+        "pv_allocation_priority": "배터리 우선",
+    }
+
+
+def test_resolve_operation_options_takes_one_key_at_a_time() -> None:
+    """**키 단위로 받는다** — 배분 순서만 바꿔 보는 실험이 성립해야 한다."""
+    assert dict(resolve_operation_options({"pv_allocation_priority": "배터리 우선"})) == {
+        "pv_allocation_priority": "배터리 우선"
+    }
+
+
+def test_resolve_operation_options_is_read_only() -> None:
+    """돌려준 매핑은 **읽기 전용**이다 (NFR-205) — 호출부가 서로를 바꾸지 않는다."""
+    resolved = resolve_operation_options({"ess_operating_mode": "계통 방전"})
+    with pytest.raises(TypeError):
+        resolved["ess_operating_mode"] = "자가소비 우선"  # type: ignore[index]
+
+
+def _rejection(value: object) -> ValidationError:
+    with pytest.raises(ValidationError) as caught:
+        resolve_operation_options(value)
+    return caught.value
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"ess_charge_source": "계통"},
+        {"ess_operating_mode": "GRID_DISCHARGE"},
+        {"pv_allocation_priority": "가격 기반"},
+        {"ess_operating_mode": 3},
+        ["ess_operating_mode"],
+    ],
+    ids=["모르는 키", "열거 이름", "미구현 갈래", "수를 적었다", "매핑이 아니다"],
+)
+def test_every_rejection_carries_the_three_elements(value: object) -> None:
+    """★★ 거부는 **셋을 다 갖춘다** (`NFR-303`) — WP-5 가 *「3요소를 갖추지 않은
+    유일한 자리」* 라고 적은 곳이 이 축이었다.
+
+    `action` 이 **받을 수 있는 값을 모두 적는지**까지 본다 — 이 축의 값은
+    한국어 문면이라 목록이 없으면 사용자가 무엇을 적어야 하는지 알 수 없다.
+    """
+    error = _rejection(value)
+    assert error.field == "operation.options"
+    assert error.reason.strip()
+    assert "준중앙급전 등록" in error.action
+    assert "배터리 우선" in error.action
+
+
+def test_an_unknown_key_is_named_in_the_reason() -> None:
+    """모르는 키는 **이름이 사유에 뜬다** — 조용히 무시하지 않는다."""
+    assert "ess_charge_source" in _rejection({"ess_charge_source": "계통"}).reason
+
+
+def test_an_enum_name_is_refused_and_told_to_use_the_value() -> None:
+    """★★★ **`"GRID_DISCHARGE"` 를 거부한다** — 그냥 넘기면 러너 깊은 곳에서
+    `ValueError: tuple.index(x): x not in tuple` 로 터진다(3요소 없음)."""
+    reason = _rejection({"ess_operating_mode": "GRID_DISCHARGE"}).reason
+    assert "GRID_DISCHARGE" in reason
+    assert "계통 방전" in reason
+
+
+def test_the_unimplemented_allocation_branch_is_not_offered() -> None:
+    """`PRICE_BASED`(「가격 기반」)는 **받을 수 있는 값 목록에 없다** — 구현이 없어
+    `core/der/pv.py::resolve_pv_allocation_priority()` 가 거부하는 갈래다."""
+    assert "가격 기반" not in _rejection({"pv_allocation_priority": "가격 기반"}).action
+
+
+def test_the_choices_come_from_the_enums_not_from_a_copy() -> None:
+    """★ 값 목록의 정본은 **열거**다 — 베낀 문면이면 `core/der` 를 고치는 날 갈린다."""
+    action = _rejection({"ess_operating_mode": "없는 값"}).action
+    for mode in ESSOperatingMode:
+        assert mode.value in action

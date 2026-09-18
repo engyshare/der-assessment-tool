@@ -52,7 +52,7 @@ NPV 계산에 넣지 않기 때문이다(관점별 「자부담」모형 — `Pe
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 
@@ -67,10 +67,10 @@ from core.cba.perspective import (
     society_excludes_subsidy,
     society_excludes_transfers,
 )
-from core.cba.proforma import benefit_row
+from core.cba.proforma import benefit_row, escalation_factor
 from core.contracts.der import DispatchResult
 from core.contracts.schemas import CashFlowRow
-from core.contracts.units import ZERO, Money
+from core.contracts.units import ZERO, Money, to_won
 from core.contracts.valuestream import Payer, ValueStream
 from core.valuestream.distributed_benefit import DistributedBenefit, DistributedSubItems
 
@@ -146,6 +146,40 @@ def build_society_annualised(
     return ((stream, annual_won),)
 
 
+def _schedule(
+    tag: str,
+    annual_won: int,
+    *,
+    horizon_years: int,
+    escalation_by_tag: Mapping[str, float],
+) -> dict[int, int]:
+    """관점 표에 실을 **연차별** 금액 — 요금 연동 갈래만 계수를 탄다 (R69/WP-2).
+
+    ## ★ 왜 여기서도 굴려야 하는가 — **같은 편익이 두 값으로 인쇄된다**
+
+    종전 이 함수 자리는 `{year: annual_won for year …}` 였다 — 1년차 값을 20년
+    깔았고, 그때는 **아무 편익도 연차를 타지 않았으므로** 그것이 옳았다.
+    R69/WP-2 가 첨두 절감(`PeakShaving`)을 요금 인상률에 태우면서 그 전제가
+    깨졌다: 결론축(사업자 열)은 오르는 값으로 서는데 참여 주민 열은 평평한
+    값으로 서서, **같은 편익의 20년 합계가 표 안에서 두 수로 인쇄된다.**
+
+    ⚠ **어느 갈래가 요금 연동인지를 이 모듈이 정하지 않는다.** 판정은 러너가
+    갖고(`e2e_runner.py` 의 편익 일정표 옆 ★★★), 여기는 `태그 → 인상률` 을
+    받기만 한다 — 여기서 태그 목록을 다시 적으면 정본이 둘이 되고, 한쪽이
+    먼저 바뀌는 날 두 열이 조용히 갈린다.
+
+    ⚠ 계수를 짓는 식은 `core/cba/proforma.py::escalation_factor()` **하나**다.
+    ⚠ 비어 있으면(`{}`) 전 연차 계수가 1.0 이라 **종전과 원 하나까지 같다.**
+    """
+    rate = escalation_by_tag.get(tag, 0.0)
+    if not rate:
+        return {year: annual_won for year in range(1, horizon_years + 1)}
+    return {
+        year: int(to_won(annual_won * escalation_factor(rate, year=year)))
+        for year in range(1, horizon_years + 1)
+    }
+
+
 def build_perspective_wiring(
     annualised: Sequence[tuple[ValueStream, int]],
     operator_benefit_rows: Sequence[CashFlowRow],
@@ -155,6 +189,7 @@ def build_perspective_wiring(
     *,
     horizon_years: int,
     society_annualised: Sequence[tuple[ValueStream, int]] = (),
+    escalation_by_tag: Mapping[str, float] = MappingProxyType({}),
 ) -> PerspectiveWiring:
     """`run_single_case_e2e()` 가 이미 가진 재료에서 관점 넷을 짓는다.
 
@@ -165,6 +200,11 @@ def build_perspective_wiring(
     ``society_annualised`` 는 `annualised` 와 같은 모양이지만 **결론축에는
     닿지 않는다**(R53/WP-1 판정 ① — `build_society_annualised()` 참조). 비어
     있으면 이 함수는 종전과 완전히 같게 동작한다.
+
+    ``escalation_by_tag`` 는 `태그 → 연 인상률(소수)` 이며 **요금에 연동된
+    편익만** 여기 실린다(R69/WP-2). 비어 있으면 전 연차 계수가 1.0 이라
+    종전과 원 하나까지 같다 — 어느 갈래가 요금 연동인지의 판정은 러너가
+    갖는다(`_schedule()` 독스트링 참조).
 
     ``operator_benefit_rows``·``operator_cost_rows`` 는 호출측이 이미 지은
     편익·비용 행 **전부**다 — `OPERATOR` 열이 새로 거르지 않고 결론축 그대로
@@ -214,7 +254,11 @@ def build_perspective_wiring(
                 by_perspective[perspective].append(
                     benefit_row(
                         stream.tag,
-                        {year: annual_won for year in range(1, horizon_years + 1)},
+                        _schedule(
+                            stream.tag, annual_won,
+                            horizon_years=horizon_years,
+                            escalation_by_tag=escalation_by_tag,
+                        ),
                     )
                 )
             # 내는 관점(transfer_counterparty)이 RESIDENT/GOVERNMENT 면 -annual_won 행
@@ -223,7 +267,11 @@ def build_perspective_wiring(
                 by_perspective[counter_perspective].append(
                     benefit_row(
                         stream.tag,
-                        {year: -annual_won for year in range(1, horizon_years + 1)},
+                        _schedule(
+                            stream.tag, -annual_won,
+                            horizon_years=horizon_years,
+                            escalation_by_tag=escalation_by_tag,
+                        ),
                     )
                 )
             continue
@@ -242,7 +290,12 @@ def build_perspective_wiring(
             continue
         by_perspective[perspective].append(
             benefit_row(
-                stream.tag, {year: annual_won for year in range(1, horizon_years + 1)}
+                stream.tag,
+                _schedule(
+                    stream.tag, annual_won,
+                    horizon_years=horizon_years,
+                    escalation_by_tag=escalation_by_tag,
+                ),
             )
         )
 

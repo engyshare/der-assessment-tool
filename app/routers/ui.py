@@ -24,9 +24,10 @@
 from __future__ import annotations
 
 import mimetypes
+from collections.abc import Mapping
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse
 
 from app.routers.ui_forms import (
@@ -52,6 +53,7 @@ from web.render import (
     run_error_context,
     run_result_context,
 )
+from web.render_load_shape import SHIFTABLE_SHARE_FIELD, appliance_season_shares
 
 router = APIRouter(tags=["ui"])
 
@@ -125,6 +127,12 @@ def regulation_admin(
 
 @router.get("/ui/run", response_class=HTMLResponse)
 def run_case(
+    # ⚠ `*` 는 **양식이 아니라 규칙**이다 (R64/WP-2 — R64/WP-1 이 그림
+    # 라우트에서 세운 것과 같다). 기기 부하 질의 둘이 붙어 인자가 일곱이 되자
+    # `PLR0917`(위치 인자 5 초과)이 울었다. FastAPI 는 키워드 전용 인자를
+    # 그대로 받으므로 라우트의 동작은 한 글자도 바뀌지 않는다. **상한을 올려
+    # 푸는 쪽을 고르지 않았다.**
+    *,
     scenario: str = Query(
         default="scenario_unsubsidized",
         description="골든 시나리오 이름 — 목록에 있는 것만 연다",
@@ -141,6 +149,44 @@ def run_case(
         default=False,
         description="ⓒ 계측 선언 ② — 발전량·전기사용량의 구분 계측·정산",
     ),
+    household_count: str = Query(
+        default="",
+        description=(
+            "실증단지 참여 가구 수(호). **비우면 시나리오에 적지 않는다** — "
+            "그때 가구 한 호 기준으로 돈다"
+        ),
+    ),
+    heatpump_load_annual_kwh: str = Query(
+        default="",
+        description=(
+            "가구 한 호의 히트펌프 연간 소비전력량(kWh/호·년). "
+            "**비우면 시나리오에 적지 않는다** — 그때 0으로 돈다"
+        ),
+    ),
+    ev_load_annual_kwh: str = Query(
+        default="",
+        description=(
+            "가구 한 호의 전기차 충전 연간 전력량(kWh/호·년). "
+            "**비우면 시나리오에 적지 않는다** — 그때 0으로 돈다"
+        ),
+    ),
+    dr_shiftable_share_pct: str = Query(
+        default="",
+        alias=SHIFTABLE_SHARE_FIELD,
+        description=(
+            "하루 안에서 옮길 수 있는 가전 부하 비율(%). "
+            "**비우면 오버라이드를 걸지 않는다** — 그때 분석 설정 대장의 "
+            "가정값으로 돈다(0 을 적으면 「옮기지 않는다」라는 다른 실행이다)"
+        ),
+    ),
+    # ★★ 계절 몫 칸은 **`Query(...)` 로 받지 않는다** (R64/WP-WEB ⓑ). 칸
+    # 이름이 `season_share-<계절이름>` 이고 계절은 **자산**
+    # (`fixtures/profiles/representative-day.yaml`)이 정하므로, 시그니처로
+    # 받으면 자산이 달력을 고치는 날 이 라우트를 함께 고쳐야 한다 — 자산을
+    # 데이터로 둔 이유가 그것을 막는 것이다(`app/routers/ui_scenarios.py::
+    # save_settings_form` 이 대장 칸 50개에 대해 같은 판단을 적었다).
+    # 거두는 자리는 `web/render_load_shape.py::appliance_season_shares` 하나다.
+    request: Request,
 ) -> HTMLResponse:
     """고른 갈래로 한 번 돌려 결과 화면을 낸다 — `FR-705-AC2` · `UI-7-AC1`.
 
@@ -166,10 +212,15 @@ def run_case(
     """
     try:
         run = _run(
-            scenario,
-            arrangement,
-            ownership_or_operation_transferred,
-            metering_separated,
+            scenario=scenario,
+            arrangement=arrangement,
+            ownership_or_operation_transferred=ownership_or_operation_transferred,
+            metering_separated=metering_separated,
+            household_count=household_count,
+            heatpump_load_annual_kwh=heatpump_load_annual_kwh,
+            ev_load_annual_kwh=ev_load_annual_kwh,
+            dr_shiftable_share_pct=dr_shiftable_share_pct,
+            season_shares=appliance_season_shares(request.query_params),
         )
     except ValidationError as exc:
         return HTMLResponse(render_run_result(run_error_context(exc)), status_code=400)
@@ -195,6 +246,21 @@ def run_case(
                         ownership_or_operation_transferred
                     ),
                     metering_separated=metering_separated,
+                    # ★ 가구 수도 그림에 함께 간다 — 안 넘기면 화면의 수는
+                    # 40호인데 그림은 1호가 되고, 둘 다 그럴듯해 보인다.
+                    household_count=household_count,
+                    # ★ 기기 부하도 그림에 함께 간다 — 안 넘기면 화면의 부하는
+                    # 히트펌프를 얹은 것인데 그림은 안 얹은 것이 되고, 둘 다
+                    # 그럴듯해 보인다.
+                    heatpump_load_annual_kwh=heatpump_load_annual_kwh,
+                    ev_load_annual_kwh=ev_load_annual_kwh,
+                    # ★ 부하의 **형상** 둘도 그림에 함께 간다 (R64/WP-WEB) —
+                    # 안 넘기면 화면의 수는 겨울에 몰아 준 것인데 그림은
+                    # 균등한 것이 되고, 둘 다 그럴듯해 보인다.
+                    dr_shiftable_share_pct=dr_shiftable_share_pct,
+                    appliance_season_shares=appliance_season_shares(
+                        request.query_params
+                    ),
                 ),
             )
         )
@@ -202,10 +268,18 @@ def run_case(
 
 
 def _run(
+    # ⚠ `*` 의 사유는 위 `run_case` 와 같다 (R64/WP-2 · `PLR0917`). 부르는
+    # 자리 둘이 이름으로 넘기므로 어느 값이 어느 칸인지 호출부에서 읽힌다.
+    *,
     scenario: str,
     arrangement: str,
     ownership_or_operation_transferred: bool,
     metering_separated: bool,
+    household_count: str = "",
+    heatpump_load_annual_kwh: str = "",
+    ev_load_annual_kwh: str = "",
+    dr_shiftable_share_pct: str = "",
+    season_shares: Mapping[str, str] | None = None,
 ) -> UiRun:
     """폼 값으로 한 번 돌린다 — **거부도 「없다」도 그대로 올린다.**
 
@@ -220,6 +294,25 @@ def _run(
         arrangement=arrangement or None,
         ownership_or_operation_transferred=ownership_or_operation_transferred,
         metering_separated=metering_separated,
+        # ★ 빈 문면을 `None` 으로 낮춘다 — 위 `arrangement` 와 같은 규약이며,
+        # 「적지 않았다」가 그대로 내려가야 판정이 한 자리에 남는다
+        # (`core/casegrid/household_scale.py::resolve_household_count`).
+        household_count=household_count or None,
+        # ★ 기기 부하 둘도 같은 규약이다 (R64/WP-2) — 빈 문면이 「적지
+        # 않았다」로 그대로 내려가야 판정이
+        # `core/casegrid/appliance_load.py::resolve_appliance_load` 한 자리에
+        # 남는다.
+        heatpump_load_annual_kwh=heatpump_load_annual_kwh or None,
+        ev_load_annual_kwh=ev_load_annual_kwh or None,
+        # ★★ 부하의 **형상** 둘 (R64/WP-WEB ⓐⓑ). 여기도 같은 규약이다 —
+        # 빈 문면이 「적지 않았다」로 그대로 내려가야 판정이 한 자리에 남는다
+        # (`core/casegrid/load_shift.py::resolve_shiftable_share` ·
+        # `core/casegrid/appliance_load.py::resolve_appliance_season_shares`).
+        # ⚠ 계절 몫은 `or None` 으로 낮추지 **않는다** — 빈 칸을 버리면
+        # 「일부만 적었다」가 「그 계절을 안 적었다」로 바뀌어 거부가 사라진다
+        # (거두는 함수의 ⚠⚠ 절).
+        dr_shiftable_share_pct=dr_shiftable_share_pct or None,
+        appliance_load_season_shares=season_shares,
     )
 
 
@@ -244,6 +337,11 @@ def _missing_scenario(exc: KeyError) -> dict[str, object]:
 @router.get("/ui/chart/{tag}.png", response_class=Response)
 def chart_png(
     tag: str,
+    # ⚠ `*` 는 **양식이 아니라 규칙**이다 (R64/WP-1). 가구 수 질의가 붙어
+    # 인자가 여섯이 되자 `PLR0917`(위치 인자 5 초과)이 울었다 — FastAPI 는
+    # 키워드 전용 인자를 그대로 받으므로 라우트의 동작은 한 글자도 바뀌지
+    # 않는다. 상한을 올려 푸는 쪽을 고르지 않았다.
+    *,
     scenario: str = Query(
         default="scenario_unsubsidized",
         description="골든 시나리오 이름 — 목록에 있는 것만 연다",
@@ -260,6 +358,40 @@ def chart_png(
         default=False,
         description="ⓒ 계측 선언 ② — 발전량·전기사용량의 구분 계측·정산",
     ),
+    household_count: str = Query(
+        default="",
+        description=(
+            "실증단지 참여 가구 수(호). **비우면 시나리오에 적지 않는다** — "
+            "그때 가구 한 호 기준으로 돈다"
+        ),
+    ),
+    heatpump_load_annual_kwh: str = Query(
+        default="",
+        description=(
+            "가구 한 호의 히트펌프 연간 소비전력량(kWh/호·년). "
+            "**비우면 시나리오에 적지 않는다** — 그때 0으로 돈다"
+        ),
+    ),
+    ev_load_annual_kwh: str = Query(
+        default="",
+        description=(
+            "가구 한 호의 전기차 충전 연간 전력량(kWh/호·년). "
+            "**비우면 시나리오에 적지 않는다** — 그때 0으로 돈다"
+        ),
+    ),
+    dr_shiftable_share_pct: str = Query(
+        default="",
+        alias=SHIFTABLE_SHARE_FIELD,
+        description=(
+            "하루 안에서 옮길 수 있는 가전 부하 비율(%). "
+            "**비우면 오버라이드를 걸지 않는다** — 그때 분석 설정 대장의 "
+            "가정값으로 돈다(0 을 적으면 「옮기지 않는다」라는 다른 실행이다)"
+        ),
+    ),
+    # ★★ 계절 몫은 `Query(...)` 가 아니다 — 사유는 위 `run_case` 와 같다
+    # (자산이 계절을 정한다). **그림도 같은 형상으로 그려야** 화면의 수와
+    # 그림이 같은 실행이 된다.
+    request: Request,
 ) -> Response:
     """차트 한 장을 **PNG 로** 낸다 — `FR-1004-AC1` · `FR-803-AC2`.
 
@@ -305,10 +437,15 @@ def chart_png(
         )
     try:
         run = _run(
-            scenario,
-            arrangement,
-            ownership_or_operation_transferred,
-            metering_separated,
+            scenario=scenario,
+            arrangement=arrangement,
+            ownership_or_operation_transferred=ownership_or_operation_transferred,
+            metering_separated=metering_separated,
+            household_count=household_count,
+            heatpump_load_annual_kwh=heatpump_load_annual_kwh,
+            ev_load_annual_kwh=ev_load_annual_kwh,
+            dr_shiftable_share_pct=dr_shiftable_share_pct,
+            season_shares=appliance_season_shares(request.query_params),
         )
     except ValidationError as exc:
         raise HTTPException(status_code=400, detail=_three_parts(exc)) from exc

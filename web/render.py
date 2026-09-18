@@ -16,6 +16,10 @@ from core.contracts.units import Money
 from core.model.composition import available_resource_tags, resource_name
 from core.model.parameters import ParameterKind, ParameterSpec, resource_parameters
 from core.model.schemas import DERConfig, ModelConfig
+from web.render_load_shape import (
+    appliance_season_share_fields,
+    shiftable_share_field,
+)
 from web.render_run import (
     baseline_arrangement_choices,
     chart_figures,
@@ -42,6 +46,7 @@ from web.render_run import (
 __all__ = (
     "DEMO_MODEL",
     "UNLABELLED",
+    "appliance_season_share_fields",
     "baseline_arrangement_choices",
     "chart_figures",
     "chart_query",
@@ -59,6 +64,7 @@ __all__ = (
     "render_run_result",
     "run_error_context",
     "run_result_context",
+    "shiftable_share_field",
 )
 
 _ROOT = Path(__file__).resolve().parent
@@ -317,6 +323,11 @@ def demo_context() -> dict[str, Any]:
         "scenarios": golden_scenario_names(),
         "baseline_arrangements": baseline_arrangement_choices(),
         "pool_prerequisites": pool_prerequisite_fields(),
+        # ★★ 부하의 **형상** 둘 (R64/WP-WEB ⓐⓑ · 사용자 요구 2·3). 여기도
+        # 데모 값이 아니다 — 계절 이름·기본 몫은 **자산**이, 비율의 기본값과
+        # 신뢰도는 **분석 설정 대장**이 정본이며 이 문맥은 그것을 나른다.
+        "dr_shiftable_share": shiftable_share_field(),
+        "appliance_season_shares": appliance_season_share_fields(),
         # ★ 결과 그림 — 여기도 데모 값이 아니다. 주소는 실제 라우트를 가리키고,
         # 그 라우트가 그리는 수는 전부 `CaseReport` 에서 온다. 질의가 비어 있어
         # 라우트의 기본 시나리오·기본 갈래로 돈다.

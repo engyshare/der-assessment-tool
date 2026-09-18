@@ -72,6 +72,9 @@ from typing import Any
 import yaml  # type: ignore[import-untyped]
 
 from core.contracts.assumptions import AssumptionProvider
+from core.contracts.validation import ValidationError
+from core.der.ess import ESSOperatingMode
+from core.der.pv import PVAllocationPriority
 
 #: (케이스 변수, 대장 키, 배율). 배율은 **단위 환산**이며 값이 아니다 —
 #: 대장의 `%/년` 을 러너가 쓰는 비율로 옮긴다.
@@ -203,6 +206,85 @@ _LEDGER_VARS: tuple[tuple[str, str, float], ...] = (
     # §7 이 요구한 *「각각 별도 설정이 가능해야 함」*을 충족하기 위해서다 — 값이
     # 같아도 통로가 따로 있어야 다음에 견적이 오면 이 한 줄만 고치면 된다.
     ("ess_replacement", "capex.ess.replacement", 1.0),
+    # ★★★ **PCS 둘 — 초기투자에 「원/kW 항」을 세우는 통로** (R66/WP-1·WP-2 · `Q-2`).
+    #
+    # R66/WP-1 이 대장에 값을 세우고 **배선은 하지 않았다** — 그 상태가 곧
+    # `capex.replacement_real_trend`(R41→R42) · `capex.pv.inverter_share`(R43) 가
+    # 지났던 자리이며, `tests/casegrid/test_ledger_levels.py::
+    # test_every_capex_ledger_item_is_a_sweep_axis_or_says_why_not` 가 **그 상태를
+    # 실제로 빨간불로 잡았다**(WP-2 착수 실측 — 그 항목 둘을 이름으로 지목했다).
+    #
+    # ⚠⚠ **둘의 쓰임이 다르다 — 같은 값을 두 번 쓰는 것이 아니다.**
+    #   · `pcs_power`(원/kW)  → **PCS 항을 세운다**: `PCS 단가 × 정격출력`
+    #   · `pcs_share_of_system`(%) → **배터리 단가를 줄인다**: `단가 × (1 − 몫)`
+    # 몫으로 PCS 를 「떼기만」 하면 떼어낸 값이 다시 **용량에** 비례해
+    # *「정격출력을 키우는 것이 공짜」* 가 그대로 남는다 — 대장 항목
+    # `capex.ess.pcs_share_of_system` 의 `applicable_scope` 가 그 함정을 스스로
+    # 적어 두었다(*「그때는 몫이 아니라 `capex.ess.pcs_power` 를 곱해야 한다」*).
+    # 배선의 몸통은 `core/casegrid/ess_build.py::_case_ess_spec` 이다.
+    #
+    # ⚠ **배율 1.0 · 0.01 이 갈리는 것은 단위 환산이다** — 앞은 대장·자원 둘 다
+    # 원/kW 이고, 뒤는 대장이 `%` 이며 자원이 비율을 쓴다. **`0.01` 은 145줄의
+    # `pv_inverter_share` 선례를 그대로 따른 것**이며(그 항목도 「단가 하나를
+    # 쪼개는 몫」이고 단위가 `%` 다), `tests/casegrid/test_ledger_levels.py::
+    # test_percent_per_year_is_converted_once` 가 `%` 로 시작하는 단위 전건에
+    # 이 환산을 요구한다 — 즉 여기서 `1.0` 을 주면 빨간불이다.
+    ("ess_pcs_unit_cost", "capex.ess.pcs_power", 1.0),
+    ("ess_pcs_share", "capex.ess.pcs_share_of_system", 0.01),
+    # ★★★ **동시율** — 사용자 지시 (R66/WP-5 · `docs/decisions-2026-09-07-R66.md`
+    # §1ⓑ *「동시율은 내가 임의로 정하기 어려움. 초기설정은 80%로 하고, 설정을
+    # 통해 변경하는 한 것으로 설계해줘」*).
+    #
+    # ⚠⚠ **이 축이 걸리는 자리는 한 곳뿐이다** — `core/casegrid/e2e_runner.py::
+    # _site_load_kw` 의 반환값(시각별 kW)이다. 그 함수 독스트링이 *왜 거기 하나인가*
+    # 와 *어디에 걸면 안 되는가* 를 갖는다. ⛔ **연간 부하 kWh 총량에 곱하면
+    # 부하를 20% 지우는 것**이고 결론축이 좋은 쪽으로 틀린다(대장 항목의
+    # `applicable_scope` 가 그 오독을 ⛔⛔ 로 막는다).
+    #
+    # ⚠ **배율 0.01 은 단위 환산이다** — 대장이 `%` 이고 러너는 배수를 쓴다.
+    # 145줄 `pv_inverter_share` 의 선례를 그대로 따랐고, 아래
+    # `test_percent_per_year_is_converted_once` 가 `%` 로 시작하는 단위 전건에
+    # 이 환산을 요구한다 — 여기서 `1.0` 을 주면 빨간불이다.
+    ("coincidence_factor", "design.coincidence_factor", 0.01),
+    # ★★★ **태양광 이용률** — R67/WP-N2 에 올렸다 (사용자 판정 R67 §2
+    # 「모든 수치는 추후 변경 가능」 · `docs/decisions-2026-09-08-R67b.md` §3-4).
+    #
+    # 종전에는 `e2e_runner` 의 모듈 상수 `PV_CAPACITY_FACTOR = 0.15` 였다 —
+    # `PV_FIXED_OM_WON_PER_YEAR`(R51/WP-2)·`DEMAND_CHARGE_WON_PER_KW_MONTH`
+    # (R43)와 **같은 형태**이며, 대장에도 축에도 없이 결론에 들어와 있었다.
+    # 그 상수를 이 라운드가 지웠다 — 소스에 기본값을 남기면 대장 한 곳만
+    # 고쳐도 실행에 반영된다는 그 판정의 요구가 깨진다.
+    #
+    # ⚠⚠ **이 축은 발전량의 전제이지 「적정용량의 답」이 아니다.** 자립 역산
+    # (`core/report/sizing.py::required_pv_capacity_kw`)이 이 값의 **역수**로
+    # 답을 내므로 역산 전체가 여기에 매여 있는데, 사용자가 바꿀 통로가
+    # 없었다(판정 R67b §3-4 가 그것을 지목했다).
+    #
+    # ⚠ **배율 1.0 이다** — 대장·자원 둘 다 0~1 의 소수를 쓴다. 대장 항목의
+    # 주석이 *왜 `%` 로 두지 않았는가*를 갖는다(형제 항목
+    # `capacity_factor.bipv_wall.ratio` 는 `%` 이고, 그쪽은 이 값에 대한
+    # 비율이라 단위가 갈린다).
+    ("pv_capacity_factor", "capacity_factor.pv_rooftop", 1.0),
+    # ★★★ **계통 전력공급 허용 비율** — R67/WP-N3 에 올렸다 (사용자 지시 ·
+    # 판정 정본 `docs/decisions-2026-09-07-R66.md` §4).
+    #
+    # ⚠⚠ **이 축은 결론축(순현재가치)을 한 원도 움직이지 않는다** — 걸리는 자리가
+    # 붙임 10 의 ESS 역산 소절 하나이고(`core/report/ess_sizing_section.py`) 그
+    # 소절은 **진단**이라 결과를 실행에 되먹이지 않는다. 그래서 5.1 영향도 표에
+    # 「미반영 — 측정 안 됨」으로 오른다(`core/report/case_influences.py::
+    # InfluenceEntry.unread_by_pipeline`).
+    #
+    # ★ **그런데 그것이 이 줄을 빼야 할 사유가 아니다.** 이 값이 정하는 것은
+    # 역산의 **채택값**이며(완전 자립분 917kWh → 채택값 642kWh · 실측), 축에
+    # 없으면 *「0.30 을 골랐다」가 그 채택값에 얼마를 넣었는지* 를 검토자가
+    # 어디서도 읽을 수 없다 — `capex.replacement_real_trend`(R41→R42) ·
+    # `capex.pv.inverter_share`(R43) 가 지났던 자리와 같은 형태다.
+    # ⚠ 「미반영」 라벨은 **결함이 아니라 사실**이다: 결론축과 채택값은 다른
+    # 축이고, 이 라벨이 그 둘을 갈라 준다.
+    #
+    # ⚠ **배율 1.0 이다** — 대장·산식 둘 다 0~1 의 소수를 쓴다. 대장 항목의
+    # 주석이 *왜 `%` 로 두지 않았는가*를 갖는다.
+    ("grid_supply_allowance", "policy.grid_supply_allowance", 1.0),
     # ⚠ **`benefit.rec_weight_pv` 는 여기 없다** — `test_levels_come_from_
     # the_ledger_not_from_a_copy` 가 모든 스윕 축에 `low < base < high` **강한
     # 부등호**를 요구하는데, 이 라운드는 가중치 폭을 조사하지 않아 세 수준이
@@ -229,6 +311,27 @@ _MODELLING_VARS: tuple[tuple[str, tuple[tuple[str, float], ...]], ...] = (
 #: 범위는 **탐색 구간**이지 불확실성이 아니다. 대장의 `sensitivity` 와 같은
 #: 이름(low·base·high)을 쓰되 뜻이 다르므로, 리포트가 이 변수를 5.1 의
 #: 불확실 인자와 **같은 표에 싣지 않는다** (`design_variables()` 로 가른다).
+#:
+#: ★★★ **아래 수는 「한 호가 갖는 설비」다 — 러너가 가구 수를 곱한다**
+#: (R65/WP-2b). `core/casegrid/e2e_runner.py` 가 이 둘을 `_resolve` 로 얻은
+#: 직후 `household_scale(household_count)` 를 곱하므로, **20호 단지의 실행이
+#: 실제로 쓰는 것은 60 kW · 200 kWh** 다. 부하 쪽
+#: (`core/casegrid/seasonal_dispatch.py:789`)이 쓰는 배수와 같은 것이며,
+#: 한쪽만 곱하면 부하와 설비가 서로 다른 사업을 그린다.
+#: ⛔ **그러니 이 수를 「작다」고 키우지 마라** — 키우면 한 호가 60 kW 를 갖는
+#: 사업이 되고 배수가 두 번 곱해진다. 여기 적는 것은 **한 호분**이다.
+#: ⚠ **탐색 구간(1.0~9.0 · 2.0~30.0)도 한 호분이다.** 그 수를 읽어 인쇄하는
+#: 자리가 둘이고 **이제 둘 다 곱한다**:
+#:   · 붙임 10 의 역산 소절 (R65/WP-2c). `core/report/case_report.py` 가
+#:     `core/report/sizing.py`·`core/report/ess_sizing.py` 에 넘길 때 부하와
+#:     구간에 같은 배수를 건다(20호면 20~180 kW · 40~600 kWh).
+#:   · 본문 4.4(적정 용량) (R65/WP-5). `core/report/capacity.py::
+#:     build_capacity_review(scale=...)` 가 **인쇄되는 값에만** 곱한다 — 20호
+#:     실행이 「60 kW 를 썼다」로 적히고 띠도 20~180 kW 다.
+#:     ⚠⚠ **스윕에 넘기는 값은 곱하지 않는다.** 그쪽은 러너를 지나고 러너가
+#:     이 배수를 이미 곱하므로, 곱하면 **두 번 곱해져** 결론축이 움직인다.
+#:     종전에는 이쪽만 안 곱해 20호 실행에서도 *「3 kW 를 썼다」* 고 적었다 —
+#:     **수는 맞고 이름표가 한 호분**이었다(`.orch/R65/result_2c.md` ⑧ⓑ).
 #: (변수, 단위, 사람이 읽는 이름, 탐색 구간)
 _DESIGN_VARS: tuple[tuple[str, str, str, tuple[tuple[str, float], ...]], ...] = (
     (
@@ -247,6 +350,200 @@ _DESIGN_VARS: tuple[tuple[str, str, str, tuple[tuple[str, float], ...]], ...] = 
 
 #: 수준 이름. 대장의 `sensitivity` 가 이 셋을 갖지 않으면 거부한다.
 LEVEL_NAMES: tuple[str, str, str] = ("low", "base", "high")
+
+#: 시나리오 yaml 이 설계 변수(PV·ESS 용량·ESS 정격출력)를 오버라이드하는
+#: **필드 이름** (R71/WP-4 · `.orch/R71/result_3.md` 지점1-ⓑ 채택).
+#:
+#: ⚠ **통로는 이 필드 하나다** — `core/casegrid/household_scale.py::
+#: HOUSEHOLD_COUNT_FIELD` 와 같은 층·같은 규약이다. 대장 항목으로 올리지
+#: 않은 이유(안 ⓐ 기각)는 `pv_capacity_kw`·`ess_capacity_kwh` 가 「시장에서
+#: 관측한 불확실 값」이 아니라 **사업자가 고르는 설계**이기 때문이다(위
+#: `_DESIGN_VARS` 옆 3분류 표) — 대장에 올리면 그 분류를 어긴다.
+DESIGN_CAPACITY_FIELD = "design_capacity"
+
+#: `ValidationError.field` 용 **점으로 이은 경로**(NFR-303 · 그 생성자가
+#: 공백 없는 점 표기를 강제한다). 시나리오 yaml 키(위 `DESIGN_CAPACITY_FIELD`,
+#: 밑줄 표기)와 다른 자리다 — `core/casegrid/appliance_load.py::
+#: APPLIANCE_SEASON_SHARE_FIELD`(yaml 키) ·
+#: `APPLIANCE_SEASON_SHARE_FIELD_KEY`(거부 필드)가 같은 짝을 이미 쓴다.
+_DESIGN_CAPACITY_FIELD_KEY = "design.capacity"
+
+#: 이 필드가 받는 키. `pv_capacity_kw`·`ess_capacity_kwh` 는 `_DESIGN_VARS`
+#: 와 이름이 같다(그 변수의 `base` 자리에 얹는다). `ess_power_kw` 는
+#: `_DESIGN_VARS` 에 **없다** — 탐침표가 아니라
+#: `core/casegrid/ess_build.py::ESS_POWER_KW` 모듈 상수를 대신한다(그 값을
+#: 흔들어 보는 §7 후보군은 이 라운드 범위가 아니다 — `.orch/R71/WP-4.md` §0).
+_DESIGN_CAPACITY_KEYS = frozenset({"pv_capacity_kw", "ess_capacity_kwh", "ess_power_kw"})
+
+
+def _design_capacity_rejected(reason: str) -> ValidationError:
+    """거부 하나 — **3요소를 갖춘다** (`NFR-303`).
+
+    문면을 한 곳에만 둔다 — `core/casegrid/household_scale.py::_rejected` 와
+    같은 판단이다.
+    """
+    return ValidationError(
+        field=_DESIGN_CAPACITY_FIELD_KEY,
+        reason=reason,
+        action=(
+            f"{DESIGN_CAPACITY_FIELD} 는 pv_capacity_kw·ess_capacity_kwh·"
+            "ess_power_kw 중 일부만 골라 0보다 큰 수로 적으십시오 — 적지 않은 "
+            "키는 대장/설계변수 기본값으로 돌아갑니다"
+        ),
+    )
+
+
+def resolve_design_capacity(value: object | None) -> Mapping[str, float]:
+    """시나리오의 `design_capacity` → {변수 이름: 한 호분 값}.
+
+    `None` 이 **「적지 않았다」**이며 그때 빈 매핑을 낸다 — 호출부
+    (`build_level_map`·`core/report/case_report.py`)는 빈 매핑을 「모두
+    기본값」으로 읽는다. `core/casegrid/household_scale.py::
+    resolve_household_count` 와 같은 「미지정과 기본값은 다른 진술」 규약이다.
+
+    ## ★ 키 단위로 받는다 — all-or-nothing 이 아니다
+
+    세 키 중 일부만 있어도 된다(예: PV 만 바꾸고 ESS 는 대장/설계변수 기본값
+    유지). 한 키가 빠졌다고 전체를 기본값으로 되돌리면 §7 후보군이 「PV 만
+    바꿔 본다」 같은 실험을 못 한다(`.orch/R71/WP-4.md` §2-①).
+
+    ⚠ **여기서 `level_map` 에 얹지 않는다.** 이 함수는 검증된 `{키: 값}` 만
+    내놓고, `base` 자리에 얹는 것은 `build_level_map` 하나다 — 두 번 얹으면
+    어느 쪽이 이겼는지 산출물에서 알 수 없다(이 파일 머리말의 ★★★ 절과 같은
+    판단).
+    """
+    if value is None:
+        return MappingProxyType({})
+    if not isinstance(value, Mapping):
+        raise _design_capacity_rejected(
+            f"{DESIGN_CAPACITY_FIELD} 는 매핑이어야 합니다 (받은 값 {value!r})"
+        )
+    unknown = sorted(set(value) - _DESIGN_CAPACITY_KEYS)
+    if unknown:
+        raise _design_capacity_rejected(
+            f"모르는 키 {', '.join(unknown)} — 쓸 수 있는 키: "
+            f"{', '.join(sorted(_DESIGN_CAPACITY_KEYS))}"
+        )
+    resolved: dict[str, float] = {}
+    for key, raw in value.items():
+        if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+            raise _design_capacity_rejected(f"{key} 의 값이 수가 아닙니다: {raw!r}")
+        try:
+            number = float(raw)
+        except (TypeError, ValueError):
+            raise _design_capacity_rejected(f"{key} 의 값이 수가 아닙니다: {raw!r}") from None
+        if not number > 0:
+            raise _design_capacity_rejected(f"{key} 는 0보다 커야 합니다 (받은 값 {number!r})")
+        resolved[key] = number
+    return MappingProxyType(resolved)
+
+
+#: 시나리오 yaml 이 **운전 구성 선택**(ESS 운전 방법 · PV 잉여 배분 순서)을
+#: 고르는 **필드 이름** (R71/WP-6 · 오케 판정 `.orch/R71/WP-6.md` §2②).
+#:
+#: ## ★ 왜 대장 항목이 아니라 시나리오 필드인가
+#:
+#: 위 `DESIGN_CAPACITY_FIELD` 와 **같은 판단이다.** 이 둘은 「시장에서 관측한
+#: 불확실 값」이 아니라 **사업자가 고르는 구성**이고, 대장은 값(전제)의
+#: 소유자이지 구성 선택의 소유자가 아니다. 반대로 같은 개선 방안이 함께 쓰는
+#: 단가 둘(`benefit.cp_price`·`benefit.nwas_price`)은 **값**이라 대장에 이미
+#: 있고, 그것을 바꾸는 통로는 `assumption_overrides` 다 — 그 둘을 이 필드로
+#: 또 열면 통로가 둘이 되고 그때 어느 것이 이겼는지 산출물에서 알 수 없다.
+#:
+#: ⛔ **`ess_charge_source` 는 이 필드가 받지 않는다.** 지금 구성에서 「계통」을
+#: 고르면 `비-태양광 ESS 방전분이 총 역송량을 초과합니다` 로 거부된다
+#: (`.orch/R71/result_5.md` 실측) — 받는 키로 세우면 「적을 수 있다고 해 놓고
+#: 늘 거부한다」가 된다.
+OPERATION_OPTIONS_FIELD = "operation_options"
+
+#: `ValidationError.field` 용 **점으로 이은 경로**(NFR-303) —
+#: `_DESIGN_CAPACITY_FIELD_KEY` 와 같은 짝이다.
+_OPERATION_OPTIONS_FIELD_KEY = "operation.options"
+
+#: 받는 키 → **그 키가 받을 수 있는 값**.
+#:
+#: ⚠⚠ **값은 「열거 이름」이 아니라 「한국어 값」이다.** `"GRID_DISCHARGE"` 를
+#: 그대로 넘기면 러너 깊은 곳에서 `ValueError: tuple.index(x): x not in tuple`
+#: 로 터진다 — 3요소가 없는 오류이고 어느 칸이 틀렸는지도 말하지 않는다.
+#: 그래서 여기서 **값으로** 맞대어 본다.
+#:
+#: ⚠ **값 문면을 여기 베끼지 않는다** — 열거가 정본이고 그 `.value` 를 읽는다.
+#: 베끼면 `core/der/ess.py` 가 spec 문면을 다듬는 날 한쪽이 남는다.
+#: ⚠ `PVAllocationPriority.PRICE_BASED`(「가격 기반」)는 **뺀다** — 구현이 없어
+#: `core/der/pv.py::resolve_pv_allocation_priority()` 가 거부하는 갈래다(그
+#: 독스트링). 받을 수 있는 값으로 적으면 「적으라고 해 놓고 거부한다」가 된다.
+_OPERATION_OPTION_CHOICES: Mapping[str, tuple[str, ...]] = MappingProxyType({
+    "ess_operating_mode": tuple(mode.value for mode in ESSOperatingMode),
+    "pv_allocation_priority": tuple(
+        choice.value
+        for choice in PVAllocationPriority
+        if choice is not PVAllocationPriority.PRICE_BASED
+    ),
+})
+
+
+def _operation_options_rejected(reason: str) -> ValidationError:
+    """거부 하나 — **3요소를 갖춘다** (`NFR-303`).
+
+    `_design_capacity_rejected` 와 같은 판단으로 문면을 한 곳에만 둔다.
+    ★ **`action` 이 받을 수 있는 값을 «모두» 적는다** — 이 축의 값은 한국어
+    문면이라 사용자가 열거 이름(`GRID_DISCHARGE`)이나 비슷한 말(「계통방전」)을
+    적기 쉽고, 목록이 없으면 거부 문면이 *「틀렸다」* 로만 끝난다.
+    """
+    allowed = " / ".join(
+        f"{key}: {' · '.join(values)}" for key, values in _OPERATION_OPTION_CHOICES.items()
+    )
+    return ValidationError(
+        field=_OPERATION_OPTIONS_FIELD_KEY,
+        reason=reason,
+        action=(
+            f"{OPERATION_OPTIONS_FIELD} 에는 다음 값만 적으십시오 — {allowed}. "
+            "적지 않은 키는 종전 동작(러너 기본값)으로 돌아갑니다"
+        ),
+    )
+
+
+def resolve_operation_options(value: object | None) -> Mapping[str, str]:
+    """시나리오의 `operation_options` → {러너 인자 이름: 한국어 값}.
+
+    `None` 이 **「적지 않았다」**이며 그때 빈 매핑을 낸다 — 호출부
+    (`core/report/case_report.py`)는 빈 매핑을 「러너 기본값 그대로」로 읽어
+    두 인자에 `None` 을 넘긴다. `resolve_design_capacity` 와 같은 「미지정과
+    기본값은 다른 진술」 규약이다.
+
+    ## ★ 키 단위로 받는다 — all-or-nothing 이 아니다
+
+    둘 중 하나만 적어도 된다(예: 배분 순서만 「배터리 우선」으로 바꾸고 운전
+    방법은 배포 기본값 유지). 한 키가 빠졌다고 둘 다 되돌리면 *「배분만 바꿔
+    본다」* 같은 실험을 못 한다.
+
+    ⚠ **여기서 열거로 승격하지 않는다.** 승격·미구현 갈래 거부는
+    `core/der/pv.py::resolve_pv_allocation_priority()` 와 러너가 지고, 이
+    함수는 **문자열로** 넘긴다(`FR-105-AC5` 의 관례 — 케이스 그리드가 문자열로
+    값을 건넨다). 두 곳에서 승격하면 어느 쪽이 이겼는지 산출물에서 알 수 없다.
+    """
+    if value is None:
+        return MappingProxyType({})
+    if not isinstance(value, Mapping):
+        raise _operation_options_rejected(
+            f"{OPERATION_OPTIONS_FIELD} 는 매핑이어야 합니다 (받은 값 {value!r})"
+        )
+    unknown = sorted(str(key) for key in set(value) - set(_OPERATION_OPTION_CHOICES))
+    if unknown:
+        raise _operation_options_rejected(
+            f"모르는 키 {', '.join(unknown)} — 쓸 수 있는 키: "
+            f"{', '.join(sorted(_OPERATION_OPTION_CHOICES))}"
+        )
+    resolved: dict[str, str] = {}
+    for key, raw in value.items():
+        choices = _OPERATION_OPTION_CHOICES[key]
+        if not isinstance(raw, str) or raw not in choices:
+            raise _operation_options_rejected(
+                f"{key} 의 값 {raw!r} 은 받을 수 있는 값이 아닙니다 — 열거 이름이 아니라 "
+                f"{' · '.join(choices)} 중 하나를 적으십시오"
+            )
+        resolved[key] = raw
+    return MappingProxyType(resolved)
 
 
 def modelling_only_variables() -> tuple[str, ...]:
@@ -424,7 +721,10 @@ def _with_overridden_base(
 
 
 def build_level_map(
-    assumptions_path: Path, *, overrides: Mapping[str, Any] | None = None
+    assumptions_path: Path,
+    *,
+    overrides: Mapping[str, Any] | None = None,
+    design_capacity: Mapping[str, float] | None = None,
 ) -> Mapping[str, Mapping[str, float]]:
     """대장을 읽어 `run_single_case_e2e(level_map=...)` 에 넘길 수준표를 만든다.
 
@@ -434,11 +734,18 @@ def build_level_map(
     움직이지 않는 근거가 그 동일성이다. 얹히는 자리가 `base` 뿐인 사유와 축이
     아닌 키를 거부하지 않는 사유는 이 파일 머리말에 있다.
 
+    `design_capacity` 는 **이미 검증된** `_DESIGN_VARS` 변수 이름 → 한 호분
+    값이다(`resolve_design_capacity()`). `overrides` 와 자리가 다른 이유는
+    `_DESIGN_VARS` 가 `_LEDGER_VARS` 와 다른 루프(아래)를 도는 것과 같다 —
+    설계 변수는 대장 키가 없어 `대장 키 → 값` 매핑에 실을 수 없다. 없거나
+    비면 **종전과 같은 표**가 나온다(R71/WP-4).
+
     반환값은 전부 읽기 전용이다 — 케이스 그리드는 병렬로 돌고, 한 번의 변형이
     다른 케이스의 결과를 조용히 바꾼다 (NFR-205).
     """
     items = _index_by_key(assumptions_path)
     edited: Mapping[str, Any] = overrides or {}
+    design_edited: Mapping[str, float] = design_capacity or {}
     level_map: dict[str, Mapping[str, float]] = {}
 
     for var_name, ledger_key, scale in _LEDGER_VARS:
@@ -457,6 +764,16 @@ def build_level_map(
         level_map[var_name] = MappingProxyType(dict(levels))
 
     for var_name, _unit, _label, levels in _DESIGN_VARS:
-        level_map[var_name] = MappingProxyType(dict(levels))
+        # ★ **오버라이드는 `base` 한 자리에만 얹는다** — `low`·`high` 탐색
+        # 구간은 그대로 둔다(`.orch/R71/WP-4.md` §2-② · 이 파일 머리말 ⚠⚠).
+        # `_with_overridden_base` 를 그대로 재사용한다 — 스케일 `1.0` 인
+        # 이유는 `design_capacity` 값이 이미 케이스 변수와 같은 단위(kW·
+        # kWh)이기 때문이다(대장 오버라이드처럼 단위 환산이 필요 없다).
+        if var_name in design_edited:
+            level_map[var_name] = _with_overridden_base(
+                dict(levels), var_name, design_edited[var_name], 1.0
+            )
+        else:
+            level_map[var_name] = MappingProxyType(dict(levels))
 
     return MappingProxyType(level_map)

@@ -163,10 +163,15 @@ def test_the_group_heading_is_not_a_key_fragment(client: TestClient) -> None:
     **온전한 키가 아니라서** 위 검사가 못 본다 — 그런데 사람이 읽는
     `<legend>` 에 서면 화면은 여전히 변수명을 인쇄한다.
     """
-    corpus = human_text(client.get("/ui/settings").text)
+    corpus = _read_by_people(client.get("/ui/settings").text)
     heads = sorted({key.split(".")[0] for key in _keys()})
 
-    leaked = [head for head in heads if head in corpus]
+    # ⚠ **낱말 경계로 센다** — 조각 검사를 그대로 두면 `download`·`payload` 의
+    # `load` 처럼 **다른 낱말 안에 든 같은 글자**가 「묶음 머리가 인쇄됐다」로
+    # 세어진다. 묶음 머리가 `<legend>` 에 서면 그것은 **낱말 하나**다.
+    leaked = [
+        head for head in heads if re.search(rf"\b{re.escape(head)}\b", corpus)
+    ]
 
     assert not leaked, (
         f"묶음 머리에 키 조각이 남아 있다: {leaked} — 한국어 이름은 "
@@ -208,6 +213,21 @@ def test_the_applied_override_table_names_items_by_label(client: TestClient) -> 
 #: `^[a-z][a-z0-9]*(_[a-z0-9]+)+$` — 소문자와 밑줄로 이어 붙인 식별자.
 _VARIABLE_NAME = re.compile(r"^[a-z][a-z0-9]*(_[a-z0-9]+)+$")
 
+#: 출처 URL. ⚠⚠ **주소는 「인쇄된 변수명」이 아니다** (R65/WP-2c). R65 가 대장
+#: `load.ev.annual` 의 `source` 에 공표 자료의 주소를 세우자, 아래 두 검사가
+#: 그 주소 **안쪽**을 세기 시작했다 — 질의 이름 `atch_no` 가 변수명 꼴로
+#: 걸리고, 경로 조각 `download.do` 의 `load` 가 묶음 머리 `load` 로 걸렸다.
+#: 둘 다 **사람이 읽는 식별자가 아니라 주소의 일부**이며, 주소는 오히려
+#: 검토자가 원문을 찾아가는 재현 정보다.
+#: ⛔ **검사를 느슨하게 한 것이 아니다** — 모집단에서 주소만 덜어 낼 뿐이고,
+#: 라벨·본문·`aria-label` 은 그대로 전건 센다(아래 대조군이 그것을 잰다).
+_URL = re.compile(r"https?://\S+")
+
+
+def _read_by_people(text: str) -> str:
+    """사람이 읽는 자리의 글자 — **주소는 덜어 낸다**(위 `_URL` 의 ⚠⚠)."""
+    return _URL.sub(" ", human_text(text))
+
 
 def test_no_variable_name_shaped_token_is_printed_where_people_read(
     client: TestClient,
@@ -224,7 +244,7 @@ def test_no_variable_name_shaped_token_is_printed_where_people_read(
     ⇒ 모집단을 「대장이 아는 이름」으로 좁히지 않고 **꼴로** 잰다. 브라우저 검수가
     쓴 자와 같은 것이어야 그 실측(설정 화면 159건)과 이 검사가 같은 것을 센다.
     """
-    corpus = human_text(client.get("/ui/settings").text)
+    corpus = _read_by_people(client.get("/ui/settings").text)
     tokens = sorted(
         {
             token
@@ -236,3 +256,11 @@ def test_no_variable_name_shaped_token_is_printed_where_people_read(
     assert not tokens, (
         f"사람이 읽는 자리에 변수명 꼴 {len(tokens)}종이 남아 있다: {tokens}"
     )
+
+    # ★ 대조군 — 주소를 덜어 내도 **본문의 변수명은 그대로 잡히는가.**
+    planted = _read_by_people("<p>옥상 태양광 · azimuth_deg 를 씁니다</p>")
+    assert [
+        token
+        for token in re.split(r"[^A-Za-z0-9_.]+", planted)
+        if _VARIABLE_NAME.match(token)
+    ] == ["azimuth_deg"], "주소를 덜어 내면서 본문의 변수명까지 놓친다"

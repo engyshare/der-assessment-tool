@@ -84,7 +84,10 @@ import pytest
 import yaml  # type: ignore[import-untyped]
 
 from core.assumption.provider import AssumptionSet
+from core.casegrid.appliance_load import resolve_appliance_loads, with_ledger_defaults
+from core.casegrid.household_scale import ledger_household_count
 from core.casegrid.ledger_levels import required_scalar
+from core.casegrid.load_shift import DR_SHIFTABLE_SHARE_LEDGER_KEY
 from core.casegrid.models import COST_TAG_VARIABLE_OM, CostLine
 from core.casegrid.profiles import DailyShapes, load_daily_shapes
 from core.report.case_report import REC_PRICE_LEDGER_KEY, REC_WEIGHT_LEDGER_KEY
@@ -148,6 +151,64 @@ def report_rec_terms() -> tuple[float, float]:
     return (
         required_scalar(provider, REC_PRICE_LEDGER_KEY, note="REC 단가(검사용 재실행)"),
         required_scalar(provider, REC_WEIGHT_LEDGER_KEY, note="REC 가중치(검사용 재실행)"),
+    )
+
+
+def report_household_wiring() -> dict[str, object]:
+    """리포트가 쓰는 **단지 규모와 기기 부하** — 진입점을 다시 돌리는 검사가 쓴다
+    (R65/WP-2c · 사용자 요구 *「가구수를 20가구로 설정」*).
+
+    ## 왜 검사 쪽이 대장을 직접 읽는가
+
+    `build_case_report` 가 `load.household.count`(20) · `load.heatpump.annual`
+    (2,675) · `load.ev.annual`(2,784)을 대장에서 읽어
+    `run_single_case_e2e(household_count=…, extra_appliance_load_kwh=…,
+    appliance_season_shares=…)` 로 넘긴다. 「보고된 값으로 다시 돌려 본다」 형태의
+    검사가 이 셋을 넘기지 않으면 러너 기본값(`None` = 가구 한 호 · `0.0` = 기기
+    없음)이 쓰여 **한 호짜리 다른 사업**의 결론에 대고 재게 된다 —
+    `report_shapes()`·`report_rec_terms()`·`report_shift_share()` 가 형상·REC·
+    부하 이동에서 막는 것과 **같은 함정**이며,
+    이 저장소가 그 형태를 **일곱 번째**로 만난 자리다.
+
+    ⚠ 수(20 · 2,675 · 2,784)를 리터럴로 적지 않는다 — 대장이 정본이다.
+    ⚠ 시나리오가 이 값들을 적으면 그것이 이기므로(통로 둘 · 차례 하나), 이
+    함수는 **시나리오가 적지 않은 실행**의 배선이다 — 골든 셋이 그것이다.
+    """
+    provider = AssumptionSet.load_from_yaml(str(_ASSUMPTIONS))
+    loads = with_ledger_defaults(resolve_appliance_loads({}), provider)
+    return {
+        "household_count": ledger_household_count(provider),
+        "extra_appliance_load_kwh": loads.total_kwh,
+        # ⚠ **계절 몫도 같은 묶음이다** — 합계만 넘기면 재실행이 그 부하를 계절에
+        # 고르게 펴고, 리포트(겨울에 몰린 하루)와 다른 사업이 된다. 셋을 따로
+        # 넘기게 두면 셋 중 하나를 잊는 자리가 다시 생긴다.
+        # ★★ **`.season_shares` 가 아니라 `.blended_season_shares` 다**
+        # (R67/WP-N1) — `build_case_report` 가 러너로 넘기는 것이 그 속성이다.
+        # 여기서 적힌 몫을 그대로 넘기면 재실행이 **전기차 충전에 냉난방의
+        # 겨울 몫을 씌운** 사업을 재고, 그것이 이 함수가 막으려는 바로 그
+        # 함정(「한 호짜리 다른 사업의 결론에 대고 잰다」)의 여덟 번째 형태다.
+        "appliance_season_shares": loads.blended_season_shares,
+    }
+
+
+def report_shift_share() -> float:
+    """리포트가 쓰는 **부하 이동 비율**(%) — 진입점을 다시 돌리는 검사가 쓴다
+    (R64/WP-7 · 사용자 요구 2).
+
+    ## 왜 검사 쪽이 대장을 직접 읽는가
+
+    `build_case_report` 가 `load.dr_shiftable_share` 를 대장에서 읽어
+    `run_single_case_e2e(dr_shiftable_share_pct=…)` 로 넘긴다. 「보고된 값으로
+    다시 돌려 본다」 형태의 검사가 이것을 넘기지 않으면 러너 기본값(`0.0` =
+    옮기지 않는다)이 쓰여 **부하를 옮기지 않은 다른 사업**의 결론에 대고 재게
+    된다 — `report_shapes()`·`report_rec_terms()` 가 형상·REC 에서 막는 것과
+    **같은 함정**이며, 이 저장소가 그 형태를 여섯 번째로 만난 자리다.
+
+    ⚠ 수를 리터럴로 적지 않는다 — 대장이 정본이다.
+    """
+    provider = AssumptionSet.load_from_yaml(str(_ASSUMPTIONS))
+    return required_scalar(
+        provider, DR_SHIFTABLE_SHARE_LEDGER_KEY, note="부하 이동 비율(검사용 재실행)"
     )
 
 

@@ -70,6 +70,11 @@ _ASSUMPTIONS = Path(__file__).resolve().parents[2] / "docs" / "assumptions.yaml"
 #: 47ⓐ 가 세우는 **자리 둘** — 값은 비어 있어야 한다.
 _HOUSEHOLD_KEYS = ("load.household.count", "load.household.type_mix")
 
+#: 그중 **사업 주관 측이 값을 정해 준** 것 (R65 · 사용자 요구 원문
+#: *「가구수를 20가구로 설정」*, 2026-09-07). ⚠ 저장소가 고른 수가 아니므로
+#: §13.0.2 자기충족이 아니고, 그래서 `blocked` 를 벗었다.
+_ANSWERED_KEYS = ("load.household.count",)
+
 
 def _raw_items() -> list[dict]:
     """대장 파일이 든 항목 **전건** — `blocked` 를 포함한다."""
@@ -221,19 +226,31 @@ def test_every_ledger_group_has_a_label_and_none_is_stale() -> None:
 
 
 def test_the_household_count_and_type_stand_in_the_ledger_without_a_made_up_value() -> None:
-    """★ **47ⓐ — 가구 수·유형이 대장에 자리를 갖는다. 값은 비어 있다.**
+    """★ **47ⓐ — 가구 수·유형이 대장에 자리를 갖는다. 값은 «회신»으로만 찬다.**
 
     검증 모드 1단계가 *「가구 수와 가구 유형을 적는 자리가 이 저장소에 **자료형
     수준으로** 없다」* 로 칸을 비워 두었다(`app/services/verify_steps.py` 의
-    갭 사유 · 브라우저 실측 `.orch/R63/result_V2.md` §3). 이 라운드가 하는 것은
-    **자리를 세우는 것**이고, 값을 채우는 것이 아니다.
+    갭 사유 · 브라우저 실측 `.orch/R63/result_V2.md` §3). R64/WP-1 이 하는 것은
+    **자리를 세우는 것**이었고, 값을 채우는 것이 아니었다.
 
-    ⚠⚠ **값을 지어내지 않는다.** 실증단지 가구 수를 우리가 정하면 그 수로 돌린
-    계산을 우리가 검증하게 된다 — `track: blocked` 가 막는 그 형태다
+    ⚠⚠ **값을 지어내지 않는다.** 실증단지 가구 수를 **우리가** 정하면 그 수로
+    돌린 계산을 우리가 검증하게 된다 — `track: blocked` 가 막는 그 형태다
     (`docs/assumptions.yaml` 머리말 · `scripts/check_assumptions.py` 검사 4).
-    ⇒ `provider` 가 건너뛰고 화면은 「없다」를 그대로 유지한다.
 
-    ★ **자리가 서면 다음 라운드가 그 칸을 채운다** — 그것이 이 항목의 값이다.
+    ## ★★ R65 — **자리 하나가 찼다. 금지가 풀린 것이 아니다**
+
+    사용자 요구 원문 *「수요 및 공급 / 가구수를 20가구로 설정」*(2026-09-07)이
+    `load.household.count` 에 값을 주었다. **사업 계획이 정하는 사실을 사업
+    주관 측이 정해 준 것**이므로 저장소가 고른 수가 아니고, 그래서 위 금지에
+    걸리지 않는다 — 금지는 *「우리가 고르지 마라」* 였지 *「대장에 값이 있으면
+    안 된다」* 가 아니었다(그 항목의 `derivation_method` 가 같은 문장을 적는다).
+
+    ⇒ 그래서 이 시험은 이제 **두 갈래를 함께** 잰다:
+      · 회신이 온 칸(`_ANSWERED_KEYS`) — 값이 서고 `provider` 를 지난다
+      · 아직 안 온 칸 — `blocked` 이고 값이 `None` 이며 `provider` 가 건너뛴다
+    ⛔ **자리 자체는 둘 다 있어야 한다** — 그 성질이 이 시험의 본론이고 R64 와
+    같다. ⚠ `load.household.type_mix` 는 여전히 비어 있으며, **조사로
+    대신 채우지 않는다**는 판단도 그대로다(그 항목의 ★★ 절).
     """
     items = {str(item.get("key")): item for item in _raw_items()}
 
@@ -244,18 +261,39 @@ def test_the_household_count_and_type_stand_in_the_ledger_without_a_made_up_valu
     )
 
     for key in _HOUSEHOLD_KEYS:
+        assert _label_of(items[key]), f"{key} 에 한국어 라벨이 없다"
+
+    still_blocked = [key for key in _HOUSEHOLD_KEYS if key not in _ANSWERED_KEYS]
+    assert still_blocked, (
+        "가구 수·유형 두 자리가 다 찼다 — 그러면 이 시험의 「지어내지 않는다」 "
+        "갈래가 0회 순회로 통과한다. 실물이 그렇게 됐으면 그 사실을 적고 "
+        "`_ANSWERED_KEYS` 를 고칠 것"
+    )
+    for key in still_blocked:
         item = items[key]
         assert item.get("track") == "blocked", (
-            f"{key} 의 갈래가 `blocked` 가 아니다 — 실측이 없는데 값을 갖는다"
+            f"{key} 의 갈래가 `blocked` 가 아니다 — 실측도 회신도 없는데 값을 갖는다"
         )
         assert item.get("value") is None, (
-            f"{key} 에 값이 채워져 있다 — 지어낸 가구 수로 우리 계산을 검증하게 된다"
+            f"{key} 에 값이 채워져 있다 — 지어낸 값으로 우리 계산을 검증하게 된다"
         )
-        assert _label_of(item), f"{key} 에 한국어 라벨이 없다"
+
+    for key in _ANSWERED_KEYS:
+        item = items[key]
+        assert item.get("track") != "blocked", (
+            f"{key} 는 회신이 온 칸인데 아직 `blocked` 다 — 값이 있는데 "
+            "`provider` 가 건너뛰면 화면이 「없다」를 그린다"
+        )
+        assert item.get("value") is not None, f"{key} 에 값이 없다"
 
     loaded = AssumptionSet.load_from_yaml(str(_ASSUMPTIONS)).items()
-    leaked = [key for key in _HOUSEHOLD_KEYS if key in loaded]
+    leaked = [key for key in still_blocked if key in loaded]
     assert not leaked, (
         f"{leaked} 가 provider 를 지나 실행 경로에 실렸다 — `blocked` 는 "
         "건너뛰어야 하고, 실리면 화면이 「없다」 대신 빈 값을 그린다"
+    )
+    missing = [key for key in _ANSWERED_KEYS if key not in loaded]
+    assert not missing, (
+        f"{missing} 가 provider 를 지나지 못했다 — 값이 있는데 실행 경로가 "
+        "그것을 못 읽으면 20호 실행이 조용히 한 호로 돈다"
     )
