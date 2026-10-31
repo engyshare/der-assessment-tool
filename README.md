@@ -31,19 +31,6 @@
 | [`rslt/task-분산특구-경제성평가.md`](rslt/) | Phase 1 작업 목록 — 상위 17 / 하위 150 |
 | [`docs/domain-rules.md`](docs/domain-rules.md) | 분산자원 경제성 평가 원칙 (편익 중복 계상·기준선·시간 처리·물리 정합성) |
 | [`docs/evidence-standard.md`](docs/evidence-standard.md) | 근거 표기 기준 (신뢰도 3단계·부기 항목 7종) |
-| [`docs/traceability.md`](docs/traceability.md) | 수용기준 ↔ 검증 항목 매핑표 — **자동 생성, 수동 편집 금지** |
-
-## 검사 실행
-
-```bash
-pip install pyyaml
-
-python scripts/check_source_rules.py     # 규칙 문서 판본 대조
-python scripts/gen_traceability.py       # 매핑표 생성 + 미매핑 검사
-python scripts/check_task_mapping.py     # 작업 목록 인용 검사
-```
-
-`check_source_rules.py`는 규칙 문서의 원본이 저장소 밖(로컬 노트)에 있을 때 `DER_VAULT_ROOT` 환경변수 또는 `--vault`로 그 위치를 받습니다. 지정하지 않으면 저장소 사본으로 대조하며, 사본은 원본과 바이트 동일해야 합니다.
 
 ## 리포트를 파일로 뽑는 법 — **입구는 둘이고, 내용의 정본은 하나다**
 
