@@ -1,4 +1,4 @@
-# 진행 상태 — 2026-09-18 (**R71 진행 중** · WP-1 이 전기차 충전손실을 별도 대장 항목으로 세워 결론축이 움직였다. 결론축 무보조 `npv` **−404,041,856원** — ⚠⚠ **옛 수(−393,481,396 · −360,695,500 · −323,257,263 등)를 인용하지 마라**)
+# 진행 상태 — 2026-11-01 (**R72 완료** · 불필요한 코드를 걷어냈다 — 게이트 30종 · 민감도 분석 · 미도달 모듈 27개. 결론축 **불변** — 무보조 `npv` **−404,041,856원** — ⚠⚠ **옛 수(−393,481,396 · −360,695,500 · −323,257,263 등)를 인용하지 마라**)
 
 > ⚠⚠ **2026-09-05 R61 정정 — 이 제목이 R52~R60 아홉 라운드 동안 「R51 · −12,591,162원 · 128.5%」로 서 있었다.** 파일 첫 줄이 세 판 낡아 있었고, 그것이 이 파일에서 가장 먼저 읽히는 줄이다. **제목은 라운드를 닫을 때 함께 고친다.**
 
@@ -123,40 +123,35 @@
 
 ## 지금 할 일 (우선순위 순)
 
-> # ▶ 2026-09-18 **R71 «진행 중» — 종료 블록 아님 (오케 `cl1` → `cl5` 인계 · 종료 예정 20:45 KST)**
+> # ⏹ 2026-11-01 **R72 완료 — 불필요한 코드를 걷어냈다(게이트 30종 · 민감도 분석 · 미도달 모듈 27개). 결론축 불변**
 >
-> ① **결론축 — 움직였다.** WP-1(전기차 충전손실 10% 를 별도 대장 항목으로)이 세 골든
->   모두 **−10,560,460원** 움직였다 — 무보조 **−404,041,856** · 보조20 **−363,841,856** ·
->   보조80 **−243,241,856**(payback 셋 다 `.inf` 그대로).
->   ⚠⚠ **옛 수(−393,481,396 · −360,695,500 등)를 인용하지 마라.**
->   WP-2·WP-4 는 축을 **안** 움직였다(골든 원소 하나까지 불변).
-> ★★ **축이 바뀌었다**(사용자 판정 2026-09-18 · 정본 `docs/decisions-2026-09-18-R71.md`) —
->   *「«어떻게 개선할 수 있는가»가 중요하고 정교한 «분석»은 중요성이 떨어진다」*.
->   ⇒ **§7 후보군 엔진은 1순위에서 내렸다.**
-> ② 이 라운드가 **연** 것 —
->   ⓐ ★ **「현 상황 + 개선 방안별 기대효과」 도구가 섰다**(`scripts/improvement_effects.py`
->     · 방안 대장 `docs/improvements.yaml`). **실측·조사·판정과 남은 조사 목록은
->     `todo-개선방안조사.md` 가 갖는다 — 다음 세션은 그 파일부터 읽어라.**
->   ⓑ ⚠⚠ **`scripts/improvement_effects.py` 가 정확히 500/500 이다** — 더하는 WP 는
->     **먼저 쪼갠다.** ⛔ 주석을 지워 자리를 만들지 마라. `seasonal_dispatch.py` 도 같다.
->   ⓒ **「검증 상태 축」은 부기를 늘려서 못 연다** — 「다음에 집을 것」 ④가 갖는다.
-> ③ **새로** 밟은 함정 셋 — **전문은 「함정」 절 머리**(워커를 부리다 밟은 것 셋).
-> ④ 착수 자리 — **`todo-개선방안조사.md`** 와 「다음에 집을 것」 절.
->   ⚠ **1순위는 더 이상 §7 이 아니다**(위 ★★).
->   ⚠⚠ **미완이 `git stash` 에 있다** — `stash@{0}` *「R71/WP-12 미완 —
->   improvement_effects.py 쪼개기 도중 중단」*. 지시문은 `.orch/R71/WP-12.md`
->   (쪼개기 + **보조율 방안 넷**). **먼저 쪼개고 바이트 대조한 뒤 보조율을 넣는 순서**다.
->   ⛔ 이 기계에만 있다 — 다른 클론에는 없다.
-> ⑤ 푸시·CI — 미푸시는 `git log --oneline origin/r64-demand-supply..HEAD | wc -l` 로
->   **센다**. 확인은 `gh run list --branch r64-demand-supply`. PR **#31**(DRAFT).
-> ⑥ 전문 — `status-history.md` **R71 블록**(WP 표 · 막혀서 멈춘 자리 · 게이트 실측 ·
->   자리 운영 · 함정 전문).
-
-> # ⏹ 2026-09-09 **R68 완료 — 검증 리포트가 「무엇을 답하는 문서」가 됐다**
->
-> 전문은 `status-history.md` R68 블록. 결론축은 **위 R71 블록 ①**을 봐라.
-> ⚠⚠ **이 블록을 지우지 마라** — 마지막 `⏹` 한 판은 **검사가 심을 자리**다
-> (사유는 「함정」 절 머리).
+> ① 결론축 — **안 움직였다.** 무보조 `npv` **−404,041,856** · 보조20 **−363,841,856** · 보조80 **−243,241,856**
+>   (payback 셋 다 `.inf`). ⚠⚠ 옛 수(「한 줄 요약」 절의 목록)를 인용하지 마라.
+> ② 이 라운드가 **연** 것 (판정 정본 `docs/decisions-2026-11-01-R72.md`) —
+>   ⓐ 리포트에서 **민감도 절이 사라졌다** — 본문 5.1·5.2 · 붙임 2 는 빈 번호로 두었다(다시 매길지 미정 · 판정 11).
+>     대장 반영 증거는 `CaseReport.ledger_inputs`(실제로 읽힌 대장 키).
+>   ⓑ 미반영 대장 축은 이제 **측정이 아니라 선언 목록**(`core/report/case_influences.py::DEAD_AXES`)이다 —
+>     그 축을 계산에 연결하는 WP 는 목록에서 손으로 빼야 한다.
+>   ⓒ ★ **「라운드는 PR 로 닫는다」(2026-09-04 사용자 판정)의 근거였던 게이트 셋(M1 변경분 커버리지 ·
+>     M2 시험 동반 · M3 커밋 순서)이 WP-2 로 사라졌다.** PR 경로를 유지할지는 사용자 판정 몫이다.
+>     `r72-slim` 에는 PR 이 없다(`r64-demand-supply` 의 PR #31 DRAFT 위에 얹힌 브랜치).
+>   ⓓ 남긴 잔재(판정 12·16) — `ConstraintDecl`(배포 코드 사용처 0) · `narrative.py` 미사용 상수 ·
+>     「5.1 영향도」 주석 · `.github/CODEOWNERS` 의 지운 디렉터리 줄 · DV-4 증명 시험 경로.
+>   ⓔ 로컬 전용 기존 결함(착수 커밋에서도 실패 · 판정 8) — `mypy` unused-ignore 6건(yaml 스텁이 로컬에만 있다) ·
+>     웹 시험 4건(`test_settings_labels.py` 3 · `test_input_source_column.py` 의 옛 npv 리터럴 1).
+> ③ **새로** 밟은 함정 —
+>   ⓐ `tests` 워크플로는 `main` 푸시·PR·수동 실행에서만 돈다 — **작업 브랜치 푸시로는 안 돈다.**
+>     `gh workflow run tests.yml --ref <브랜치>` 로 걸고 `gh run list --branch <브랜치>` 로 읽는다.
+>   ⓑ CI 는 `mypy>=1.10`·`pip-audit` 대상을 고정 없이 받는다 — **코드를 안 바꿔도 날이 바뀌면 빨간불**이 난다
+>     (R72: `setuptools` 새 권고 · `mypy 2.4.1`). 재현: `uvx --from mypy==<판> mypy --python-executable ./.venv/Scripts/python.exe`.
+>   ⓒ 워커가 「지워라」를 하위호환 별칭·늘 0인 필드로 남기는 우회를 했다 — 검수에서 새 이름이 아니라
+>     **남은 옛 이름**(`git grep`)과 **늘 기본값인 필드**를 본다.
+> ④ 착수 자리 — R71 이 남긴 그대로: **`todo-개선방안조사.md`** 와 「다음에 집을 것」 절.
+>   ⚠⚠ 미완이 `git stash@{0}` 에 있다(R71/WP-12 — `scripts/improvement_effects.py` 쪼개기 · 지시문 `.orch/R71/WP-12.md` ·
+>   이 기계에만 있다). 그 파일은 코드 줄 상한에 붙어 있다 — 더하는 WP 는 먼저 쪼갠다(`check_file_size.py --code-strict` 로 센다).
+> ⑤ 푸시·CI — 브랜치 `r72-slim`. 미푸시는 `git log --oneline origin/r72-slim..HEAD | wc -l` 로 센다.
+>   확인은 `gh run list --branch r72-slim` — `tests` 는 `workflow_dispatch` 실행을 본다.
+> ⑥ 전문 — `status-history.md` **R72 블록**(WP 표 · 워커가 어긋난 것 · 게이트 실측 · 자리 운영). R71 경위는 그 아래 R71 블록.
 
 ---
 
@@ -673,51 +668,28 @@ P2~P4는 **agy 조사**를 지시받았다(조사·채택·독립 검증은 미�
 
 ## 게이트 — 라운드를 닫기 전에 돌리는 것
 
-> ★ **인터프리터를 먼저 확인한다.** 저장소 `.venv` 와 `C:\Python313` 에는 `pytest`
-> 조차 없다. 의존성이 있는 것은 `~/miniconda3/python.exe` 이고 `lint-imports` 는
-> `~/miniconda3/Scripts/` 에 있다. **`PYTHONUTF8=1` 을 켠다** — 켜지 않으면 서브프로세스
-> 출력을 cp949 로 디코드하다 6건이 로컬에서만 빨간불이 된다(R24 실측).
+> ★ **인터프리터는 저장소 `.venv` 하나다**(`CLAUDE.md`). **`PYTHONUTF8=1` 을 켠다.**
+> ⚠ **R72/WP-2 가 작업 절차 감시 게이트 30종을 지웠다**(`check_status_round_blocks`·`check_commit_order`·
+> `check_test_accompaniment`·`gen_traceability`·`check_task_mapping` 등) — 남은 것은 아래뿐이다.
+> 판정 근거 `docs/decisions-2026-11-01-R72.md` 1항.
 
 ```bash
-PY=~/miniconda3/python.exe
-PYTHONUTF8=1 $PY -m pytest -q                                   # rc=0. 2분 초과 — 배경 실행
-PYTHONUTF8=1 $PY -m ruff check core tests scripts app infra web # --fix 는 마지막에
-PYTHONUTF8=1 $PY -m mypy                                        # 127파일 (R53 실측)
-PYTHONUTF8=1 ~/miniconda3/Scripts/lint-imports.exe              # 4 kept 0 broken
-#   ⚠ 이것도 PYTHONUTF8 이 필요하다 (2026-08-17 실측). 켜지 않으면
-#   `'cp949' codec can't decode byte 0xe2` 로 rc=1 이 나고, 그것은 계약 위반이
-#   아니라 **자기 배너를 못 읽은 것**이다 — 위 ★ 문단이 pytest 에만 해당하는
-#   줄로 읽혀 이 줄만 맨몸으로 남아 있었다
-PYTHONUTF8=1 $PY scripts/gen_traceability.py    # rc=1 이 정상(미매핑 10). ★ 부수효과로 파일을 다시 만든다
-git diff --stat docs/traceability.md            # ← 커밋 전 이것이 반영돼야 CI 가 초록불이다
-PYTHONUTF8=1 $PY scripts/check_task_mapping.py  # rc=0 이어야 한다 — CI 차단이다
-for g in check_marker_substance check_hardcoded_params check_source_rules          check_partition_assignment check_disclosure check_assumptions          check_precommit_installed check_unread_extension_points          check_docstring_references check_status_round_blocks; do PYTHONUTF8=1 $PY scripts/$g.py; done
+PY=./.venv/Scripts/python.exe
+PYTHONUTF8=1 $PY scripts/verify_ladder.py check --deep          # 결론축 L0~L6 · 14초
+PYTHONUTF8=1 $PY -m pytest tests/golden -p no:cacheprovider     # 골든 대조
+PYTHONUTF8=1 $PY -m ruff check core tests scripts app infra web tests_e2e
+PYTHONUTF8=1 $PY -m mypy                                        # ⚠ 로컬 전용 unused-ignore 6건은 기존 결함(R72)
+PYTHONUTF8=1 ./.venv/Scripts/lint-imports.exe                   # 4 kept 0 broken
+for g in check_hardcoded_params check_disclosure check_assumptions check_unread_extension_points; do PYTHONUTF8=1 $PY scripts/$g.py; done
 PYTHONUTF8=1 $PY scripts/check_file_size.py --code-strict
-for f in scripts/negtest_*.py; do PYTHONUTF8=1 $PY "$f"; done   # 16종(R59 에 +1). 배경 실행
-#   ⚠ 수를 박지 말고 세라 — `ls scripts/negtest_*.py | wc -l`
-PYTHONUTF8=1 ~/miniconda3/envs/r31py311/python.exe -m pytest -q # CI 는 3.11 이다
+for f in scripts/negtest_*.py; do PYTHONUTF8=1 $PY "$f"; done   # 수는 세라 — ls scripts/negtest_*.py | wc -l
+#   ⚠ 넓은 pytest 는 CI 가 돈다(`gh workflow run tests.yml --ref <브랜치>`) — 로컬 전건은 그 중복이다
 ```
 
-**커밋 뒤에만 되는 것 셋**: `check_coverage_inputs` · `check_test_accompaniment` ·
-★ `check_commit_order`(R59 신설)는 기준 ref 를 요구한다 — `--base HEAD~2`.
-커밋 전에는 변경 0건으로 보여 rc=2 이며 **그것이 옳다**(0건을 통과로 읽지 않는다).
-
-> ### ★ `check_commit_order` 의 종료 코드는 다른 게이트와 다르다 (R59 신설 · `NFR-105-M3`)
->
-> 조항이 *「위반 시 **경고**(차단 아님, 스쿼시 병합 등 예외 존재)」* 라고 못 박으므로
-> **위반이 있어도 `rc=0`** 이다. **`rc=2` 는 「판정 불가」**(기준 ref 없음 · 범위에
-> 커밋이 하나뿐)이며 **그것을 통과로 읽지 않는다.**
-> ⚠ 그래서 **`rc` 만 보면 위반을 못 본다 — 출력의 `::warning::` 줄을 읽어라.**
-> ⚠ 감지 능력은 `scripts/negtest_commit_order.py` 가 잰다(음성 1 + 양성 2 + 경계 2).
-> ⚠ **CI 에서는 PR 일 때만 판정된다** — 그래서 **라운드를 PR 로 닫는다**(아래
-> ★★★ 절 · 2026-09-04 사용자 판정). 직접 푸시 경로에서는 여전히 「미수행」이다.
-⚠ **`check_test_accompaniment` 는 라운드를 닫기 전에 반드시 한 번 돌린다** —
-R42 가 여기서 한 건(`core/model/parameters.py`)을 잡혀 커밋을 하나 더 했고,
-**R43 도 두 건(`narrative.py`·`unreflected.py`)을 잡혀 넷째 커밋을 했다.**
-라운드 전체를 볼 때는 `--base <라운드 시작 ref>` 가 맞다(R43 은 `c4ce0e5`).
-★ **R53 은 `--base origin/main`** 으로 돌렸다 — 그것이 **CI 와 같은 기준**이다.
-
 > ### ★★★ **라운드는 PR 로 닫는다 — 직접 푸시로 닫지 않는다** (2026-09-04 사용자 판정 · R60 실측)
+>
+> ⚠ **R72 주 — 아래가 말하는 게이트 셋(M1 변경분 커버리지 · M2 시험 동반 · M3 커밋 순서)은 R72/WP-2 로 지워졌다.**
+> 이 절차를 유지할지는 사용자 판정 몫이다(「지금 할 일」 R72 블록 ②ⓒ). 판정이 날 때까지 본문은 고치지 않는다.
 >
 > 게이트 셋(`NFR-105-M1` 변경분 커버리지 · `M2` 테스트 동반 · `M3` 커밋 순서)은
 > `.github/workflows/tests.yml` 에서 **`if: github.event_name == 'pull_request'`**

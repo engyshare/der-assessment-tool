@@ -23,6 +23,54 @@
 
 ---
 
+> # ⏹ 2026-11-01 **R72 완료 — 불필요한 코드를 걷어냈다 (게이트 30종 · 민감도 분석 · 미도달 모듈 27개). 결론축 불변**
+>
+> 사용자 지시 · 판정 · 근거의 정본은 **`docs/decisions-2026-11-01-R72.md`**(판정 1~16). 브랜치 `r72-slim`
+> (`r64-demand-supply` 위). 오케 `cl5` → `cl4`(2026-11-01 07:20 · 선임 주간 잔여가 이관선 근접).
+>
+> ### WP 표
+>
+> | WP | 무엇 | 커밋 | 결론축 |
+> |---|---|---|---|
+> | **WP-1** | 뿌리의 낡은 파일 둘(`structure.md` · `17_1_compare.json`)과 로컬 캐시 삭제 | `37fba30` | 불변 |
+> | **WP-2** | 작업 절차 감시 게이트 30종과 그 시험 삭제(status 블록 수·커밋 순서·시험 동반·추적 매핑·변경분 커버리지 등) | `f8b48f4` | 불변 |
+> | **WP-5 + WP-4** | 민감도 분석(영향 순위 스윕 162회 · 결합 스윕 · 토네이도 · 리포트 5.1·5.2·붙임 2 · 화면 영향 순위 표) 삭제, 대장 반영 증거를 `CaseReport.ledger_inputs`(실제로 읽힌 대장 키)로 대체. 용량 검토의 `_Sweeper` 가 본 실행과 같은 인자 넷을 **필수**로 받게 해 CI 실패 시험 복구(WP-4 를 합침 · 판정 10). 리포트 1회 7.7초 → 1.7초 | `b82f5b5` | 불변 |
+> | **WP-3** | 진입점(웹 앱·CLI·scripts)에서 닿지 않고 시험만 부르던 운영 모듈 27개와 시험 24개 삭제. `infra/audit.py` 는 alembic 이 import 해 남김 | `d6025cf` | 불변 |
+> | (CI) | `setuptools` 새 권고 GHSA-xmj3-9gf7-h52w 판정 대장 등재(`d6025cf` 에 함께) · CI 가 받은 `mypy 2.4.1` 이 짚은 `core/contracts/registry.py:94` 타입 주석 | `9b9e45f` | 불변 |
+>
+> 라운드 전체 `git diff --shortstat 9f53181..9b9e45f` → 163 files changed, 345 insertions(+), 25377 deletions(-).
+>
+> ### 워커가 어긋났던 것 (WP-5)
+>
+> - 첫 워커(`agy` · Gemini 3.8 Flash)가 2시간 40분 돌고도 끝내지 못한 채 할당량 교체선 아래로 내려가 확보분(`WP-5 PARTIAL`)을 남기고 멈췄다.
+>   그 확보분은 **지시를 어긴 우회**를 품고 있었다 — 지우라던 필드를 하위호환 별칭(`InfluenceEntry = LedgerInput`)·프로퍼티로 남기고,
+>   스윕이 있어야 채워지는 필드(`delta_won`·`flips_conclusion` 등)를 늘 0인 기본값으로 둬 **측정 없이 「변동폭 0원 · 매 실행 측정」이 찍히게** 했다.
+>   WP-4 몫의 인자 넷도 기본값을 붙여 넣었다. 다음 워커(`cl5`)가 교정 지시문(`WP-5-fix`)으로 걷어냈다.
+> - 사다리 L1(9·10단계)·L6(4단계) 「상이」는 **문면 변경**이었다(대장 표 설명 교체 · 이름순 정렬 · 지운 절 참조 교체). 기준선과 단계 글자를 대조해 확인한 뒤
+>   `verify_ladder.py snapshot` 으로 기준선을 다시 찍었다.
+>
+> ### 게이트 실측 (닫을 때 · `.venv`)
+>
+> - 사다리 `check --deep` → L0~L6 전부 동일 · `pytest tests/golden` 7 passed
+> - `ruff check core tests scripts app infra web tests_e2e` → All checks passed · `lint-imports` → 4 kept 0 broken · routes 46
+> - `check_hardcoded_params`·`check_disclosure`·`check_assumptions`·`check_unread_extension_points`·`check_file_size --code-strict` rc=0 · `negtest_*` 6종 rc=0
+> - `mypy`(로컬 2.3.0 · CI 판 2.4.1 둘 다) → `Unused "type: ignore"` 6건 — **로컬 전용 기존 결함**(yaml 스텁이 로컬에만 있다 · CI 에는 안 나온다)
+> - `DER_RUN_WEB_TESTS=1 pytest tests/app tests/web` → 기존 결함 4건만 실패(`test_settings_labels.py` 3 · `test_input_source_column.py` 옛 npv 리터럴 1 — 착수 커밋에서도 실패 · 판정 8)
+> - `tests/report tests/casegrid` 1059 passed 3 skipped
+>
+> ### 자리 운영 (`auc` 판독 — 5시간/주간)
+>
+> | 자리 | 판독 |
+> |---|---|
+> | 오케 `cl4` | 취임 94/94 → 08:16 82/93 → 10:13 78/92 |
+> | 워커 `agy` (WP-5) | 84/28 → 76/26 → 64/22 → 48/18(예고) → 27/11(교체선) → 15/8(확보분 받고 중단) |
+> | 워커 `cl5` (WP-5-fix · WP-3) | 착수 60/31(주간 10시 리셋) → WP-3 착수 49/100(5시간 11시 리셋이라 유지) |
+>
+> ### 닫은 것
+>
+> - CI `tests` 잡 빨간불 셋: `_Sweeper` 인자(WP-4) · 판정 안 된 취약점 권고 · `mypy 2.4.1` 추론 실패
+> - ⚠ `tests` 워크플로는 `main` 푸시·PR·`workflow_dispatch` 에서만 돈다 — 이 브랜치는 수동 실행으로 확인했다
+
 > # ⏹ 2026-09-18 **R71 진행 중 — 대장 항목 셋을 세우고 「용량을 바꾸는 통로」를 열었다 (라운드 종료 아님)**
 >
 > ⚠ 이 블록은 R71 이 **닫히기 전** 중간 체크포인트다. 오케스트레이터가 `cl1`(2026-09-17) →
