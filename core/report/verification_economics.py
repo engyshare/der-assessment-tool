@@ -20,7 +20,7 @@
 
 ## ⛔ 대장 전건 표를 주제별로 쪼개지 않는다
 
-이 단계가 *「1 의 나머지」* 이므로 전건 표(ⓑ)와 `uncertain_influences` 표(ⓒ)가
+이 단계가 *「1 의 나머지」* 이므로 전건 표(ⓑ)와 `ledger_inputs` 표(ⓒ)가
 **여기 한 덩어리로** 온다. 주제별로 쪼개 여러 단계에 흩으면 어느 단계에도 안
 실리는 접두가 생기고 **행이 조용히 사라진다** — 앞머리의 부분 표는 그 전건에서
 *「이 단계가 새로 세우는 것」* 만 골라 앞세운 것이며, **행을 짓지 않는다.**
@@ -169,14 +169,14 @@ def influence_lines(report: CaseReport) -> list[str]:
         "1단계 · 2단계 · 3단계가 이미 썼고(경제성 입력을 물리 검증 뒤에 두는 "
         "것이 이 배열의 뜻이다) 요금·REC 단가·할인율·지원율은 5~10단계가 "
         "받는다. 아래는 파이프라인이 "
-        "**실제로 읽어 결론에 반영한** 대장 키만 골라낸 것이다(5.1 영향도 분석이 "
-        "대장과 결선된 것으로 확인한 인자 — `report.uncertain_influences`):",
+        "**실제로 읽어 결론에 반영한** 대장 키만 골라낸 것이다"
+        "(이 실행이 실제로 읽은 대장 키 — `report.ledger_inputs`):",
         "",
         "| 변수 | 대장 키 | 사용값 | 단위 |",
         "|---|---|---|---|",
         *(
             f"| {entry.variable} | `{entry.ledger_key}` | {_num(entry.used_value)} "
             f"| {entry.value_unit or '—'} |"
-            for entry in report.uncertain_influences
+            for entry in report.ledger_inputs
         ),
     ]

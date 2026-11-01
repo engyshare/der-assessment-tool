@@ -34,13 +34,11 @@ import yaml
 
 from core.assumption.provider import AssumptionSet
 from core.casegrid.e2e_runner import run_single_case_e2e
-from core.casegrid.ledger_levels import build_level_map, ledger_unit_scales
 from core.report.case_report import (
     CONCLUSION_METRIC,
     HEADLINE_METRIC,
     PLAN_VARIANT,
     _overrides,
-    _scheme_for,
     build_case_report,
 )
 from tests.report.conftest import (
@@ -70,16 +68,12 @@ def test_one_call_produces_every_section_the_reviewer_needs() -> None:
     """
     report = _report()
 
-    assert report.influences, "영향도 순위가 비어 있다 (FR-1002-AC1)"
-    deltas = [entry.delta_won for entry in report.influences]
-    assert deltas == sorted(deltas, reverse=True) or report.flipping, (
-        "영향도 순위가 내림차순이 아니다"
-    )
+    assert report.ledger_inputs, "대장 입력이 비어 있다"
     assert report.formulas, "산식이 비어 있다 (FR-1001-AC2)"
     assert report.assumptions, "가정 부록이 비어 있다 (FR-1002-AC6)"
     assert report.manifest_hash, "매니페스트가 없다 (FR-1005-AC1)"
     # `AC3` 은 인자마다 사용값·단위·기준연도·출처·신뢰도를 **함께** 요구한다.
-    for entry in report.influences:
+    for entry in report.ledger_inputs:
         assert entry.confidence, f"{entry.variable}: 신뢰도 칸이 비었다"
         assert entry.source, f"{entry.variable}: 출처 칸이 비었다"
 
@@ -104,196 +98,6 @@ def test_conclusion_reads_the_supported_variant_not_the_case_metric() -> None:
     assert subsidised.metrics["initial_outlay_won"] < plain.metrics[
         "initial_outlay_won"
     ], "지원을 받았는데 초기지출이 줄지 않았다"
-
-
-@pytest.mark.req("FR-1002-AC2", "FR-607-AC1")
-def test_the_sweep_follows_the_supported_variant_too() -> None:
-    """★ **영향도 스윕도 지원을 반영한다.**
-
-    결론 한 줄과 스윕은 **서로 다른 줄**에서 변형을 읽는다. 결론만 고치면
-    표는 「보조 80% 사업」인데 영향도 순위는 **무보조 사업의 것**이 된다 —
-    검토자는 지원을 받은 사업을 보면서 지원 없는 사업의 위험 인자를 읽는다.
-
-    변이로 확인했다: 스윕 쪽만 케이스 지표로 되돌리면 위 결론 검사는 **전건
-    초록불**이었다. 무보조 시나리오에서는 두 값이 같아서 드러나지 않는다.
-
-    ## ⚠⚠ **이 검사는 자기 죽음을 예고해 두었고, 그 예고가 맞았다** (R49)
-
-    R41 판은 전환 인자 **집합**으로 재면서 이렇게 적어 두었다 — *「이 검사는
-    이제 결론축이 다시 올라가면 죽는다 … 그때 죽는 방식은 빨간불이며 그것이
-    옳다: 전제가 바뀐 것을 알려야 한다」*. R48 이 결론축을 **−6,289,675 →
-    −12,956,180원**(무보조)으로 두 배로 내리자 보조 80% 도 실물 범위에서 전환을
-    잃어 **두 집합이 다시 같아졌다**(둘 다 `set()`). 예고대로 빨간불이 됐고,
-    그것이 이 갱신을 불렀다(판정 §3 · `docs/decisions-2026-08-31-R49.md`).
-
-    ## ★ 새 전제 — **비어 있어도 갈리는 것으로 옮긴다**
-
-    전환 인자는 *결론축이 0 선을 넘느냐*이므로 **결론이 나쁠 때 0건이 된다** —
-    즉 오라클이 사업의 형편에 매여 있었다. 그래서 **인자별 두 끝의 결론 축**
-    으로 옮긴다. 그 수는 사업이 아무리 나빠도 9건 × 두 끝이 있다.
-
-    무엇으로 견주는가 — **지원 1원은 그 사업의 결론 축을 정확히 1원 올린다**
-    (`residual_gap_at_full_support_won` 독스트링). 그러므로 같은 인자·같은 끝
-    에서 두 시나리오의 결론 축 차는 **보조율 × 그 끝에서의 총사업비**여야 한다.
-
-    ⚠ **기대값을 리포트에서 읽지 않는다**(동어반복). 보조율은 **시나리오
-    정본**에서, 그 끝에서의 총사업비는 **지원 없이 파이프라인을 다시 돌려**
-    짓는다 — 리포트의 어느 칸도 읽지 않는다.
-
-    ★ 이 견줌이 종전 집합 대조보다 **더 잡는다**:
-
-        스윕이 변형을 안 읽는다        → 차가 18곳 전부 0원          → 빨간불
-        기준 보조액을 상수로 더한다    → 설비단가 끝 넷이 어긋난다    → 빨간불
-
-    뒤쪽이 요점이다 — 지원은 **그 끝에서의 설비비**의 80% 이므로 설비단가를
-    흔들면 지원액도 함께 움직인다(실측: 7,040,000 · 8,640,000 · 7,072,000 ·
-    8,608,000원). 나머지 다섯 인자는 설비비를 건드리지 않아 전부
-    7,840,000원(= 0.8 × 9,800,000)이다. **차가 한 값이 아니라는 사실**을 아래
-    마지막 단정이 함께 붙든다 — 한 값이 되면 이 검사는 상수 하나만 재게 된다.
-
-    ⚠ **영향폭(delta)은 같아도 정상이다.** 보조금은 `t=0` 에 상수로 들어가
-    인자를 흔들었을 때의 **폭**을 바꾸지 않는다(설비단가는 예외다). 그래서
-    폭이 아니라 **두 끝의 값**을 본다.
-    """
-    plain = _report("scenario_unsubsidized")
-    subsidised = _report("scenario_subsidy_80")
-    subsidy_rate = _declared_subsidy_rate("scenario_subsidy_80")
-    assert subsidy_rate > 0.0, (
-        "보조 시나리오의 보조율이 0 이다 — 이 검사가 지원 없는 사업 둘을 견준다"
-    )
-
-    level_map = build_level_map(_ASSUMPTIONS)
-    horizon = plain.basis.horizon_years
-    supported = {entry.variable: entry for entry in subsidised.uncertain_influences}
-    assert plain.uncertain_influences, (
-        "스윕한 인자가 0건이다 — 아래 순회가 0회 돌면서 초록불이 된다"
-    )
-    assert supported.keys() == {
-        entry.variable for entry in plain.uncertain_influences
-    }, "두 시나리오가 서로 다른 인자를 스윕했다 — 견줄 짝이 없다"
-
-    lifts: set[int] = set()
-    for entry in plain.uncertain_influences:
-        counterpart = supported[entry.variable]
-        for end in ("low", "high"):
-            # ★ 끝값은 **대장에서** 읽는다. `InfluenceEntry.low`·`high` 는 표시용
-            # 으로 대장 단위로 되돌린 값이므로(그 독스트링) 배율이 1 이 아닌
-            # 인자에서 파이프라인에 그대로 넣으면 다른 값을 재게 된다.
-            value = level_map[entry.variable][end]
-            unsupported = _variant_at(level_map, entry.variable, value, horizon, None)
-            expected = subsidy_rate * float(unsupported["initial_outlay_won"])
-            lift = getattr(counterpart, f"npv_{end}") - getattr(entry, f"npv_{end}")
-            assert lift == pytest.approx(expected, abs=1.0), (
-                f"{entry.variable} `{end}` 끝: 보조 80% 의 결론 축이 무보조보다 "
-                f"{lift:,.0f}원 높다 — 지원분 {expected:,.0f}원과 다르다. "
-                "스윕이 변형을 읽지 않거나(차 0원), 기준 보조액을 상수로 "
-                "더하고 있다(설비단가 끝에서 어긋난다)"
-            )
-            lifts.add(round(lift))
-
-    assert len(lifts) > 1, (
-        f"두 시나리오의 차가 {lifts} 한 값뿐이다 — 지원액이 그 끝에서의 "
-        "설비비를 따라 움직이지 않는다. 설비단가 축이 표에서 빠졌다면 이 "
-        "검사는 상수 하나만 재고 있으므로 그때 다시 세울 것"
-    )
-
-
-@pytest.mark.req("FR-1002-AC2", "FR-1002-AC4")
-def test_reported_sweep_numbers_survive_a_rerun_of_the_pipeline() -> None:
-    """★★ **보고된 수로 다시 돌려 본다** — 표시만 하는 구현을 잡는다.
-
-    이 검사가 없으면 스윕의 수를 **표시만** 하는 구현이 통과한다 — 검토자는
-    리포트에서 *「단가가 이 값을 넘으면 사업성이 뒤집힌다」* 와 *「끝까지 밀어도
-    3,853,240원이 남는다」* 를 읽고 정책 판단을 하는데, 그 수가 계산과 무관해도
-    아무도 모른다.
-
-    ## ⚠⚠ 전제를 바꿨다 — **임계값 하나에서 「보고된 수 전부」로** (R49)
-
-    종전 이름은 `test_reported_flip_threshold_actually_flips_the_conclusion` 이고
-    첫 줄이 `assert flipping` 이었다. R48 이 결론축을 두 배로 내려 **실물 범위의
-    전환 인자가 두 시나리오 다 0건**이 되면서 그 단정이 빨간불이 됐다 —
-    정당한 상태를 빨간불로 만드는 자리다(판정 §3).
-
-    ★ **오라클은 버리지 않는다.** 잡으려는 결함은 *「보고된 수가 파이프라인에서
-    오지 않는다」* 이고, 그 수는 임계값 하나가 아니다 — 전환 인자가 0건인 지금
-    리포트가 5.1 에서 기대는 수는 **두 끝의 결론 축**(그 끝의 남은 거리 ·
-    줄어드는 결손 · 결합 표)이다. 그래서 재는 대상을 셋으로 넓혔다:
-
-        ㉠ 두 끝의 결론 축이 재실행과 같은가        ← 인자 9건 × 2 = 18곳
-        ㉡ 「전환 없음」이 실물인가                  ← 두 끝과 **중점**이 0 선 아래
-        ㉢ 전환 인자가 있으면 그 임계값이 뒤집는가   ← 종전 오라클, 그대로
-
-    ㉡ 가 종전 `assert flipping` 이 지던 몫을 진다. 이분탐색은 **단조성을
-    전제**하므로 두 끝만 보면 가운데서 0 선을 넘는 인자를 놓친다 — 그때 리포트는
-    「없음」을 **거짓으로** 인쇄하고, 그것이 R33 의 `_find_flip_threshold`
-    허용오차 결함과 같은 자리다. 중점을 함께 재는 것이 그 자리를 붙든다.
-
-    ⚠ **순회 대상이 비면 그것 자체를 빨간불로 만든다** — 그 규약은 그대로다.
-    다만 이제 순회 대상이 *전환 인자*가 아니라 **스윕한 인자 전건**이므로,
-    사업이 나빠져도 비지 않는다.
-
-    ⚠ **단위를 대장에서 되돌린다.** `InfluenceEntry` 의 `low`·`high`·`threshold`
-    는 표시용으로 **대장 단위**이고(`ledger_unit_scales`) 파이프라인은 환산값을
-    받는다. 종전 판은 배율 1 인 인자만 순회해 드러나지 않았다 — 배율이 1 이
-    아닌 인자가 전환을 내는 날 조용히 다른 값을 재게 되는 자리였다.
-    """
-    subsidy_rate = _declared_subsidy_rate("scenario_subsidy_80")
-    report = _report("scenario_subsidy_80")
-    level_map = build_level_map(_ASSUMPTIONS)
-    scales = ledger_unit_scales()
-    horizon = report.basis.horizon_years
-    # ⚠ **지원 조건을 함께 넘긴다.** 넘기지 않으면 재실행은 무보조 사업의
-    # 결론을 내고, 보조 80% 리포트의 수를 **다른 사업의 0 선**에 대고 재는 것이
-    # 된다 — 그러면 이 검사는 옳은 리포트를 빨간불로 만든다.
-    scheme = _scheme_for(subsidy_rate)
-
-    assert report.uncertain_influences, (
-        "스윕한 인자가 0건이다 — 아래 순회가 0회 돌면서 초록불이 된다"
-    )
-
-    for entry in report.uncertain_influences:
-        levels = level_map[entry.variable]
-        low, high = float(levels["low"]), float(levels["high"])
-        scale = scales.get(entry.variable, 1.0) or 1.0
-
-        # ㉠ 두 끝의 결론 축이 **재실행과 같은 수**인가.
-        for end, value in (("low", low), ("high", high)):
-            rerun = _conclusion_at(level_map, entry.variable, value, horizon, scheme)
-            assert getattr(entry, f"npv_{end}") == pytest.approx(rerun, abs=1.0), (
-                f"{entry.variable} `{end}` 끝: 리포트가 싣는 결론 축 "
-                f"{getattr(entry, f'npv_{end}'):,.0f}원이 같은 값으로 다시 돌린 "
-                f"{rerun:,.0f}원과 다르다 — 리포트가 그 수를 표시만 하고 있다"
-            )
-
-        if entry.threshold is None:
-            # ㉡ 「전환 없음」이 실물인가 — 가운데도 함께 본다(단조성 전제).
-            assert not entry.flips_conclusion
-            for label, value in (("low", low), ("중점", (low + high) / 2.0), ("high", high)):
-                conclusion = _conclusion_at(
-                    level_map, entry.variable, value, horizon, scheme
-                )
-                assert conclusion < 0.0, (
-                    f"{entry.variable} `{label}`: 리포트는 이 인자로 결론이 "
-                    f"전환되지 않는다고 적는데 결론 축이 {conclusion:,.0f}원 "
-                    "(0 선 위)이다 — 「없음」이 거짓이거나 임계값 탐색이 "
-                    "구간 안의 전환을 놓쳤다"
-                )
-            continue
-
-        # ㉢ 전환 인자가 있으면 **보고된 임계값**으로 다시 돌려 뒤집히는지 본다.
-        span = (high - low) * 0.05
-        threshold = entry.threshold * scale
-        below = _conclusion_at(
-            level_map, entry.variable, threshold - span, horizon, scheme
-        )
-        above = _conclusion_at(
-            level_map, entry.variable, threshold + span, horizon, scheme
-        )
-        assert (below >= 0.0) != (above >= 0.0), (
-            f"{entry.variable}: 보고된 임계값 {entry.threshold} 를 사이에 두고 "
-            f"결론이 바뀌지 않는다 (아래 {below:,.0f}원 · 위 {above:,.0f}원). "
-            "리포트가 임계값을 표시만 하고 있다"
-        )
 
 
 def _conclusion_at(
@@ -400,9 +204,7 @@ def test_provenance_comes_from_the_ledger_not_from_the_report() -> None:
     }
 
     checked = 0
-    for entry in report.influences:
-        if entry.ledger_key is None:
-            continue
+    for entry in report.ledger_inputs:
         checked += 1
         assert entry.confidence == ledger[entry.ledger_key]["confidence"], (
             f"{entry.variable}: 신뢰도가 대장과 다르다"
@@ -412,36 +214,7 @@ def test_provenance_comes_from_the_ledger_not_from_the_report() -> None:
         )
     assert checked, "대장에서 오는 인자가 하나도 없다"
 
-    # `AC5` — 신뢰도 `가정` 이면서 결론을 뒤집는 인자만 경고 대상이다.
-    assert set(report.provisional_warning) <= set(report.flipping)
-    for entry in report.provisional_warning:
-        assert entry.confidence == "가정"
 
-
-@pytest.mark.req("FR-1002-AC3")
-def test_a_variable_the_pipeline_never_reads_is_surfaced_not_ranked_last() -> None:
-    """★ **변동폭이 정확히 0인 인자를 「영향 없음」으로 적지 않는다.**
-
-    범위를 끝에서 끝까지 흔들어도 결론이 한 원도 움직이지 않는 일은 경제적으로
-    일어나지 않는다 — 사실상 파이프라인이 그 인자를 읽지 않는다는 뜻이다.
-    그것을 순위 최하위로만 적으면 검토자는 *「이 인자는 사업성과 무관하다」* 는
-    **틀린 결론을 리포트에서 배워 간다.**
-
-    ⚠ 이 검사는 「미배선이 있어야 통과」가 아니다. 있으면 **드러나야** 통과다.
-    배선이 끝나면 `unread_variables` 가 비고 이 검사는 그대로 통과한다.
-    """
-    report = _report()
-    for entry in report.influences:
-        zero_span_move = (
-            entry.delta_won == 0.0 and entry.low != entry.high
-        )
-        assert entry.unread_by_pipeline == zero_span_move, (
-            f"{entry.variable}: 변동폭 0 인데 드러나지 않았다"
-        )
-    for entry in report.unread_variables:
-        assert not entry.flips_conclusion, (
-            f"{entry.variable}: 결론을 뒤집는데 변동폭이 0일 수는 없다"
-        )
 
 
 @pytest.mark.req("FR-1002-AC3")
@@ -466,11 +239,9 @@ def test_displayed_values_are_in_the_units_the_report_prints() -> None:
     }
 
     checked = 0
-    for entry in report.influences:
-        if entry.ledger_key is None:
-            continue
+    for entry in report.ledger_inputs:
         checked += 1
-        sensitivity = ledger[entry.ledger_key]["sensitivity"]
+        sensitivity =ledger[entry.ledger_key]["sensitivity"]
         assert entry.used_value == pytest.approx(float(sensitivity["base"])), (
             f"{entry.variable}: 표시값 {entry.used_value} 가 대장 값 "
             f"{sensitivity['base']} 와 다르다 — 단위 환산이 표시까지 새어 나왔다"

@@ -22,7 +22,6 @@ from core.casegrid import (
     quick_preset_grid,
     result_table,
     run_cases,
-    tornado_ranking,
 )
 
 
@@ -233,7 +232,6 @@ def test_feasible_region_filters_and_tornado_ranking_use_case_results() -> None:
     cells = feasible_region(results, x="discount_rate", y="tariff", metric="npv", target=50)
     achieved = filter_results(results, metric="npv", target=50, achieved=True)
     missed = filter_results(results, metric="npv", target=50, achieved=False)
-    ranking = tornado_ranking(results, metric="npv")
 
     assert {(cell.x_value, cell.y_value, cell.achieved) for cell in cells} == {
         ("low", "low", False),
@@ -243,7 +241,6 @@ def test_feasible_region_filters_and_tornado_ranking_use_case_results() -> None:
     }
     assert [result.case_index for result in achieved] == [1, 3]
     assert [result.case_index for result in missed] == [0, 2]
-    assert ranking[0].variable_name == "tariff"
     assert compare_metric(50, 50, ">=") is True
 
 

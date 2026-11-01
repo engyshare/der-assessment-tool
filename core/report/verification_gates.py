@@ -145,7 +145,7 @@ def run_identity_line(report: CaseReport) -> str:
 #:                          덮지 못한다
 #:
 #: ⚠ 검토서 8번(*「어떤 입력 변화가 경제성 결과를 움직이는가」*)에 짝이 되는
-#: 단계는 **없다** — 영향도는 심의용 리포트 5.1 이 싣고 이 보고서에는 그 단계가
+#: 단계는 **없다** — 영향도 분석은 R72/WP-5 가 걷어냈고 이 보고서에는 그 단계가
 #: 서지 않는다. 없는 단계를 지어내지 않는다(`STAGE_COUNT` 는 **10** 이며 그 열은
 #: 이 보고서가 실제로 내는 단계다).
 #:
@@ -274,7 +274,7 @@ def _stage1_gate(report: CaseReport) -> StageGate:
              2단계 용량 역산과 3단계 운전이 그 부하를 그대로 받을 수 없다
     진행      미충족이 있으면 불가 — 2·3단계가 이 단계의 부하를 **대입값으로** 쓴다
     적용      이 실행이 **수요·설계** 대장 값을 읽어 결론에 반영했는가
-             (`uncertain_influences` 의 그 접두 항목이 증거다 — 비면 읽은
+             (`ledger_inputs` 의 그 접두 항목이 증거다 — 비면 읽은
              자리가 없다). ⚠ 4단계 게이트는 같은 축을 **전건**으로 본다
     사람      ⓐ 신뢰도 「가정」인 수요·설계 항목의 출처·실측 — **값의 확실성은
              계산이 정하지 못한다** ⓑ 히트펌프 난방·냉방·급탕 분해가 대장에
@@ -293,15 +293,11 @@ def _stage1_gate(report: CaseReport) -> StageGate:
     if report.appliance_loads.ev_kwh is None:
         unmet.append("전기차 부하 미지정")
     assumed = _assumed_rows(report, demand=True)
-    # ⚠ `ledger_key` 는 자료형이 `str | None` 이다 — `uncertain_influences` 가
-    # 이미 `None` 을 걸렀으나 **자료형은 그 사실을 모른다.** 여기서 다시 걸러야
-    # 검사가 통과하고, 그 한 줄이 「대장에 결선되지 않은 인자」를 이 칸에서도
-    # 세지 않게 한다(같은 판정을 두 번 하지 않는다).
     prefixes = tuple(DEMAND_LEDGER_PREFIXES)
-    demand_influences = [
+    demand_inputs = [
         entry
-        for entry in report.uncertain_influences
-        if entry.ledger_key is not None and entry.ledger_key.startswith(prefixes)
+        for entry in report.ledger_inputs
+        if entry.ledger_key.startswith(prefixes)
     ]
     human: list[str] = []
     if assumed:
@@ -319,7 +315,7 @@ def _stage1_gate(report: CaseReport) -> StageGate:
         blocking=bool(unmet),
         diagnostic_only=(
             ""
-            if demand_influences
+            if demand_inputs
             else "이 실행이 수요·설계 대장 값을 읽어 결론에 반영한 자리가 없다"
         ),
         human=tuple(human),
@@ -430,11 +426,9 @@ def _stage3_gate(report: CaseReport) -> StageGate:
 def _stage4_gate(report: CaseReport) -> StageGate:
     """4단계(경제성 입력) — **금액을 매기기 전에** 그 단가를 믿을 수 있는가.
 
-    미충족   신뢰도 「가정」이면서 **결론을 뒤집는** 인자
-             (`CaseReport.provisional_warning` 이 그 판정의 정본이다). 값은
-             서 있으나 그 값이 결론을 뒤집으므로 5단계가 그대로 화폐화할 수 없다
-    진행      미충족이 있으면 불가 — 5~10단계가 이 표의 단가를 **대입값으로** 쓴다
-    적용      이 실행이 대장 값을 읽어 결론에 반영했는가 (`uncertain_influences`
+    미충족   없음 (민감도 스윕이 없으므로 결론 뒤집힘 판정 불가)
+    진행      가능 — 5~10단계가 이 표의 단가를 **대입값으로** 쓴다
+    적용      이 실행이 대장 값을 읽어 결론에 반영했는가 (`ledger_inputs`
              전건이 그 증거다 — 비면 읽은 자리가 없다)
     사람      신뢰도 「가정」인 **수요·설계 밖의** 항목의 출처·실측. 수요·설계
              쪽은 1단계 게이트가 이미 넘겼다 — 같은 항목을 두 번 넘기지 않는다
@@ -449,18 +443,13 @@ def _stage4_gate(report: CaseReport) -> StageGate:
     조용히 사라진다.
     """
     unmet: list[str] = []
-    if report.provisional_warning:
-        unmet.append(
-            f"신뢰도 「{ConfidenceLevel.ASSUMED.value}」이면서 결론을 뒤집는 "
-            f"인자 {len(report.provisional_warning)}건"
-        )
     assumed = _assumed_rows(report, demand=False)
     return StageGate(
         unmet=tuple(unmet),
         blocking=bool(unmet),
         diagnostic_only=(
             ""
-            if report.uncertain_influences
+            if report.ledger_inputs
             else "이 실행이 대장 값을 읽어 결론에 반영한 자리가 없다"
         ),
         human=(

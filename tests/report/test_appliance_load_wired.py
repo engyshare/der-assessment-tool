@@ -179,33 +179,6 @@ def test_the_two_appliances_are_not_interchangeable_in_the_output() -> None:
     assert any(f"{_EV:,.0f}" in line and "전기차" in line for line in lines)
 
 
-def test_the_sweep_runs_on_the_same_load_as_the_body() -> None:
-    """★★★ **5·6절의 스윕도 같은 부하로 돈다** — 두 절이 다른 사업을 그리지 않는다.
-
-    ## 어떻게 재는가 — 「읽지 않는 인자」가 스윕의 **기준선**을 드러낸다
-
-    `unread_by_pipeline` 인 인자는 끝에서 끝까지 흔들어도 결론축이 0원
-    움직인다. 그러므로 그 인자의 `npv_low`·`npv_high` 는 **스윕의 기준선
-    그 자체**이며, 스윕이 본 실행과 다른 부하로 돌면 그 값이 본문의 결론과
-    갈린다. `tests/report/test_household_count_wired.py::
-    test_the_sweep_runs_on_the_same_site_size_as_the_body` 가 가구 수 축에서
-    같은 방법을 쓴다.
-    """
-    report = _report(**{HEATPUMP_LOAD_FIELD: _HEATPUMP, EV_LOAD_FIELD: _EV})
-    conclusion = float(report.metrics[CONCLUSION_METRIC])
-    unread = [entry for entry in report.influences if entry.unread_by_pipeline]
-    assert unread, (
-        "파이프라인이 읽지 않는 인자가 0건이다 — 이 검사가 0회 순회로 통과한다"
-    )
-    for entry in unread:
-        assert entry.npv_low == pytest.approx(conclusion, abs=1.0), (
-            f"`{entry.variable}` 의 스윕 기준선이 {entry.npv_low:,.0f}원인데 "
-            f"본문 결론은 {conclusion:,.0f}원이다 — 스윕이 다른 기기 부하로 "
-            "돌고 있다"
-        )
-        assert entry.npv_high == pytest.approx(conclusion, abs=1.0)
-
-
 def test_the_appendix_prints_what_it_ran_on() -> None:
     """★★ 붙임 1 이 **무엇을 얼마나 얹었는지**를 표로 싣는다."""
     lines = appendix_section(
@@ -295,30 +268,6 @@ def test_the_season_shares_reach_the_body_and_move_the_conclusion() -> None:
         f"냉난방을 계절마다 차등했는데 결론축이 그대로다({plain:,.0f}원) — "
         "계절 몫이 계산에 들어가지 않았다"
     )
-
-
-def test_the_sweep_runs_on_the_same_season_shares_as_the_body() -> None:
-    """★★★ **5·6절의 스윕도 같은 계절 몫으로 돈다.**
-
-    안 넘기면 본문 4절은 차등한 부하로, 5·6절은 차등하지 않은 부하로 계산되어
-    두 절이 서로 다른 사업을 그린다 — 재는 법은 위
-    `test_the_sweep_runs_on_the_same_load_as_the_body` 와 같다(읽지 않는 인자의
-    스윕 기준선이 곧 스윕이 선 사업이다).
-    """
-    report = _report(
-        **{HEATPUMP_LOAD_FIELD: 3000.0, APPLIANCE_SEASON_SHARE_FIELD: _season_heavy()}
-    )
-    conclusion = float(report.metrics[CONCLUSION_METRIC])
-    unread = [entry for entry in report.influences if entry.unread_by_pipeline]
-    assert unread, (
-        "파이프라인이 읽지 않는 인자가 0건이다 — 이 검사가 0회 순회로 통과한다"
-    )
-    for entry in unread:
-        assert entry.npv_low == pytest.approx(conclusion, abs=1.0), (
-            f"`{entry.variable}` 의 스윕 기준선이 {entry.npv_low:,.0f}원인데 "
-            f"본문 결론은 {conclusion:,.0f}원이다 — 스윕이 계절 몫 없이 돌고 있다"
-        )
-        assert entry.npv_high == pytest.approx(conclusion, abs=1.0)
 
 
 def test_a_scenario_whose_season_shares_do_not_sum_to_one_is_refused() -> None:

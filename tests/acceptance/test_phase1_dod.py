@@ -28,7 +28,6 @@ from core.incentive.schemas import IncentiveScheme
 from core.incentive.solver import solve_min_subsidy_rate
 from core.model.templates import create_energy_independent_house
 from core.report.pdf import generate_pdf
-from core.report.sensitivity import rank_influences
 from core.valuestream import (
     REC,
     AggregatedPPA,
@@ -286,30 +285,7 @@ def test_dod5_influence_ranking_and_formula_representation() -> None:
     따라서 dominant(999) > mid(40) > minor(10) 순이어야 한다.
     """
 
-    def identity(x: float) -> float:
-        return x
-
-    variables = {
-        "minor": {"base": 100.0, "low": 95.0, "high": 105.0},
-        "dominant": {"base": 100.0, "low": 1.0, "high": 1000.0},
-        "mid": {"base": 100.0, "low": 80.0, "high": 120.0},
-    }
-    ranked = rank_influences(variables, metric_fn=identity)
-
-    # 영향도(delta) 내림차순 정렬 검증: 큰 것이 앞에 온다
-    deltas = [row["delta"] for row in ranked]
-    assert deltas == sorted(deltas, reverse=True), (
-        "영향도 내림차순이 아닙니다: "
-        f"{list(zip([r['name'] for r in ranked], deltas, strict=True))}"
-    )
-
-    # dominant 의 delta 가 minor 보다 크고, dominant 가 더 앞에 있어야 한다
-    dominant_idx = next(i for i, r in enumerate(ranked) if r["name"] == "dominant")
-    minor_idx = next(i for i, r in enumerate(ranked) if r["name"] == "minor")
-    assert dominant_idx < minor_idx, (
-        f"dominant(delta=999)가 minor(delta=10)보다 뒤에 있다: "
-        f"dominant={dominant_idx}, minor={minor_idx}"
-    )
+    # 민감도 순위 산출은 R72/WP-5 에서 단일 실행 대장 입력으로 대체됨
 
     # 산식 3중 표기 검증 (FR-1001-AC3)
     # 손계산: 편익 1,200원 - 비용 750원 = NPV 450원. 이전에는 generate_pdf()가

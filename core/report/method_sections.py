@@ -183,8 +183,7 @@ def model_section(report: CaseReport) -> list[str]:
         "| 항목 | 값 | 출처 |",
         "|---|---|---|",
         f"| 분석기간 | {basis.horizon_years}년 | 대장 `analysis.period_years` |",
-        f"| 할인율 | {basis.discount_rate:.1%} | 모형 파라미터 (대장 항목 아님 · "
-        "감도는 5.2) |",
+        f"| 할인율 | {basis.discount_rate:.1%} | 모형 파라미터 (대장 항목 아님) |",
         f"| 가격 기준 | {report.price_basis} | 전 항목 공통 |",
         f"| 전제 대장 | `{report.assumption_set_name}` 판 "
         f"{report.assumption_set_version} | 전건은 붙임 1 |",
@@ -641,7 +640,7 @@ def resource_detail_section(basis: CaseBasis) -> list[str]:
         "(전제 대장 아님 · 정격출력·수명 등 제원과 위 표의 "
         "**고정 운영비**)",
         "- 대장에서 오는 값 — 설비 단가 · 요금 단가 · 분석기간 "
-        "(신뢰도·출처·기준연도는 붙임 1 · 인자별 대장 키는 붙임 2)",
+        "(신뢰도·출처·기준연도·대장 키는 붙임 1)",
         "",
     ]
     return lines

@@ -80,6 +80,11 @@ def _sweeper(
         distributed_sub_items=None,
         baseline_arrangement=arrangement,
         pool_metering=pool_metering,
+        # 러너 기본값과 같은 값 — 이 검사가 재는 인자가 아니다.
+        nwas_price_won_per_kwh=0.0,
+        cp_price_won_per_kw_month=0.0,
+        ess_operating_mode=None,
+        pv_allocation_priority=None,
     )
 
 
@@ -119,6 +124,10 @@ def test_the_sweeper_hands_the_pool_metering_declaration_to_the_runner(
         distributed_sub_items=None,
         baseline_arrangement=BaselineArrangement.POOL,
         pool_metering=lopsided,
+        nwas_price_won_per_kwh=0.0,
+        cp_price_won_per_kw_month=0.0,
+        ess_operating_mode=None,
+        pv_allocation_priority=None,
     )
     sweeper.conclusion_at_many({"household_load_annual_kwh": 5.0})
 

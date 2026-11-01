@@ -789,9 +789,3 @@ class FeasibleCell:
     case_index: int
     x_index: int | None = None
     y_index: int | None = None
-
-
-@dataclass(frozen=True)
-class TornadoInfluence:
-    variable_name: str
-    influence: float

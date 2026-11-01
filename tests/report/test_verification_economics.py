@@ -149,8 +149,8 @@ def test_the_two_axes_the_ledger_does_not_hold_stand_outside_its_table(
 def test_the_handoff_carries_every_wired_influence(report: CaseReport) -> None:
     """ⓒ 가 «실제로 읽어 결론에 반영한» 대장 키를 전건 싣는다."""
     text = "\n".join(influence_lines(report))
-    assert report.uncertain_influences, "픽스처 전제가 깨졌다 — 결선된 인자가 0건이다"
-    for entry in report.uncertain_influences:
+    assert report.ledger_inputs, "픽스처 전제가 깨졌다 — 결선된 인자가 0건이다"
+    for entry in report.ledger_inputs:
         assert f"`{entry.ledger_key}`" in text, (
             f"ⓒ 가 결선된 인자 `{entry.ledger_key}` 를 잃었다"
         )

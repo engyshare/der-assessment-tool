@@ -17,8 +17,8 @@ test_the_ledger_source_word_moved_in_the_context` — *「화면에 없는 것�
 ## ⚠⚠ 기준을 화면에서 되읽지 않는다
 
 「화면에 있는 출처가 화면에 있다」는 항진이다. 모집단은 언제나 **자료 쪽**이다 —
-대시보드는 `demo_context()["inputs"]`, 결과 화면은 `CaseReport.assumptions` 와
-`CaseReport.influences`. 화면이 한 줄을 빠뜨리면 그 차이가 여기서 드러난다.
+대시보드는 `demo_context()["inputs"]`, 결과 화면은 `CaseReport.assumptions`.
+화면이 한 줄을 빠뜨리면 그 차이가 여기서 드러난다.
 
 ## ⚠ 「하나 이상 있다」로 두지 않는다
 
@@ -47,7 +47,7 @@ import pytest
 from app.services.ui_run import run_ui_case
 from tests.web.test_dashboard import human_text, machine_attribute_text, parse
 from web.render import demo_context, render_dashboard, render_run_result
-from web.render_run import NO_LEDGER_SOURCE, run_result_context
+from web.render_run import run_result_context
 
 #: 기본값 실행의 무보조 결론축. **표시층은 이 수를 움직이지 않는다.**
 #: ⚠ 옛 수를 인용하지 마라(`−11,552,270`·`−11,537,129`·`−12,591,162`·`−924,900`).
@@ -217,74 +217,6 @@ def test_the_new_ledger_word_now_stands_on_the_screen() -> None:
 
 
 # ── 결과 화면 `/ui/run` ────────────────────────────────────────────────────
-
-
-def test_every_influence_carries_the_source_the_ledger_recorded(report) -> None:
-    """★★ **영향도 인자 전건이 자기 출처를 갖는다** — 화면이 아니라 자료에서 잰다.
-
-    ★ **문면을 화면에 손으로 적지 않는다.** 출처는 `CaseReport.assumptions` 의
-    `source` 이며 인자의 `ledger_key` 로 잇는다 — 손으로 적으면 대장이 출처를
-    갱신하는 날 화면만 옛 글자를 인쇄하고, 그 상태는 아무 검사도 빨간불을 내지
-    않는다(그것이 `D12` 의 경위다).
-
-    ⚠ **대장 키가 없는 인자를 빈칸으로 두지 않는다.** 빈칸은 「출처가 없다」와
-    「싣지 못했다」를 화면에서 같게 만든다(§13.0.1 ④). 글자로 인쇄한다.
-    """
-    sources = {row.key: row.source for row in report.assumptions}
-    context = run_result_context(report, scenario_text="")
-
-    assert context["influences"], "영향도 인자가 없다 — 검사가 성립하지 않는다"
-    for entry, drawn in zip(report.influences, context["influences"], strict=True):
-        expected = sources.get(entry.ledger_key or "", NO_LEDGER_SOURCE)
-        assert drawn["source"] == expected, (
-            f"{entry.variable} 의 출처가 대장과 다르다: "
-            f"{drawn['source']!r} ≠ {expected!r}"
-        )
-        assert str(drawn["source"]).strip(), (
-            f"{entry.variable} 의 출처 칸이 비어 있다 — 빈칸은 진술이 아니다"
-        )
-
-
-def test_the_result_screen_draws_every_one_of_those_sources(report) -> None:
-    """★★ **문맥에 실린 출처 전건이 화면에 그려진다** — 문맥만 맞는 상태와 가른다.
-
-    ⚠ **개수를 박지 않는다.** 모집단은 이 실행의 인자 수이며 그것은 리포트가
-    정한다.
-    """
-    context = run_result_context(report, scenario_text="")
-    html = render_run_result(context)
-
-    cells = {
-        element.attrs["data-influence-source"]: element.text.strip()
-        for element in parse(html).elements
-        if "data-influence-source" in element.attrs
-    }
-    assert len(cells) == len(context["influences"]), (
-        f"화면의 출처 칸이 {len(cells)}개 — 인자는 {len(context['influences'])}개다"
-    )
-    for item in context["influences"]:
-        assert cells.get(str(item["rank"])) == str(item["source"]), (
-            f"{item['rank']}위 인자의 출처 칸이 문맥과 다르다: "
-            f"{cells.get(str(item['rank']))!r} ≠ {item['source']!r}"
-        )
-
-
-def test_the_source_text_is_the_ledgers_own_and_never_written_by_hand(report) -> None:
-    """★ **화면에 선 출처가 전부 자료 쪽 글자다** — 손으로 적은 것이 섞이지 않았다.
-
-    ⚠ 위 두 검사는 「자료가 화면에 있다」를 재고, 이것은 그 **반대 방향**이다:
-    화면에 있는 출처 중 자료에도 상수에도 없는 글자가 있으면 누군가 손으로 적은
-    것이다. 그 글자는 대장이 갱신되는 날 조용히 낡는다.
-    """
-    allowed = {row.source for row in report.assumptions} | {NO_LEDGER_SOURCE}
-    context = run_result_context(report, scenario_text="")
-
-    invented = sorted(
-        str(item["source"])
-        for item in context["influences"]
-        if str(item["source"]) not in allowed
-    )
-    assert not invented, f"자료에 없는 출처 문면이 화면에 있다: {invented}"
 
 
 # ── 가로 스크롤 · 결론축 ───────────────────────────────────────────────────

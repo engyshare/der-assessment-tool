@@ -84,13 +84,9 @@ UNWIRED: Mapping[str, str] = MappingProxyType({
         "그림은 `seasonal_operation` 이다"
     ),
     "feasible_region": (
-        "`CaseReport` 에 2변수 격자가 없다. 2변수 재료는 `coupled_sweeps` "
-        "하나뿐인데 그것은 격자가 아니라 **별 모양 탐침**이다(기준점 + 한 "
-        "인자씩 + 함께, low·high). 3수준 격자로 펴면 두 칸이 비고, 그 차트는 "
-        "빈 칸을 거부한다 — 「일부만 실행했다면 등고선은 실행하지 않은 좌표의 "
-        "값을 지어냅니다」. 채워지는 2수준 부분격자가 있으나 low 쪽과 high 쪽 "
-        "중 어느 반쪽을 고르느냐가 「목표 달성 영역」의 넓이를 바꾸고, 그 "
-        "선택을 정하는 규칙이 저장소에 없다"
+        "`CaseReport` 에 2변수 격자가 없다(유일한 2변수 재료였던 결합 스윕은 "
+        "R72 에서 걷어냈다). 그 차트는 빈 칸을 거부한다 — 「일부만 실행했다면 "
+        "등고선은 실행하지 않은 좌표의 값을 지어냅니다」"
     ),
 })
 
@@ -135,11 +131,6 @@ _DESCRIPTIONS: Mapping[str, str] = MappingProxyType({
         "내보낸 전력(태양광 발전·저장장치 방전), 0 아래로 쌓인 막대는 받아들인 "
         "전력(저장장치 충전)이며, 검은 파선이 그 계절 하루의 전력 수요다"
     ),
-    "tornado": (
-        "인자를 하나씩 끝에서 끝까지 흔들었을 때 순현재가치가 움직인 폭을 큰 "
-        "것부터 가로 막대로 놓은 그림이다. 결론이 뒤집히는 인자의 막대는 "
-        "붉은색이고 나머지는 파란색이다"
-    ),
 })
 
 #: 그 차트의 수가 **리포트의 어느 필드에서 왔는지**. `<figcaption>` 이 이것을
@@ -158,7 +149,6 @@ _SOURCES: Mapping[str, str] = MappingProxyType({
         "fixtures/profiles/representative-day.yaml 이 정한 **가정값**이다) · "
         "basis.resources"
     ),
-    "tornado": "CaseReport.influences",
 })
 
 
@@ -515,29 +505,6 @@ def _seasonal_operation(report: CaseReport) -> dict[str, Any]:
     }
 
 
-def _tornado(report: CaseReport) -> dict[str, Any]:
-    """인자별 영향도 — `FR-803-AC2`.
-
-    ⚠ **순위를 여기서 다시 매기지 않는다.** `CaseReport.influences` 가 이미
-    내림차순이며(`FR-1002-AC1`), 화면의 「영향도 순위」 목록도 같은 순서를
-    쓴다(`web/render.py::run_result_context`). 여기서 다시 정렬하면 그림과
-    목록이 갈릴 수 있고, 갈려도 둘 다 그럴듯해 보인다.
-
-    ⚠ `uncertain_influences`·`policy_influences` 로 가르지 않는다 — 가르면
-    그림이 목록보다 짧아지고, 왜 짧은지는 그림에 적히지 않는다.
-    """
-    return {
-        "influences": [
-            {
-                "name": entry.variable,
-                "delta": float(entry.delta_won),
-                "flips_conclusion": entry.flips_conclusion,
-            }
-            for entry in report.influences
-        ]
-    }
-
-
 #: tag → 입력을 짓는 함수. **여기 없는 태그는 `UNWIRED` 가 사유를 갖는다.**
 _BUILDERS = MappingProxyType({
     "cashflow_line": _cashflow_line,
@@ -545,7 +512,6 @@ _BUILDERS = MappingProxyType({
     "dispatch_stack": _dispatch_stack,
     "model_comparison": _model_comparison,
     "seasonal_operation": _seasonal_operation,
-    "tornado": _tornado,
 })
 
 

@@ -52,7 +52,9 @@
 ·`_Sweeper`·`_probe_for`·`_influences` 와 상수 넷·`MAX_SUBSIDY_RATE` 는
 `core/report/case_influences.py` 로 옮겼다(그 독스트링이 경위를 갖는다).
 이 파일은 그것을 import 해 그대로 쓴다 — 밖에서 `case_report` 의
-`CONCLUSION_METRIC`·`InfluenceEntry` 를 읽던 경로는 재수출로 그대로 산다.
+`CONCLUSION_METRIC`·`LedgerInput` 을 읽던 경로는 재수출로 그대로 산다.
+R72/WP-5 가 `InfluenceEntry`·`_probe_for`·`_influences` 를 지우고
+스윕 없는 `LedgerInput`·`_ledger_inputs` 로 바꿨다.
 
 ## R64/WP-2 — **3중 표기 산식** 한 덩어리를 또 뗐다
 
@@ -105,7 +107,6 @@ from core.casegrid.ledger_levels import (
     build_level_map,
     design_variables,
     ledger_backed_variables,
-    ledger_unit_scales,
     required_scalar,
     resolve_design_capacity,
     resolve_operation_options,
@@ -138,13 +139,12 @@ from core.report.case_influences import (
     HEADLINE_METRIC,
     MAX_SUBSIDY_RATE,
     PLAN_VARIANT,
-    InfluenceEntry,
-    _influences,
+    LedgerInput,
+    _ledger_inputs,
     _Sweeper,
     break_even_subsidy_rate,
     residual_gap_at_full_support_won,
 )
-from core.report.combined import CoupledSweep, build_coupled_sweeps
 from core.report.dispatch_notes import (
     DispatchHour,
     DispatchNote,
@@ -174,7 +174,7 @@ __all__ = (
     "HEADLINE_METRIC",
     "MAX_SUBSIDY_RATE",
     "PLAN_VARIANT",
-    "InfluenceEntry",
+    "LedgerInput",
 )
 
 #: 저장소 뿌리 — 리포트에 **저장소 상대 경로**만 싣기 위한 기준이다.
@@ -450,11 +450,7 @@ class CaseReport:
     variant_labels: tuple[tuple[str, str], ...]
     variants: Mapping[str, Mapping[str, float]]
     basis: CaseBasis
-    #: 영향도 내림차순 (`FR-1002-AC1`). **한 인자만 움직인 단독 기여**다.
-    influences: tuple[InfluenceEntry, ...]
-    #: 함께 움직이는 인자를 함께 흔든 결과 (`core/report/combined.py`).
-    #: 저장소가 이미 결합으로 선언한 묶음만 나온다 — 여기서 새로 묶지 않는다.
-    coupled_sweeps: tuple[CoupledSweep, ...]
+    ledger_inputs: tuple[LedgerInput, ...]
     formulas: tuple[Formula, ...]
     assumptions: tuple[AssumptionRow, ...]
     #: 기준 전제 대비 변경 항목 (`FR-602-AC2`) — 붙임 1 이 표로 낸다.
@@ -507,60 +503,9 @@ class CaseReport:
     perspectives: PerspectiveWiring
 
     @property
-    def uncertain_influences(self) -> tuple[InfluenceEntry, ...]:
-        """**틀릴 수 있는 값** — 대장 항목에서 온 인자만.
-
-        ## ★ 왜 할인율을 여기서 빼는가 (검토 지적 4)
-
-        첫 판은 할인율을 영향도 1위로 실었다. 지적이 정확했다 — *「대부분의
-        분석은 할인율을 통제할 수 있는 값으로 보지 않는다. 고정적으로 적용하는
-        값을 주요 요인으로 뽑는 것이 의미가 있는가」*.
-
-        영향도 순위가 답하려는 물음은 *「우리가 모르는 것 중 무엇이 결론을
-        좌우하는가」*, 즉 **어느 자료를 먼저 확보할 것인가**다. 할인율은 모르는
-        값이 아니라 **평가자가 정하는 값**이다. 둘을 한 표에 섞으면 순위 1위가
-        「확보할 자료」가 아니라 「이미 정한 규칙」이 되고, 그 표를 읽은 사람은
-        확보 우선순위를 잘못 잡는다.
-
-        그렇다고 **버리지도 않는다** — 할인율을 몇으로 정하느냐가 결론을 바꾸는
-        것은 사실이며, 그것은 *자료 문제가 아니라 정책 선택*이다. 그래서
-        `policy_influences` 로 갈라 **따로** 싣는다.
-        """
-        return tuple(
-            entry for entry in self.influences if entry.ledger_key is not None
-        )
-
-    @property
-    def policy_influences(self) -> tuple[InfluenceEntry, ...]:
-        """**평가자가 정하는 값** — 대장 항목이 아닌 모형 파라미터.
-
-        불확실성이 아니라 **선택**이다. 위 `uncertain_influences` 참조.
-        """
-        return tuple(entry for entry in self.influences if entry.ledger_key is None)
-
-    @property
-    def flipping(self) -> tuple[InfluenceEntry, ...]:
-        """결론을 뒤집는 **불확실** 인자 — 최상단에 별도 강조 (`FR-1002-AC4`).
-
-        ⚠ 모형 파라미터는 여기 들어오지 않는다. 위 `uncertain_influences` 참조.
-        """
-        return tuple(
-            entry for entry in self.uncertain_influences if entry.flips_conclusion
-        )
-
-    @property
-    def provisional_warning(self) -> tuple[InfluenceEntry, ...]:
-        """신뢰도 `가정` 이면서 결론을 뒤집는 인자 (`FR-1002-AC5`).
-
-        비면 경고를 띄우지 않는다 — 상시 경고는 읽히지 않고, 읽히지 않는 경고는
-        경고가 아니다.
-        """
-        return tuple(entry for entry in self.flipping if entry.confidence == "가정")
-
-    @property
-    def unread_variables(self) -> tuple[InfluenceEntry, ...]:
-        """파이프라인이 읽지 않은 것으로 보이는 인자 (`InfluenceEntry` 참조)."""
-        return tuple(entry for entry in self.influences if entry.unread_by_pipeline)
+    def unread_variables(self) -> tuple[LedgerInput, ...]:
+        """`DEAD_AXES` 선언 목록에 든 대장 입력 (`core/report/unreflected.py` 가 읽는다)."""
+        return tuple(entry for entry in self.ledger_inputs if entry.unread_by_pipeline)
 
     @property
     def recovers_within_horizon(self) -> bool:
@@ -985,6 +930,11 @@ def build_case_report(
     # 않지만, 읽는 날을 대비해 본 실행과 같은 값을 본다 — result_1.md 8절의
     # 「판정 필요」를 R54/WP-3 이 답한 자리다.
     distributed_sub_items = _read_distributed_sub_items(provider)
+    # 본 실행과 `_Sweeper` 가 같은 값을 쓰도록 한 번만 읽는다 (R72/WP-4).
+    nwas_price = required_scalar(provider, NWAS_PRICE_LEDGER_KEY, note="NWAs 단가")
+    cp_price = required_scalar(provider, CP_PRICE_LEDGER_KEY, note="CP 단가")
+    ess_operating_mode = operation_options.get("ess_operating_mode")
+    pv_allocation_priority = operation_options.get("pv_allocation_priority")
     # ★ **가구 부하를 본 실행에 세운다** (판정 B-1, `docs/decisions-
     # 2026-08-31-R48.md` §5·§1·§4). 종전에는 이 호출이 `annual_load_kwh` 를
     # 넘기지 않아 결론이 부하 없는 사업(PV+ESS 만) 위에 섰고, 그래서 §4 가
@@ -1030,10 +980,10 @@ def build_case_report(
         # (운전 방법이 「자가소비 우선」이면 `enabled=False`), 운전 방법만
         # 고르면 단가가 0이라 편익이 0원인 채 `PeakShaving` 만 사라진다 —
         # 어느 쪽도 예외를 내지 않는다.
-        nwas_price_won_per_kwh=required_scalar(provider, NWAS_PRICE_LEDGER_KEY, note="NWAs 단가"),
-        cp_price_won_per_kw_month=required_scalar(provider, CP_PRICE_LEDGER_KEY, note="CP 단가"),
-        ess_operating_mode=operation_options.get("ess_operating_mode"),
-        pv_allocation_priority=operation_options.get("pv_allocation_priority"),
+        nwas_price_won_per_kwh=nwas_price,
+        cp_price_won_per_kw_month=cp_price,
+        ess_operating_mode=ess_operating_mode,
+        pv_allocation_priority=pv_allocation_priority,
         # ★ ⓒ 의 계측 선언 — 이것이 없으면 ⓒ 는 러너에서도 거부된다(R60/WP-3).
         pool_metering=pool_metering,
     )
@@ -1078,6 +1028,10 @@ def build_case_report(
         # 서지 않는다 — 위 갈래와 달리 이 어긋남은 **조용하지 않다**(거부가
         # 난다). 그래서 `_Sweeper` 쪽에 기본값을 두었다.
         pool_metering=pool_metering,
+        nwas_price_won_per_kwh=nwas_price,
+        cp_price_won_per_kw_month=cp_price,
+        ess_operating_mode=ess_operating_mode,
+        pv_allocation_priority=pv_allocation_priority,
     )
     # ★★★ **이 실행이 읽은 대장 키를 여기서 굳힌다** (R63/N3 · 「인쇄되는데
     # 안 먹는 키」). 자리가 **여기**인 이유: 계산은 위에서 끝났고 아래 조립부는
@@ -1100,19 +1054,11 @@ def build_case_report(
     # 된다. ⛔ **선언을 넓혀 통과시키지 마라**: 선언 밖의 키가 들어왔다면
     # 그것이 이 장치가 찾으려던 것이다.
     read_keys = provider.keys_read() | frozenset(ledger_backed_variables().values())
-    # ★ 부기 칸 만들기(`_provenance`)를 주입한다 — 그 함수는 이 파일에 남아
-    # 있고(R54/WP-2 는 영향도 스윕 한 덩어리만 뗐다), `case_influences` 가
-    # 여기서 import 하면 순환이 된다(그 모듈 독스트링의 「`_provenance` 는
-    # 여기에 없다」 절이 같은 이유를 적는다).
-    influences = _influences(
-        sweeper=sweeper, level_map=level_map, provider=provider,
-        provenance=_provenance,
-    )
-    coupled_sweeps = build_coupled_sweeps(
+    ledger_inputs = _ledger_inputs(
         level_map=level_map,
-        probe=sweeper.conclusion_at_many,
-        scales=ledger_unit_scales(),
-        base_npv=float(outcome.variants[PLAN_VARIANT][CONCLUSION_METRIC]),
+        provider=provider,
+        provenance=_provenance,
+        read_keys=read_keys,
     )
 
     # ★ 용량 스윕은 **1변수 스윕과 같은 기계**를 쓴다 (`sweeper.conclusion_at`).
@@ -1260,8 +1206,7 @@ def build_case_report(
         ),
         variants=outcome.variants,
         basis=outcome.basis,
-        influences=influences,
-        coupled_sweeps=coupled_sweeps,
+        ledger_inputs=ledger_inputs,
         formulas=build_formulas(
             outcome.basis,
             outcome.variants[PLAN_VARIANT],

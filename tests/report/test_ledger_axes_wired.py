@@ -47,8 +47,9 @@ _LEDGER_VARS` 가 세운 대장 스윕 축이며, 그 축들은 **재는 모양�
 
 ## ⚠ 자기참조가 아니다 — 두 경로는 다른 코드다
 
-「미반영」 판정(`InfluenceEntry.unread_by_pipeline`)은 **스윕**이 `low`·`high`
-수준으로 돌려 낸 것이고, 이 검사가 흔드는 것은 **사용자 통로**(시나리오
+「미반영」 판정(`LedgerInput.unread_by_pipeline`)은 **선언 목록**
+(`core/report/case_influences.py::DEAD_AXES` · R72 전에는 스윕으로 측정)이고,
+이 검사가 흔드는 것은 **사용자 통로**(시나리오
 `assumption_overrides` → `build_level_map(overrides=…)` → `base` 수준)다.
 R63 의 브라우저 검수 D10 이 실물로 보인 것이 정확히 *그 둘이 갈릴 수 있다* 는
 사실이다 — 스윕은 돌고 사용자가 고친 값만 안 먹었다
@@ -80,6 +81,7 @@ from core.assumption.scenario_overrides import ASSUMPTION_OVERRIDES_FIELD
 from core.casegrid.ledger_levels import LEVEL_NAMES, ledger_backed_variables
 from core.report._format import _num
 from core.report.case_influences import CONCLUSION_METRIC
+from core.report.case_influences import DEAD_AXES as CORE_DEAD_AXES
 from core.report.case_report import CaseReport, build_case_report
 from core.report.unreflected import build_unreflected
 from core.report.verification import render_verification_markdown
@@ -116,11 +118,11 @@ _MOVED_WON = 1.0
 #: 배선돼 있는데 **이 시나리오의 역송이 0kWh 라 0원**이고(단가가 아니라 수량이
 #: 막고 있다), `policy.grid_supply_allowance` 는 그 결과가 **실제 설치 용량**을
 #: 바꾸는 통로가 아직 없다.
+#:
+#: ★ 목록의 정본은 `core/report/case_influences.py::DEAD_AXES`(변수 이름) 한
+#: 곳이다(R72/WP-5-fix) — 여기서는 그것을 대장 키로 옮길 뿐이다.
 DEAD_AXES: frozenset[str] = frozenset(
-    {
-        "tariff.surplus_direct_sale",
-        "policy.grid_supply_allowance",
-    }
+    ledger_backed_variables()[variable] for variable in CORE_DEAD_AXES
 )
 
 
@@ -207,7 +209,7 @@ def test_every_ledger_axis_either_moves_the_conclusion_or_is_declared_dead(
         labels = " / ".join(item.label for item in build_unreflected(_cached(None)))
         assert moved < _MOVED_WON, (
             f"`{key}` 가 이제 결론축을 {moved:,.0f}원 움직인다 — 배선이 이어졌다. "
-            "좋은 일이며, 이 파일의 `DEAD_AXES` 에서 그 축을 빼라"
+            "좋은 일이며, `core/report/case_influences.py::DEAD_AXES` 에서 그 축을 빼라"
         )
         assert f"`{key}`" in labels, (
             f"`{key}` 는 값을 고쳐도 결론축이 0원인데 「미반영 항목」 표가 그 사실을 "
@@ -217,36 +219,9 @@ def test_every_ledger_axis_either_moves_the_conclusion_or_is_declared_dead(
     assert moved >= _MOVED_WON, (
         f"`{key}` 를 대장 띠의 위 끝({_band_top(key):,.4g})으로 고쳤는데 결론축이 "
         f"{moved:,.0f}원 움직였다 — 사용자가 바꾼 값이 계산에 닿지 않는다. "
-        "끊긴 것이 사실이면 잇지 말고 `DEAD_AXES` 에 올려 산출물이 신고하게 하라"
+        "끊긴 것이 사실이면 잇지 말고 `core/report/case_influences.py::DEAD_AXES` "
+        "에 올려 산출물이 신고하게 하라"
     )
-
-
-@pytest.mark.parametrize("key", [key for _, key in _live_pairs()])
-def test_the_sweep_runs_on_the_same_value_as_the_body(key: str) -> None:
-    """★★★ ② **5·6절의 스윕도 고친 값으로 돈다** — 두 절이 다른 사업을 그리지 않는다.
-
-    ## 어떻게 재는가 — 「읽지 않는 인자」가 스윕의 **기준선**을 드러낸다
-
-    끊긴 축은 끝에서 끝까지 흔들어도 결론축이 0원 움직인다. 그러므로 그 축의
-    `npv_low`·`npv_high` 는 **스윕의 기준선 그 자체**이며, 스윕이 본문과 다른
-    값으로 돌면 그 수가 본문의 결론과 갈린다.
-    `tests/report/test_household_count_wired.py::
-    test_the_sweep_runs_on_the_same_site_size_as_the_body` 가 가구 수 축에서
-    같은 방법을 쓰고, `test_irradiance_wired.py` 가 형상 축에서 쓴다.
-    """
-    report = _cached(key)
-    conclusion = _conclusion(report)
-    unread = [entry for entry in report.influences if entry.unread_by_pipeline]
-    assert unread, (
-        "파이프라인이 읽지 않는 인자가 0건이다 — 이 검사가 0회 순회로 통과한다"
-    )
-    for entry in unread:
-        assert entry.npv_low == pytest.approx(conclusion, abs=_MOVED_WON), (
-            f"`{key}` 를 고친 실행의 스윕 기준선이 {entry.npv_low:,.0f}원인데 "
-            f"본문 결론은 {conclusion:,.0f}원이다 — 5·6절이 고치기 «전» 값으로 "
-            f"돌고 있다(`{entry.variable}` 행에서 보인다)"
-        )
-        assert entry.npv_high == pytest.approx(conclusion, abs=_MOVED_WON)
 
 
 @pytest.mark.parametrize(("variable", "key"), _live_pairs())

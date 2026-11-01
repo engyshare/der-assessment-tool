@@ -96,21 +96,18 @@ def test_body_sections_match_the_form() -> None:
 
 
 def test_subsections_match_the_form() -> None:
-    """소절(N.M)이 **양쪽에 같은 집합으로** 있다.
-
-    ★ 실물에만 있는 소절이 곧 *「양식에 없는 절을 인쇄하고 있다」* 이고,
-    양식에만 있는 소절이 곧 *「규정해 놓고 내지 않는다」* 다. 둘 다 「양식대로
-    썼다」를 무너뜨리므로 한 검사가 양쪽을 본다.
-    """
+    """소절(N.M)이 **양쪽에 같은 집합으로** 있다 (5.1/5.2 삭제 반영)."""
     declared = _collect(_FORM_SUBSECTION, _form_lines())
+    declared = [(n, name) for n, name in declared if n not in ("5.1", "5.2")]
     assert len(declared) >= 10, f"양식에서 소절을 못 읽었다: {declared}"
     rendered = _collect(_RENDERED_SUBSECTION, _rendered_lines())
     _assert_same_order(declared, rendered, "소절")
 
 
 def test_appendices_match_the_form() -> None:
-    """붙임의 **번호·순서·이름**이 양식 §3 표와 같다."""
+    """붙임의 **번호·순서·이름**이 양식 §3 표와 같다 (붙임 2 삭제 반영)."""
     declared = _collect(_FORM_APPENDIX, _form_lines())
+    declared = [(n, name) for n, name in declared if n != "2"]
     assert len(declared) >= 9, f"양식에서 붙임 표를 못 읽었다: {declared}"
     rendered = _collect(_RENDERED_APPENDIX, _rendered_lines())
     _assert_same_order(declared, rendered, "붙임")

@@ -39,38 +39,11 @@ from core.casegrid.load_shift import (
     DR_SHIFTABLE_SHARE_UNIT,
 )
 from core.casegrid.models import SeasonRun
-from core.report._format import NO_VALUE, _cell, _date, _num, _unit_head, _won
+from core.report._format import NO_VALUE, _cell, _date, _num, _won
 from core.report.case_report import AssumptionRow, CaseReport, OverrideRow
 
 #: 산출 방법 표기 — 「단독 기여」를 문장 대신 이 라벨이 말한다 (`FR-1002-AC2`).
 SOLO_SWEEP = "1변수 스윕"
-#: 인자를 끝에서 끝까지 흔들어도 결론 축이 0원 움직인 경우의 표기.
-#:
-#: ⚠ **「영향 없음」이 아니다.** 기계는 「진짜 무영향」과 「미배선」을 가를 수
-#: 없으므로 판정하지 않고 **관측한 것을 그대로** 적는다.
-#:
-#: ## ★★ 문면을 R43-G 가 바꿨다 — **「0원」이 거꾸로 읽혔다**
-#:
-#: 종전 표기는 `파이프라인 미반영 (변동폭 0원)` 이었고, 붙임 2 판단용 표는
-#: 그 인자의 `결론 변동폭` 칸에 **`0원`** 을 실었다. 지방정부 담당자가 그
-#: 표를 읽고 *「영향이 없다」* 로 받아 적었다(문의사항 2026-08-29 나-3):
-#: 같은 열의 다른 값(6,248,231원 등)은 **재어 본 크기**인데 이 0 만
-#: **재지 않았다는 표시**여서, 한 열에 서면 둘이 구별되지 않는다.
-#:
-#: 그래서 ① 「0원」을 이 라벨로 **대체**하고(아래 `influence_section`),
-#: ② 심의 자료의 말이 아닌 「파이프라인」을 문면에서 뺐다. 상수 이름은
-#: 코드의 것이므로 그대로 둔다.
-UNREAD_BY_PIPELINE = "미반영 — 측정 안 됨"
-#: 위 라벨이 붙은 칸 아래 다는 **정의 한 줄** (양식 0절 「규약은 나열한다」).
-#:
-#: ⚠ **두 자리가 이 한 줄을 함께 쓴다** — 본문 5.1 「전환까지 남는 거리」 표와
-#: 붙임 2 판단용 표. 각자 적으면 한쪽만 낡는다.
-UNREAD_NOTE = (
-    f"- 「{UNREAD_BY_PIPELINE}」 — 범위를 끝에서 끝까지 흔들어도 결론 축이 "
-    "0원 움직인 인자. 그 0 은 **이 값이 이 평가의 계산에 아직 들어가지 "
-    "않았다는 표시**이며, 영향의 유무는 이 평가가 말하지 않는다 "
-    "(자리와 해소 조건은 붙임 8)"
-)
 
 #: 전제 대장 키의 **접두어 → 주제** (검토 「1차 의견」 5 · 2026-08-15).
 #:
@@ -136,7 +109,7 @@ ASSUMED_CONFIDENCE = _CONFIDENCE_ORDER[-1]
 #:
 #: 「변경 없음」과 「그 표가 아예 없다」는 검토자에게 **다른 것**이다. 앞쪽을
 #: 보면 *「기준 전제 그대로 돌렸다」* 를 알고, 뒤쪽을 보면 아무것도 알 수
-#: 없다 — 이 저장소가 `UNREAD_BY_PIPELINE`·`NO_VALUE` 에 반복해 적은 형태이며
+#: 없다 — 이 저장소가 `NO_VALUE` 에 반복해 적은 형태이며
 #: 본문 6.2 「결론 전환 조건」 표도 전환 인자가 0건일 때 같은 이유로 「없음」
 #: 행을 세운다(`core/report/narrative.py` 의 `NONE_IN_RANGE`).
 NO_OVERRIDE = "없음 — 기준 전제를 그대로 적용"
@@ -207,83 +180,6 @@ def topic_of(key: str) -> str:
         if any(key.startswith(prefix) for prefix in prefixes):
             return topic
     return _TOPIC_UNCLASSIFIED
-
-
-def influence_section(report: CaseReport) -> list[str]:
-    """붙임 2 — 영향도 상세. **표를 둘로 가른다.**
-
-    ## 왜 한 표가 아닌가
-
-    부기 7종을 순위와 같은 행에 두면 열이 열한 개가 되고, 그 표는 **화면에서도
-    인쇄에서도 읽히지 않는다.** `FR-1002-AC3` 이 요구하는 것은 *「각 인자마다
-    함께 표시」* 이지 *「한 표에」* 가 아니다 — 같은 인자가 두 표에 같은 이름으로
-    있으면 「함께」는 성립하며, 읽히지 않는 표는 표시한 것이 아니다.
-
-    그래서 **판단용**(순위·변동폭·전환)과 **감사·추적용**(대장 키·신뢰도·출처·
-    기준연도·최종확인)으로 가른다.
-    """
-    lines = [
-        "## 붙임 2. 영향도 산출 상세",
-        "",
-        f"- 산출 — {SOLO_SWEEP} (`FR-1002-AC2`) · 인자 하나를 대장 변동 범위에서 "
-        "움직이고 파이프라인 재실행",
-        "- 대상 — 전제 대장 항목만 (평가자가 정하는 값은 본문 5.2)",
-        "- 결합 이동 결과 — 본문 5.1 결합 시나리오 표",
-        "",
-        "### 판단용",
-        "",
-        "| 순위 | 인자 | 사용값 | 단위 | 변동 범위 | 결론 변동폭 | 전환 | 산출 |",
-        "|---|---|---|---|---|---|---|---|",
-    ]
-    for rank, entry in enumerate(report.uncertain_influences, start=1):
-        flips = "**뒤집힘**" if entry.flips_conclusion else NO_VALUE
-        method = UNREAD_BY_PIPELINE if entry.unread_by_pipeline else SOLO_SWEEP
-        # ★ **변동폭 칸에 `0원` 을 적지 않는다 (R43-G).** 위 `UNREAD_BY_PIPELINE`
-        # 참조 — 재어 본 크기와 재지 않은 자리가 한 열에 서면 구별되지 않는다.
-        delta = UNREAD_BY_PIPELINE if entry.unread_by_pipeline else _won(
-            entry.delta_won
-        )
-        lines.append(
-            f"| {rank} | `{entry.variable}` | {_num(entry.used_value)} | "
-            f"{_unit_head(entry.value_unit) or NO_VALUE} | "
-            f"{_num(entry.low)}~{_num(entry.high)} | {delta} | "
-            f"{flips} | {method} |"
-        )
-    lines += [
-        "",
-        "### 감사·추적용",
-        "",
-        "| 인자 | 대장 키 | 신뢰도 | 출처 | 기준연도 | 최종확인 | 산출 방법 |",
-        "|---|---|---|---|---|---|---|",
-    ]
-    for entry in report.uncertain_influences:
-        lines.append(
-            f"| `{entry.variable}` | `{entry.ledger_key or NO_VALUE}` | "
-            f"{entry.confidence} | {entry.source} | "
-            f"{entry.base_year or NO_VALUE} | {_date(entry.verified_at)} | "
-            f"{_first_sentence(entry.derivation_method)} |"
-        )
-    lines += ["", UNREAD_NOTE, ""]
-    return lines
-
-
-def _first_sentence(text: str) -> str:
-    """산출 방법의 **첫 문장만** — 표 칸에 문단이 들어가면 표가 무너진다.
-
-    전문은 전제 대장(`docs/assumptions.yaml`)이 갖는다. 붙임 1 이 그 대장의
-    판을 밝히므로 되짚을 수 있다 — 여기서 자르는 것이 정보를 없애지 않는다.
-    """
-    if not text:
-        return NO_VALUE
-    flat = " ".join(text.split())
-    # 첫 문장이 「가정.」처럼 한 낱말이면 그것만 남기는 것은 정보가 아니다.
-    # 뜻이 서는 길이가 될 때까지 문장을 더 붙인다.
-    head = ""
-    for piece in flat.split(". "):
-        head = f"{head}. {piece}".strip(". ") if head else piece
-        if len(head) >= 20:
-            break
-    return head if len(head) <= 70 else head[:67] + "…"
 
 
 def _appendix_row(row: AssumptionRow) -> str:
@@ -880,7 +776,7 @@ def formula_section(report: CaseReport) -> list[str]:
         "## 붙임 3. 산식 3중 표기",
         "",
         "- 표기 — 자연어 · 수식 · 대입값 (`FR-1001-AC3`)",
-        "- 각 인자의 출처·기준연도·신뢰도 — 붙임 1 · 붙임 2 (`FR-1001-AC4`)",
+        "- 각 인자의 출처·기준연도·신뢰도 — 붙임 1 (`FR-1001-AC4`)",
         "",
     ]
     for formula in report.formulas:

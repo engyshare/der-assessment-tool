@@ -271,7 +271,9 @@ def test_unread_variable_gets_no_invented_direction() -> None:
         assert item.direction == DIRECTION_UNKNOWN, (
             f"{entry.variable}: 잴 수 없는 방향을 적었다 — {item.direction}"
         )
-        assert "0원" in item.magnitude, "측정된 변동폭이 크기 칸에 없다"
+        assert "미측정" in item.magnitude, (
+            "선언 목록 축인데 크기 칸이 측정한 변동폭처럼 적혀 있다"
+        )
 
 
 def test_the_grid_purchase_is_now_a_cost_row_and_leaves_the_unreflected_table() -> None:

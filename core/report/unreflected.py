@@ -241,8 +241,9 @@ def _unit(value_unit: str) -> str:
 
 
 def _unread_items(report: CaseReport) -> list[UnreflectedItem]:
-    """**계산에 들어가지 않은 인자** — 영향폭이 정확히 0원인 것.
+    """**계산에 들어가지 않은 인자** — `DEAD_AXES` 선언 목록에 든 것.
 
+    ⚠ 이 실행이 재지 않는다 — 목록은 선언이다(R72 전에는 스윕으로 측정).
     ⚠ 방향을 적지 않는다. 배선되지 않았으므로 반영했을 때의 이동을 잴 수 없다.
     """
     return [
@@ -252,11 +253,11 @@ def _unread_items(report: CaseReport) -> list[UnreflectedItem]:
             magnitude=(
                 f"사용값 {entry.used_value:,.4g}{_unit(entry.value_unit)} · "
                 f"검토 범위 {entry.low:,.4g}~{entry.high:,.4g} · "
-                "결론 변동폭 0원"
+                "결론 변동폭 미측정 (계산 미사용 선언 축)"
             ),
             reason="케이스 그리드 탐색 축 · 파이프라인이 읽는 자리 없음",
             resolves_when="이 값을 쓰는 계산의 실행 경로 배선 (요금 엔진 등)",
-            measured=True,
+            measured=False,
         )
         for entry in report.unread_variables
     ]

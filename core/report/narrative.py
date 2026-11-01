@@ -50,14 +50,11 @@ PDF(`FR-1003-AC2`)는 같은 `CaseReport` 를 받는 **다른 렌더러**의 몫
 """
 from __future__ import annotations
 
-from core.report._format import NO_VALUE, _num, _recovery, _unit_head, _won, _years
+from core.report._format import NO_VALUE, _recovery, _won, _years
 from core.report.appendix_sections import (
-    UNREAD_BY_PIPELINE,
-    UNREAD_NOTE,
     appendix_section,
     formula_section,
     glossary_section,
-    influence_section,
     ledger_confidence_note,
     reproduction_section,
 )
@@ -72,9 +69,7 @@ from core.report.case_report import (
     HEADLINE_METRIC,
     MAX_SUBSIDY_RATE,
     CaseReport,
-    InfluenceEntry,
 )
-from core.report.combined import MOVED_LEVELS, CombinedPoint, CoupledSweep
 from core.report.dispatch_sections import (
     dispatch_profile_section,
     dispatch_rule_section,
@@ -93,7 +88,6 @@ from core.report.shortfall import (
     SECTION_NUMBER as SHORTFALL_SECTION,
 )
 from core.report.shortfall import (
-    SENSITIVITY_SECTION,
     build_shortfall,
     shortfall_section,
 )
@@ -247,127 +241,18 @@ def _summary_section(report: CaseReport) -> list[str]:
 
 
 def _flip_names(report: CaseReport) -> str:
-    """전환 인자 요약 칸 — 이름 · 임계값 · 신뢰도."""
-    # ★ **「없음」을 지우지 않는다 — 옆에 자리를 세운다** (판정 §3 ⓒ).
-    # 「없음」은 정직하고 옳다. 바뀌는 것은 그 옆에 *「그럼 결손은 어디서
-    # 오는가」* 에 답하는 절이 서고, 이 칸이 그 자리를 가리키는 것이다.
-    if not report.flipping:
-        return f"없음 ({SOLO_SWEEP} 범위 내 · 결손의 구조는 {SHORTFALL_SECTION})"
-    return " · ".join(
-        f"`{entry.variable}` {_num(entry.threshold or 0)}"
-        f"{_unit_suffix(entry.value_unit)} (신뢰도 {entry.confidence})"
-        for entry in report.flipping
-    )
-
-
-def _unit_suffix(value_unit: str) -> str:
-    head = _unit_head(value_unit)
-    return f" {head}" if head else ""
+    """전환 인자 요약 칸."""
+    return f"없음 (결손의 구조는 {SHORTFALL_SECTION})"
 
 
 def _summary_combined(report: CaseReport) -> str:
-    """결합 전환 조건 칸.
-
-    ⚠ **여기서 새 수를 만들지 않는다.** 5.1 의 결합 표가 이미 낸 행을 그대로
-    가리킨다 — 요약이 스스로 계산하면 두 절의 수가 갈라지고, 그 어긋남은
-    검토자가 두 표를 대조할 때에야 드러난다.
-    """
-    cells: list[str] = []
-    for sweep in report.coupled_sweeps:
-        for point in sweep.points:
-            if point.is_combined and point.recovers:
-                cells.append(
-                    f"`{sweep.bundle}` 동반 `{point.level}` → "
-                    f"{_won(point.npv)} (**회수**)"
-                )
-    return " · ".join(cells) if cells else NONE_IN_RANGE
+    """결합 전환 조건 칸."""
+    return NONE_IN_RANGE
 
 
 def _provisional_cell(report: CaseReport) -> str:
-    """1. 요약 「잠정성」 · 6.1 「전환 인자의 신뢰도」 칸.
-
-    ## ★★ 「없음」이 **거꾸로 읽힌 자리다** (R43-G)
-
-    종전 이 칸은 전환 인자가 0건일 때 *「전환 인자에 신뢰도 `가정` 없음」*
-    한 줄이었다. 참이지만 **검토자가 그것을 「이 결론은 가정에 기대지
-    않는다」로 읽었다** — 사유와 근거는 `ledger_confidence_note()` 에 있다.
-
-    그래서 두 사실을 **함께** 싣는다. 앞은 *전환 인자가 없다*, 뒤는 *대장은
-    대부분 `가정` 이다* 이며, 둘 다 관측이지 판정이 아니다.
-
-    ⚠ **뒤 절을 여기서 짓지 않는다** — 붙임 1 을 세는 함수가 그것의 소유자다.
-    """
-    if not report.provisional_warning:
-        return (
-            "검토 범위 안에서 결론을 뒤집는 인자가 없다. "
-            f"{ledger_confidence_note(report)}"
-        )
-    names = " · ".join(f"`{e.variable}`" for e in report.provisional_warning)
-    return (
-        f"전환 인자 중 신뢰도 `가정` — {names}. "
-        f"{ledger_confidence_note(report)}"
-    )
-
-
-def _flip_section(report: CaseReport) -> list[str]:
-    """`FR-1002-AC4` — 결론이 뒤집히는 인자를 **최상단에 별도로**.
-
-    ## ★★ 전환 인자가 **0건일 때도 본문이 답한다** (2026-08-17)
-
-    종전 이 절은 전환 인자가 없으면 *「단독 전환 인자 — 없음」* 한 줄이었다.
-    그 한 줄은 참이지만 **검토자가 묻는 것에 답하지 않는다** — 「없음」은
-    *「조금 모자란다」* 와 *「두 배 모자란다」* 를 같은 글자로 적는다. 5.1 이
-    양식에서 지는 물음이 *「무엇이 얼마가 되면 뒤집히는가」* 이므로, 뒤집히는
-    인자가 없을 때 그 물음은 **「그럼 얼마나 모자란가」** 로 남는다.
-
-    그래서 셋을 싣는다 — 어느 것도 새 판정이 아니라 **환산과 관측**이다.
-
-        결론까지 남은 거리      결론 축의 절대값 (총사업비 대비 비율 병기)
-        결론 전환 지원율        그 거리를 t=0 지원으로 환산한 값 (붙임 3 이 산식)
-        줄임 표                 인자를 끝까지 밀면 **얼마가 줄고 얼마가 남는가**
-                                (R49/WP-4 가 「줄임」 열을 세웠다 — 종전에는
-                                 남는 거리만 실려 뺄셈이 독자에게 남았다)
-
-    ⚠ **「없음」 줄을 지우지 않았다.** 거리가 실렸다고 전환 인자의 존부가
-    말해지는 것은 아니며, 1절 요약이 그 사실을 같은 문면으로 이미 싣는다.
-    """
-    # ★ 번호는 `shortfall.SENSITIVITY_SECTION` 한 곳이 짓는다 — 5.3 이 이 절을
-    # 가리키므로(상호 참조), 두 자리에 적으면 절을 옮길 때 한쪽만 고쳐진다.
-    lines = [f"### {SENSITIVITY_SECTION} 불확실 인자 — 값이 틀릴 수 있는 것", ""]
-    if not report.flipping:
-        lines += [
-            f"- 단독 전환 인자 — 없음 (산출: {SOLO_SWEEP} · 범위는 대장 "
-            f"`sensitivity` 의 low~high · 전건은 붙임 2 · 결손의 구조는 "
-            f"{SHORTFALL_SECTION})",
-            "",
-        ]
-    else:
-        lines += [
-            "| 인자 | 사용값 | 단위 | 결론 전환값 | 여유 | 신뢰도 | 산출 |",
-            "|---|---|---|---|---|---|---|",
-        ]
-        for entry in report.flipping:
-            margin = (
-                f"{entry.margin_pct:.1f}%"
-                if entry.margin_pct is not None
-                else NO_VALUE
-            )
-            threshold = (
-                _num(entry.threshold) if entry.threshold is not None else NO_VALUE
-            )
-            lines.append(
-                f"| `{entry.variable}` | {_num(entry.used_value)} | "
-                f"{_unit_head(entry.value_unit) or NO_VALUE} | {threshold} | "
-                f"{margin} | {entry.confidence} | {SOLO_SWEEP} |"
-            )
-        lines.append("")
-    # ★ 거리는 **전환 표 다음**이다. `FR-1002-AC4` 가 「뒤집히는 인자를 최상단에
-    # 별도 강조」라고 못 박으므로, 거리 두 줄을 위에 두면 강조가 한 칸 밀린다.
-    # 읽는 순서도 그쪽이 맞다 — *「뒤집히는가」* 다음에 *「얼마나 모자란가」* 다.
-    lines += _gap_lines(report)
-    lines += _remaining_gap_table(report)
-    lines += _combined_lines(report)
-    return lines
+    """1. 요약 「잠정성」 · 6.1 「전환 인자의 신뢰도」 칸."""
+    return ledger_confidence_note(report)
 
 
 def _gap_lines(report: CaseReport) -> list[str]:
@@ -401,245 +286,6 @@ def _gap_lines(report: CaseReport) -> list[str]:
         # **지원율 값 줄이 아니라 진술 줄**이 된다(위 독스트링).
         f"- 결론 전환 지원율 — {_support_answer(report)} (현 지원율 "
         f"{report.subsidy_rate:.1%} · 산출: t=0 일시 지원 환산 · 산식은 붙임 3)",
-        "",
-    ]
-    return lines
-
-
-def _remaining_gap_table(report: CaseReport) -> list[str]:
-    """인자마다 **그 끝까지 밀면 결손이 얼마 줄어드나** — 그리고 얼마가 남는가.
-
-    붙임 2 의 `변동폭` 과 다른 것을 재는 표다. 변동폭은 *「이 인자가 결론 축을
-    얼마나 흔드는가」* 이고 이 표는 *「그 흔들림을 최대한 좋은 쪽으로 써서
-    결손을 얼마 줄이고, 0 선까지 얼마가 남는가」* 다. 둘은 같은 순위를 만들지
-    않는다 — 변동폭이 커도 반대 끝에서 시작하면 남는 거리가 더 클 수 있다.
-
-    ## ★★ **줄임을 열로 세운다** (R49/WP-4 · 판정 §3 ⓑ)
-
-    종전 이 표는 `그 끝의 남은 거리` 만 실었다. 재료는 다 있었으나 *「그러면
-    이 인자가 **얼마를 벌어 주는가**」* 는 **읽는 사람의 뺄셈으로 남았다** —
-    붙임 8 이 R43-H 에 고친 것과 같은 형태의 결함이다(*「재료가 다 있는데
-    담당자가 스스로 빼기를 해야 알았다」*). 판정 §3 ⓑ 의 제목이 그 물음
-    그대로이므로(*「이 인자를 고치면 적자가 얼마 줄어드나」*) 뺄셈을 표가 진다.
-
-    ★ **순서도 줄임이 정한다.** `결손 − 남은 거리` 가 줄임이고 결손은 행마다
-    같은 수이므로, **줄임 내림차순은 남은 거리 오름차순과 정확히 같은 순서**다
-    (그래서 정렬 키는 남은 거리 하나이며 두 수를 각각 정렬하지 않는다).
-
-    ⚠ **전환 인자를 이 표에 넣지 않는다.** 그쪽은 남는 거리가 0 인 지점
-    (임계값)이 존재하므로 위 표의 `결론 전환값`·`여유` 열이 답이고, 여기 함께
-    실으면 같은 인자가 두 표에서 다른 물음에 답하는 것처럼 읽힌다.
-    """
-    rows = [
-        entry for entry in report.uncertain_influences if not entry.flips_conclusion
-    ]
-    if not rows:
-        return []
-    # 결손(또는 여유)은 **행마다 같은 수**다 — 줄임의 기준선이며, 여기서 한 번만
-    # 읽는다. 행마다 다시 읽으면 그것이 사본이 된다.
-    gap = abs(report.conclusion_gap_won)
-    direction = GAP_MARGIN if report.recovers_within_horizon else GAP_SHORTFALL
-    measured = sorted(
-        (
-            (entry, *_flip_direction_end(
-                entry, recovers=report.recovers_within_horizon
-            ))
-            for entry in rows
-        ),
-        # 남은 거리 오름차순 = 줄임 내림차순 (위 독스트링).
-        key=lambda measure: abs(measure[2]),
-    )
-    lines = [
-        "#### 무엇을 고치면 얼마가 줄어드나 — 검토 범위 끝까지 밀었을 때",
-        "",
-        "| 인자 | 사용값 | 단위 | 전환 방향 끝 | "
-        f"그 끝까지 밀면 줄어드는 {direction} | 그 끝의 남은 거리 | 신뢰도 | 산출 |",
-        "|---|---|---|---|---|---|---|---|",
-    ]
-    for entry, end_value, end_npv in measured:
-        # ⚠ **두 끝의 결론 축이 같으면 「전환 방향」이 없다.** 그때 어느 끝을
-        # 적어도 *그쪽으로 밀면 0 선에 가까워진다* 를 함의하게 되는데, 그 인자는
-        # 어느 쪽으로도 결론을 움직이지 않는다 — 방향 칸은 `NO_VALUE` 로 두고
-        # 사실은 `산출` 열의 미반영 라벨이 나른다. 거리는 어느 끝이든 같다.
-        moved = NO_VALUE if entry.npv_low == entry.npv_high else _num(end_value)
-        method = UNREAD_BY_PIPELINE if entry.unread_by_pipeline else SOLO_SWEEP
-        lines.append(
-            f"| `{entry.variable}` | {_num(entry.used_value)} | "
-            f"{_unit_head(entry.value_unit) or NO_VALUE} | {moved} | "
-            f"{_won(gap - abs(end_npv))} | {_won(abs(end_npv))} | "
-            f"{entry.confidence} | {method} |"
-        )
-    lines.append("")
-    # ★ **라벨의 뜻을 표 바로 아래에 단다 (R43-G).** 종전에는 붙임 2 각주와
-    # 붙임 8 에만 있었고, *「표를 인용해 가는 사람은 거기까지 가지 않는다」*
-    # 가 실제로 일어났다(문의사항 2026-08-29 나-3). 문면의 소유자는
-    # `UNREAD_NOTE` 한 곳이다 — 여기서 다시 적지 않는다.
-    if any(entry.unread_by_pipeline for entry in rows):
-        lines += [UNREAD_NOTE, ""]
-    lines += _reduction_total_line(gap, measured, direction=direction)
-    return lines
-
-
-def _reduction_total_line(
-    gap: float,
-    measured: list[tuple[InfluenceEntry, float, float]],
-    *,
-    direction: str,
-) -> list[str]:
-    """줄임의 **합**과 그래도 남는 몫 — 판정 §3 ⓑ 가 묻는 것의 마지막 칸.
-
-    ## ⚠ 왜 「단순 합」이라 못 박는가
-
-    이것은 1변수 스윕 전건을 각각 좋은 끝까지 민 값을 **더한 것**이며, 전건을
-    동시에 민 실행이 아니다. 양식 §2 가 *「단독 효과를 더하면 결합 효과」를
-    단정하지 않는다* 로 못 박고 있으므로 라벨이 그 사실을 진다 — 실제로 이
-    구성의 설비단가 묶음은 잔차 0원이지만(아래 결합 시나리오), 그것이 **전건에
-    성립한다는 근거는 없다.**
-
-    ★ 그래도 이 한 줄이 서는 이유는, 이 수가 없으면 *「전건을 다 좋은 쪽으로
-    밀어도 절반밖에 못 메운다」* 를 심의회가 **표의 칸을 손으로 더해** 알아야
-    하기 때문이다. 판정 §3 ⓑ 의 실측 노트가 든 *「검사용 하한까지 낮춰도 약
-    667만원이 여전히 부족」* 과 같은 물음이며, 그 물음의 답을 표가 낸다.
-
-    ⚠ **남는 몫을 「해소 조건」으로 읽히게 두지 않는다** — 어느 항에서 오는
-    몫인지는 5.3 이 항목별로 가르며, 이 줄은 그 자리를 가리키는 것까지다.
-    """
-    total = sum(gap - abs(end_npv) for _entry, _end_value, end_npv in measured)
-    residual = gap - total
-    # ⚠ 결손이 0 이면 비율이 성립하지 않는다 — 그때는 비율 칸을 두지 않는다.
-    share = f" ({direction} {_won(gap)}의 {residual / gap:.1%})" if gap else ""
-    return [
-        f"- 위 {len(measured)}건을 각각 좋은 끝까지 밀어 얻는 줄임의 **단순 합** "
-        f"— {_won(total)} (산출: {SOLO_SWEEP} {len(measured)}건의 합 · "
-        f"상호작용 미반영 · 함께 민 결과는 아래 결합 시나리오) · "
-        f"그래도 남는 {direction} **{_won(residual)}**{share} · "
-        f"그 몫이 어느 항에서 오는지는 {SHORTFALL_SECTION}",
-        "",
-    ]
-
-
-def _flip_direction_end(
-    entry: InfluenceEntry, *, recovers: bool
-) -> tuple[float, float]:
-    """**결론이 뒤집히는 쪽** 끝의 (인자 값, 결론 축).
-
-    방향을 결론에서 읽는다 — 미회수면 결론 축이 큰 끝, 회수면 작은 끝이 0 선에
-    가깝다. 인자마다 부호를 적어 두는 안은 버렸다: 그 표는 편익·비용 인자가
-    늘 때마다 낡고, 낡은 부호는 **반대 끝을 「가까운 끝」으로 싣는다.**
-    """
-    ends = ((entry.low, entry.npv_low), (entry.high, entry.npv_high))
-    return min(ends, key=lambda end: end[1]) if recovers else max(
-        ends, key=lambda end: end[1]
-    )
-
-
-def _combined_lines(report: CaseReport) -> list[str]:
-    """5.1 — **함께 움직이는 인자를 함께 흔든 표** (검토 「1차 의견」 1).
-
-    묶음은 **여기서 정하지 않는다.** `core/casegrid/grid.py` 의 프리셋이 이미
-    선언한 것을 읽어 온다 — 케이스 그리드는 결합으로 흔드는데 리포트만 독립인
-    상태가 이 절이 생긴 이유이므로, 리포트가 묶음을 따로 적으면 같은 어긋남이
-    반대 방향으로 다시 생긴다.
-    """
-    if not report.coupled_sweeps:
-        return []
-    # ⚠ **단위를 열 머리에 넣는다.** 이 표는 서로 다른 단위의 단가를 **나란히**
-    # 싣는 첫 자리다(원/kW 와 원/kWh). 숫자만 두면 검토자는 1,600,000 과
-    # 500,000 을 같은 자로 견주게 된다.
-    units = {entry.variable: entry.value_unit for entry in report.influences}
-    lines: list[str] = []
-    for sweep in report.coupled_sweeps:
-        heads = [
-            f"`{name}` ({_unit_head(units[name])})"
-            if units.get(name)
-            else f"`{name}`"
-            for name in sweep.variables
-        ]
-        lines += [
-            f"#### 결합 시나리오 — `{sweep.bundle}`",
-            "",
-            f"- 묶음 구성 — {' · '.join(f'`{n}`' for n in sweep.variables)} "
-            "(선언: `FR-801` 구성표 · 케이스 그리드)",
-            f"- 이동 수준 — `{MOVED_LEVELS[0]}` · `{MOVED_LEVELS[1]}` "
-            "(대장 `sensitivity` · 붙임 2 와 같은 범위)",
-            f"- 산출 — {COUPLED_SWEEP}",
-            "",
-            "| 시나리오 | " + " | ".join(heads) + " | 순현재가치 | 기준 대비 | 회수 |",
-            "|---|" + "---|" * (len(sweep.variables) + 3),
-        ]
-        for point in sweep.points:
-            values = " | ".join(
-                _num(point.values[name]) for name in sweep.variables
-            )
-            delta = NO_VALUE if point.is_base else _won(point.delta_won)
-            lines.append(
-                f"| {_point_label(point)} | {values} | {_won(point.npv)} | "
-                f"{delta} | {_recovery(point.recovers)} |"
-            )
-        lines.append("")
-        lines += _combined_note(sweep)
-    return lines
-
-
-def _point_label(point: CombinedPoint) -> str:
-    if point.is_base:
-        return "기준 (전건 `base`)"
-    level = "하락" if point.level == "low" else "상승"
-    if point.is_combined:
-        return f"**동반 {level}** (전건 `{point.level}`)"
-    return f"`{point.moved[0]}` 단독 {level}"
-
-
-def _combined_note(sweep: CoupledSweep) -> list[str]:
-    """표 아래 **잰 값**을 나열한다.
-
-    상호작용 잔차가 0 인 것은 지금 구성에서 설비단가가 `t=0` CAPEX 로만 들어가
-    서로 곱해지지 않기 때문이며 **모형의 일반 성질이 아니다.** 그 사실을
-    문장으로 논하지 않고 **잔차 값 자체**를 싣는다 — 0 이 아니게 되는 날 값이
-    스스로 달라진다.
-    """
-    residual = " · ".join(
-        f"`{level}` {_won(value)}"
-        for level, value in sorted(sweep.interaction_won.items())
-    )
-    lines = [
-        f"- 상호작용 잔차 (결합에서 단독 합을 뺀 값) — {residual}",
-        f"- 단독 합과 결합의 일치 — {'일치' if sweep.additive else '불일치'}",
-    ]
-    flips = sweep.flips_only_when_combined
-    if flips:
-        levels = " · ".join(f"`{point.level}`" for point in flips)
-        lines.append(
-            f"- 결합에서만 회수되는 수준 — {levels} (단독 이동으로는 전건 미회수)"
-        )
-    lines.append("")
-    return lines
-
-
-def _policy_section(report: CaseReport) -> list[str]:
-    """5.2 — **평가자가 정하는 값**의 감도 (R33 검토 지적 4).
-
-    영향도 순위가 답하려는 물음은 **「어느 자료를 먼저 확보할 것인가」**다.
-    할인율은 확보할 자료가 아니라 정해 놓고 쓰는 규칙이므로 5.1 과 갈라 싣는다.
-    """
-    lines = [
-        "### 5.2 정책 설정값 — 평가자가 정하는 것",
-        "",
-        "| 설정값 | 적용값 | 검토 범위 | 결론 전환값 | 결론 변동폭 | 산출 |",
-        "|---|---|---|---|---|---|",
-    ]
-    for entry in report.policy_influences:
-        threshold = (
-            _num(entry.threshold) if entry.threshold is not None else "범위 내 없음"
-        )
-        lines.append(
-            f"| `{entry.variable}` | {_num(entry.used_value)} | "
-            f"{_num(entry.low)}~{_num(entry.high)} | {threshold} | "
-            f"{_won(entry.delta_won)} | {SOLO_SWEEP} |"
-        )
-    lines += [
-        "",
-        "- 분류 — 대장 항목이 아닌 **모형 파라미터**다. 확보 대상(5.1)과 갈라 싣는다",
         "",
     ]
     return lines
@@ -710,44 +356,10 @@ def _judgement_section(report: CaseReport) -> list[str]:
         # ★★ **지원 행이 맨 위다 (R43-G).** 아래 `_subsidy_flip_row()` 참조 —
         # 이 표에서 「없음」만 떼어 인용된 기록이 있다.
         _subsidy_flip_row(report),
+        f"| 지원 외의 단일·결합 인자 | {NONE_IN_RANGE} | — |",
     ]
-    for entry in report.flipping:
-        direction = "이하" if (entry.threshold or 0) < entry.used_value else "이상"
-        margin = (
-            f"{entry.margin_pct:.1f}%" if entry.margin_pct is not None else NO_VALUE
-        )
-        lines.append(
-            f"| `{entry.variable}` {_num(entry.threshold or 0)}"
-            f"{_unit_suffix(entry.value_unit)} {direction} | "
-            f"사용값 대비 {margin} | {SOLO_SWEEP} |"
-        )
-    for sweep in report.coupled_sweeps:
-        for point in sweep.points:
-            if point.is_combined and point.recovers:
-                lines.append(
-                    f"| `{sweep.bundle}` 전건 `{point.level}` 동반 | "
-                    f"{_won(point.npv)} (회수) | {COUPLED_SWEEP} |"
-                )
-    # ★ **행이 없으면 「없음」을 적는다 (R34 · 실물을 눈으로 읽고 찾았다).**
-    #
-    # 전환 인자가 0건이 되자 이 표가 **머리 두 줄만 남은 빈 표**로 인쇄됐다.
-    # 검토자에게 빈 표는 *「없다」* 와 *「싣지 못했다」* 를 구별해 주지 않는다 —
-    # 1절 요약은 같은 사실을 이미 「없음 (검토 범위 내)」로 적고 있으므로,
-    # 여기만 비면 두 자리가 다른 말을 하는 것처럼 읽힌다.
-    #
-    # ⚠ **비었는지는 지원 행 위에서 잰다 (R43-G).** 지원 행이 늘 서므로 표는
-    # 다시는 비지 않는데, 그렇다고 「단독·결합으로는 없음」이 사라지면 종전에
-    # 「없음」이 말하던 사실이 표에서 지워진다.
-    if lines[-1] == _subsidy_flip_row(report):
-        lines.append(f"| 지원 외의 단일·결합 인자 | {NONE_IN_RANGE} | — |")
 
     lines += ["", "### 6.3 미해소 항목", "", "| 구분 | 항목 | 해소 조건 |", "|---|---|---|"]
-    for entry in report.flipping:
-        if entry.ledger_key:
-            lines.append(
-                f"| 자료 확보 | 전제 대장 `{entry.ledger_key}` | "
-                f"신뢰도 `{entry.confidence}` → 실측·회신 |"
-            )
     # ★★★ **미반영 항목의 해소 조건 «전문»을 여기 되풀이하지 않는다**
     # (R67/WP-N1d · 사용자 판정 P1 *「결론·주요 민감도·미반영 항목의 방향을
     # 본문에 남기고 상세 근거와 중복 내용을 붙임으로 재배치한다」*).
@@ -782,7 +394,7 @@ def _judgement_section(report: CaseReport) -> list[str]:
             f"| 미반영 | {len(unreflected)}건 (항목명 · 방향 · 판정은 3.4) | "
             "항목마다 다르다 — 붙임 8 「해소 조건」 열이 전문을 진다 |"
         )
-    lines += ["", "- 상세 — 자료 확보는 붙임 2, 미반영 항목은 붙임 8", ""]
+    lines += ["", "- 상세 — 미반영 항목은 붙임 8", ""]
     return lines
 
 
@@ -868,8 +480,6 @@ def render_markdown(report: CaseReport) -> str:
     lines += ["---", "", "# 붙임", ""]
     lines += appendix_section(report)
     lines += ["---", ""]
-    lines += influence_section(report)
-    lines += ["---", ""]
     lines += formula_section(report)
     lines += ["---", ""]
     lines += resource_detail_section(report.basis)
@@ -923,17 +533,8 @@ def _result_section(report: CaseReport) -> list[str]:
 
 
 def _driver_section(report: CaseReport) -> list[str]:
-    """【5】 결론을 좌우하는 요인 — **두 종류를 갈라 싣고, 결손을 가른다.**
-
-    ★ **5.3 은 5.1 · 5.2 뒤에 붙는다** (R49 · 판정 §3 ⓐ). 번호를 다시 매기지
-    않은 이유는 `5.1` 을 **이름으로 인용하는 자리가 여럿**이기 때문이다 —
-    양식 문서 · 붙임 2 · 붙임 3 · 검사 문면. 번호를 옮기면 그 인용이 전부
-    거짓이 된다.
-    """
+    """【5】 결론을 좌우하는 요인 — 결손을 가른다."""
     lines = ["## 5. 결론을 좌우하는 요인", ""]
-    lines += _flip_section(report)
-    lines += _policy_section(report)
-    # ★ 조립을 여기서 하지 않는다 — 분해는 `build_shortfall()` 이 만들고
-    # 합계가 결론 축과 다르면 **그 함수가 터뜨린다**(그쪽 독스트링).
+    lines += _gap_lines(report)
     lines += shortfall_section(build_shortfall(report))
     return lines

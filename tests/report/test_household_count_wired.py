@@ -157,33 +157,6 @@ def test_the_body_runs_on_the_bigger_site() -> None:
     )
 
 
-def test_the_sweep_runs_on_the_same_site_size_as_the_body() -> None:
-    """★★★ **5·6절의 스윕도 같은 규모로 돈다** — 두 절이 다른 사업을 그리지 않는다.
-
-    ## 어떻게 재는가 — 「읽지 않는 인자」가 스윕의 **기준선**을 드러낸다
-
-    `unread_by_pipeline` 인 인자는 끝에서 끝까지 흔들어도 결론축이 0원
-    움직인다. 그러므로 그 인자의 `npv_low`·`npv_high` 는 **스윕의 기준선
-    그 자체**이며, 스윕이 본 실행과 다른 규모로 돌면 그 값이 본문의 결론과
-    갈린다. `tests/report/test_irradiance_wired.py::
-    test_the_influence_endpoints_move_with_the_shaped_run` 이 형상 축에서
-    같은 방법을 쓴다.
-    """
-    report = _report(_COUNT)
-    conclusion = float(report.metrics[CONCLUSION_METRIC])
-    unread = [entry for entry in report.influences if entry.unread_by_pipeline]
-    assert unread, (
-        "파이프라인이 읽지 않는 인자가 0건이다 — 이 검사가 0회 순회로 통과한다"
-    )
-    for entry in unread:
-        assert entry.npv_low == pytest.approx(conclusion, abs=1.0), (
-            f"`{entry.variable}` 의 스윕 기준선이 {entry.npv_low:,.0f}원인데 "
-            f"본문 결론은 {conclusion:,.0f}원이다 — 스윕이 다른 가구 수로 "
-            "돌고 있다"
-        )
-        assert entry.npv_high == pytest.approx(conclusion, abs=1.0)
-
-
 def test_the_appendix_prints_the_size_it_ran_on() -> None:
     """★★ 붙임 1 이 **몇 호로 돌았는지**를 표로 싣는다."""
     lines = appendix_section(_report(_COUNT))

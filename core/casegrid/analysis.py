@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from core.casegrid.models import CaseResult, FeasibleCell, TornadoInfluence
+from core.casegrid.models import CaseResult, FeasibleCell
 from core.contracts.validation import ValidationError
 
 #: 슬라이스 기본 수준의 이름. 프리셋이 `low`/`base`/`high` 세 수준을 쓴다
@@ -167,16 +167,6 @@ def filter_results(
     )
 
 
-def tornado_ranking(results: Sequence[CaseResult], *, metric: str) -> tuple[TornadoInfluence, ...]:
-    variable_names = sorted({name for result in results for name in result.values})
-    influences: list[TornadoInfluence] = []
-    for variable_name in variable_names:
-        averages = _metric_averages_by_value(results, variable_name, metric)
-        influence = max(averages) - min(averages) if averages else 0.0
-        influences.append(TornadoInfluence(variable_name=variable_name, influence=influence))
-    return tuple(sorted(influences, key=lambda item: (-item.influence, item.variable_name)))
-
-
 def compare_metric(value: float, target: float, comparator: str = ">=") -> bool:
     if comparator == ">=":
         return value >= target
@@ -189,14 +179,3 @@ def compare_metric(value: float, target: float, comparator: str = ">=") -> bool:
     if comparator == "==":
         return value == target
     raise ValueError(f"unsupported comparator: {comparator!r}")
-
-
-def _metric_averages_by_value(
-    results: Sequence[CaseResult],
-    variable_name: str,
-    metric: str,
-) -> tuple[float, ...]:
-    grouped: dict[object, list[float]] = {}
-    for result in results:
-        grouped.setdefault(result.values[variable_name], []).append(result.metrics[metric])
-    return tuple(sum(values) / len(values) for values in grouped.values())

@@ -245,32 +245,6 @@ def test_more_shiftable_share_moves_more_until_the_surplus_caps_it() -> None:
     )
 
 
-def test_the_sweep_runs_on_the_same_day_as_the_body() -> None:
-    """★★★ **5·6절의 스윕도 같은 하루로 돈다** — 두 절이 다른 사업을 그리지 않는다.
-
-    ## 어떻게 재는가 — 「읽지 않는 인자」가 스윕의 **기준선**을 드러낸다
-
-    `unread_by_pipeline` 인 인자는 끝에서 끝까지 흔들어도 결론축이 0원
-    움직인다. 그러므로 그 인자의 `npv_low`·`npv_high` 는 **스윕의 기준선 그
-    자체**이며, 스윕이 옮기지 않은 하루로 돌면 그 값이 본문의 결론과 갈린다.
-    `tests/report/test_appliance_load_wired.py` 가 기기 부하 축에서 같은 방법을
-    쓴다.
-    """
-    report = _report()
-    conclusion = float(report.metrics[CONCLUSION_METRIC])
-    unread = [entry for entry in report.influences if entry.unread_by_pipeline]
-    assert unread, (
-        "파이프라인이 읽지 않는 인자가 0건이다 — 이 검사가 0회 순회로 통과한다"
-    )
-    for entry in unread:
-        assert entry.npv_low == pytest.approx(conclusion, abs=1.0), (
-            f"`{entry.variable}` 의 스윕 기준선이 {entry.npv_low:,.0f}원인데 "
-            f"본문 결론은 {conclusion:,.0f}원이다 — 스윕이 옮기지 않은 하루로 "
-            "돌고 있다"
-        )
-        assert entry.npv_high == pytest.approx(conclusion, abs=1.0)
-
-
 def test_the_appendix_prints_the_share_and_what_actually_moved() -> None:
     """★★★ 붙임 1 이 **비율과 실제로 옮긴 몫을 함께** 싣는다 (판정 ⑥ ①②).
 

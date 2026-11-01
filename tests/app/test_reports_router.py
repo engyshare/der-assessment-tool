@@ -47,7 +47,7 @@ def test_report_endpoint_is_collected_and_returns_a_report(client: TestClient) -
     for heading in (
         "## 2. 평가 개요",
         "## 3. 평가 방법",
-        "### 5.1 불확실 인자",
+        "## 5. 결론을 좌우하는 요인",
         "## 붙임 5. 재현 절차",
     ):
         assert heading in body, f"리포트에 «{heading}» 절이 없다"
@@ -67,7 +67,7 @@ def test_json_export_is_parseable_by_a_standard_parser(client: TestClient) -> No
     assert response.status_code == 200
     parsed = json.loads(response.text)  # strict 파서 — Infinity 면 여기서 멈춘다
     assert "Infinity" not in response.text
-    assert parsed["influences"], "JSON 에 영향도 순위가 없다"
+    assert parsed["ledger_inputs"], "JSON 에 대장 입력이 없다"
     assert parsed["assumptions"], "JSON 에 가정 부록이 없다"
     assert parsed["manifest_hash"]
 

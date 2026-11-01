@@ -329,22 +329,6 @@ def test_result_card_delta_matches_supported_minus_baseline() -> None:
         assert delta == pytest.approx(supported - baseline)
 
 
-@pytest.mark.req("UI-7-AC1", "FR-1002-AC1")
-def test_impact_ranking_precedes_input_value_listing_in_dom() -> None:
-    """UI-7-AC1 과 FR-1002-AC1 은 동일 요구사항이다(docs/traceability.md:359
-    가 "(FR-1002)"로 명시). render_dashboard() 실제 HTML 을 파싱해 DOM 순서를
-    검증하므로, 리포트 첫 화면이 영향도 순위로 시작한다는 FR-1002-AC1 의
-    실질도 이 테스트가 실검증한다 (§17.1 — 마커만 추가, 새 단언 없음)."""
-    parser = parse(render_dashboard())
-    positions = {
-        element.attrs["id"]: element.index
-        for element in parser.elements
-        if "id" in element.attrs
-    }
-
-    assert positions["impact-ranking"] < positions["result-input-appendix"]
-
-
 @pytest.mark.req("NFR-302-M1")
 def test_inputs_have_tooltips_with_unit_description_and_source() -> None:
     tips = [
@@ -489,7 +473,10 @@ def test_the_demo_section_says_on_screen_that_it_is_a_demo() -> None:
     assert 'href="#run"' in notice
 
     # ③ **그 절의 머리**에 있다. 아래에 있으면 데모 수를 먼저 읽고 나중에 안다
-    assert html.index("data-demo-notice") < html.index('id="impact-ranking"')
+    # 표지 바로 뒤의 첫 데모 값은 결과 카드다(R72/WP-5 가 영향도 순위 표를 지웠다).
+    assert html.index("data-demo-notice") < html.index(
+        'aria-label="무지원 기준선 대비 증분"'
+    )
     assert html.index('id="results"') < html.index("data-demo-notice")
 
 

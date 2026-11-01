@@ -23,7 +23,6 @@ from core.report._format import _recovery
 from core.report.appendix_sections import (
     NO_OVERRIDE,
     OVERRIDE_TABLE,
-    UNREAD_BY_PIPELINE,
 )
 from core.report.case_report import (
     CONCLUSION_METRIC,
@@ -75,15 +74,6 @@ def test_influence_ranking_comes_before_the_assumption_list() -> None:
         "붙임으로 보내라고 한다"
     )
     assert text.index("# 붙임") < listing, "전 가정 목록이 본문에 있다"
-
-
-@pytest.mark.req("FR-1002-AC4")
-def test_flipping_factors_are_the_first_section() -> None:
-    """결론을 뒤집는 인자가 **맨 앞**이다."""
-    text = _markdown()
-    flip = text.index("### 5.1 불확실 인자")
-    ranking = text.index("## 붙임 2. 영향도 산출 상세")
-    assert flip < ranking
 
 
 def test_no_scientific_notation_reaches_the_reviewer() -> None:
@@ -150,56 +140,6 @@ def test_no_machine_local_path_reaches_the_reviewer() -> None:
     assert len(re.findall(_LOCAL_PATH, planted)) == 3, (
         "좁힌 무늬가 진짜 기계 경로를 놓친다"
     )
-
-
-@pytest.mark.req("FR-1001-AC4")
-def test_every_ranked_factor_carries_its_provenance_in_the_same_row() -> None:
-    """출처·기준연도·신뢰도가 **같은 행**에 있다.
-
-    별표로 미루면 검토자가 두 표를 대조해야 하고, 그 대조는 `MC-1` 이 금지한
-    「부연」에 해당한다 — 대조 방법을 설명해야 하기 때문이다.
-    """
-    report = build_case_report(
-        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
-    )
-    text = render_markdown(report)
-    section = text[text.index("## 붙임 2. 영향도 산출 상세") : text.index("## 붙임 3.")]
-    for entry in report.uncertain_influences:
-        row = next(
-            line
-            for line in section.splitlines()
-            if line.startswith(f"| `{entry.variable}` ")
-        )
-        assert entry.confidence in row, f"{entry.variable}: 신뢰도가 행에 없다"
-        assert entry.source in row, f"{entry.variable}: 출처가 행에 없다"
-
-
-@pytest.mark.req("FR-1002-AC1")
-def test_policy_parameters_are_not_ranked_with_the_uncertain_ones() -> None:
-    """★ **할인율은 영향도 순위표에 없다** (R33 검토 지적 4).
-
-    영향도 순위가 답하려는 물음은 *「어느 자료를 먼저 확보할 것인가」*다.
-    할인율은 확보할 자료가 아니라 **평가자가 정하는 값**이므로, 한 표에 섞이면
-    1위가 「확보 대상」이 아니게 되고 표를 읽은 사람이 우선순위를 잘못 잡는다.
-
-    ⚠ **빼는 것과 버리는 것은 다르다.** 5절에 반드시 있어야 한다 — 할인율
-    선택이 결론을 바꾸는 것은 사실이고, 그것을 지우면 리포트가 덜 정직해진다.
-    """
-    report = build_case_report(
-        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
-    )
-    text = render_markdown(report)
-    ranking = text[text.index("## 붙임 2. 영향도 산출 상세") : text.index("## 붙임 3.")]
-    policy = text[text.index("### 5.2 정책 설정값") : text.index("## 6. 종합")]
-
-    assert report.policy_influences, "정책 설정값이 하나도 없다 — 전제가 바뀌었다"
-    for entry in report.policy_influences:
-        assert f"`{entry.variable}`" not in ranking, (
-            f"{entry.variable} 은 정해 놓고 쓰는 값인데 영향도 순위에 섞였다"
-        )
-        assert f"| `{entry.variable}` " in policy, (
-            f"{entry.variable} 이 5절에도 없다 — 빼는 것과 버리는 것은 다르다"
-        )
 
 
 @pytest.mark.req("FR-1005-AC1")
@@ -615,42 +555,11 @@ def test_the_flip_condition_table_is_never_left_empty() -> None:
     ]
 
     assert len(rows) >= 2, f"6.2 표에 머리 말고 행이 없다 — {rows}"
-    if not report.flipping:
-        assert NONE_IN_RANGE in section, (
-            "전환 인자가 0건인데 그 사실을 적은 행이 없다 — 요약(1절)은 이미 "
-            f"「{NONE_IN_RANGE}」 로 적고 있다"
-        )
-
-
-@pytest.mark.req("FR-1002-AC3")
-def test_unread_variable_is_called_out_in_the_body() -> None:
-    """변동폭 0 을 **「영향 최하위」로 흘려보내지 않는다.**
-
-    ⚠ 종전 이 검사는 *「계산이 이 인자를 읽지 않고 있을 가능성이 크다」* 라는
-    **경고 문장**을 찾았다. 양식 0절이 해설을 금지한 뒤로는 같은 사실을
-    `산출` 열의 라벨과 3.4 미반영 표가 나른다 — 문장이 아니라 **자리**를
-    본다.
-    """
-    report = build_case_report(
-        _GOLDEN / "scenario_unsubsidized.yaml", assumptions_path=_ASSUMPTIONS
+    # R72/WP-5 이후 전환 인자를 찾는 스윕이 없으므로 이 행은 늘 선다.
+    assert NONE_IN_RANGE in section, (
+        "전환 인자 행이 없다 — 요약(1절)은 이미 "
+        f"「{NONE_IN_RANGE}」 로 적고 있다"
     )
-    text = render_markdown(report)
-    limits = text[text.index("### 3.4 이 평가가 하지 않은 것") : text.index("## 4. 평가 결과")]
-    ranking = text[text.index("## 붙임 2. 영향도 산출 상세") : text.index("## 붙임 3.")]
-
-    for entry in report.unread_variables:
-        row = next(
-            line
-            for line in ranking.splitlines()
-            if line.startswith("| ") and f"`{entry.variable}`" in line
-        )
-        assert UNREAD_BY_PIPELINE in row, (
-            f"{entry.variable}: 변동폭 0 이 「영향 최하위」로만 실렸다 — "
-            "산출 열이 미반영을 말해야 한다"
-        )
-        assert entry.variable in limits, (
-            f"{entry.variable}: 미반영 인자가 본문 3.4 에 없다"
-        )
 
 
 @pytest.mark.req("FR-607-AC1")
@@ -775,22 +684,10 @@ def test_summary_section_stands_alone_for_the_committee() -> None:
         "요약의 결론 수치가 본문과 다르다"
     )
 
-    # ② 결론을 좌우하는 요인 — 단독과 결합 **둘 다**
-    for entry in report.flipping:
-        assert entry.variable in summary, f"{entry.variable} 이 요약에 없다"
-    for sweep in report.coupled_sweeps:
-        recovering = [
-            p for p in sweep.points if p.is_combined and p.recovers
-        ]
-        if recovering:
-            assert sweep.bundle in summary, (
-                f"{sweep.bundle}: 결합에서 회수되는데 요약에 없다 — "
-                "단독만 실으면 사업을 실제보다 어렵게 그린다"
-            )
+    # ② 결론을 좌우하는 요인 — 단일 실행에서는 없음
+    assert NONE_IN_RANGE in summary
 
-    # ③ 유의사항 — 있는 것만 적되, 있으면 반드시 적는다
-    if report.provisional_warning:
-        assert "가정" in summary, "전환 인자의 신뢰도가 요약에 없다"
+    # ③ 유의사항
     unreflected = build_unreflected(report)
     if unreflected:
         assert str(len(unreflected)) in summary, "미반영 건수가 요약에 없다"
@@ -1281,7 +1178,7 @@ def test_appendix_one_prints_the_change_table_even_when_nothing_changed() -> Non
     )
     text = render_markdown(report)
     appendix = text[
-        text.index("## 붙임 1. 전제 대장 전건") : text.index("## 붙임 2.")
+        text.index("## 붙임 1. 전제 대장 전건") : text.index("## 붙임 3.")
     ]
 
     assert OVERRIDE_TABLE in appendix, (
@@ -1308,7 +1205,7 @@ def test_appendix_one_prints_the_change_table_even_when_nothing_changed() -> Non
     )
     changed_text = render_markdown(changed)
     table = changed_text[
-        changed_text.index(OVERRIDE_TABLE) : changed_text.index("## 붙임 2.")
+        changed_text.index(OVERRIDE_TABLE) : changed_text.index("## 붙임 3.")
     ]
     row = [
         line for line in table.splitlines()

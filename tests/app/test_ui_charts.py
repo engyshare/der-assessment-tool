@@ -176,32 +176,6 @@ def test_an_unknown_chart_tag_is_a_404_that_lists_the_registered_ones(
         assert tag in detail, f"{tag} 이(가) 오류 문면에 없다"
 
 
-@pytest.mark.req("FR-803-AC2")
-def test_the_tornado_draws_the_same_influences_the_report_ranks() -> None:
-    """★ **토네이도가 리포트의 영향도와 같은 것을 그린다.**
-
-    그림이 별도의 순위를 그리면 화면의 「영향도 순위」 목록과 그림이 갈릴 수
-    있고, 갈려도 **둘 다 그럴듯해 보인다.** 그래서 이름·폭·전환 여부 셋을
-    `CaseReport.influences` 와 **순서까지** 맞대고 본다.
-
-    ⚠ 기댓값을 박지 않는다 — 대장 판이 오르면 폭이 움직이는데, 박으면 그날
-    이 검사가 「그림이 틀렸다」로 빨간불이 된다.
-    """
-    report = run_ui_case(_SCENARIO).report
-    passed = chart_data(report, "tornado")["influences"]
-
-    assert passed, "리포트가 영향도를 한 건도 내지 않았다 — 대조할 것이 없다"
-    assert [item["name"] for item in passed] == [
-        entry.variable for entry in report.influences
-    ]
-    assert [item["delta"] for item in passed] == [
-        entry.delta_won for entry in report.influences
-    ]
-    assert [item["flips_conclusion"] for item in passed] == [
-        entry.flips_conclusion for entry in report.influences
-    ]
-
-
 @pytest.mark.req("FR-1004-AC1")
 def test_the_picture_follows_the_arrangement_the_screen_chose(
     client: TestClient,

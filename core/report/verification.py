@@ -591,7 +591,7 @@ def _stage9_metrics(report: CaseReport) -> StageBlock:
     ]
     c = [
         "이 지표(할인 회수기간·순현재가치)가 10단계 변형별 비교와 심의용 리포트 "
-        "5.1 영향도 분석의 기준값이다.",
+        "5절(결론을 좌우하는 요인)의 기준값이다.",
     ]
     d = []
     for f in report.formulas:

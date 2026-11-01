@@ -134,11 +134,11 @@ def test_design_variables_stay_out_of_the_uncertainty_table() -> None:
     """
     report = _report()
     names = {variable.name for variable in design_variables()}
-    listed = {entry.variable for entry in report.influences}
+    listed = {entry.variable for entry in report.ledger_inputs}
     assert not (names & listed), f"설계 변수가 영향도 표에 섞였다: {names & listed}"
 
     text = render_markdown(report)
-    body = text[text.index("### 5.1") : text.index("## 6. 종합")]
+    body = text[text.index("## 5. 결론을 좌우하는 요인") : text.index("## 6. 종합")]
     for name in names:
         assert name not in body, f"5절에 설계 변수 {name} 이 실렸다"
 

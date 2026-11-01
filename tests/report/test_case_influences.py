@@ -205,6 +205,11 @@ def test_the_sweeper_hands_the_distributed_credit_to_the_runner(
         # 위 `distributed_sub_items` 에 「헷갈릴 여지 없는 수」를 담은 것과
         # 같은 이유다.
         baseline_arrangement=BaselineArrangement.NONE,
+        # 러너 기본값과 같은 값 — 이 검사가 재는 인자가 아니다.
+        nwas_price_won_per_kwh=0.0,
+        cp_price_won_per_kw_month=0.0,
+        ess_operating_mode=None,
+        pv_allocation_priority=None,
     )
     sweeper.conclusion_at_many({"household_load_annual_kwh": 5.0})
 

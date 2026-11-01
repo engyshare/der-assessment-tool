@@ -416,7 +416,7 @@
       <h2 id="results-title">결과 대시보드</h2>
 
       {# ★★ D5 (R62/WP-7) — **이 절의 수는 전부 데모 값이다.**
-         결과 카드·영향도 순위 셋·가정 배지 둘·입력값 부록은
+         결과 카드·가정 배지 둘·입력값 부록은
          `web/render.py::demo_context()` 가 지은 **박힌 수**이고, 그런데도 같은
          화면의 「분석 실행」이 내는 **실제 결과와 나란히 놓인다** — 심의에서
          이것이 실측으로 읽힐 자리다.
@@ -439,7 +439,7 @@
       >
         <h3 id="demo-notice-title">데모 값 — 실제 결과가 아니다</h3>
         <p>
-          아래 <strong>결과 카드·영향도 순위·가정 배지·입력값 부록</strong>은
+          아래 <strong>결과 카드·가정 배지·입력값 부록</strong>은
           <strong>화면 모양을 보이는 데모 값</strong>이며
           <strong>실제 결과가 아니다</strong>.
           실제 결과는 「분석 실행」이 낸다.
@@ -465,18 +465,6 @@
         </p>
       </section>
       {% endif %}
-
-      <section id="impact-ranking" aria-labelledby="impact-title">
-        <h3 id="impact-title">영향도 순위</h3>
-        <ol class="impact-list">
-          {% for item in influences %}
-          <li data-rank="{{ item.rank }}">
-            <strong>{{ item.name }}</strong>
-            <span>{{ "{:,}".format(item.impact) }}원</span>
-          </li>
-          {% endfor %}
-        </ol>
-      </section>
 
       <section class="cards" aria-label="무지원 기준선 대비 증분">
         {% for card in result_cards %}

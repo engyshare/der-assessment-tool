@@ -296,11 +296,6 @@ def demo_context() -> dict[str, Any]:
                 "unit": "%",
             },
         ),
-        "influences": (
-            {"rank": 1, "name": "전력 단가", "impact": 270_000},
-            {"rank": 2, "name": "할인율", "impact": -80_000},
-            {"rank": 3, "name": "초기 투자비", "impact": -55_000},
-        ),
         "errors": (
             {
                 "field": "태양광 용량",
