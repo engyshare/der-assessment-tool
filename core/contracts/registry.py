@@ -91,6 +91,7 @@ def _concrete_subclasses(contract: type[T], prefix: str) -> list[type[T]]:
     found: dict[str, type[T]] = {}
 
     def walk(cls: type) -> None:
+        sub: type  # mypy 2.4 가 `__subclasses__()` 원소 타입을 추론하지 못한다
         for sub in cls.__subclasses__():
             module = getattr(sub, "__module__", "")
             abstract = bool(getattr(sub, "__abstractmethods__", frozenset()))
