@@ -29,12 +29,10 @@ source_modules =
     core.contracts
 forbidden_modules =
     core.der
-    core.asset
     core.model
     core.assumption
     core.regulation
     core.valuestream
-    core.constraint
     core.engine
     core.cba
     core.incentive
@@ -61,10 +59,9 @@ layers =
     core.incentive
     core.cba
     core.engine
-    core.constraint
     core.valuestream
     core.model
-    core.der : core.asset : core.regulation : core.assumption
+    core.der : core.regulation : core.assumption
     core.contracts
 containers =
 
@@ -78,7 +75,6 @@ name = 형제 구획 간 직접 import 금지 — contracts 경유 (NFR-208-AC2)
 type = independence
 modules =
     core.der
-    core.asset
     core.regulation
     core.assumption
 

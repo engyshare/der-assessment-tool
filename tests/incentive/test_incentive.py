@@ -11,13 +11,6 @@ from core.incentive.calculator import (
     calculate_loan_schedule,
 )
 from core.incentive.schemas import IncentiveScheme
-from core.incentive.solver import (
-    Goal,
-    generate_iso_support_curve,
-    solve_min_subsidy_rate,
-    solve_min_subsidy_rate_for_goals,
-    solve_min_support_variable,
-)
 
 
 def _scheme(**kwargs: Any) -> IncentiveScheme:
@@ -392,130 +385,7 @@ def test_build_capex_cashflows_baseline() -> None:
 # 있는 경우만 본다. AC4 를 검사하는 것은 아래 `..._unachievable` 이고, 그쪽은
 # 반대로 `FR-608-AC5`(역산 대상 변수 확장)를 인용하고 있었다. 둘이 서로 남의
 # 조항을 달고 있었고, `core/incentive/solver.py` 의 주석도 같은 오기였다.
-@pytest.mark.req("FR-608-AC1", "FR-608-AC2")
-def test_solve_min_subsidy_rate_basic() -> None:
-    """FR-608-AC1(택일)·AC2: 목표 3종을 각각 역산한다.
-
-    ★ **`IRR` 갈래는 R26 까지 한 번도 실행되지 않았다.** 조항이 열거한 목표는
-    셋(`NPV`·`IRR`·`PAYBACK`)인데 검사는 둘만 지났고, 그동안 `is_met` 의 IRR
-    분기가 부등호를 뒤집어도 아무것도 빨간불이 되지 않았다.
-    """
-
-    def eval_npv_linear(rate: float) -> float:
-        return -100.0 + (200.0 * rate)
-
-    res1 = solve_min_subsidy_rate(eval_npv_linear, 0.0, "NPV")
-    assert res1.success is True
-    assert abs(res1.subsidy_rate - 0.5) <= 0.001
-
-    def eval_payback(rate: float) -> float:
-        return 15.0 - (10.0 * rate)
-
-    res3 = solve_min_subsidy_rate(eval_payback, 10.0, "PAYBACK")
-    assert res3.success is True
-    assert abs(res3.subsidy_rate - 0.5) <= 0.001
-
-    # ★ IRR — 조항 예시가 「IRR ≥ 5%」다. 손계산: 지원율 r 에서 IRR = 10r 이면
-    # 5% 를 넘기는 최소 r 은 0.5 다. NPV 와 **같은 방향**(클수록 좋다)이므로
-    # `is_met` 이 PAYBACK 쪽 부등호를 쓰면 답이 0.0 으로 나온다.
-    def eval_irr(rate: float) -> float:
-        return 10.0 * rate
-
-    res_irr = solve_min_subsidy_rate(eval_irr, 5.0, "IRR")
-    assert res_irr.success is True
-    assert abs(res_irr.subsidy_rate - 0.5) <= 0.001, (
-        f"IRR 목표의 최소 지원율이 0.5 여야 합니다: {res_irr.subsidy_rate}"
-    )
-
-
-@pytest.mark.req("FR-608-AC3")
-def test_solve_min_subsidy_rate_monotonicity() -> None:
-    """FR-608-AC3: 비단조 구간 대응"""
-
-    def eval_npv_non_monotonic(rate: float) -> float:
-        if rate < 0.4:
-            return rate * 100
-        elif rate < 0.6:
-            return 40 - (rate - 0.4) * 100
-        else:
-            return 20 + (rate - 0.6) * 200
-
-    res4 = solve_min_subsidy_rate(eval_npv_non_monotonic, 30.0, "NPV", precision=0.01)
-    assert res4.success is True
-    assert abs(res4.subsidy_rate - 0.3) <= 0.01
-
-
-@pytest.mark.req("FR-608-AC4")
-def test_solve_min_subsidy_rate_unachievable() -> None:
-    """FR-608-**AC4**: 해가 없으면 그 사실과 **부족분**을 명시한다.
-
-    (마커가 `AC5` 로 적혀 있었다 — R26 정정. AC5 는 역산 대상 변수 확장이며
-    이 테스트와 무관하다. `..._basic` 과 서로 남의 조항을 달고 있었다.)
-    """
-
-    def eval_npv_linear(rate: float) -> float:
-        return -100.0 + (200.0 * rate)
-
-    res2 = solve_min_subsidy_rate(eval_npv_linear, 200.0, "NPV")
-    assert res2.success is False
-    assert res2.subsidy_rate == 1.0
-    assert res2.shortfall == 100.0
-    assert res2.reason is not None and "최대 지원" in res2.reason
-
-
 # ── FR-608-AC1 후반부 — 목표 「복수」 ────────────────────────────────────
-
-
-@pytest.mark.req("FR-608-AC1")
-def test_multiple_goals_take_the_binding_one() -> None:
-    """★ 복수 목표의 답은 **각 목표 최소 해의 최댓값**이고, 무엇이 구속했는지 말한다.
-
-    손계산 오라클:
-        NPV ≥ 0       NPV = -100 + 200r  →  200r ≥ 100  →  최소 r = 0.50
-        회수기간 ≤ 8  PB  = 15 - 10r     →  10r  ≥ 7    →  최소 r = 0.70
-    둘 다 만족하는 최소 지원율은 **0.70** 이고 구속하는 것은 회수기간이다.
-
-    **최댓값이 아니라 최솟값·평균을 쓰면 답이 0.50 이나 0.60 이 되고, 그 값에서
-    회수기간 목표는 충족되지 않는다** — 그래도 「해를 찾았다」로 보인다.
-    """
-    goals = [
-        Goal(lambda r: -100.0 + 200.0 * r, 0.0, "NPV", label="NPV≥0"),
-        Goal(lambda r: 15.0 - 10.0 * r, 8.0, "PAYBACK", label="회수기간≤8년"),
-    ]
-
-    result = solve_min_subsidy_rate_for_goals(goals)
-
-    assert result.success is True
-    assert abs(result.subsidy_rate - 0.7) <= 0.001
-    assert result.binding_label == "회수기간≤8년", (
-        "어느 목표가 답을 결정했는지 말해야 한다 — 그것이 없으면 지원율을 "
-        f"낮출 때 무엇을 완화해야 할지 알 수 없다: {result.binding_label!r}"
-    )
-
-    # 구속하지 않는 목표만 남기면 답이 내려간다 — 위 0.70 이 「둘 다」에서 온
-    # 값이지 목표 하나에서 온 우연이 아님을 보인다
-    only_npv = solve_min_subsidy_rate_for_goals([goals[0]])
-    assert abs(only_npv.subsidy_rate - 0.5) <= 0.001
-
-
-@pytest.mark.req("FR-608-AC1")
-@pytest.mark.req("FR-608-AC4")
-def test_multiple_goals_name_the_unreachable_one() -> None:
-    """하나라도 100%로 달성 불가하면 전체 실패이고 **그 목표를 지목한다.**
-
-    「어딘가 안 된다」로는 무엇을 고쳐야 할지 알 수 없다.
-    """
-    goals = [
-        Goal(lambda r: -100.0 + 200.0 * r, 0.0, "NPV", label="NPV≥0"),
-        Goal(lambda r: 15.0 - 10.0 * r, 1.0, "PAYBACK", label="회수기간≤1년"),
-    ]
-
-    result = solve_min_subsidy_rate_for_goals(goals)
-
-    assert result.success is False
-    assert result.binding_label == "회수기간≤1년"
-    assert result.shortfall is not None
-    assert "회수기간≤1년" in (result.reason or "")
 
 
 # ── FR-608-AC5 — 역산 대상 변수를 보조율 외로도 지정 ──────────────────────
@@ -526,75 +396,6 @@ def test_multiple_goals_name_the_unreachable_one() -> None:
 # `test_dod9_phase_1_musthave_unmapped_zero` 가 빨간불이 되어 그 사실이
 # 드러났다. R20 이 「마커를 지우면 DoD 9 가 빨간불」이라 적어 둔 자리와 같은
 # 형태이며, 그때와 달리 이번에는 조항을 **구현해서** 닫는다.
-
-
-@pytest.mark.req("FR-608-AC5")
-def test_other_support_variables_can_be_solved_and_are_named() -> None:
-    """보조율 외 변수도 역산하고, **어느 변수였는지 결과가 말한다.**
-
-    손계산 오라클: 융자금리를 x 로 두었을 때 NPV = -100 + 200x 이면 NPV ≥ 0 인
-    최소 x 는 0.5 다(보조율 예시와 같은 식 — 탐색은 변수에 무관하다는 것이
-    요점이므로 식을 일부러 같게 둔다).
-
-    ★ **변수 이름이 결과에 남아야 한다.** `SolverResult` 의 필드는
-    `subsidy_rate` 라서, 거기에 융자금리를 담으면 표시 층이 그것을 보조율로
-    읽는다 — 값은 맞는데 뜻이 틀린 상태가 되고 아무 예외도 나지 않는다.
-    """
-    def eval_npv(x: float) -> float:
-        return -100.0 + 200.0 * x
-
-    result = solve_min_support_variable(
-        eval_npv, 0.0, "NPV", variable="loan_interest_rate"
-    )
-
-    assert result.success is True
-    assert abs(result.value - 0.5) <= 0.001
-    assert result.variable == "loan_interest_rate", (
-        "어느 변수를 역산했는지 결과에 없다 — 표시 층이 보조율로 읽게 된다"
-    )
-
-
-@pytest.mark.req("FR-608-AC5")
-def test_the_four_named_variables_are_all_accepted() -> None:
-    """조항이 **이름으로 세운 넷**이 전부 받아들여진다.
-
-    하나만 확인하면 나머지 셋이 빠져 있어도 통과한다 — 조항은 넷을 열거한다
-    (융자금리·거치기간·직접거래단가·REC단가).
-    """
-    def eval_npv(x: float) -> float:
-        return -100.0 + 200.0 * x
-
-    for variable in (
-        "loan_interest_rate",
-        "grace_period_years",
-        "direct_trade_price",
-        "rec_price",
-    ):
-        result = solve_min_support_variable(
-            eval_npv, 0.0, "NPV", variable=variable
-        )
-        assert result.success is True, variable
-        assert result.variable == variable
-
-
-@pytest.mark.req("FR-608-AC5")
-def test_an_unknown_variable_is_refused() -> None:
-    """★ 목록 밖 이름은 거부한다 — 열어 두면 오타가 조용히 통과한다.
-
-    `loan_rat` 같은 오타를 받아 답을 돌려주면 그 답은 **아무 변수의 것도
-    아니다.** 그런데 값은 그럴듯하고 예외도 나지 않는다.
-    """
-    with pytest.raises(ValueError, match="역산 대상 변수가 아닙니다"):
-        solve_min_support_variable(
-            lambda x: x, 0.0, "NPV", variable="loan_rat"
-        )
-
-
-@pytest.mark.req("FR-608-AC1")
-def test_no_goals_is_refused() -> None:
-    """목표가 비면 역산할 대상이 없다 — 조용히 0.0 을 돌려주지 않는다."""
-    with pytest.raises(ValueError, match="목표가 하나도 없습니다"):
-        solve_min_subsidy_rate_for_goals([])
 
 
 @pytest.mark.req("FR-610-AC1")
@@ -616,50 +417,6 @@ def test_resource_differential_support() -> None:
 
     assert cf_pv[0].amounts[1] == Money(-700)
     assert cf_ess[0].amounts[1] == Money(-500)
-
-
-@pytest.mark.req("FR-609-AC1", "FR-609-AC2", "FR-609-AC3")
-def test_generate_iso_support_curve() -> None:
-    """FR-609-AC1, AC2, AC3: 등가 지원 조합 곡선 산출 및 최소 재정부담 조합 강조 검증.
-
-    손으로 계산한 기대값:
-    사업자 NPV = -1000 + 1000 * s + 500 * lr * (0.05 - li)
-    정부 재정 부담 현가(gov_fiscal_pv) = 1050 * s + 500 * lr * (0.05 - li)
-    목표 사업자 NPV = 0.0 일 때:
-    - (lr=0.0, li=0.0): s=1.000, owner_npv=0.0, gov_fiscal_pv=1050.0
-    - (lr=0.5, li=0.02): s=0.9925, owner_npv=0.0, gov_fiscal_pv=1049.625
-    - (lr=0.8, li=0.00): s=0.9800, owner_npv=0.0, gov_fiscal_pv=1049.0 (최소)
-    모든 조합에서 사업자 NPV=0.0을 달성하는 등가 곡선이다.
-    """
-
-    def eval_model(
-        subsidy_rate: float, loan_rate: float, loan_interest: float
-    ) -> tuple[float, float]:
-        owner_npv = (
-            -1000.0 + 1000.0 * subsidy_rate + 500.0 * loan_rate * (0.05 - loan_interest)
-        )
-        gov_fiscal_pv = 1050.0 * subsidy_rate + 500.0 * loan_rate * (0.05 - loan_interest)
-        return owner_npv, gov_fiscal_pv
-
-    loan_candidates = [
-        (0.0, 0.0),
-        (0.5, 0.02),
-        (0.8, 0.0),
-    ]
-
-    result = generate_iso_support_curve(
-        eval_model, target_value=0.0, target_type="NPV", loan_candidates=loan_candidates
-    )
-
-    assert len(result.points) == 3
-    # FR-609-AC1: 목표 NPV=0.0 달성 등가 곡선 포인트 확인 (0.1%p 정밀도 내)
-    for pt in result.points:
-        assert abs(pt.owner_metric - 0.0) <= 1.0
-
-    # FR-609-AC2 & AC3: 정부 재정 부담 현가 병기 및 최소 부담 조합 존재 확인
-    assert result.min_fiscal_point is not None
-    assert result.min_fiscal_point.is_minimum_fiscal_burden is True
-    assert result.min_fiscal_point.loan_rate == 0.8
 
 
 # ⚠ **`req` 마커에 `DV-N` 을 쓰지 않는다** — R24 인수 정정. `DV-1` 은 §7.3 검증

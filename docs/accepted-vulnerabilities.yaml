@@ -60,3 +60,22 @@ accepted:
   # 그래서 **건수와 ID 수가 다르다.** 검사기가 건수를 세지 않고 **ID 를
   # 대조하는** 이유가 이것이다 — 「2」를 기대값으로 적었다면 그 수는 무엇도
   # 가리키지 못한 채 맞았을 것이다.
+
+  - id: GHSA-xmj3-9gf7-h52w
+    package: setuptools
+    installed: "79.0.1"
+    fixed_in: "84.1.0"
+    decision: 올리지 않는다
+    judged_at: "2026-11-01"
+    judged_in: R72
+    reason: >-
+      위 PYSEC-2026-3447 과 같은 패키지이고 같은 근거다 — `setuptools` 는
+      런타임 의존이 아니라 빌드·설치 환경에만 있다. 권고 내용(심각도 low ·
+      2026-10-23 공개)은 **Windows 에서 옛 wheel 설치 경로가**
+      `namespace_packages.txt` 로 대상 디렉터리 밖에 `__init__.py` 를 만들 수
+      있다는 것이며, 파일 내용은 공격자가 정하지 못한다. 이 저장소의 CI 는
+      Linux 러너이고 배포물은 그 경로를 타지 않으므로 위 판정의 재검토 조건
+      ⓑ(빌드 산출물 오염)에 해당하지 않는다.
+    revisit_when: >-
+      위 PYSEC-2026-3447 의 ⓐ·ⓒ 와 같다. 더해 Windows 에서 서드파티 wheel 을
+      `setuptools` 의 옛(egg) 설치 경로로 까는 배포·설치 절차가 생기는 날.

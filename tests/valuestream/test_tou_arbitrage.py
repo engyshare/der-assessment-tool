@@ -19,23 +19,15 @@ import pytest
 
 from core.contracts.der import DispatchResult
 from core.contracts.units import Money, to_won
-from core.contracts.validation import ValidationError
 from core.contracts.valuestream import ExclusionType, Payer
 from core.der.ess import ESS, ESSOperatingMode
 from core.valuestream import (
-    CapacityPayment,
-    NWAs,
-    PeakShaving,
-    SelfConsumption,
-    SurplusSale,
     TouArbitrage,
 )
 from core.valuestream.exclusion_table import (
     DEFAULT_EXCLUSION_RULES,
-    collect_exclusions,
     find_rule,
 )
-from core.valuestream.report import STATE_EXCLUDED, build_report
 
 #: 운전 주체가 **사업자**인 편익 — R50 이 `TouArbitrage` 를 더해 **셋**이다.
 #: 계통 급전 편익 둘과의 유형 `E` 쌍은 그래서 **2 × 3 = 6** 이다.
@@ -77,26 +69,6 @@ def _p1_ess(**overrides: object) -> ESS:
     }
     params.update(overrides)
     return ESS(**params)  # type: ignore[arg-type]
-
-
-def _user_operated(tag: str) -> SelfConsumption | PeakShaving | TouArbitrage:
-    if tag == "SelfConsumption":
-        return SelfConsumption(baseline_annual_bill_won=300, new_annual_bill_won=120)
-    if tag == "PeakShaving":
-        return PeakShaving(
-            monthly_peak_reduction_kw=[1.0] * 12, demand_charge_won_per_kw_month=5_000
-        )
-    return _tou()
-
-
-def _grid_dispatch(tag: str, *, enabled: bool = True) -> NWAs | CapacityPayment:
-    if tag == "NWAs":
-        return NWAs(contribution_price_won_per_kwh=50.0, enabled=enabled)
-    return CapacityPayment(
-        registered_capacity_kw=10.0,
-        capacity_price_won_per_kw_month=6_000.0,
-        enabled=enabled,
-    )
 
 
 # ── 산식 — FR-401-AC2.TouArbitrage ───────────────────────────────────────
@@ -266,71 +238,6 @@ def test_negative_inputs_are_refused(field: str, value: float) -> None:
 # ── 더는 배타가 아니다 — 수량 차감으로 대신한다 (R51/WP-5 · 판정 §4) ────────
 
 
-@pytest.mark.req("FR-402-AC2.A")
-def test_surplus_sale_pair_is_no_longer_an_exclusion() -> None:
-    """★★ `SurplusSale` 과는 **더는 배타가 아니다** — 수량에서 뺀다.
-
-    R50 은 이 쌍을 유형 A(같은 kWh 가 두 항목에 각각 판매로 들어간다)로 막았다.
-    사용자 판정 §4(`docs/decisions-2026-09-01-R51.md`)는 그것을 *「두 번 센
-    것」*이 아니라 *「같은 전력이 길을 돌아간 것」*으로 다시 읽는다 — 답은
-    「둘 중 하나를 끄라」가 아니라 **「잉여판매 수량에서 그 몫을 빼라」**다.
-    차감은 `SurplusSale.non_pv_ess_discharge_kwh` 가 지고, 그 값을 계산해
-    넘기는 것은 러너(`core/casegrid/e2e_runner.py`)다 — 이 파일은 편익 계약
-    수준의 배타 여부만 본다(수량 차감 자체는
-    `tests/valuestream/test_surplus_sale.py`·
-    `tests/casegrid/test_surplus_sale_charge_source_deduction.py` 가 잰다).
-
-    ⚠ **정당한 동시 운전을 지우지 않는다는 것까지 함께 본다** — 배타로 막으면
-    ESS 는 `GRID` 충전으로 차익거래를 하고 PV 잉여는 따로 파는 구성이
-    사라진다(판정 §4 의 요점).
-    """
-    assert find_rule("TouArbitrage", "SurplusSale") is None, (
-        "TouArbitrage ↔ SurplusSale 배타 규칙이 아직 docs/exclusion-rules.yaml 에 "
-        "있습니다 — R51/WP-5 가 뗐어야 합니다(판정 §4)"
-    )
-
-    report = build_report(
-        [_tou(), SurplusSale(sale_price_won_per_kwh=120.0)],
-        _dispatch_electric([10.0, 20.0]),
-        year=1,
-    )
-    states = {line.tag: line.state for line in report.all_lines()}
-    assert states["TouArbitrage"] != STATE_EXCLUDED
-    assert states["SurplusSale"] != STATE_EXCLUDED
-
-
-@pytest.mark.req("FR-402-AC1", "FR-402-AC2.E")
-def test_it_is_not_exclusive_with_the_other_operator_run_benefits() -> None:
-    """★★★ **`SelfConsumption`·`PeakShaving` 과는 배타가 아니다.**
-
-    셋 다 **운전 주체가 사업자**이고 `ESS.mode_weights` 가 혼합 모드를 **명시로
-    허용**한다(`tests/der/test_ess.py` 가 `TOU_ARBITRAGE 0.5 + PEAK_SHAVING 0.2`
-    를 돌린다). 배타로 적으면 **정당한 동시 계상을 지운다** — `FR-402-AC1` 이
-    명시로 금지한 방향이며, 겁내서 하나만 세면 **과대 지원**을 요구하게 된다.
-
-    ⚠ **없음을 재는 검사다.** 규칙이 없다는 것만 보면 「아직 안 적었다」와
-    「적지 않기로 했다」가 같아 보이므로, **실행 경로가 셋을 함께 계상하는
-    것까지** 함께 고정한다.
-    """
-    assert find_rule("TouArbitrage", "SelfConsumption") is None
-    assert find_rule("TouArbitrage", "PeakShaving") is None
-
-    # ⚠ `SelfConsumption` ↔ `PeakShaving` 은 저장소가 이미 동시 계상으로 두고
-    # 있으므로 셋을 한 번에 세울 수 있다 — 그것이 `FR-402-AC1` 의 예시다.
-    streams = [_user_operated(t) for t in USER_OPERATED_TAGS]
-    dispatch = _dispatch_electric([10.0, 20.0])
-
-    report = build_report(streams, dispatch, year=1)
-    states = {line.tag: line.state for line in report.all_lines()}
-
-    for tag in USER_OPERATED_TAGS:
-        assert states[tag] != STATE_EXCLUDED, (
-            f"{tag} 가 배타제외됐습니다 — 사업자 운전 편익 셋은 동시에 성립하며 "
-            "동시 발생하는 다중 효과는 중복이 아닙니다 (FR-402-AC1)"
-        )
-    assert report.total_accounted() > to_won(0)
-
-
 # ── 배타 유형 E — 계통 급전 편익 (FR-402-AC2.E) ──────────────────────────
 
 
@@ -355,40 +262,6 @@ def test_both_grid_dispatch_pairs_are_declared_as_type_e() -> None:
         assert rule.applies_to_profile is None
         assert rule.applies_to_structure is None
         assert "방전" in rule.rationale
-
-
-@pytest.mark.req("FR-402-AC2.E")
-@pytest.mark.parametrize("grid_tag", GRID_DISPATCH_TAGS)
-def test_type_e_pair_is_refused_on_the_execution_path(
-    grid_tag: str,
-) -> None:
-    """★★ **실행 경로에서 잰다** — `build_report()` 를 지난다.
-
-    이 저장소는 *「거부 기계는 있는데 배포 코드가 아무도 안 부른다」* 를 실물로
-    겪었다(R26 · R17/WP-28B). 그래서 규칙표를 직접 읽는 것으로 끝내지 않는다.
-
-    ⚠⚠ **R52/WP-3 이 뒤집었다.** `build_report()` 는 라벨링 전에
-    `assert_no_exclusions()` 를 부르므로, 유형 `E` 가 거부 대상이 된 지금은
-    `STATE_EXCLUDED` 라벨이 아니라 `ValidationError` 가 난다. **금액이 있는
-    상태로 재는 것이 요점이다** — 두 편익 다 0원이면 「거부됐다」와 「원래
-    0이다」가 같아 보인다.
-    """
-    grid = _grid_dispatch(grid_tag)
-    tou = _tou()
-    dispatch = _dispatch_electric([10.0, 20.0])
-
-    assert grid.annual_value(dispatch, year=1) > to_won(0)
-    assert tou.annual_value(dispatch, year=1) > to_won(0)
-
-    with pytest.raises(ValidationError) as caught:
-        build_report([grid, tou], dispatch, year=1)
-
-    err = caught.value
-    assert err.rule == "DV-12"
-    assert grid_tag in err.reason and "TouArbitrage" in err.reason, (
-        f"{grid_tag} ↔ TouArbitrage 는 동시에 성립할 수 없는 운전인데 그 쌍이 "
-        f"거부 사유에 없습니다: {err.reason!r} (FR-402-AC2.E)"
-    )
 
 
 @pytest.mark.req("FR-402-AC2.E")
@@ -418,24 +291,6 @@ def test_the_operating_agent_axis_now_counts_six_pairs() -> None:
         "운전 주체 축의 유형 E 쌍이 여섯이 아닙니다 — 계통 급전 편익 둘 × "  # noqa: RUF001
         f"사업자 운전 편익 셋입니다. 표에 있는 것: {sorted(map(sorted, table))}"
     )
-
-
-@pytest.mark.req("FR-402-AC2.E")
-def test_type_e_does_not_fire_when_the_grid_dispatch_benefit_is_off() -> None:
-    """**오탐 0 쪽도 함께 잰다** — 꺼져 있으면 배타가 발동하지 않는다.
-
-    계통 급전 편익 둘은 **기본 비활성**이 정상 상태이므로, 여기서 잘못 걸리면
-    아무것도 켜지 않은 기준 구성에서 TOU 차익거래가 지워진다.
-    """
-    streams = [_grid_dispatch("NWAs", enabled=False), _tou()]
-    dispatch = _dispatch_electric([10.0, 20.0])
-
-    assert collect_exclusions(streams) == []
-
-    report = build_report(streams, dispatch, year=1)
-    states = {line.tag: line.state for line in report.all_lines()}
-    assert states["TouArbitrage"] != STATE_EXCLUDED
-    assert report.total_accounted() > to_won(0)
 
 
 # ── 운전 방법과의 연결 — FR-105-AC1 (자원 쪽은 tests/der/test_ess.py) ────

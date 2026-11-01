@@ -20,12 +20,9 @@ from pathlib import Path
 
 import pytest
 
-import core.asset
 import core.der
-from core.contracts.asset import CommonAsset
 from core.contracts.der import DER
 from core.contracts.registry import (
-    REGISTRY_ABSTRACT_FLAG,
     RegistryError,
     discover,
     load_package_modules,
@@ -68,39 +65,6 @@ def test_der_registry_is_built_by_scanning() -> None:
         )
 
 
-@pytest.mark.contract
-@pytest.mark.req("NFR-207-AC1")
-def test_common_asset_registry_uses_the_same_mechanism() -> None:
-    """같은 발견기가 `core/asset/` 에도 쓰인다.
-
-    발견기가 특정 구획을 모르기 때문에 그럴 수 있다 — 그것이
-    `core/contracts/` 에 둘 수 있었던 이유이기도 하다 (NFR-208-AC3).
-    """
-    registry = discover(core.asset, CommonAsset)
-    assert set(registry) == COMMON_ASSET_TAGS
-
-
-@pytest.mark.contract
-@pytest.mark.req("NFR-207-AC1")
-def test_shared_base_class_is_excluded_only_by_explicit_marker() -> None:
-    """공유 기반 클래스는 **표식으로** 빠진다 — 그리고 표식은 상속되지 않는다.
-
-    `StandardCommonAsset` 은 구상이지만 FR-106-AC2 가 열거한 «유형» 이 아니다.
-    표식을 `getattr` 로 보면 **상속되어 CEMS·HEMS·공용 계량통신 셋 전부가
-    등록에서 빠진다** — 그 상태는 「공통설비가 없는 단지」로 계산되고, CEMS
-    구축비·운영비가 통째로 사라지는데 결과는 그럴듯하다.
-
-    실제로 구현 중에 한 번 그 상태가 됐고 이 검사가 그것을 고정한다.
-    """
-    from core.asset.common_asset import CEMS, StandardCommonAsset
-
-    assert StandardCommonAsset.__dict__.get(REGISTRY_ABSTRACT_FLAG) is True
-    # 상속된 값은 참이지만 **자기 선언은 없다** — 그래서 등록된다
-    assert getattr(CEMS, REGISTRY_ABSTRACT_FLAG, False) is True
-    assert REGISTRY_ABSTRACT_FLAG not in CEMS.__dict__
-    assert "CEMS" in discover(core.asset, CommonAsset)
-
-
 # ── AC1 · M1: 공유 파일에 자원 이름이 없다 ──────────────────────────
 
 @pytest.mark.contract
@@ -125,7 +89,6 @@ def test_no_central_registry_file_names_any_resource() -> None:
     """
     shared = [
         REPO_ROOT / "core" / "der" / "__init__.py",
-        REPO_ROOT / "core" / "asset" / "__init__.py",
         REPO_ROOT / "core" / "contracts" / "__init__.py",
         REPO_ROOT / "core" / "contracts" / "registry.py",
     ]

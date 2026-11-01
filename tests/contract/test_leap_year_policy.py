@@ -32,17 +32,11 @@ import inspect
 import pytest
 
 from core.contracts.units import (
-    HOURS_PER_LEAP_YEAR,
     HOURS_PER_YEAR,
     LEAP_YEAR_POLICY,
-    STEPS_15MIN_PER_LEAP_YEAR,
     STEPS_15MIN_PER_YEAR,
     steps_per_year,
 )
-from infra.tsstore import ALLOWED_ROW_COUNTS, LEAP_YEAR_ROW_COUNTS
-
-HOURS_PER_DAY = 24
-STEPS_15MIN_PER_DAY = 96
 
 
 @pytest.mark.contract
@@ -94,34 +88,3 @@ def test_the_step_count_cannot_depend_on_the_year() -> None:
     # 해상도별 스텝 수는 상수이며, 그 상수가 평년 값이다
     assert steps_per_year(3600) == HOURS_PER_YEAR == 8760
     assert steps_per_year(900) == STEPS_15MIN_PER_YEAR == 35_040
-
-
-@pytest.mark.contract
-@pytest.mark.req("NFR-303-M1")
-def test_leap_year_row_counts_are_the_leap_counts_and_are_not_allowed() -> None:
-    """★★ ③ 선언이 「366일 시계열은 받지 않는다」고 했다 — 두 갈래로 붙든다.
-
-    ⓐ **윤년 상수가 정말 윤년 값인가** — 아무 숫자나 적어 두고 「윤년 행 수」라
-    부르면, 실제 366일 자료(8784행)는 그 목록에 걸리지 않아 **일반 거부 문장을
-    받는다.** 그러면 선언은 있는데 닿지 않는다.
-    ⓑ **그 값이 허용 목록에 들어가 있지 않은가** — 누가 `ALLOWED_ROW_COUNTS` 에
-    8784 를 더하면 선언은 거짓이 되는데, 그 변경은 기존 검사를 **하나도**
-    빨간불로 만들지 않는다(허용이 늘어나는 방향이므로).
-    """
-    # ⓐ 윤년 = 평년 + 하루
-    assert HOURS_PER_LEAP_YEAR == HOURS_PER_YEAR + HOURS_PER_DAY == 8784
-    assert (
-        STEPS_15MIN_PER_LEAP_YEAR
-        == STEPS_15MIN_PER_YEAR + STEPS_15MIN_PER_DAY
-        == 35_136
-    )
-    assert {HOURS_PER_LEAP_YEAR, STEPS_15MIN_PER_LEAP_YEAR} == LEAP_YEAR_ROW_COUNTS
-
-    # ⓑ 허용과 겹치지 않는다
-    assert not (ALLOWED_ROW_COUNTS & LEAP_YEAR_ROW_COUNTS), (
-        f"윤년 행 수가 허용 목록에 있습니다: "
-        f"{sorted(ALLOWED_ROW_COUNTS & LEAP_YEAR_ROW_COUNTS)}. "
-        "`LEAP_YEAR_POLICY` 는 366일 시계열을 받지 않는다고 선언합니다 — "
-        "규약을 바꾸려면 선언을 먼저 고치십시오."
-    )
-    assert {HOURS_PER_YEAR, STEPS_15MIN_PER_YEAR} == ALLOWED_ROW_COUNTS

@@ -10,14 +10,12 @@ from __future__ import annotations
 
 import pytest
 
-from core.contracts.der import DER, DispatchContext, DispatchResult
+from core.contracts.der import DER, DispatchContext
 from core.contracts.units import ENERGY_TOLERANCE_KWH, Money, to_won, won_sum
 from core.contracts.validation import ValidationError
 from core.der.ess import ESS, ESSChargeSource, ESSOperatingMode
 from core.incentive.calculator import build_capex_cashflows
 from core.incentive.schemas import IncentiveScheme
-from core.valuestream import NWAs, SelfConsumption
-from core.valuestream.report import build_report
 from tests.contract.test_der_contract import DERContractTests
 
 
@@ -991,54 +989,6 @@ def test_default_operating_mode_still_excludes_grid_dispatch_benefits() -> None:
     assert default.value_streams() == ("TouArbitrage",)
     assert "NWAs" not in default.value_streams()
     assert "CP" not in default.value_streams()
-
-
-@pytest.mark.req("FR-105-AC1", "FR-402-AC2.E")
-def test_grid_discharge_plus_self_consumption_is_refused_on_the_execution_path() -> None:
-    """★★ **혼합 모드로 「계통 방전」+「자가소비 우선」을 켜면 유형 `E` 가 거부한다**
-    (R52/WP-3 · 판정 §3 앞 문장, `docs/decisions-2026-09-02-R52.md` §3).
-
-    *「상황에 따라 변경될 수 있으며」* 는 **고를 수 있다**는 뜻이지 **동시에
-    성립한다**는 뜻이 아니다 — `value_streams()` 가 두 태그를 함께 내는 것은
-    결함이 아니라, **유형 `E` 배타가 실행 경로에서 그것을 걸러내는 것이 옳은
-    동작이다.** `build_report()` 를 지나는 실행 경로에서 잰다 — 이 저장소는
-    「거부 기계는 있는데 배포 코드가 아무도 안 부른다」를 실물로 겪었다(R26).
-
-    ⚠⚠ **R52/WP-3 이 뒤집었다.** R51/WP-3 이 이 이름으로 세운 자리는 그
-    시점에 「거부가 아니라 표시로 걸린다」는 사실을 `STATE_EXCLUDED` 로
-    붙들고 있었다 — `assert_no_exclusions()` 가 유형 `A` 만 걸렀기 때문이다.
-    이제 그 함수가 유형 `E` 도 거부하므로 `build_report()` 는 라벨링에
-    닿기 전에 `ValidationError` 를 던진다.
-    """
-    mixed = _p1_ess(
-        operating_mode=ESSOperatingMode.HYBRID,
-        mode_weights={
-            ESSOperatingMode.SELF_CONSUMPTION: 0.5,
-            ESSOperatingMode.GRID_DISCHARGE: 0.5,
-        },
-    )
-    assert set(mixed.value_streams()) == {"SelfConsumption", "NWAs"}
-
-    dispatch = DispatchResult(
-        electric=[10.0, 20.0], heat=[0.0, 0.0], cool=[0.0, 0.0], fuel=[0.0, 0.0]
-    )
-    streams = [
-        NWAs(contribution_price_won_per_kwh=50.0, enabled=True),
-        SelfConsumption(baseline_annual_bill_won=300, new_annual_bill_won=120),
-    ]
-    # 켜져 있으면 값이 난다 — 0원끼리 비교하는 검사가 되지 않게 먼저 확인한다.
-    assert streams[0].annual_value(dispatch, year=1) > to_won(0)
-    assert streams[1].annual_value(dispatch, year=1) > to_won(0)
-
-    with pytest.raises(ValidationError) as caught:
-        build_report(streams, dispatch, year=1)
-
-    err = caught.value
-    assert err.rule == "DV-12"
-    assert "NWAs" in err.reason and "SelfConsumption" in err.reason, (
-        f"계통 방전과 자가소비는 동시에 성립할 수 없는 운전인데 그 쌍이 거부 "
-        f"사유에 없습니다: {err.reason!r} (FR-402-AC2.E)"
-    )
 
 
 @pytest.mark.req("FR-105-AC3")

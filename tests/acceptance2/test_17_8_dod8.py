@@ -11,14 +11,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-import core.asset
 import core.der
 from core.contracts.der import DER
 from core.contracts.registry import discover
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TESTS_DER_DIR = REPO_ROOT / "tests" / "der"
-TESTS_ASSET_DIR = REPO_ROOT / "tests" / "asset"
 WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "tests.yml"
 
 # §13.2.2 공통 비용 5종 — 전 자원 공통
@@ -44,11 +42,6 @@ RESOURCE_SPECIFIC_CASES: dict[str, list[str]] = {
     # ThermalLoad: RC-TL-P1~P2
     "ThermalLoad": ["RC-TL-P1", "RC-TL-P2"],
 }
-
-# CommonAsset: RC-CA-C1~C5, RC-CA-A1~A2, RC-CA-X1 (§13.2.3)
-COMMON_ASSET_CASES = ["RC-CA-C1", "RC-CA-C2", "RC-CA-C3",
-                   "RC-CA-C4", "RC-CA-C5", "RC-CA-A1", "RC-CA-A2", "RC-CA-X1"]
-
 
 def _extract_test_case_ids(test_file: Path, resource_tag: str) -> set[str]:
     """테스트 파일에서 RC-* 케이스 ID를 추출한다.
@@ -106,9 +99,6 @@ def _extract_test_case_ids(test_file: Path, resource_tag: str) -> set[str]:
 
 def _get_test_file_for_resource(tag: str, module_path: Path) -> Path:
     """자원 태그에 해당하는 테스트 파일 경로를 반환한다."""
-    if tag == "CommonAsset":
-        return TESTS_ASSET_DIR / "test_common_asset.py"
-
     module_name = module_path.stem
     return TESTS_DER_DIR / f"test_{module_name}.py"
 
@@ -250,44 +240,6 @@ def test_dod8_verification_cases_actually_execute() -> None:
 
 
 @pytest.mark.req("NFR-106-M1")
-def test_dod8_common_asset_has_all_rc_ca_cases() -> None:
-    """DoD 8 — CommonAsset(공통설비)가 §13.2.3 RC-CA-* 케이스를 전건 보유하는지 확인.
-
-    CommonAsset은 DER이 아니므로 별도 검사가 필요하다 (FR-106).
-    """
-    test_file = TESTS_ASSET_DIR / "test_common_asset.py"
-
-    if not test_file.is_file():
-        raise AssertionError(f"CommonAsset 테스트 파일이 없습니다: {test_file}")
-
-    # 파일에서 RC-CA-* 케이스 ID 추출
-    case_ids = _extract_test_case_ids(test_file, "CA")
-
-    missing = [case for case in COMMON_ASSET_CASES if case not in case_ids]
-
-    if missing:
-        raise AssertionError(f"CommonAsset에 누락된 케이스가 있습니다: {', '.join(missing)}")
-
-    # pytest collect-only로 실행 가능성 확인
-    import subprocess
-    import sys
-
-    result = subprocess.run(
-        [sys.executable, "-m", "pytest", str(test_file), "-p", "no:cacheprovider",
-         "--no-cov", "-q", "--collect-only"],
-        capture_output=True,
-        text=True,
-        cwd=REPO_ROOT,
-        check=False,
-    )
-
-    if result.returncode != 0:
-        raise AssertionError(
-            f"CommonAsset 테스트를 수집할 수 없습니다:\n{result.stdout}\n{result.stderr}"
-        )
-
-
-@pytest.mark.req("NFR-106-M1")
 def test_dod8_resource_case_files_have_no_skip_or_xfail_and_ci_runs_them_unrestricted() -> None:
     """DoD 8 — 케이스 존재가 곧 «실행·통과」가 아니다.
 
@@ -300,9 +252,7 @@ def test_dod8_resource_case_files_have_no_skip_or_xfail_and_ci_runs_them_unrestr
     missing_case_files: list[str] = []
     marked_skip_or_xfail: list[str] = []
 
-    for test_file in sorted(TESTS_DER_DIR.glob("test_*.py")) + sorted(
-        TESTS_ASSET_DIR.glob("test_*.py")
-    ):
+    for test_file in sorted(TESTS_DER_DIR.glob("test_*.py")):
         source = test_file.read_text(encoding="utf-8")
         if "pytest.mark.skip" in source or "pytest.mark.xfail" in source:
             marked_skip_or_xfail.append(str(test_file.relative_to(REPO_ROOT)))
@@ -345,28 +295,6 @@ def _cleanup_violation_marker(marker_file: Path) -> None:
     """위반 검사용 마커 파일을 삭제한다."""
     if marker_file.exists():
         marker_file.unlink()
-
-
-@pytest.mark.req("NFR-106-M1")
-def test_dod8_verification_catches_missing_cases() -> None:
-    """DoD 8 검증이 누락된 케이스를 감지하는지 확인 (음성 테스트).
-
-    검사를 만들고 그것이 위반을 잡지 않으면 「검사한 적이 없는 것」과 같다.
-    의도적으로 케이스 하나를 제외하고 검사가 빨간불이 되는지 확인한다.
-    """
-    # 실제 검증: 케이스 집합을 확인하고 의도적으로 실패 케이스 만들기
-    test_file = TESTS_ASSET_DIR / "test_common_asset.py"
-    case_ids = _extract_test_case_ids(test_file, "CommonAsset")
-
-    # RC-CA-A1이 케이스 집합에 있는지 확인 (정상 케이스)
-    assert "RC-CA-A1" in case_ids, "검사 기준 케이스가 파일에 없습니다"
-
-    # 의도적으로 RC-CA-A1 제외하고 검사 → 실패해야 함
-    case_ids_without_a1 = {cid for cid in case_ids if cid != "RC-CA-A1"}
-
-    # 검사 로직을 직접 실행 (함수 호출 대신)
-    missing = [case for case in COMMON_ASSET_CASES if case not in case_ids_without_a1]
-    assert missing == ["RC-CA-A1"], f"의도적으로 빼낸 케이스 감지 실패: {missing}"
 
 
 # ── 전체 자원 목록 포괄 확인 ────────────────────────────────────────
@@ -416,13 +344,3 @@ def test_dod8_six_resource_types_have_complete_coverage() -> None:
         for tag, cases in sorted(incomplete.items()):
             error_lines.append(f"  {tag}: {', '.join(cases)}")
         raise AssertionError("\n".join(error_lines))
-
-    # CommonAsset 별도 확인
-    test_file = TESTS_ASSET_DIR / "test_common_asset.py"
-    if test_file.is_file():
-        case_ids = _extract_test_case_ids(test_file, "CA")
-        missing_ca = [case for case in COMMON_ASSET_CASES if case not in case_ids]
-        if missing_ca:
-            raise AssertionError(f"CommonAsset에 누락된 케이스가 있습니다: {', '.join(missing_ca)}")
-    else:
-        raise AssertionError(f"CommonAsset 테스트 파일이 없습니다: {test_file}")

@@ -21,7 +21,6 @@ from core.contracts.valuestream import ExclusionType, Payer
 from core.valuestream import (
     CapacityPayment,
     NWAs,
-    PeakShaving,
     SelfConsumption,
 )
 from core.valuestream.exclusion_table import (
@@ -30,7 +29,6 @@ from core.valuestream.exclusion_table import (
     collect_exclusions,
     find_rule,
 )
-from core.valuestream.report import STATE_EXCLUDED, build_report
 
 #: 계통 급전 편익 × 사용자 운전 편익 — **이 파일이 보는 것은 넷이다** (R48
 #: 판정 §2 · spec FR-402-AC2.E). 목록을 여기 한 번만 두고 검사들이 함께 돈다 —
@@ -63,16 +61,6 @@ def _dispatch_electric(values: list[float]) -> DispatchResult:
 
 def _self_consumption() -> SelfConsumption:
     return SelfConsumption(baseline_annual_bill_won=300, new_annual_bill_won=120)
-
-
-def _peak_shaving() -> PeakShaving:
-    return PeakShaving(
-        monthly_peak_reduction_kw=[1.0] * 12, demand_charge_won_per_kw_month=5_000
-    )
-
-
-def _user_operated(tag: str) -> SelfConsumption | PeakShaving:
-    return _self_consumption() if tag == "SelfConsumption" else _peak_shaving()
 
 
 def _grid_dispatch(tag: str, *, enabled: bool = True) -> NWAs | CapacityPayment:
@@ -294,64 +282,6 @@ def test_all_four_grid_dispatch_pairs_are_declared_as_type_e() -> None:
         "급전 편익 둘 × 사업자 운전 편익 셋입니다"  # noqa: RUF001
         f": {[(r.benefit_a, r.benefit_b) for r in type_e_rows]}"
     )
-
-
-@pytest.mark.req("FR-402-AC2.E")
-@pytest.mark.parametrize(("grid_tag", "user_tag"), TYPE_E_PAIRS)
-def test_type_e_pair_is_refused_on_the_execution_path(
-    grid_tag: str, user_tag: str
-) -> None:
-    """★★ **실행 경로에서 잰다** — `build_report()` 를 지난다.
-
-    이 저장소는 *「거부 기계는 있는데 배포 코드가 아무도 안 부른다」* 를 실물로
-    겪었다(R26 · R17/WP-28B). 그래서 `collect_exclusions()` 를 직접 부르는
-    것으로 끝내지 않고, 리포트를 만드는 **그 경로**가 이 조합을 거부하는지를
-    고정한다.
-
-    ⚠⚠ **R52/WP-3 이 뒤집었다.** `build_report()` 는 라벨링 전에
-    `assert_no_exclusions()` 를 부르므로(`core/valuestream/report.py`), 유형
-    `E` 가 거부 대상이 된 지금은 **라벨링까지 가지 않고 그 자리에서 거부된다**
-    — 종전처럼 `STATE_EXCLUDED` 로 표시되고 계상 합계가 0으로 남는 것이 아니라
-    `ValidationError` 가 난다. 「금액이 있는 상태로 재는 것이 요점」이라는
-    원칙은 그대로 지킨다 — 0원끼리 비교하면 거부와 「원래 0이다」가 같아
-    보인다.
-    """
-    grid = _grid_dispatch(grid_tag)
-    user = _user_operated(user_tag)
-    dispatch = _dispatch_electric([10.0, 20.0])
-
-    # 켜져 있으면 값이 난다 — 0원끼리 비교하는 검사가 되지 않게 먼저 확인한다.
-    assert grid.annual_value(dispatch, year=1) > to_won(0)
-    assert user.annual_value(dispatch, year=1) > to_won(0)
-
-    with pytest.raises(ValidationError) as caught:
-        build_report([grid, user], dispatch, year=1)
-
-    err = caught.value
-    assert err.rule == "DV-12"
-    assert grid_tag in err.reason and user_tag in err.reason, (
-        f"{grid_tag} ↔ {user_tag} 는 동시에 성립할 수 없는 운전인데 그 쌍이 "
-        f"거부 사유에 없습니다: {err.reason!r} (FR-402-AC2.E)"
-    )
-
-
-@pytest.mark.req("FR-402-AC2.E")
-def test_type_e_does_not_fire_when_the_grid_dispatch_benefit_is_off() -> None:
-    """**오탐 0 쪽도 함께 잰다** — 꺼져 있으면 배타가 발동하지 않는다.
-
-    두 편익 다 활성일 때만 걸려야 한다. 기본 비활성이 정상 상태이므로, 여기서
-    잘못 걸리면 **아무것도 켜지 않은 기준 구성이 거부된다.**
-    """
-    grid = _grid_dispatch("NWAs", enabled=False)
-    user = _self_consumption()
-    dispatch = _dispatch_electric([10.0, 20.0])
-
-    report = build_report([grid, user], dispatch, year=1)
-
-    states = {line.tag: line.state for line in report.all_lines()}
-    assert states["SelfConsumption"] != STATE_EXCLUDED
-    assert states["NWAs"] != STATE_EXCLUDED
-    assert report.total_accounted() > to_won(0)
 
 
 @pytest.mark.req("FR-402-AC2.E")

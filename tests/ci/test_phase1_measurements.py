@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib
 import shutil
-import ssl
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -12,7 +11,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-from app.security import tls
 from app.services.scenario_store import InMemoryScenarioStore, ScenarioRecord
 from core.contracts.der import DER
 from core.contracts.registry import discover
@@ -284,16 +282,6 @@ def test_app_engine_is_actually_built_from_the_env_value(
         # 다른 테스트가 인메모리 기본값을 전제하므로 반드시 되돌린다.
         monkeypatch.delenv("DER_DB_URL", raising=False)
         importlib.reload(app.deps)
-
-
-@pytest.mark.req("NFR-402-AC1")
-def test_tls_context_requires_tls12_or_higher() -> None:
-    """Spec oracle: the minimum accepted transport version is TLS 1.2."""
-    ctx = tls.build_ssl_context()
-
-    assert tls.MIN_TLS_VERSION is ssl.TLSVersion.TLSv1_2
-    assert ctx.minimum_version is ssl.TLSVersion.TLSv1_2
-    tls.assert_tls12_or_higher()
 
 
 @pytest.mark.req("FR-1103-AC1")

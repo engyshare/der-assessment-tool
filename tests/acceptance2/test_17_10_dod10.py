@@ -18,7 +18,6 @@ from core.contracts.registry import discover
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SHARED_FILES = [
     REPO_ROOT / "core" / "der" / "__init__.py",
-    REPO_ROOT / "core" / "asset" / "__init__.py",
     REPO_ROOT / "core" / "contracts" / "__init__.py",
     REPO_ROOT / "core" / "contracts" / "registry.py",
 ]

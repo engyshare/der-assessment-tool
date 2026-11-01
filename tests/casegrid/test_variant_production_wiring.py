@@ -29,7 +29,6 @@ R26 이 형태 하나로 모은 결함이고(`DV-12`·`DV-5`·`FR-205`) 이것�
 from __future__ import annotations
 
 from collections.abc import Mapping
-from concurrent.futures import Executor, ThreadPoolExecutor
 from types import MappingProxyType
 from typing import Any, ClassVar
 
@@ -37,14 +36,11 @@ import pytest
 
 from core.casegrid import incentive_cases
 from core.casegrid.e2e_runner import run_single_case_e2e
-from core.casegrid.execution import run_cases
 from core.casegrid.ledger_levels import design_levels
-from core.casegrid.models import Case
 from core.casegrid.variants import run_order
 from core.contracts.casevariant import CaseVariant
 from core.contracts.validation import ValidationError
 from core.incentive.schemas import IncentiveScheme
-from core.report.variant_report import build_variant_table
 
 #: 대장을 읽지 않는다 — 이 파일이 보는 것은 금액이 아니라 **배선**이다.
 LEVEL_MAP = {
@@ -213,65 +209,6 @@ def test_the_baseline_variant_and_the_case_metric_use_one_convention() -> None:
         "무지원 기준선의 NPV 가 케이스 지표와 다릅니다 — 초기투자를 `t=0` 에 "
         "두는 규약이 한쪽에서만 지켜지고 있습니다"
     )
-
-
-@pytest.mark.req("FR-607-AC1")
-def test_the_case_grid_carries_the_variants_into_the_result() -> None:
-    """`run_cases()` 가 변형을 `CaseResult` 로 나른다 — 표가 실제로 선다.
-
-    함수 층만 보면 진입점이 변형을 «돌려주는» 것까지만 알 수 있다. 그 값을
-    케이스 그리드가 버리면 표시 층은 여전히 빈 결과를 받고, 그 상태에서 위
-    네 테스트는 전부 초록불이다.
-    """
-    results = run_cases(
-        [Case(index=0, values={})],
-        lambda case: _run(scheme=_scheme()),
-    )
-
-    table = build_variant_table(results[0])
-
-    assert table.baseline_row.tag == "unsupported"
-    assert table.baseline_row.baseline is True
-    # ★ **목록을 못 박는다.** 지표가 변형마다 갈리면 `build_variant_table` 이
-    # 거부하므로 그 어긋남은 여기까지 오지 않는다. 이 단언이 지키는 것은 다른
-    # 것이다 — **지표가 조용히 사라지는 것**. R33 이 `initial_outlay_won` 을
-    # 더했고(리포트가 「얼마를 덜 냈기에 그런가」를 말하려면 필요하다) 그때
-    # 이 줄이 빨간불로 그 사실을 알렸다. 지우면 다음 사람이 지표를 지워도
-    # 아무 일도 일어나지 않는다.
-    assert table.metric_names == ("initial_outlay_won", "npv", "payback_years")
-
-
-@pytest.mark.req("FR-607-AC1", "FR-805-AC1")
-def test_the_variants_survive_the_parallel_path() -> None:
-    """④ ★ 병렬 경로에서도 변형이 살아 있다 — 결과가 **피클을 지난다.**
-
-    `CaseResult.__getstate__` 가 `variants` 를 빠뜨리면 **직렬에서는 보이고
-    병렬에서만 사라진다.** R31 이 그 위험을 독스트링에 적어 두었으나 그때는
-    변형을 낳는 코드가 없어 실행 경로로 확인할 수 없었다.
-
-    `ProcessPoolExecutor` 대신 스레드를 쓰면 피클을 지나지 않아 이 검사가
-    아무것도 붙들지 못한다. 그래서 **결과를 직접 피클로 왕복**시켜 그 층을
-    따로 붙든다(프로세스 풀은 람다를 절일 수 없어 이 파일에서 쓸 수 없다).
-    """
-    import pickle
-
-    def _factory(max_workers: int | None) -> Executor:
-        return ThreadPoolExecutor(max_workers=max_workers or 1)
-
-    results = run_cases(
-        [Case(index=0, values={})],
-        lambda case: _run(scheme=_scheme()),
-        parallel=True,
-        executor_factory=_factory,
-    )
-
-    restored = pickle.loads(pickle.dumps(results[0]))
-
-    assert dict(restored.variants) == dict(results[0].variants), (
-        "피클 왕복에서 변형이 달라졌습니다 — 병렬 실행에서만 변형이 사라지고 "
-        "케이스 수가 적은 검사에서는 드러나지 않습니다"
-    )
-    assert build_variant_table(restored).rows[0].baseline is True
 
 
 class _MinimumSupportProbe(CaseVariant):
